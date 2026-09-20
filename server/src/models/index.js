@@ -2038,15 +2038,19 @@ const assistantConfigSchema = new Schema({
   model: { type: String, default: '' },
   // How many tool rounds one question may take before it has to answer.
   maxToolRounds: { type: Number, default: 4 },
-  // Who may use it. Reports are admin and accounts; this sees the same data.
-  roles: { type: [String], default: ['admin', 'accounts'] },
+  // Who may use it. Reports are admin and accounts, and BayOps (the mobile
+  // command bar) is a rep tool first, so sales_rep is in the default too —
+  // this is only what a brand-new config document gets; an already-existing
+  // one keeps whatever an admin set, same as any other field here.
+  roles: { type: [String], default: ['admin', 'accounts', 'sales_rep'] },
   /* Whether it may do things — create a quotation, send it — as well as
    * answer. Every action is proposed first and runs only when a person
    * confirms it in the widget; this switch decides whether it may even
-   * propose. Admin only by default: an action here reserves a unit and
-   * messages a customer. */
+   * propose. Admin and sales_rep by default — a rep proposing their own
+   * quotation or lead is exactly BayOps' job, still gated by a person
+   * pressing Confirm either way. */
   actionsEnabled: { type: Boolean, default: true },
-  actionRoles: { type: [String], default: ['admin'] },
+  actionRoles: { type: [String], default: ['admin', 'sales_rep'] },
 }, { timestamps: true });
 export const AssistantConfig = model('AssistantConfig', assistantConfigSchema);
 

@@ -1,11 +1,13 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { requireAdmin } from '../middleware/auth.js';
 import { askAssistant, getAssistantConfig, DEFAULT_PROMPT } from '../services/assistant/index.js';
 import { toolNames } from '../services/assistant/tools.js';
 import { takeProposal, dropProposal, runAction } from '../services/assistant/actions.js';
-import { openaiConfigured, openaiModel } from '../services/openai.js';
+import { openaiConfigured, openaiModel, transcribeAudio } from '../services/openai.js';
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const PROMPT_LIMIT = 20000;
 
@@ -36,6 +38,30 @@ router.post('/ask', async (req, res) => {
          authHeader: req.headers.authorization || '',
       });
       res.json(out);
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
+/**
+ * Speech in, text out — for BayOps' command-bar mic. The same transcription
+ * OpenAI service the WhatsApp voice-note pipeline already uses
+ * (services/mediaUnderstanding.js); this just exposes it for the app to
+ * call directly instead of only ever running against an inbound WhatsApp
+ * voice note. Text only comes back — the caller still runs it through /ask
+ * itself, exactly as if it had been typed.
+ */
+router.post('/transcribe', upload.single('audio'), async (req, res) => {
+   try {
+      if (!(await allowed(req))) return res.status(403).json({ error: 'The assistant is not enabled for your role' });
+      if (!req.file) return res.status(400).json({ error: 'No audio file' });
+      const text = await transcribeAudio({
+         buffer: req.file.buffer,
+         mimeType: req.file.mimetype || 'audio/m4a',
+         filename: req.file.originalname || 'voice.m4a',
+      });
+      if (!text) return res.status(422).json({ error: "Couldn't make that out — try again, or type it instead." });
+      res.json({ text });
    } catch (e) {
       res.status(500).json({ error: e.message });
    }
@@ -116,6 +142,11 @@ router.put('/config', requireAdmin, async (req, res) => {
    } catch (e) {
       res.status(500).json({ error: e.message });
    }
+});
+
+router.use((error, _req, res, _next) => {
+   if (error.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'Recording is too long — under 10MB, please.' });
+   res.status(500).json({ error: error.message });
 });
 
 export default router;
