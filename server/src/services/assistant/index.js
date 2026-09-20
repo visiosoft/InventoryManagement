@@ -220,5 +220,19 @@ export async function askAssistant({ question, history = [], siteId = null, user
       if (c?.customerIds?.length || c?.contracts?.length) { compose = c; break; }
    }
 
-   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose };
+   /* A structured card for the couple of answers where a prose sentence
+      throws away shape a screen can show better — a stat grid for
+      inventory, a list for people found, a line-item breakdown for a
+      price. Built from the actual tool result, same rule as links/compose:
+      never from the model, so a card can't show a number the model made
+      up. Anything not on this short list just reads as the plain answer —
+      most questions are answered fine in a sentence and don't need one. */
+   const CARD_TOOLS = { units_available: 'inventory', find_customer: 'contacts', price_booking: 'price' };
+   let card = null;
+   for (const r of results) {
+      const type = CARD_TOOLS[r.tool];
+      if (type && !r.result?.error) { card = { type, data: r.result }; break; }
+   }
+
+   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card };
 }
