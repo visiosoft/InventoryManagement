@@ -3,7 +3,7 @@ import { chatWithTools, openaiConfigured, openaiModel } from '../openai.js';
 import { siteScope } from '../../utils/siteScope.js';
 import { dayKeyFor } from '../dailyDigest.js';
 import { toolDefinitions, toolByName } from './tools.js';
-import { PROPOSAL_TOOLS } from './actions.js';
+import { PROPOSAL_TOOLS, ACTION_TOOLS } from './actions.js';
 
 /**
  * The assistant in the corner of every page.
@@ -76,7 +76,7 @@ function systemPromptFor(config, { user, now }) {
  *
  * @returns {{ answer, tools: [{name, args, ok}], model, rounds, grounded }}
  */
-export async function askAssistant({ question, history = [], siteId = null, user = null, now = new Date() }) {
+export async function askAssistant({ question, history = [], siteId = null, user = null, now = new Date(), authHeader = '' }) {
    if (!openaiConfigured()) return { answer: 'The assistant is not set up — OpenAI is not configured.', tools: [], model: '', rounds: 0, grounded: true };
    const config = await getAssistantConfig();
    if (!config.enabled) return { answer: 'The assistant is switched off.', tools: [], model: '', rounds: 0, grounded: true };
@@ -85,7 +85,10 @@ export async function askAssistant({ question, history = [], siteId = null, user
    if (!text) return { answer: 'Ask me something about the system.', tools: [], model: '', rounds: 0, grounded: true };
 
    const scope = await siteScope(siteId).catch(() => null);
-   const ctx = { scope, user, now };
+   // Carried so a write tool can call the app's own API with the asking
+   // user's own token — same reason the confirmed-proposal executor does:
+   // whatever it creates is attributed exactly as if they had used the page.
+   const ctx = { scope, user, now, authHeader };
    const model = config.model || openaiModel();
    const system = systemPromptFor(config, { user, now });
 
@@ -104,8 +107,8 @@ export async function askAssistant({ question, history = [], siteId = null, user
    /* Whether this person may even be offered an action. If not, the proposal
       tool is simply absent — the model cannot propose what it cannot see. */
    const mayAct = config.actionsEnabled !== false
-      && (config.actionRoles?.length ? config.actionRoles : ['admin']).includes(user?.role);
-   const tools = toolDefinitions().filter((t) => mayAct || !PROPOSAL_TOOLS.includes(t.function.name));
+      && (config.actionRoles?.length ? config.actionRoles : ['admin', 'sales_rep']).includes(user?.role);
+   const tools = toolDefinitions().filter((t) => mayAct || !ACTION_TOOLS.includes(t.function.name));
    let pending = null;
 
    for (; rounds < maxRounds; rounds += 1) {

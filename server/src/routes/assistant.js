@@ -13,7 +13,11 @@ const PROMPT_LIMIT = 20000;
  *  sees the same figures, so that is the default. */
 async function allowed(req) {
    const config = await getAssistantConfig();
-   const roles = config.roles?.length ? config.roles : ['admin', 'accounts'];
+   // sales_rep in the default: BayOps (the mobile command bar) is a rep tool
+   // first — a fresh install with nobody having touched this config should
+   // not leave reps locked out of the thing built for them. Still fully
+   // admin-configurable from here down.
+   const roles = config.roles?.length ? config.roles : ['admin', 'accounts', 'sales_rep'];
    return roles.includes(req.user?.role);
 }
 
@@ -29,6 +33,7 @@ router.post('/ask', async (req, res) => {
          question, history: Array.isArray(history) ? history : [],
          siteId: site || req.query.site || null,
          user: req.user,
+         authHeader: req.headers.authorization || '',
       });
       res.json(out);
    } catch (e) {
@@ -39,7 +44,7 @@ router.post('/ask', async (req, res) => {
 async function mayAct(req) {
    const c = await getAssistantConfig();
    if (c.actionsEnabled === false) return false;
-   return (c.actionRoles?.length ? c.actionRoles : ['admin']).includes(req.user?.role);
+   return (c.actionRoles?.length ? c.actionRoles : ['admin', 'sales_rep']).includes(req.user?.role);
 }
 
 /**
