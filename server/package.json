@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "node --watch-path=src src/index.js",
     "start": "node src/index.js",
+    "test": "node --test test/ src/",
+    "test:leads": "node --test test/leads.test.js",
     "seed": "node src/seed.js",
     "google-contacts:oauth": "node src/googleContactsOAuthSetup.js",
     "import:inventory": "node src/importInventory.js",
@@ -39,6 +41,8 @@
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.0",
-    "pdfjs-dist": "^4.10.38"
+    "mongodb-memory-server": "^11.2.0",
+    "pdfjs-dist": "^4.10.38",
+    "supertest": "^7.2.2"
   }
 }

@@ -115,6 +115,13 @@ export const leadApi = {
       .post<{ ok: true; created: boolean; customer: Customer; lead: Lead }>(`/leads/${id}/convert`)
       .then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/leads/${id}`).then((r) => r.data),
+  /** Move every lead currently owned by `fromOwner` to `toOwner` (or to
+   *  nobody, if `toOwner` is omitted) in one action — for a rep who's been
+   *  terminated/removed, or just a rebalance. Admin-only server-side.
+   *  Optional `status` narrows it to one pipeline stage instead of the
+   *  rep's whole book. */
+  reassign: (body: { fromOwner: string; toOwner?: string; status?: string }) =>
+    api.post<{ reassigned: number }>('/leads/reassign', body).then((r) => r.data),
   /** The pipeline as a funnel: how many leads sit at each stage right now,
    *  and how long they've been there. Server: routes/leads.js's GET /funnel,
    *  logic in services/leadFunnel.js. */

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
-import { notifyLeadAssigned, pendingAssignmentBadge } from '../services/leadNotify.js';
+import { notifyLeadAssigned, notifyBulkReassignment, pendingAssignmentBadge } from '../services/leadNotify.js';
 import { resolvePlaceholderNames } from '../services/leadNames.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask } from '../services/followUps.js';
 import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
@@ -86,6 +86,11 @@ function cleanBody(body) {
 async function validateOwner(ownerId) {
     const owner = await User.findById(ownerId).select('_id');
     return Boolean(owner);
+}
+
+async function ownerName(ownerId) {
+    const owner = await User.findById(ownerId).select('name email');
+    return owner?.name || owner?.email || 'a former rep';
 }
 
 // Sales reps only ever see/touch leads assigned to them — enforced server-side
@@ -1114,6 +1119,55 @@ router.put('/:id', async (req, res) => {
     }
 
     res.json(await lead.populate('owner', 'name email'));
+});
+
+/* Moving one rep's whole book to another in one action — the case the
+ * per-lead owner field never had an answer for: a rep is terminated or
+ * removed, or a manager just wants to rebalance, and doing it lead-by-lead
+ * (or via the filter + select-all + bulk-assign workflow already on the
+ * board) does not scale past a handful. Admin-only: this is a management
+ * action, not something a rep does to their own queue. */
+router.post('/reassign', async (req, res) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+    const fromOwner = String(req.body?.fromOwner || '');
+    if (!fromOwner) return res.status(400).json({ error: 'Choose the rep to move leads away from' });
+    const toOwner = req.body?.toOwner ? String(req.body.toOwner) : null;
+    if (toOwner && toOwner === fromOwner) return res.status(400).json({ error: 'Choose a different rep to receive the leads' });
+    if (toOwner) {
+        const receiving = await User.findById(toOwner).select('isActive');
+        if (!receiving) return res.status(400).json({ error: 'Lead owner not found' });
+        if (!receiving.isActive) return res.status(400).json({ error: 'That rep is inactive — reactivate them first, or choose someone else' });
+    }
+
+    const filter = { owner: fromOwner };
+    if (req.body?.status) {
+        if (!ALLOWED_STATUS.has(req.body.status)) return res.status(400).json({ error: 'Invalid lead status' });
+        filter.status = req.body.status;
+    }
+    const count = await Lead.countDocuments(filter);
+    if (!count) return res.json({ reassigned: 0 });
+
+    const userName = req.user.name || req.user.email || 'an admin';
+    const timelineText = toOwner
+        ? `Reassigned by ${userName} — bulk transfer`
+        : `Left unassigned by ${userName} — bulk transfer`;
+    await Lead.updateMany(filter, {
+        $set: {
+            owner: toOwner, ownerSeenAt: null, assignedAt: toOwner ? new Date() : null,
+            firstResponseAt: null, assignedBy: toOwner ? req.user.id : null, autoAssigned: false,
+        },
+        $push: { timeline: { type: 'updated', text: timelineText, user: req.user.id, at: new Date() } },
+    });
+
+    // One notification for the whole transfer, not one per lead — a rep
+    // inheriting 40 leads at once should not get 40 push notifications for
+    // it (see leadNotify.js's own reasoning for capping/collapsing these).
+    if (toOwner) {
+        notifyBulkReassignment({ toOwner, count, fromOwnerName: await ownerName(fromOwner) })
+            .catch((e) => console.error('[Leads] bulk reassign notify failed:', e.message));
+    }
+
+    res.json({ reassigned: count });
 });
 
 router.patch('/:id/status', async (req, res) => {

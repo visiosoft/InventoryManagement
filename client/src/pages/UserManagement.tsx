@@ -198,6 +198,16 @@ function UserModal({ editing, onClose, onDone }: {
   const isAdmin = role === 'admin'
   const isSalesRep = isSalesRepRole(role)
 
+  // Deactivating a rep never touches their leads on its own — this just
+  // surfaces that so it isn't discovered later as leads silently owned by
+  // someone who can no longer log in. Only worth asking for once there's a
+  // rep to check and a reason to (being turned off).
+  const leadCount = useQuery<number>({
+    queryKey: ['user-lead-count', editing?._id],
+    queryFn: () => api.get('/leads', { params: { owner: editing!._id, limit: 1 } }).then(r => r.data.total ?? 0),
+    enabled: !isNew && isSalesRep && !isActive && !!editing?._id,
+  })
+
   function changeRole(next: string) {
     setRole(next)
     if (isSalesRepRole(next)) setPerms(['sales_board'])
@@ -256,6 +266,12 @@ function UserModal({ editing, onClose, onDone }: {
                 <option value="inactive">Inactive (cannot log in)</option>
               </Select>
             </Field>
+          )}
+          {!isActive && !!leadCount.data && (
+            <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+              Still owns {leadCount.data} lead{leadCount.data === 1 ? '' : 's'} — deactivating doesn't move these off their board.
+              Use <span className="font-semibold">Reassign leads</span> on the Leads page to hand them to someone else.
+            </p>
           )}
 
           {isAdmin && (
