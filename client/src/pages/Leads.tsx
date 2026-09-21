@@ -1273,17 +1273,35 @@ export default function Leads() {
                         <option value="exhausted">Needs a decision{stats?.chase ? ` (${stats.chase.exhausted})` : ''}</option>
                     </select>
 
+                    {/* Who currently owns the lead — separate from who has
+                        chased it below. Reassigning a lead moves this
+                        instantly; it only catches up in "Contacted by" once
+                        the new owner logs an attempt on it. */}
+                    {(stats?.byOwner?.length ?? 0) > 0 && (
+                        <select
+                            value={owner && owner !== 'unassigned' ? owner : ''}
+                            onChange={(e) => setOwner(e.target.value)}
+                            style={{ height: 44, minWidth: 160, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                        >
+                            <option value="">Assigned to anyone</option>
+                            {(stats?.byOwner ?? []).map((o) => (
+                                <option key={o._id} value={o._id}>{o.name} ({o.count})</option>
+                            ))}
+                        </select>
+                    )}
+
                     {/* Who did the chasing, which is not who owns it: leads get
-                        reassigned, and the record of the work stays put. */}
+                        reassigned, and the record of the work — who actually
+                        logged an attempt — stays with the person who did it. */}
                     {(stats?.byChaser?.length ?? 0) > 0 && (
                         <select
                             value={attemptBy}
                             onChange={(e) => setAttemptBy(e.target.value)}
                             style={{ height: 44, minWidth: 160, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
                         >
-                            <option value="">Chased by anyone</option>
+                            <option value="">Contacted by anyone</option>
                             {(stats?.byChaser ?? []).map((c) => (
-                                <option key={c._id} value={c._id}>{c.name} ({c.count})</option>
+                                <option key={c._id} value={c._id}>{c.name} ({c.count} contacted)</option>
                             ))}
                         </select>
                     )}
