@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
@@ -6,7 +6,7 @@ import {
     Pencil, Plus, PlusCircle, Repeat, RotateCcw, Search, Trash2, X,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { Badge, Button, Modal, Spinner, Textarea } from '../components/ui'
+import { Badge, Button, Modal, SlideOver, Spinner, Textarea } from '../components/ui'
 import { formatDate } from '../lib/utils'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -104,6 +104,10 @@ export default function AutomationRules() {
     const [newGroupName, setNewGroupName] = useState('')
     const [error, setError] = useState('')
     const [editingTemplate, setEditingTemplate] = useState<{ ruleId: string; stepIdx: number } | null>(null)
+    // Keeps the last-resolved rule/step around so StepTemplateModal can stay
+    // mounted (and its SlideOver can animate the exit) after editingTemplate
+    // goes back to null instead of losing its content mid-close.
+    const lastTemplateEditRef = useRef<{ rule: AutomationRule; step: AutomationStep; stepIdx: number } | null>(null)
     // Deep-linkable from the dashboard's "Contracts Expiring Soon" banner
     // (?tab=pending) — read once on load, same as any other tab default.
     const [searchParams] = useSearchParams()
@@ -482,16 +486,21 @@ export default function AutomationRules() {
             )}
 
             {/* Template Editor Modal */}
-            {editingTemplate && (() => {
-                const rule = rules.find(r => r._id === editingTemplate.ruleId)
-                const step = rule?.steps[editingTemplate.stepIdx]
-                if (!rule || !step) return null
+            {(() => {
+                if (editingTemplate) {
+                    const rule = rules.find(r => r._id === editingTemplate.ruleId)
+                    const step = rule?.steps[editingTemplate.stepIdx]
+                    if (rule && step) lastTemplateEditRef.current = { rule, step, stepIdx: editingTemplate.stepIdx }
+                }
+                const shown = lastTemplateEditRef.current
+                if (!shown) return null
                 return (
                     <StepTemplateModal
-                        step={step}
+                        open={!!editingTemplate}
+                        step={shown.step}
                         templates={templates}
                         onSave={(patch) => {
-                            updateStep(rule, editingTemplate.stepIdx, patch)
+                            updateStep(shown.rule, shown.stepIdx, patch)
                             setEditingTemplate(null)
                         }}
                         onClose={() => setEditingTemplate(null)}
@@ -936,7 +945,8 @@ function RuleCard({ rule, templates: _templates, onToggleEnabled, onToggleEmail,
 }
 
 // ── Step Template Editor Modal ───────────────────────────────────────────────
-function StepTemplateModal({ step, templates, onSave, onClose }: {
+function StepTemplateModal({ open, step, templates, onSave, onClose }: {
+    open: boolean
     step: AutomationStep
     templates: MessageTemplate[]
     onSave: (patch: Partial<AutomationStep>) => void
@@ -947,6 +957,22 @@ function StepTemplateModal({ step, templates, onSave, onClose }: {
     const [emailSubject, setEmailSubject] = useState(step.emailSubject || '')
     const [emailBody, setEmailBody] = useState(step.emailBody || '')
     const [whatsappBody, setWhatsappBody] = useState(step.whatsappBody || '')
+
+    // SlideOver keeps this component mounted across opens/closes so it can
+    // animate the exit (see the parent's lastTemplateEditRef), so the fields
+    // no longer get a free reset from remounting on every open — do it here
+    // instead, keyed off `open` flipping true, whether re-editing the same
+    // step or switching to a different one.
+    useEffect(() => {
+        if (open) {
+            setTab('email')
+            setTemplateName(step.template)
+            setEmailSubject(step.emailSubject || '')
+            setEmailBody(step.emailBody || '')
+            setWhatsappBody(step.whatsappBody || '')
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open])
 
     function loadFromTemplate(key: string) {
         const t = templates.find(t => t.key === key)
@@ -965,16 +991,8 @@ function StepTemplateModal({ step, templates, onSave, onClose }: {
     const VARIABLES = ['@name', '@amount', '@unit', '@dueDate', '@daysLeft', '@contractNo', '@startDate', '@endDate', '@invoiceNo']
 
     return (
-        <div className="fixed inset-0 z-50">
-            <div className="absolute inset-0 bg-black/20" onClick={onClose} />
-            <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right">
-                <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
-                    <h2 className="text-lg font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em', color: '#14081F' }}>
-                        Edit Template – {step.template}
-                    </h2>
-                    <button onClick={onClose} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
-                </div>
-                <div className="p-5 space-y-4">
+        <SlideOver open={open} onClose={onClose} title={`Edit Template – ${step.template}`} width="max-w-md">
+                <div className="space-y-4">
                     {/* Template name */}
                     <div>
                         <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Step Label</label>
@@ -1076,7 +1094,6 @@ function StepTemplateModal({ step, templates, onSave, onClose }: {
                         <Button onClick={handleSave}>Save Template</Button>
                     </div>
                 </div>
-            </div>
-        </div>
+        </SlideOver>
     )
 }
