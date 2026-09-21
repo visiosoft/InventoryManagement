@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { GripVertical } from 'lucide-react'
+import { AlertTriangle, GripVertical } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead } from '../lib/api'
 import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
@@ -142,14 +142,14 @@ function WidgetShell({
       className="min-w-0"
     >
       <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden' }}>
-        <div style={{ padding: '16px 20px 0' }}>
+        <div style={{ padding: '20px 22px 0' }}>
           <span className="flex items-center gap-2">
             <GripVertical size={14} style={{ color: MUTED_CLR }} />
-            <span style={{ color: INK, fontWeight: 600, fontSize: 14 }}>{title}</span>
+            <span style={{ ...HEADING, color: INK, fontWeight: 700, fontSize: 15 }}>{title}</span>
           </span>
-          {subtitle && <div style={{ color: MUTED_CLR, fontSize: 12, marginTop: 2, paddingLeft: 22 }}>{subtitle}</div>}
+          {subtitle && <div style={{ color: MUTED_CLR, fontSize: 12, marginTop: 3, paddingLeft: 22 }}>{subtitle}</div>}
         </div>
-        <div style={{ padding: '12px 20px 20px' }}>{children}</div>
+        <div style={{ padding: '14px 22px 22px' }}>{children}</div>
       </div>
     </div>
   )
@@ -517,17 +517,17 @@ export default function Dashboard() {
   // one (or one failing request taking the whole page down with it).
 
   return (
-    <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+    <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-6 sm:p-9">
 
-      <div className="mb-5"><DashboardAsk /></div>
+      <div className="mb-6"><DashboardAsk /></div>
 
       {isAdmin && Boolean(pendingExpiry?.total) && (
         <Link
           to="/settings/automation?tab=pending"
-          className="mb-5 flex items-center gap-3 flex-wrap rounded-2xl border px-5 py-3.5 hover:bg-amber-100/60 transition-colors"
+          className="mb-6 flex items-center gap-3 flex-wrap rounded-2xl border px-5 py-3.5 hover:bg-amber-100/60 transition-colors"
           style={{ background: '#FFF7E6', borderColor: '#F5D896' }}
         >
-          <span style={{ fontSize: 20 }}>⚠️</span>
+          <AlertTriangle size={18} style={{ color: '#8A5A00', flexShrink: 0 }} />
           <div className="flex-1 min-w-[220px]">
             <div style={{ ...HEADING, fontWeight: 700, fontSize: 14.5, color: '#8A5A00' }}>Contracts Expiring Soon</div>
             <div className="text-xs mt-0.5" style={{ color: '#8A5A00', opacity: 0.85 }}>
@@ -539,12 +539,17 @@ export default function Dashboard() {
         </Link>
       )}
 
-      <div className="space-y-5">
+      <div className="space-y-8">
         {layout.map((id) => {
           if (id === 'stats') {
             return (
               <div key={id} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
-                <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><GripVertical size={14} /> KPI Cards</div>
+                <div
+                  className="mb-3 flex items-center gap-2"
+                  style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}
+                >
+                  <GripVertical size={13} /> Overview
+                </div>
                 {widgets[id]}
               </div>
             )
@@ -555,7 +560,7 @@ export default function Dashboard() {
             const first = peerIds.find((x) => layout.includes(x))
             if (id !== first) return null
             return (
-              <div key="charts-grid" className="grid gap-4 lg:grid-cols-2">
+              <div key="charts-grid" className="grid gap-5 lg:grid-cols-2">
                 {peerIds.filter((x) => layout.includes(x)).map((x) => (
                   <div key={x}>{widgets[x]}</div>
                 ))}
@@ -568,7 +573,7 @@ export default function Dashboard() {
             const first = peerIds.find((x) => layout.includes(x))
             if (id !== first) return null
             return (
-              <div key="middle-grid" className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
+              <div key="middle-grid" className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
                 {peerIds.filter((x) => layout.includes(x)).map((x) => (
                   <div key={x}>{widgets[x]}</div>
                 ))}
