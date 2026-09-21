@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { GripVertical, X } from 'lucide-react'
+import { GripVertical } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead } from '../lib/api'
 import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
-import { EmptyState, Skeleton, Table, Th, Td, Button, Badge } from '../components/ui'
-import { formatDate } from '../lib/utils'
+import { EmptyState, Skeleton, Table, Th, Td, Button, Badge, SlideOver } from '../components/ui'
+import { CHART_STYLE } from './reports/shared'
+import { formatDate, formatMoney } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
 import QuietLeadsModal from '../components/QuietLeadsModal'
 import { useAuth } from '../lib/auth'
@@ -21,7 +22,6 @@ type WidgetId =
   | 'high-intent-leads'
   | 'units-by-size'
   | 'floor-occupancy'
-  | 'quiet-leads'
   | 'expiring-contracts'
   | 'team-tasks'
 
@@ -32,7 +32,6 @@ const DEFAULT_LAYOUT: WidgetId[] = [
   'high-intent-leads',
   'units-by-size',
   'floor-occupancy',
-  'quiet-leads',
   'expiring-contracts',
   'team-tasks',
 ]
@@ -75,6 +74,46 @@ function safeLoadLayout() {
   } catch {
     return DEFAULT_LAYOUT
   }
+}
+
+const KPI_SKELETON = (
+  <div className="grid grid-cols-2 lg:grid-cols-6 gap-[18px]">
+    {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[150px] rounded-[22px]" />)}
+  </div>
+)
+
+const RENEWAL_BADGE: Record<string, { label: string; tone: string }> = {
+  undecided: { label: 'Undecided', tone: 'gray' },
+  renewing: { label: 'Renewing', tone: 'green' },
+  not_renewing: { label: 'Not renewing', tone: 'red' },
+}
+
+const PAYMENT_BADGE: Record<string, { label: string; tone: string }> = {
+  paid: { label: 'Paid', tone: 'green' },
+  pending: { label: 'Pending', tone: 'amber' },
+}
+
+function KpiTile({
+  label, value, footer, onClick, extra,
+}: {
+  label: string
+  value: React.ReactNode
+  footer: React.ReactNode
+  onClick?: () => void
+  extra?: React.ReactNode
+}) {
+  return (
+    <div
+      onClick={onClick}
+      style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: onClick ? 'pointer' : undefined }}
+      className={onClick ? 'hover:shadow-md transition-shadow' : undefined}
+    >
+      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>{label}</div>
+      <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{value}</div>
+      <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>{footer}</div>
+      {extra}
+    </div>
+  )
 }
 
 function WidgetShell({
@@ -120,14 +159,11 @@ export default function Dashboard() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
-  // Tasks is an admin/sales-rep tool and the server blocks staff outright, so
-  // don't offer a tab that would only 403.
   const [layout, setLayout] = useState<WidgetId[]>(() => safeLoadLayout())
-  const [dragged, setDragged] = useState<WidgetId | null>(null)
+  const [, setDragged] = useState<WidgetId | null>(null)
   const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
   const [sizeFilter, setSizeFilter] = useState<number | null>(null)
   const [showQuiet, setShowQuiet] = useState(false)
-  const [quietOwner, setQuietOwner] = useState<string | undefined>(undefined)
 
   // Every card below fetches its own slice, independently, so whichever
   // answers first shows first instead of the whole page waiting on the
@@ -152,11 +188,12 @@ export default function Dashboard() {
     staleTime: 5 * 60_000,
   })
 
-  /* Every rep's quiet-lead backlog, rolled up — the count and the chart. It
-   * is the heaviest thing this page asks for (every open lead in the
-   * company, not one rep's few dozen). Its own card, its own load — no
-   * reason left to hold it back behind anything else on the page. */
-  const { data: quiet, isLoading: quietLoading } = useQuery({
+  /* Every rep's quiet-lead backlog, rolled up — the count feeds the pinned
+   * "Dormant leads" KPI tile below. It is the heaviest thing this page asks
+   * for (every open lead in the company, not one rep's few dozen). Its own
+   * card, its own load — no reason left to hold it back behind anything
+   * else on the page. */
+  const { data: quiet } = useQuery({
     queryKey: ['lead-follow-up-summary'],
     queryFn: () => leadFollowUpApi.summary(),
     staleTime: 60_000,
@@ -188,7 +225,6 @@ export default function Dashboard() {
     _id: string; title: string; status: string; dueDate?: string | null
     leadName?: string; leadType?: string | null; leadId?: string
     assignedTo?: { name?: string; email?: string } | null
-    createdAt?: string
   }
   // Newest-first, capped server-side — this used to fetch every task in the
   // system (no limit) just to re-sort and keep 6 of them client-side, which
@@ -199,33 +235,30 @@ export default function Dashboard() {
     staleTime: 60_000,
   })
 
-
-
-  const onDragStart = (id: WidgetId) => setDragged(id)
-  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => e.preventDefault()
-  const onDrop = (targetId: WidgetId) => {
-    if (!dragged || dragged === targetId) return
-    const next = [...layout]
-    const from = next.indexOf(dragged)
-    const to = next.indexOf(targetId)
-    if (from < 0 || to < 0) return
-    next.splice(from, 1)
-    next.splice(to, 0, dragged)
-    setLayout(next)
-    setDragged(null)
-    localStorage.setItem(DASHBOARD_LAYOUT_KEY, JSON.stringify(next))
-  }
-
-  const kpiSkeleton = (
-    <div className="grid grid-cols-2 lg:grid-cols-6 gap-[18px]">
-      {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[150px] rounded-[22px]" />)}
-    </div>
-  )
+  const onDragStart = useCallback((id: WidgetId) => setDragged(id), [])
+  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => e.preventDefault(), [])
+  const onDrop = useCallback((targetId: WidgetId) => {
+    setDragged((dragged) => {
+      if (!dragged || dragged === targetId) return dragged
+      setLayout((prev) => {
+        const next = [...prev]
+        const from = next.indexOf(dragged)
+        const to = next.indexOf(targetId)
+        if (from < 0 || to < 0) return prev
+        next.splice(from, 1)
+        next.splice(to, 0, dragged)
+        localStorage.setItem(DASHBOARD_LAYOUT_KEY, JSON.stringify(next))
+        return next
+      })
+      return null
+    })
+  }, [])
+  const dragHandlers = { onDragStart, onDragOver, onDrop }
 
   const widgets = useMemo<Record<WidgetId, React.ReactNode>>(
     () => {
       return ({
-        stats: statsLoading ? kpiSkeleton : statsIsError || !stats ? (
+        stats: statsLoading ? KPI_SKELETON : statsIsError || !stats ? (
           <div className="rounded-[22px] border p-6 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: 'rgba(20,8,31,.10)' }}>
             <div>
               <div style={{ color: INK, fontWeight: 600, fontSize: 14 }}>Couldn&rsquo;t load the KPI numbers</div>
@@ -257,31 +290,24 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Booked — units with somebody in them. */}
-            <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Booked</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{stats.byStatus.occupied}</div>
-              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>{stats.activeContracts} active contracts</div>
-            </div>
+            <KpiTile label="Booked" value={stats.byStatus.occupied} footer={`${stats.activeContracts} active contracts`} />
 
-            {/* Reserved — held, not yet moved in. */}
-            <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Reserved</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{stats.byStatus.reserved}</div>
-              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>held, not moved in yet</div>
-            </div>
+            <KpiTile label="Reserved" value={stats.byStatus.reserved} footer="held, not moved in yet" />
 
             {/* Vacant — the same units the old Available card counted, named
                 the way the team asks for them. */}
-            <div onClick={() => { setSizeFilter(null); setMovePanel('available') }} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Vacant</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{stats.byStatus.available}</div>
-              <div className="flex flex-wrap gap-1 mt-auto" onClick={e => e.stopPropagation()}>
-                {stats.bySize.filter(s => s.available > 0).slice(0, 3).map(s => (
-                  <button key={s.sizeSqf} onClick={() => { setSizeFilter(parseInt(s.sizeSqf)); setMovePanel('available') }} style={{ fontSize: 10, fontWeight: 600, padding: '3px 6px', borderRadius: 6, background: PURPLE_LIGHT, color: '#4A1FA0', cursor: 'pointer', border: 'none' }} className="hover:opacity-80">{s.available}×{s.sizeSqf.replace(' sq ft', '')}</button>
-                ))}
-              </div>
-            </div>
+            <KpiTile
+              label="Vacant"
+              value={stats.byStatus.available}
+              onClick={() => { setSizeFilter(null); setMovePanel('available') }}
+              footer={
+                <div className="flex flex-wrap gap-1" onClick={e => e.stopPropagation()}>
+                  {stats.bySize.filter(s => s.available > 0).slice(0, 3).map(s => (
+                    <button key={s.sizeSqf} onClick={() => { setSizeFilter(parseInt(s.sizeSqf)); setMovePanel('available') }} style={{ fontSize: 10, fontWeight: 600, padding: '3px 6px', borderRadius: 6, background: PURPLE_LIGHT, color: '#4A1FA0', cursor: 'pointer', border: 'none' }} className="hover:opacity-80">{s.available}×{s.sizeSqf.replace(' sq ft', '')}</button>
+                  ))}
+                </div>
+              }
+            />
 
             {/* Moving out this month.
                 Deliberately not the old Move-outs figure, which counted
@@ -289,14 +315,17 @@ export default function Dashboard() {
                 already counted as such. This is who is still in the building
                 with an end date before the month is out, which is the list
                 worth acting on. */}
-            <div onClick={() => setMovePanel('out')} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Moving out</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{stats.movingOutThisMonth ?? 0}</div>
-              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>
-                still in, leaving in {stats.monthLabel ?? 'this month'}
-                {stats.moveOutsThisMonth > 0 && ` · ${stats.moveOutsThisMonth} already out`}
-              </div>
-            </div>
+            <KpiTile
+              label="Moving out"
+              value={stats.movingOutThisMonth ?? 0}
+              onClick={() => setMovePanel('out')}
+              footer={
+                <>
+                  still in, leaving in {stats.monthLabel ?? 'this month'}
+                  {stats.moveOutsThisMonth > 0 && ` · ${stats.moveOutsThisMonth} already out`}
+                </>
+              }
+            />
 
             {/* Leads gone quiet — pinned here rather than left as a
                 draggable/removable widget. That system reads its order from
@@ -307,28 +336,16 @@ export default function Dashboard() {
                 everything else. A KPI tile in this fixed row has no such
                 array to be missing from — it is exactly as visible as
                 Occupancy or Vacant, every time, for every admin. */}
-            <div
-              onClick={() => { setQuietOwner(undefined); setShowQuiet(true) }}
-              style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }}
-              className="hover:shadow-md transition-shadow"
-            >
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Dormant leads</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{quiet?.total ?? '—'}</div>
-              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>
-                {quiet === undefined ? 'loading…' : quiet.total > 0 ? 'we spoke last, nothing came back — review & send →' : 'nobody, good sign'}
-              </div>
-            </div>
+            <KpiTile
+              label="Dormant leads"
+              value={quiet?.total ?? '—'}
+              onClick={() => setShowQuiet(true)}
+              footer={quiet === undefined ? 'loading…' : quiet.total > 0 ? 'we spoke last, nothing came back — review & send →' : 'nobody, good sign'}
+            />
           </div>
         ),
         'high-intent-leads': (
-          <WidgetShell
-            id="high-intent-leads"
-            title="High intent — today & yesterday"
-            subtitle="Scored by the AI's read of the conversation — these are the ones to follow up"
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-          >
+          <WidgetShell id="high-intent-leads" title="High intent — today & yesterday" subtitle="Scored by the AI's read of the conversation — these are the ones to follow up" {...dragHandlers}>
             {highIntentLoading ? <Skeleton className="h-[160px]" /> : !highIntent || highIntent.items.length === 0 ? (
               <p style={{ fontSize: 12.5, color: MUTED_CLR, padding: '8px 0' }}>
                 Nobody's scored high yet today or yesterday. Open a chat in WhatsApp to have one read.
@@ -366,23 +383,16 @@ export default function Dashboard() {
           </WidgetShell>
         ),
         'units-by-size': (
-          <WidgetShell
-            id="units-by-size"
-            title="Units by size"
-            subtitle="Available vs occupied per size"
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-          >
+          <WidgetShell id="units-by-size" title="Units by size" subtitle="Available vs occupied per size" {...dragHandlers}>
             {statsLoading ? <Skeleton className="h-[240px]" /> : statsIsError || !stats ? (
               <EmptyState message="Couldn't load this chart." />
             ) : (
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={stats.bySize} barGap={2}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="sizeSqf" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-                  <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                  <XAxis dataKey="sizeSqf" tick={CHART_STYLE.axisStyle} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={CHART_STYLE.axisStyle} axisLine={false} tickLine={false} width={28} />
+                  <Tooltip contentStyle={CHART_STYLE.contentStyle} />
                   <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
                   <Bar dataKey="occupied" name="Occupied" fill="#4C8CE4" radius={[3, 3, 0, 0]} />
                 </BarChart>
@@ -391,14 +401,7 @@ export default function Dashboard() {
           </WidgetShell>
         ),
         'floor-occupancy': (
-          <WidgetShell
-            id="floor-occupancy"
-            title="Floor occupancy"
-            subtitle="Available vs occupied by floor"
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-          >
+          <WidgetShell id="floor-occupancy" title="Floor occupancy" subtitle="Available vs occupied by floor" {...dragHandlers}>
             {floorLoading ? <Skeleton className="h-[240px]" /> : floorIsError || !floor ? (
               <div className="flex items-center justify-between gap-3 flex-wrap py-4">
                 <span className="text-sm text-muted-foreground">Couldn&rsquo;t load this chart.</span>
@@ -408,9 +411,9 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={floor.byFloor} barGap={2}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="floor" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-                  <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                  <XAxis dataKey="floor" tick={CHART_STYLE.axisStyle} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={CHART_STYLE.axisStyle} axisLine={false} tickLine={false} width={28} />
+                  <Tooltip contentStyle={CHART_STYLE.contentStyle} />
                   <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
                   <Bar dataKey="occupied" name="Occupied" fill="#4C8CE4" radius={[3, 3, 0, 0]} />
                   <Bar dataKey="maintenance" name="Maintenance" fill="#94a3b8" radius={[3, 3, 0, 0]} />
@@ -419,68 +422,8 @@ export default function Dashboard() {
             )}
           </WidgetShell>
         ),
-        'quiet-leads': (
-          <WidgetShell
-            id="quiet-leads"
-            title="Dormant leads"
-            subtitle="We spoke last, nothing came back"
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-          >
-            {quietLoading ? <Skeleton className="h-[160px]" /> : !quiet || quiet.total === 0 ? (
-              <p style={{ fontSize: 12.5, color: MUTED_CLR, padding: '8px 0' }}>Nobody&rsquo;s been quiet. Good sign.</p>
-            ) : (
-              <>
-                <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-                  <div style={{ ...HEADING, fontWeight: 700, fontSize: 28, letterSpacing: '-0.02em' }}>{quiet.total}</div>
-                  <button
-                    type="button"
-                    onClick={() => { setQuietOwner(undefined); setShowQuiet(true) }}
-                    className="cursor-pointer"
-                    style={{ fontSize: 12, fontWeight: 600, color: '#4A1FA0', background: PURPLE_LIGHT, border: 'none', borderRadius: 8, padding: '6px 12px' }}
-                  >
-                    Review & send
-                  </button>
-                </div>
-                <ResponsiveContainer width="100%" height={160}>
-                  <BarChart data={quiet.buckets} barGap={6}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-                    <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                    <Bar dataKey="count" name="quiet leads" fill="#A78BFA" radius={[3, 3, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-                {/* Per rep, so it is visible when the backlog is really one
-                    person's — the number that started this whole feature. */}
-                <div style={{ marginTop: 10, display: 'grid', gap: 4 }}>
-                  {quiet.byOwner.slice(0, 5).map((o) => (
-                    <button
-                      key={o.ownerId ?? 'unassigned'}
-                      type="button"
-                      onClick={() => { setQuietOwner(o.ownerId ?? undefined); setShowQuiet(true) }}
-                      className="flex items-center justify-between cursor-pointer hover:opacity-80"
-                      style={{ fontSize: 12, padding: '3px 0', background: 'none', border: 'none', textAlign: 'left' }}
-                    >
-                      <span style={{ color: INK }}>{o.ownerName}</span>
-                      <span style={{ color: MUTED_CLR, fontWeight: 600 }}>{o.count}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </WidgetShell>
-        ),
         'expiring-contracts': (
-          <WidgetShell
-            id="expiring-contracts"
-            title="Contracts expiring soon"
-            subtitle="Next 15 days"
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-          >
+          <WidgetShell id="expiring-contracts" title="Contracts expiring soon" subtitle="Next 15 days" {...dragHandlers}>
             {expiringLoading ? <Skeleton className="h-[240px]" /> : expiringIsError ? (
               <div className="flex items-center justify-between gap-3 flex-wrap py-4">
                 <span className="text-sm text-muted-foreground">Couldn&rsquo;t load this list.</span>
@@ -494,12 +437,7 @@ export default function Dashboard() {
                   const daysLeft = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
                   const endFmt = new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
                   const urgency = daysLeft <= 3 ? 'text-destructive' : daysLeft <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
-                  const renewalIntent = c.renewalIntent || 'undecided'
-                  const renewalBadge = {
-                    undecided: { label: 'Undecided', cls: 'bg-muted text-muted-foreground' },
-                    renewing: { label: 'Renewing', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400' },
-                    not_renewing: { label: 'Not renewing', cls: 'bg-destructive/10 text-destructive' },
-                  }[renewalIntent] || { label: 'Undecided', cls: 'bg-muted text-muted-foreground' }
+                  const renewal = RENEWAL_BADGE[c.renewalIntent || 'undecided'] ?? RENEWAL_BADGE.undecided
                   return (
                     <li key={c._id} className="hover:bg-muted/40">
                       {/* Whole row is the link — two lines so it fits any width */}
@@ -508,7 +446,7 @@ export default function Dashboard() {
                           <div className="text-sm truncate flex items-center gap-2">
                             <span className="font-medium">{c.customer?.fullName}</span>
                             {c.unit?.unitNumber && <span className="text-muted-foreground"> · {c.unit.unitNumber}</span>}
-                            <span className={`shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${renewalBadge.cls}`}>{renewalBadge.label}</span>
+                            <Badge tone={renewal.tone}>{renewal.label}</Badge>
                           </div>
                           <div className={`text-xs mt-0.5 ${urgency}`}>expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} ({endFmt})</div>
                         </div>
@@ -523,51 +461,42 @@ export default function Dashboard() {
           </WidgetShell>
         ),
         'team-tasks': (
-          <WidgetShell
-            id="team-tasks"
-            title="Latest tasks from the team"
-            subtitle="Newest first, across everyone"
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-          >
+          <WidgetShell id="team-tasks" title="Latest tasks from the team" subtitle="Newest first, across everyone" {...dragHandlers}>
             {tasksLoading ? <Skeleton className="h-[240px]" /> : !teamTasks || teamTasks.length === 0 ? (
               <EmptyState message="No tasks yet." />
             ) : (
               <Table>
                 <thead><tr><Th>Task</Th><Th>Assigned to</Th><Th>Due</Th><Th>Status</Th></tr></thead>
                 <tbody>
-                  {teamTasks.map((t) => (
-                    <tr key={t._id} className="hover:bg-muted/50">
-                      <Td>
-                        <div className="font-medium">{t.title}</div>
-                        {t.leadName && (
-                          t.leadType === 'contract' && t.leadId
-                            ? <Link to={`/contracts/${t.leadId}`} className="text-xs text-primary hover:underline">{t.leadName}</Link>
-                            : <span className="text-xs text-muted-foreground">{t.leadName}</span>
-                        )}
-                      </Td>
-                      <Td className="text-sm">{t.assignedTo?.name || t.assignedTo?.email || '—'}</Td>
-                      <Td className="text-sm">
-                        {t.dueDate ? (
-                          (() => {
-                            const days = Math.ceil((new Date(t.dueDate).getTime() - Date.now()) / 86400000)
-                            const late = days < 0 && t.status !== 'done'
-                            return (
-                              <span className={late ? 'text-destructive font-medium' : ''}>
-                                {formatDate(t.dueDate)}{late ? ` · ${Math.abs(days)}d late` : ''}
-                              </span>
-                            )
-                          })()
-                        ) : '—'}
-                      </Td>
-                      <Td>
-                        <Badge tone={t.status === 'done' ? 'green' : t.status === 'in_progress' ? 'blue' : 'gray'}>
-                          {t.status === 'in_progress' ? 'In progress' : t.status === 'done' ? 'Done' : 'To do'}
-                        </Badge>
-                      </Td>
-                    </tr>
-                  ))}
+                  {teamTasks.map((t) => {
+                    const daysLeft = t.dueDate ? Math.ceil((new Date(t.dueDate).getTime() - Date.now()) / 86400000) : null
+                    const late = daysLeft !== null && daysLeft < 0 && t.status !== 'done'
+                    return (
+                      <tr key={t._id} className="hover:bg-muted/50">
+                        <Td>
+                          <div className="font-medium">{t.title}</div>
+                          {t.leadName && (
+                            t.leadType === 'contract' && t.leadId
+                              ? <Link to={`/contracts/${t.leadId}`} className="text-xs text-primary hover:underline">{t.leadName}</Link>
+                              : <span className="text-xs text-muted-foreground">{t.leadName}</span>
+                          )}
+                        </Td>
+                        <Td className="text-sm">{t.assignedTo?.name || t.assignedTo?.email || '—'}</Td>
+                        <Td className="text-sm">
+                          {t.dueDate ? (
+                            <span className={late ? 'text-destructive font-medium' : ''}>
+                              {formatDate(t.dueDate)}{late ? ` · ${Math.abs(daysLeft!)}d late` : ''}
+                            </span>
+                          ) : '—'}
+                        </Td>
+                        <Td>
+                          <Badge tone={t.status === 'done' ? 'green' : t.status === 'in_progress' ? 'blue' : 'gray'}>
+                            {t.status === 'in_progress' ? 'In progress' : t.status === 'done' ? 'Done' : 'To do'}
+                          </Badge>
+                        </Td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </Table>
             )}
@@ -576,7 +505,7 @@ export default function Dashboard() {
       })
     },
     [statsLoading, statsIsError, stats, statsError, refetchStats, floorLoading, floorIsError, floor, refetchFloor,
-      expiringLoading, expiringIsError, expiringContracts, refetchExpiring, tasksLoading, teamTasks, quietLoading, quiet,
+      expiringLoading, expiringIsError, expiringContracts, refetchExpiring, tasksLoading, teamTasks, quiet,
       highIntentLoading, highIntent,
       onDrop, onDragStart, onDragOver]
   )
@@ -647,15 +576,6 @@ export default function Dashboard() {
             )
           }
 
-          /* quiet-leads is retired, on purpose ("Pin Leads gone quiet into
-             the fixed KPI row, not the draggable widgets") — its number
-             lives in the stats card above now, via the same `quiet` query.
-             The DEFAULT_LAYOUT/widgets entries are what's left behind from
-             before that move; kept out of the generic fallback below so
-             this loop does not quietly bring back a duplicate "Dormant
-             leads" card the day it stops being special-cased. */
-          if (id === 'quiet-leads') return null
-
           /* Everything else — its own full-width row, nothing to pair it
              with. This used to be a bare `return null` covering every id
              above, which is exactly how high-intent-leads went missing:
@@ -674,47 +594,45 @@ export default function Dashboard() {
       </div>
 
       {/* Detail panel */}
-      {movePanel && stats && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setMovePanel(null)} />
-          <div className="relative w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right">
-            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
-              <h2 style={{ ...HEADING, fontSize: 18, fontWeight: 700, color: INK }}>
-                {movePanel === 'in' ? 'Move-ins this month' : movePanel === 'out' ? 'Move-outs this month' : sizeFilter ? `Available Units · ${sizeFilter} sq ft` : 'Available Units'}
-              </h2>
-              <button onClick={() => setMovePanel(null)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
-            </div>
-            <div className="p-5 space-y-2">
-              {movePanel === 'available' ? (() => {
-                const filtered = (stats.availableUnitsList ?? []).filter((u: any) => sizeFilter ? u.sizeSqf === sizeFilter : true)
-                return filtered.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">No available units{sizeFilter ? ` for ${sizeFilter} sq ft` : ''}.</p>
-                ) : filtered.map((u: any) => (
-                  <Link key={u._id} to={`/units`} onClick={() => setMovePanel(null)}
-                    className="block rounded-lg border px-4 py-3 hover:bg-muted/50 transition-colors">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium text-sm">Unit {u.unitNumber}</p>
-                        <p className="text-xs text-muted-foreground">{u.floor} · {u.sizeSqf} sq ft</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        {u.monthlyRent ? (
-                          <>
-                            <span className="text-sm font-semibold" style={{ color: INK }}>AED {u.monthlyRent.toLocaleString()}</span>
-                            <span className="text-[10px] text-muted-foreground block">/ month</span>
-                          </>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">No price set</span>
-                        )}
-                      </div>
+      <SlideOver
+        open={!!(movePanel && stats)}
+        onClose={() => setMovePanel(null)}
+        title={movePanel === 'in' ? 'Move-ins this month' : movePanel === 'out' ? 'Move-outs this month' : sizeFilter ? `Available Units · ${sizeFilter} sq ft` : 'Available Units'}
+      >
+        {movePanel && stats && (
+          <div className="space-y-2">
+            {movePanel === 'available' ? (() => {
+              const filtered = (stats.availableUnitsList ?? []).filter((u: any) => sizeFilter ? u.sizeSqf === sizeFilter : true)
+              return filtered.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No available units{sizeFilter ? ` for ${sizeFilter} sq ft` : ''}.</p>
+              ) : filtered.map((u: any) => (
+                <Link key={u._id} to={`/units`} onClick={() => setMovePanel(null)}
+                  className="block rounded-lg border px-4 py-3 hover:bg-muted/50 transition-colors">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium text-sm">Unit {u.unitNumber}</p>
+                      <p className="text-xs text-muted-foreground">{u.floor} · {u.sizeSqf} sq ft</p>
                     </div>
-                  </Link>
-                ))
-              })() : (() => {
-                const list = (movePanel === 'in' ? stats.moveInsList : stats.moveOutsList) ?? []
-                return list.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">No {movePanel === 'in' ? 'move-ins' : 'move-outs'} this month.</p>
-                ) : list.map((c: any) => (
+                    <div className="text-right shrink-0">
+                      {u.monthlyRent ? (
+                        <>
+                          <span className="text-sm font-semibold" style={{ color: INK }}>AED {formatMoney(u.monthlyRent)}</span>
+                          <span className="text-[10px] text-muted-foreground block">/ month</span>
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No price set</span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              ))
+            })() : (() => {
+              const list = (movePanel === 'in' ? stats.moveInsList : stats.moveOutsList) ?? []
+              return list.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No {movePanel === 'in' ? 'move-ins' : 'move-outs'} this month.</p>
+              ) : list.map((c: any) => {
+                const payment = PAYMENT_BADGE[c.paymentStatus] ?? { label: 'No invoice', tone: 'gray' }
+                return (
                   <Link key={c._id} to={`/contracts/${c._id}`} onClick={() => setMovePanel(null)}
                     className="block rounded-lg border px-4 py-3 hover:bg-muted/50 transition-colors">
                     <div className="flex justify-between items-start">
@@ -726,24 +644,18 @@ export default function Dashboard() {
                         <span className="text-xs text-muted-foreground block">
                           {new Date(movePanel === 'in' ? c.startDate : c.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                         </span>
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${c.paymentStatus === 'paid' ? 'bg-emerald-100 text-emerald-700' :
-                          c.paymentStatus === 'pending' ? 'bg-amber-100 text-amber-700' :
-                            'bg-muted text-muted-foreground'
-                          }`}>
-                          {c.paymentStatus === 'paid' ? 'Paid' : c.paymentStatus === 'pending' ? 'Pending' : 'No invoice'}
-                        </span>
+                        <Badge tone={payment.tone}>{payment.label}</Badge>
                       </div>
                     </div>
                   </Link>
-                ))
-              })()}
-            </div>
+                )
+              })
+            })()}
           </div>
-        </div>
-      )}
+        )}
+      </SlideOver>
 
-      {showQuiet && <QuietLeadsModal onClose={() => setShowQuiet(false)} scope="all" ownerId={quietOwner} />}
+      {showQuiet && <QuietLeadsModal onClose={() => setShowQuiet(false)} scope="all" />}
     </div>
   )
 }
-
