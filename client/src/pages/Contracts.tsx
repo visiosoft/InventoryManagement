@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronUp, Mail, Paperclip, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { isSalesRepRole } from '../lib/roles'
 import type { Contract } from '../lib/types'
 import EmailCustomersModal from './customers/EmailCustomersModal'
 import { Button, EmptyState, Modal, Spinner, statusLabel } from '../components/ui'
@@ -97,6 +98,10 @@ export default function Contracts() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  // Emailing tenants doesn't touch anyone else's data the way bulk-delete
+  // does, so it's open to reps too — they carry the same 'contracts' floor
+  // that gets them onto this page in the first place.
+  const canEmailTenants = isAdmin || isSalesRepRole(user?.role)
   const [emailing, setEmailing] = useState(false)
   // ?search= lets other screens link straight to a filtered list
   const [urlParams] = useSearchParams()
@@ -369,7 +374,7 @@ export default function Contracts() {
               getRows={fetchAllForExport}
               total={data?.total ?? rows.length}
             />
-            {isAdmin && (
+            {canEmailTenants && (
               <button
                 onClick={() => setEmailing(true)}
                 className="ctr-page-btn"
