@@ -36,12 +36,12 @@ const MOVING_PLACEHOLDERS = [
 
 const normalizeModule = (m) => (m === 'moving' ? 'moving' : 'storage');
 
+// Admins always can; anyone else needs the agreement_templates permission
+// explicitly granted (Settings → Users) — see ALL_MODULES in models/index.js.
 const requireAdmin = (req, res) => {
-  if (req.user?.role !== 'admin') {
-    res.status(403).json({ error: 'Only admins can manage templates' });
-    return false;
-  }
-  return true;
+  if (req.user?.role === 'admin' || req.user?.permissions?.includes('agreement_templates')) return true;
+  res.status(403).json({ error: 'You do not have permission to manage agreement templates' });
+  return false;
 };
 
 // Older builds stored one template under key 'default'; give it a name once

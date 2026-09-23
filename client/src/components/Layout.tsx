@@ -156,6 +156,10 @@ const salesRepNavGroups = [
          refuses the write either way. */
       { key: 'book-unit', to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'sales_board' },
       { key: 'customers', to: '/contracts', label: 'Customers', icon: Users, perm: 'contracts' },
+      // Only shows up once an admin grants it (Settings → Users) — not part
+      // of a rep's default toolkit, unlike everything else in this group.
+      { key: 'tenants', to: '/customers', label: 'Tenants', icon: Users, perm: 'customers' },
+      { key: 'agreement-templates', to: '/settings/agreement', label: 'Agreement Templates', icon: FileText, perm: 'agreement_templates' },
     ],
   },
   {

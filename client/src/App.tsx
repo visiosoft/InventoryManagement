@@ -221,7 +221,7 @@ export default function App() {
         <Route path="/units" element={<Units />} />
         <Route path="/floor-map" element={<PermGuard module="units"><FloorMap /></PermGuard>} />
         <Route path="/sites" element={<PermGuard module="units"><Sites /></PermGuard>} />
-        <Route path="/customers" element={<Customers />} />
+        <Route path="/customers" element={<PermGuard module="customers"><Customers /></PermGuard>} />
         <Route path="/customers/:id" element={<PersonProfile />} />
         <Route path="/people/:id" element={<PersonProfile />} />
         {/* Accounts do not work leads, so the page is not theirs — hiding the
@@ -273,7 +273,7 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/templates" element={<AdminGuard><MessageTemplates /></AdminGuard>} />
         <Route path="/settings/whatsapp-debug" element={<AdminGuard><WhatsAppDebug /></AdminGuard>} />
-        <Route path="/settings/agreement" element={<AdminGuard><AgreementTemplate /></AdminGuard>} />
+        <Route path="/settings/agreement" element={<PermGuard module={['settings', 'agreement_templates']}><AgreementTemplate /></PermGuard>} />
         <Route path="/zoho-comparison" element={<AdminGuard><ZohoComparison /></AdminGuard>} />
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
         <Route path="/settings/automation" element={<AdminGuard><AutomationRules /></AdminGuard>} />

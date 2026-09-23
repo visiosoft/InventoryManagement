@@ -21,6 +21,7 @@ const MODULE_GROUPS = [
       { key: 'moving_inventory', label: 'Moving Ops' },
       { key: 'contracts',        label: 'Contracts' },
       { key: 'documents',        label: 'Documents' },
+      { key: 'agreement_templates', label: 'Agreement Templates' },
     ],
   },
   {
@@ -283,21 +284,27 @@ function UserModal({ editing, onClose, onDone }: {
           {isSalesRep && (
             <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-start gap-2 text-sm">
               <ShieldCheck size={15} className="text-primary shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">Sales reps automatically get their own "My Leads" board (only leads assigned to them), plus read access to the Unit Map, Customers, and Moving Schedule.</span>
+              <span className="text-muted-foreground">Sales reps always keep their own "My Leads" board and Unit Map access, whatever is unticked below — everything else is optional.</span>
             </div>
           )}
         </div>
 
-        {/* Right: permissions */}
-        {!isSalesRep && (
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-              Module access
-            </div>
-            <PermissionGrid permissions={permissions}
-              onChange={setPerms} disabled={false} />
+        {/* Right: permissions — every role, including sales reps/accounts,
+            can be granted any module here. Sales reps used to have this
+            panel hidden entirely, silently capped at the fixed default set
+            (sales_board, units, customers, contracts, moving_schedule) with
+            no way for an admin to give one rep something extra (e.g.
+            agreement_templates) without also giving it to every rep by
+            changing the default. The server's ROLE_FLOOR still force-keeps
+            sales_board/units even if unticked here, so this can't lock a rep
+            out of their own board. */}
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+            Module access
           </div>
-        )}
+          <PermissionGrid permissions={permissions}
+            onChange={setPerms} disabled={false} />
+        </div>
       </div>
 
       {/* Footer */}

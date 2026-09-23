@@ -5,6 +5,7 @@ const { Schema, model } = mongoose;
 
 const ALL_MODULES = [
   'dashboard', 'units', 'moving_inventory', 'contracts', 'documents',
+  'agreement_templates',
   'customers', 'quotes', 'invoices', 'vendors', 'expenses',
   'leads', 'purchases', 'payments',
   // The WhatsApp console. Historically reached through 'leads', which is why
