@@ -29,6 +29,7 @@ import { UPLOADS_DIR } from './services/drive.js';
 import authRoutes from './routes/auth.js';
 import unitRoutes from './routes/units.js';
 import warehouseRoutes from './routes/warehouse.js';
+import shopifyMerchantRoutes from './routes/shopifyMerchants.js';
 import warehouseJobPublicRoutes from './routes/warehouseJobPublic.js';
 import floorPlanRoutes from './routes/floorPlans.js';
 import siteRoutes from './routes/sites.js';
@@ -242,6 +243,10 @@ app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 app.use('/api/integrations/whatsapp/webhook', (req, _res, next) => next());
 app.use('/api/units', requireAuth, unitRoutes);
 app.use('/api/warehouse', requireAuth, warehouseRoutes);
+// Phase A only — manual merchant/SKU/fulfillment-job management. The inbound
+// Shopify order webhook (Phase B) mounts unauthenticated, near the other
+// webhook routes above, once it exists.
+app.use('/api/shopify', requireAuth, shopifyMerchantRoutes);
 /* Accounts read tenants and contracts to invoice against them; they do not
    agree terms or correct somebody's details. See readOnlyFor. */
 const accountsReadOnly = readOnlyFor('accounts');

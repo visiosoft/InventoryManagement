@@ -73,6 +73,9 @@ import MyDay from './pages/MyDay'
 import FollowUps from './pages/FollowUps'
 import Units from './pages/Units'
 import StoredInventory from './pages/warehouse/StoredInventory'
+import ShopifyMerchants from './pages/shopify/Merchants'
+import ShopifySkuInventory from './pages/shopify/SkuInventory'
+import ShopifyFulfillmentQueue from './pages/shopify/FulfillmentQueue'
 import FloorMap from './pages/FloorMap'
 import Sites from './pages/Sites'
 import Customers from './pages/Customers'
@@ -229,6 +232,9 @@ export default function App() {
         <Route path="/" element={<SmartHome />} />
         <Route path="/units" element={<Units />} />
         <Route path="/warehouse" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><StoredInventory /></PermGuard>} />
+        <Route path="/shopify/merchants" element={<AdminGuard><ShopifyMerchants /></AdminGuard>} />
+        <Route path="/shopify/inventory" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><ShopifySkuInventory /></PermGuard>} />
+        <Route path="/shopify/fulfillment" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><ShopifyFulfillmentQueue /></PermGuard>} />
         <Route path="/floor-map" element={<PermGuard module="units"><FloorMap /></PermGuard>} />
         <Route path="/sites" element={<PermGuard module="units"><Sites /></PermGuard>} />
         <Route path="/customers" element={<Customers />} />
