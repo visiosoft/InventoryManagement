@@ -673,7 +673,6 @@ export default function ContractDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
   // Accounts read a contract to invoice against it; they do not change it.
   const readOnly = user?.role === 'accounts'
   const qc = useQueryClient()
@@ -1361,7 +1360,7 @@ export default function ContractDetail() {
               <PenLine size={14} /> {createSigningLink.isPending ? 'Generating…' : 'Send signing link'}
             </Button>
           )}
-          {c.status === 'active' && isAdmin && (
+          {c.status === 'active' && (
             <Button size="sm" variant="outline" onClick={() => createSigningLink.mutate()} disabled={createSigningLink.isPending}>
               <PenLine size={14} /> {createSigningLink.isPending ? 'Generating…' : 'Allow re-sign'}
             </Button>

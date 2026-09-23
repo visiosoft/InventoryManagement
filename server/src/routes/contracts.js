@@ -702,9 +702,9 @@ router.post('/', async (req, res) => {
   res.status(201).json(populated);
 });
 
-// Generate a unique signing link for the customer.
-// Draft / pending_signature → any authenticated user.
-// Active (re-sign) → admin only.
+// Generate a unique signing link for the customer — any authenticated user,
+// whatever the contract's current status (draft, pending_signature, or
+// re-signing an already-active one).
 router.post('/:id/create-signing-link', async (req, res) => {
   const contract = await Contract.findById(req.params.id);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
@@ -712,11 +712,6 @@ router.post('/:id/create-signing-link', async (req, res) => {
   const allowedStatuses = ['draft', 'pending_signature', 'active'];
   if (!allowedStatuses.includes(contract.status)) {
     return res.status(409).json({ error: `Cannot generate a signing link for a ${contract.status} contract` });
-  }
-
-  // Re-signing an already-active contract requires admin
-  if (contract.status === 'active' && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Only an admin can generate a signing link for an already-signed contract' });
   }
 
   const token = crypto.randomBytes(32).toString('hex');
