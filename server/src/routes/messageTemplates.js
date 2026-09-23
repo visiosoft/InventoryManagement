@@ -76,6 +76,35 @@ router.post('/quick-reply-video', handleVideoUpload, async (req, res) => {
 });
 
 
+/**
+ * An image dropped into an email template's plain-text body — the QR-code
+ * style "here's a picture" case, not a video. Local disk storage, same as
+ * the quick-reply video above, rather than requiring Google Drive to be
+ * configured: this only needs to be served at a stable public URL, which
+ * /uploads already does for every other locally-stored asset in this app.
+ */
+const EMAIL_IMAGE_DIR = path.join(UPLOADS_DIR, 'email-images');
+fs.mkdirSync(EMAIL_IMAGE_DIR, { recursive: true });
+
+const imageStorage = multer.diskStorage({
+  destination: EMAIL_IMAGE_DIR,
+  filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}${path.extname(file.originalname).toLowerCase() || '.jpg'}`),
+});
+const uploadImage = multer({
+  storage: imageStorage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, /^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)),
+}).single('image');
+
+router.post('/email-image', (req, res, next) => {
+  uploadImage(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'That image is over 8 MB.' : (err.message || 'That file could not be read') });
+    if (!req.file) return res.status(400).json({ error: 'No image received, or the file was not a JPEG/PNG/WebP/GIF' });
+    const apiBase = (process.env.API_PUBLIC_URL || process.env.APP_URL || req.headers.origin || 'https://api.purplebox.ae').replace(/\/+$/, '');
+    res.json({ url: `${apiBase}/uploads/email-images/${req.file.filename}` });
+  });
+});
+
 const DEFAULT_TEMPLATES = [
   { key: 'welcome', label: 'Welcome Email', subject: 'Welcome to PurpleBox Storage, @name!', emailBody: 'Dear @name,\n\nWelcome to PurpleBox Storage! Your contract @contractNo has been created.\n\nUnit: @unit\nStart Date: @startDate\n\nThank you for choosing us.\n\nBest regards,\nPurpleBox Team', whatsappBody: 'Hello @name 👋\n\nWelcome to PurpleBox Storage!\nYour contract *@contractNo* is ready.\nUnit: @unit\n\nThank you – PurpleBox', variables: ['@name', '@contractNo', '@unit', '@startDate', '@endDate', '@phone', '@email'] },
   { key: 'contract_signed', label: 'Contract Signed', subject: 'Contract @contractNo Signed Successfully', emailBody: 'Dear @name,\n\nYour contract @contractNo has been signed successfully.\n\nUnit: @unit\nTerm: @startDate – @endDate\nMonthly Rate: AED @rate\n\nYou can view your signed contract here: @signedDocUrl\n\nThank you,\nPurpleBox Team', whatsappBody: 'Hi @name ✅\n\nYour contract *@contractNo* is now signed and active.\nUnit: @unit\nTerm: @startDate → @endDate\n\nThank you – PurpleBox', variables: ['@name', '@contractNo', '@unit', '@startDate', '@endDate', '@rate', '@signedDocUrl'] },

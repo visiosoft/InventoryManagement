@@ -43,3 +43,28 @@ test('a "<" typed into template text cannot inject markup into the email', () =>
     assert.doesNotMatch(html, /<script>/);
     assert.match(html, /&lt;script&gt;/);
 });
+
+test('a [image: URL] block on its own becomes a real, centered <img>', () => {
+    const html = brandedEmailHtml({
+        bodyText: 'Leave us a review:\n\n[image: https://api.purplebox.ae/uploads/email-images/qr.png]\n\nThanks!',
+    });
+    assert.match(html, /<img src="https:\/\/api\.purplebox\.ae\/uploads\/email-images\/qr\.png" alt="" style="max-width:100%[^"]*">/);
+    assert.match(html, /text-align:center/);
+    // Surrounding text still renders as ordinary paragraphs, not swallowed.
+    assert.match(html, /Leave us a review:/);
+    assert.match(html, /Thanks!/);
+});
+
+test('an [image: ...] block with a non-http(s) URL is left as plain (escaped) text, not rendered as an <img>', () => {
+    // brandedEmailHtml always includes its own logo <img> in the header, so
+    // check for the absence of an <img> whose src is the untrusted value,
+    // not the absence of "<img" anywhere in the email.
+    const html = brandedEmailHtml({ bodyText: '[image: javascript:alert(1)]' });
+    assert.doesNotMatch(html, /<img src="javascript:/);
+    assert.match(html, /\[image: javascript:alert\(1\)\]/);
+});
+
+test('an [image: URL] mid-sentence (not its own block) is left as plain text', () => {
+    const html = brandedEmailHtml({ bodyText: 'See our QR here [image: https://x.test/a.png] on the poster.' });
+    assert.doesNotMatch(html, /<img src="https:\/\/x\.test/);
+});
