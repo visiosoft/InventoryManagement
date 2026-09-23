@@ -27,7 +27,7 @@ interface AuthContextValue {
  * Search Units is not a privilege to grant.
  */
 const ROLE_FLOOR: Record<string, string[]> = {
-  sales_rep: ['sales_board', 'units'],
+  sales_rep: ['sales_board', 'units', 'contracts'],
   /* Accounts raise the invoices, so they need to see what they are invoicing:
      which units are free, who the tenant is, and the contract behind the
      charge. Antony had sales_board, moving_jobs and moving_invoices, so the
