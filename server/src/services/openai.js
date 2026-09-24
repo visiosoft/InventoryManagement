@@ -33,6 +33,19 @@ function headers() {
     };
 }
 
+/**
+ * The GPT-6 family (and GPT-5 before it) rejects `max_tokens` outright:
+ * "Unsupported parameter: 'max_tokens' is not supported with this model. Use
+ * 'max_completion_tokens' instead." — the exact failure a model switch on the
+ * assistant's settings page surfaced. Only gpt-4o/gpt-4.1/gpt-3.5 and earlier
+ * still expect the old name, so this is a lookup keyed on what is actually
+ * selected, not a blanket rename that would need flipping back later.
+ */
+const LEGACY_MAX_TOKENS_MODELS = /^(gpt-4|gpt-3\.5)/;
+export function tokenLimitParam(model, n) {
+    return LEGACY_MAX_TOKENS_MODELS.test(model || '') ? { max_tokens: n } : { max_completion_tokens: n };
+}
+
 /** Cheap credential check — lists models, which costs nothing. */
 export async function verifyOpenAIKey(apiKey, model) {
     const { data } = await axios.get(`${API_BASE}/models`, {
@@ -58,17 +71,18 @@ export async function verifyOpenAIKey(apiKey, model) {
  * empty answer.
  */
 export async function chatJson({ system, messages = [], temperature = 0, maxTokens = 400, timeout = 30000, model }) {
+    const chosenModel = model || openaiModel();
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {
             // The caller's choice, then the server's, then the default. The
             // assistant picks its own on the settings page; everything else
             // here is happy with whatever the server is set to.
-            model: model || openaiModel(),
+            model: chosenModel,
             messages: [{ role: 'system', content: system }, ...messages],
             response_format: { type: 'json_object' },
             temperature,
-            max_tokens: maxTokens,
+            ...tokenLimitParam(chosenModel, maxTokens),
         },
         { headers: headers(), timeout },
     );
@@ -112,14 +126,15 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
  */
 export async function chatWithTools({ system, messages = [], tools = [], model, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
     if (!openaiConfigured()) throw new Error('OpenAI is not configured');
+    const chosenModel = model || openaiModel();
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {
-            model: model || openaiModel(),
+            model: chosenModel,
             messages: [{ role: 'system', content: system }, ...messages],
             ...(tools.length ? { tools, tool_choice: toolChoice } : {}),
             temperature,
-            max_tokens: maxTokens,
+            ...tokenLimitParam(chosenModel, maxTokens),
         },
         { headers: headers(), timeout },
     );
@@ -133,13 +148,14 @@ export async function chatWithTools({ system, messages = [], tools = [], model, 
 }
 
 export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000, model }) {
+    const chosenModel = model || openaiModel();
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {
             // Whatever the assistant is set to reads its photos too: one model
             // for the conversation, so a picture and the words about it are
             // not understood by two different things.
-            model: model || openaiModel(),
+            model: chosenModel,
             messages: [
                 { role: 'system', content: system },
                 {
@@ -152,7 +168,7 @@ export async function visionJson({ system, imageBase64, mimeType, prompt = '', m
             ],
             response_format: { type: 'json_object' },
             temperature: 0,
-            max_tokens: maxTokens,
+            ...tokenLimitParam(chosenModel, maxTokens),
         },
         { headers: headers(), timeout },
     );
@@ -204,7 +220,7 @@ export async function parseAvailabilityQuery(text, context = {}) {
             ],
             response_format: { type: 'json_object' },
             temperature: 0,
-            max_tokens: 200,
+            ...tokenLimitParam(openaiModel(), 200),
         },
         { headers: headers(), timeout: 20000 },
     );
