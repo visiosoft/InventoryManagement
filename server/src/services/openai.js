@@ -34,16 +34,29 @@ function headers() {
 }
 
 /**
- * The GPT-6 family (and GPT-5 before it) rejects `max_tokens` outright:
- * "Unsupported parameter: 'max_tokens' is not supported with this model. Use
- * 'max_completion_tokens' instead." — the exact failure a model switch on the
- * assistant's settings page surfaced. Only gpt-4o/gpt-4.1/gpt-3.5 and earlier
- * still expect the old name, so this is a lookup keyed on what is actually
- * selected, not a blanket rename that would need flipping back later.
+ * The GPT-6 family (and GPT-5 before it) rejects two parameters every call
+ * here used to send unconditionally:
+ *
+ *  - `max_tokens` — "Unsupported parameter: 'max_tokens' is not supported
+ *    with this model. Use 'max_completion_tokens' instead."
+ *  - a non-default `temperature` — "Unsupported value: 'temperature' does
+ *    not support 0.3 with this model. Only the default (1) value is
+ *    supported." — these models only ever run at temperature 1, so the
+ *    parameter has to be left out entirely rather than sent as 1, in case a
+ *    future model accepts the parameter but not that exact value.
+ *
+ * Both failures surfaced back to back the moment the WhatsApp assistant was
+ * switched to gpt-6-sol. Only gpt-4o/gpt-4.1/gpt-3.5 and earlier still take
+ * the old max_tokens name and a chosen temperature, so this is a lookup keyed
+ * on what is actually selected, not a blanket rename that would need
+ * flipping back later.
  */
-const LEGACY_MAX_TOKENS_MODELS = /^(gpt-4|gpt-3\.5)/;
+const LEGACY_MODELS = /^(gpt-4|gpt-3\.5)/;
 export function tokenLimitParam(model, n) {
-    return LEGACY_MAX_TOKENS_MODELS.test(model || '') ? { max_tokens: n } : { max_completion_tokens: n };
+    return LEGACY_MODELS.test(model || '') ? { max_tokens: n } : { max_completion_tokens: n };
+}
+export function temperatureParam(model, temperature) {
+    return LEGACY_MODELS.test(model || '') ? { temperature } : {};
 }
 
 /** Cheap credential check — lists models, which costs nothing. */
@@ -81,7 +94,7 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
             model: chosenModel,
             messages: [{ role: 'system', content: system }, ...messages],
             response_format: { type: 'json_object' },
-            temperature,
+            ...temperatureParam(chosenModel, temperature),
             ...tokenLimitParam(chosenModel, maxTokens),
         },
         { headers: headers(), timeout },
@@ -133,7 +146,7 @@ export async function chatWithTools({ system, messages = [], tools = [], model, 
             model: chosenModel,
             messages: [{ role: 'system', content: system }, ...messages],
             ...(tools.length ? { tools, tool_choice: toolChoice } : {}),
-            temperature,
+            ...temperatureParam(chosenModel, temperature),
             ...tokenLimitParam(chosenModel, maxTokens),
         },
         { headers: headers(), timeout },
@@ -167,7 +180,7 @@ export async function visionJson({ system, imageBase64, mimeType, prompt = '', m
                 },
             ],
             response_format: { type: 'json_object' },
-            temperature: 0,
+            ...temperatureParam(chosenModel, 0),
             ...tokenLimitParam(chosenModel, maxTokens),
         },
         { headers: headers(), timeout },
@@ -219,7 +232,7 @@ export async function parseAvailabilityQuery(text, context = {}) {
                 { role: 'user', content: String(text || '').slice(0, 500) },
             ],
             response_format: { type: 'json_object' },
-            temperature: 0,
+            ...temperatureParam(openaiModel(), 0),
             ...tokenLimitParam(openaiModel(), 200),
         },
         { headers: headers(), timeout: 20000 },
