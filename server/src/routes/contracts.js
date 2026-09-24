@@ -228,6 +228,15 @@ router.get('/', async (req, res) => {
             total: { $sum: '$amount' },
             paid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
             overdue: { $sum: { $cond: [{ $eq: ['$status', 'overdue'] }, 1, 0] } },
+            // Soonest still-unpaid due date — what the Tenants list shows as
+            // "Next payment due". Contract.nextPaymentDate is not used for
+            // this: it is only ever written once, at legacy import time, and
+            // nothing keeps it current as payments come and go.
+            nextDue: {
+              $min: {
+                $cond: [{ $in: ['$status', ['pending', 'overdue']] }, '$dueDate', null],
+              },
+            },
           }
         },
       ]),
@@ -259,6 +268,7 @@ router.get('/', async (req, res) => {
       totalAmount: pay ? Math.round(pay.total * 100) / 100 : 0,
       contractAmount,
       overdueCount: pay?.overdue ?? 0,
+      nextPaymentDue: pay?.nextDue ?? null,
     };
   });
 

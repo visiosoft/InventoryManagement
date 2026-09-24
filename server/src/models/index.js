@@ -1124,6 +1124,10 @@ const paymentSchema = new Schema(
     status: { type: String, enum: ['pending', 'paid', 'overdue'], default: 'pending' },
     notes: { type: String, default: '' },
     recordedBy: { type: String, default: '' },
+    // Set once the accounts payment-due digest has told the team this
+    // payment is coming up, so a daily job cannot email the same due date
+    // twice. See services/paymentDueDigest.js.
+    accountsDueSoonNotifiedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

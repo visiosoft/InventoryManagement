@@ -518,6 +518,10 @@ export interface Contract {
   // Unpaid balance in Zoho Books for this contract's tenant, attached by the
   // contracts list when Zoho is connected.
   outstanding?: number
+  // Soonest unpaid Payment.dueDate for this contract, attached by the
+  // contracts list. Not the same as nextPaymentDate below, which is a stale
+  // import-time field nothing keeps current.
+  nextPaymentDue?: string
   billingPeriod: 'weekly' | 'monthly'
   rate: number
   deposit: number

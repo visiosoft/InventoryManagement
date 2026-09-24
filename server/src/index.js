@@ -102,6 +102,7 @@ import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
 import { runDayBriefs } from './services/dayBrief.js';
+import { runPaymentDueDigest } from './services/paymentDueDigest.js';
 import { runLeadSla } from './services/leadSla.js';
 import { runQuietNudge } from './services/quietNudge.js';
 import { runLeadAssignReminder } from './services/leadAssignReminder.js';
@@ -513,6 +514,21 @@ async function start() {
       if (out.sent) console.log(`[DayBrief] sent ${out.sent} brief(s)`);
     } catch (e) {
       console.error('[DayBrief]', e.message);
+    }
+  }, 60_000);
+
+  /* Accounts' payment-due-soon digest: one email a day listing every tenant
+     whose payment is due in 7 days. Same minute tick and fixed local hour as
+     the digest/day-brief jobs; idempotent through each Payment's
+     accountsDueSoonNotifiedAt rather than a stored row. */
+  const PAYMENT_DUE_DIGEST_HOUR = Number(process.env.PAYMENT_DUE_DIGEST_HOUR ?? 8);
+  setInterval(async () => {
+    try {
+      if (localHour() !== PAYMENT_DUE_DIGEST_HOUR) return;
+      const out = await runPaymentDueDigest();
+      if (out.sent) console.log(`[PaymentDueDigest] sent, ${out.count} payment(s)`);
+    } catch (e) {
+      console.error('[PaymentDueDigest]', e.message);
     }
   }, 60_000);
 

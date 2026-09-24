@@ -683,6 +683,19 @@ export default function Contracts() {
 
                         <div style={{ flex: '0 0 170px', textAlign: 'right', fontSize: 12.5, color: SECOND, fontVariantNumeric: 'tabular-nums' }}>
                           {formatDate(c.startDate)} → {formatDate(c.endDate)}
+                          {c.nextPaymentDue && (
+                            <div
+                              title="Soonest unpaid payment due date, from the payment schedule"
+                              style={{
+                                marginTop: 2,
+                                fontSize: 11.5,
+                                fontWeight: 600,
+                                color: new Date(c.nextPaymentDue).getTime() < Date.now() ? DANGER : MUTED_COLOR,
+                              }}
+                            >
+                              Next due {formatDate(c.nextPaymentDue)}
+                            </div>
+                          )}
                         </div>
 
                         <div style={{ flex: '0 0 76px', textAlign: 'right', fontWeight: 700, fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
