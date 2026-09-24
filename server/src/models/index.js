@@ -1764,6 +1764,7 @@ reminderLogSchema.index({ contract: 1, sentAt: -1 });
 // "did we email them?" had no single answer.
 const sentEmailSchema = new Schema({
   to: { type: String, default: '' },
+  cc: { type: String, default: '' },
   // Bulk sends put the list here and the sender in `to`; the count is what
   // matters on a list page, the addresses are for opening one row.
   bcc: { type: String, default: '' },
@@ -2571,6 +2572,11 @@ const messageTemplateSchema = new Schema({
   label: { type: String, required: true },
   subject: { type: String, default: '' },
   emailBody: { type: String, default: '' },
+  // Extra recipients for this specific automated email, comma-separated —
+  // e.g. copying a manager on the accounts payment-due digest. Empty for
+  // every tenant-facing template; nothing reads this unless the sending
+  // service (like paymentDueDigest.js) explicitly looks for it.
+  cc: { type: String, default: '' },
   // The designed version. When present it is what actually goes out, with
   // emailBody kept as the plain-text part for clients that will not render
   // HTML — a reminder should not arrive blank because someone reads mail in a

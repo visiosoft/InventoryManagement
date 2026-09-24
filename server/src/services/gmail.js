@@ -22,13 +22,15 @@ function mimeEncode(str) {
     return '=?UTF-8?B?' + Buffer.from(str, 'utf8').toString('base64') + '?=';
 }
 
-function buildRawEmail({ from, to, subject, text, html, attachments, bcc }) {
+function buildRawEmail({ from, to, subject, text, html, attachments, cc, bcc }) {
     const boundary = '____boundary_' + Date.now().toString(36);
     const nl = '\r\n';
 
     let raw = '';
     raw += `From: ${from}${nl}`;
     raw += `To: ${to}${nl}`;
+    // Cc is visible to every other recipient, unlike Bcc below.
+    if (cc) raw += `Cc: ${cc}${nl}`;
     // Comma-separated list; Gmail strips this header before delivery so
     // recipients can't see each other.
     if (bcc) raw += `Bcc: ${bcc}${nl}`;
@@ -71,11 +73,11 @@ function buildRawEmail({ from, to, subject, text, html, attachments, bcc }) {
     return Buffer.from(raw).toString('base64url');
 }
 
-export async function sendGmail({ to, subject, text, html, attachments, bcc }) {
+export async function sendGmail({ to, subject, text, html, attachments, cc, bcc }) {
     const auth = getOAuth2Client();
     if (!auth) throw new Error('Gmail API is not configured — connect Gmail in Settings');
     const gmail = google.gmail({ version: 'v1', auth });
     const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'PurpleBox <contact@purplebox.ae>';
-    const raw = buildRawEmail({ from, to, subject, text, html, attachments, bcc });
+    const raw = buildRawEmail({ from, to, subject, text, html, attachments, cc, bcc });
     await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
 }

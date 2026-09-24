@@ -146,8 +146,13 @@ export async function runPaymentDueDigest({ now = new Date() } = {}) {
   const { subject, text, html } = buildPaymentDueDigest({ payments, template, now });
 
   try {
+    // Extra recipients set on the template itself (e.g. a manager copied in
+    // addition to everyone with the accounts role) — see Message Templates →
+    // Accounts: Payment Due Soon.
+    const cc = template?.cc?.trim() || undefined;
     await sendMail({
       to: recipients.join(', '),
+      cc,
       subject, text, html,
       context: { kind: 'accounts_payment_due_digest' },
     });

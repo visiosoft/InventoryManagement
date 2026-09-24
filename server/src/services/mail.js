@@ -50,11 +50,12 @@ export function mailFromAddress() {
 // the 16 MB document limit even if something odd comes through.
 const BODY_CAP = 200_000;
 
-async function record({ to, bcc, subject, text, html, attachments, context = {}, status, error }) {
+async function record({ to, cc, bcc, subject, text, html, attachments, context = {}, status, error }) {
     try {
         const recipients = bcc ? String(bcc).split(',').filter((x) => x.trim()).length : 1;
         await SentEmail.create({
             to: String(to || ''),
+            cc: String(cc || ''),
             bcc: String(bcc || ''),
             recipientCount: recipients,
             subject: String(subject || ''),
@@ -72,7 +73,7 @@ async function record({ to, bcc, subject, text, html, attachments, context = {},
     } catch { /* the log is a record, not a gate */ }
 }
 
-export async function sendMail({ to, subject, text, html, attachments, bcc, context }) {
+export async function sendMail({ to, subject, text, html, attachments, cc, bcc, context }) {
     if (!gmailConfigured() && !smtpConfigured()) {
         // Not logged: nothing was attempted, and a row here would read as a
         // delivery failure rather than a missing configuration.
@@ -81,15 +82,15 @@ export async function sendMail({ to, subject, text, html, attachments, bcc, cont
 
     try {
         const result = gmailConfigured()
-            ? await sendGmail({ to, subject, text, html, attachments, bcc })
+            ? await sendGmail({ to, subject, text, html, attachments, cc, bcc })
             : await getTransporter().sendMail({
                 from: process.env.SMTP_FROM || `PurpleBox <${process.env.SMTP_USER}>`,
-                to, subject, text, html, attachments, bcc,
+                to, subject, text, html, attachments, cc, bcc,
             });
-        await record({ to, bcc, subject, text, html, attachments, context, status: 'sent' });
+        await record({ to, cc, bcc, subject, text, html, attachments, context, status: 'sent' });
         return result;
     } catch (err) {
-        await record({ to, bcc, subject, text, html, attachments, context, status: 'failed', error: err?.message });
+        await record({ to, cc, bcc, subject, text, html, attachments, context, status: 'failed', error: err?.message });
         throw err;
     }
 }

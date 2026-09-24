@@ -20,6 +20,10 @@ type Template = {
   label: string
   subject: string
   emailBody: string
+  // Extra recipients for this one automated email, comma-separated. Only
+  // meaningful for an internal template like the accounts payment-due
+  // digest — a tenant-facing template has no reason to set it.
+  cc?: string
   whatsappBody: string
   /* The name Meta approved this under, if it has one. Without it a reminder
      can only reach somebody who wrote to us in the last 24 hours. */
@@ -81,6 +85,7 @@ export default function MessageTemplates() {
   const [tab, setTab] = useState<'email' | 'whatsapp'>('email')
   const [subject, setSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
+  const [cc, setCc] = useState('')
   const [whatsappBody, setWhatsappBody] = useState('')
   const [waTemplate, setWaTemplate] = useState('')
   const [waLang, setWaLang] = useState('en')
@@ -290,6 +295,7 @@ export default function MessageTemplates() {
     setSelected(t)
     setSubject(t.subject)
     setEmailBody(t.emailBody)
+    setCc(t.cc || '')
     setWhatsappBody(t.whatsappBody)
     setError(''); setSuccess('')
   }
@@ -657,7 +663,7 @@ export default function MessageTemplates() {
                     </Button>
                   )}
                   <Button size="sm" onClick={() => updateMut.mutate({
-                    subject, emailBody, whatsappBody,
+                    subject, emailBody, cc: cc.trim(), whatsappBody,
                     whatsappTemplate: waTemplate.trim(),
                     whatsappTemplateLang: waLang.trim() || 'en',
                     whatsappTemplateVars: waVars,
@@ -698,6 +704,12 @@ export default function MessageTemplates() {
                   <Field label="Subject">
                     <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Email subject line..." />
                   </Field>
+                  <Field label="Cc (optional)">
+                    <Input value={cc} onChange={e => setCc(e.target.value)} placeholder="e.g. manager@purplebox.ae, owner@purplebox.ae" />
+                  </Field>
+                  <p className="text-xs text-muted-foreground -mt-2">
+                    Comma-separated. Copied on every send of this template, in addition to its usual recipients.
+                  </p>
                   <Field label="Body">
                     <Textarea ref={emailBodyRef} value={emailBody} onChange={e => setEmailBody(e.target.value)} rows={12} className="font-mono text-sm" placeholder="Email body..." />
                   </Field>

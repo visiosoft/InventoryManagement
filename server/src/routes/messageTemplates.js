@@ -314,9 +314,12 @@ router.get('/', async (req, res) => {
 // Update a template
 router.put('/:id', async (req, res) => {
   const { subject, emailBody, emailHtml, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename, mediaThumbnailUrl, mediaSizeBytes,
-    whatsappTemplate, whatsappTemplateLang, whatsappTemplateVars,
+    whatsappTemplate, whatsappTemplateLang, whatsappTemplateVars, cc,
     locationLat, locationLng, locationName, locationAddress } = req.body;
   const update = { subject, emailBody, whatsappBody };
+  // Comma-separated extra recipients for this one automated email — see the
+  // field's own comment on the model for why this exists.
+  if (cc !== undefined) update.cc = String(cc || '').trim();
 
   /* The Meta-approved name, if this template has one.
    *
