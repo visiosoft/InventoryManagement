@@ -88,6 +88,15 @@ const MODELS = [
         // multiple on this prompt like the others above.
         note: 'Not yet evaluated against the real instructions and price list — try it and see.',
     },
+    {
+        id: 'gpt-6-luna',
+        label: 'GPT-6 Luna',
+        cost: '~0.7×',
+        // Same caveat as gpt-6-sol above: not yet run through the eval
+        // questions. Listed here because it undercuts even gpt-4o-mini on
+        // OpenAI's price list, unlike Sol.
+        note: 'Not yet evaluated. Cheaper than gpt-4o-mini on list price — try it and see.',
+    },
 ];
 const MODEL_IDS = MODELS.map((m) => m.id);
 
