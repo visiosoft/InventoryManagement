@@ -84,6 +84,8 @@ export default function AssistantSettings() {
                 <option value="gpt-4o-mini">gpt-4o-mini — cheapest</option>
                 <option value="gpt-4.1-mini">gpt-4.1-mini</option>
                 <option value="gpt-4.1">gpt-4.1 — best at reading questions</option>
+                <option value="gpt-6-luna">gpt-6-luna — cheaper than gpt-4o-mini, untested here</option>
+                <option value="gpt-6-sol">gpt-6-sol — newer, untested here</option>
               </select>
             </label>
             <label style={{ display: 'block' }}>
