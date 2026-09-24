@@ -8,6 +8,7 @@ import { creditFor, markLeadWon } from '../services/dealCredit.js';
 import { contractExportRows } from '../services/contractExportRows.js';
 import { promoteToCustomer } from '../services/customerStage.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
+import { nextPaymentDueDate } from '../services/billingCycle.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { renewLink, moveOutLink } from '../services/renewalLink.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
@@ -233,15 +234,6 @@ router.get('/', async (req, res) => {
             total: { $sum: '$amount' },
             paid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
             overdue: { $sum: { $cond: [{ $eq: ['$status', 'overdue'] }, 1, 0] } },
-            // Soonest still-unpaid due date — what the Tenants list shows as
-            // "Next payment due". Contract.nextPaymentDate is not used for
-            // this: it is only ever written once, at legacy import time, and
-            // nothing keeps it current as payments come and go.
-            nextDue: {
-              $min: {
-                $cond: [{ $in: ['$status', ['pending', 'overdue']] }, '$dueDate', null],
-              },
-            },
           }
         },
       ]),
@@ -273,7 +265,10 @@ router.get('/', async (req, res) => {
       totalAmount: pay ? Math.round(pay.total * 100) / 100 : 0,
       contractAmount,
       overdueCount: pay?.overdue ?? 0,
-      nextPaymentDue: pay?.nextDue ?? null,
+      // When the next 4-week rent collection falls, computed from the
+      // contract's own dates rather than any Payment record — see
+      // services/billingCycle.js for why.
+      nextPaymentDue: nextPaymentDueDate({ startDate: c.startDate, endDate: c.endDate }),
     };
   });
 

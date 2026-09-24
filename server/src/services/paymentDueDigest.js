@@ -1,28 +1,29 @@
 /**
- * Tells accounts, once, which tenants have a payment due in exactly seven
- * days — so an invoice can be raised or a nudge sent to the tenant before the
- * due date arrives, not after it.
+ * Tells accounts, once, which tenants have their next 4-week rent cycle
+ * landing in exactly seven days — so an invoice can be raised or a nudge sent
+ * to the tenant before the due date arrives, not after it.
  *
- * Sourced from the Payment collection, the same place the tenant-facing
- * payment_due automation reads from (see automationEngine.js) — not from
- * Contract.nextPaymentDate, which is only ever written once, at legacy
- * import time, and nothing keeps it current.
+ * The due date for each contract is computed, not looked up — see
+ * services/billingCycle.js for why the local Payment collection cannot
+ * answer "when is this contract's next payment due" for an ongoing lease
+ * invoiced through Zoho Books after signing.
  *
  * The wording is an editable MessageTemplate (key: accounts_payment_due_digest),
  * same as every tenant-facing email — visible and editable from the Message
  * Templates page. Only the intro text is templated; the list of who is due is
  * always generated fresh, since hand-editing a list of tenants makes no sense.
  *
- * Idempotent through each Payment's accountsDueSoonNotifiedAt: a restart or an
- * extra tick on the same day cannot mention the same due date twice. Nothing
+ * Idempotent through each Contract's lastDueSoonNotifiedFor: a restart or an
+ * extra tick on the same day cannot mention the same cycle twice. Nothing
  * here throws — a digest that fails to send must never be the reason a
  * scheduler tick stops.
  */
 
-import { Payment, MessageTemplate } from '../models/index.js';
+import { Contract, MessageTemplate } from '../models/index.js';
 import { mailConfigured, sendMail } from './mail.js';
 import { accountsAddresses, whyNotEmailed } from './staffMail.js';
 import { dubaiDayRange } from './automationEngine.js';
+import { nextPaymentDueDate } from './billingCycle.js';
 
 export const DUE_SOON_KEY = 'accounts_payment_due_digest';
 export const DUE_SOON_DAYS = 7;
@@ -51,33 +52,32 @@ const FALLBACK_SUBJECT = 'Payments due in @days days — @count tenant(s)';
 const FALLBACK_BODY = 'Hi team,\n\nThe following @count payment(s) are due in @days days, on @date.\n\nPlease raise invoices / follow up as needed.';
 
 /**
- * The due payments, seven days out, that have not already been mentioned.
+ * The active contracts whose computed next-due date falls exactly `days`
+ * from now, and have not already been mentioned for that specific cycle.
  * Exported separately from the send step so a dry run or a test can inspect
  * exactly what would go out.
  */
 export async function collectPaymentsDueSoon({ now = new Date(), days = DUE_SOON_DAYS } = {}) {
   const { start, end } = dubaiDayRange(new Date(now.getTime() + days * 86_400_000));
-  const payments = await Payment.find({
-    status: { $in: ['pending', 'overdue'] },
-    dueDate: { $gte: start, $lt: end },
-    accountsDueSoonNotifiedAt: null,
-  })
-    .populate({
-      path: 'contract',
-      select: 'contractNo customer unit units status',
-      populate: [
-        { path: 'customer', select: 'fullName email phone' },
-        { path: 'unit', select: 'unitNumber' },
-        { path: 'units', select: 'unitNumber' },
-      ],
-    })
-    .sort({ dueDate: 1 })
+
+  const contracts = await Contract.find({ status: 'active' })
+    .select('contractNo customer unit units startDate endDate rate lastDueSoonNotifiedFor')
+    .populate('customer', 'fullName email phone')
+    .populate('unit', 'unitNumber')
+    .populate('units', 'unitNumber')
     .lean();
 
-  // A payment on a contract that no longer exists, or has since ended,
-  // is not accounts' problem any more — drop it rather than emailing a
-  // reminder nobody can act on.
-  return payments.filter((p) => p.contract && p.contract.status !== 'ended' && p.contract.status !== 'cancelled');
+  const due = [];
+  for (const c of contracts) {
+    const nextDue = nextPaymentDueDate({ startDate: c.startDate, endDate: c.endDate, now });
+    if (!nextDue || nextDue < start || nextDue >= end) continue;
+    // Already mentioned for this exact cycle — do not repeat it just because
+    // the job ticks more than once before the cycle rolls over.
+    if (c.lastDueSoonNotifiedFor && new Date(c.lastDueSoonNotifiedFor).getTime() === nextDue.getTime()) continue;
+    due.push({ contract: c, dueDate: nextDue });
+  }
+  due.sort((a, b) => a.dueDate - b.dueDate);
+  return due;
 }
 
 /**
@@ -85,17 +85,21 @@ export async function collectPaymentsDueSoon({ now = new Date(), days = DUE_SOON
  * editable MessageTemplate row (may be null, in which case the fallback
  * wording is used, same convention as every other automated email here).
  */
-export function buildPaymentDueDigest({ payments, template, days = DUE_SOON_DAYS, now = new Date() }) {
-  const vars = { count: payments.length, days, date: fmtDate(new Date(now.getTime() + days * 86_400_000)) };
+export function buildPaymentDueDigest({ due, template, days = DUE_SOON_DAYS, now = new Date() }) {
+  const vars = { count: due.length, days, date: fmtDate(new Date(now.getTime() + days * 86_400_000)) };
   const subject = interpolate(template?.subject?.trim() || FALLBACK_SUBJECT, vars);
   const intro = interpolate(template?.emailBody?.trim() || FALLBACK_BODY, vars);
 
-  const rows = payments.map((p) => ({
-    tenant: p.contract.customer?.fullName || '—',
-    unit: unitLabel(p.contract),
-    contractNo: p.contract.contractNo || '—',
-    amount: money(p.amount),
-    dueDate: fmtDate(p.dueDate),
+  const rows = due.map(({ contract, dueDate }) => ({
+    tenant: contract.customer?.fullName || '—',
+    unit: unitLabel(contract),
+    contractNo: contract.contractNo || '—',
+    // Every cycle after the first is billed at the full monthly/4-week rate
+    // — the first-cycle discount never applies past the first invoice (see
+    // [[billing-28day-logic]]) — so contract.rate is always the right figure
+    // here.
+    amount: money(contract.rate),
+    dueDate: fmtDate(dueDate),
   }));
 
   const text = [
@@ -129,21 +133,21 @@ export function buildPaymentDueDigest({ payments, template, days = DUE_SOON_DAYS
 }
 
 /**
- * Send today's digest. Idempotent through accountsDueSoonNotifiedAt — see the
- * field's own comment on the Payment schema.
+ * Send today's digest. Idempotent through each Contract's
+ * lastDueSoonNotifiedFor — see the field's own comment on the model.
  */
 export async function runPaymentDueDigest({ now = new Date() } = {}) {
-  const payments = await collectPaymentsDueSoon({ now });
-  if (!payments.length) return { sent: false, reason: 'nothing due', count: 0 };
-  if (!mailConfigured()) return { sent: false, reason: 'email is not configured', count: payments.length };
+  const due = await collectPaymentsDueSoon({ now });
+  if (!due.length) return { sent: false, reason: 'nothing due', count: 0 };
+  if (!mailConfigured()) return { sent: false, reason: 'email is not configured', count: due.length };
 
   const recipients = await accountsAddresses();
-  if (!recipients.length) return { sent: false, reason: whyNotEmailed({ role: 'accounts' }), count: payments.length };
+  if (!recipients.length) return { sent: false, reason: whyNotEmailed({ role: 'accounts' }), count: due.length };
 
   // Editable from the Message Templates page — see DEFAULT_TEMPLATES in
   // routes/messageTemplates.js for the seeded starting text.
   const template = await MessageTemplate.findOne({ key: DUE_SOON_KEY }).lean();
-  const { subject, text, html } = buildPaymentDueDigest({ payments, template, now });
+  const { subject, text, html } = buildPaymentDueDigest({ due, template, now });
 
   try {
     // Extra recipients set on the template itself (e.g. a manager copied in
@@ -156,13 +160,15 @@ export async function runPaymentDueDigest({ now = new Date() } = {}) {
       subject, text, html,
       context: { kind: 'accounts_payment_due_digest' },
     });
-    await Payment.updateMany(
-      { _id: { $in: payments.map((p) => p._id) } },
-      { $set: { accountsDueSoonNotifiedAt: now } },
-    );
-    return { sent: true, count: payments.length, to: recipients };
+    await Contract.bulkWrite(due.map(({ contract, dueDate }) => ({
+      updateOne: {
+        filter: { _id: contract._id },
+        update: { $set: { lastDueSoonNotifiedFor: dueDate } },
+      },
+    })));
+    return { sent: true, count: due.length, to: recipients };
   } catch (e) {
     console.error('[PaymentDueDigest]', e.message);
-    return { sent: false, reason: e.message, count: payments.length };
+    return { sent: false, reason: e.message, count: due.length };
   }
 }

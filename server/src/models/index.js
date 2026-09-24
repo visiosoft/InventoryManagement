@@ -649,6 +649,11 @@ const contractSchema = new Schema(
     // Reminders are opt-in: new contracts start muted, enable per contract
     // from its Reminders tab
     remindersMuted: { type: Boolean, default: true },
+    // Which computed nextPaymentDueDate() this contract was last mentioned
+    // in the accounts payment-due digest for — compared against the current
+    // computed date so a cycle is only mentioned once, without needing a
+    // per-cycle Payment record. See services/paymentDueDigest.js.
+    lastDueSoonNotifiedFor: { type: Date, default: null },
     reminderOverrides: [
       {
         rule: { type: Schema.Types.ObjectId, ref: 'AutomationRule' },
