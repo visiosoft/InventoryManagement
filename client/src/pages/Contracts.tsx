@@ -442,6 +442,7 @@ export default function Contracts() {
             <option value="owes_asc">Sort: Owes least first</option>
             <option value="renewal_asc">Sort: Renewal intent</option>
             <option value="renewal_desc">Sort: Renewal intent ↓</option>
+            <option value="next_due_asc">Sort: Next payment due</option>
           </select>
 
           <button
@@ -683,7 +684,7 @@ export default function Contracts() {
 
                         <div style={{ flex: '0 0 170px', textAlign: 'right', fontSize: 12.5, color: SECOND, fontVariantNumeric: 'tabular-nums' }}>
                           {formatDate(c.startDate)} → {formatDate(c.endDate)}
-                          {c.nextPaymentDue && (
+                          {c.status === 'active' && c.nextPaymentDue && (
                             <div
                               title="Soonest unpaid payment due date, from the payment schedule"
                               style={{

@@ -184,7 +184,12 @@ router.get('/', async (req, res) => {
   // Contracts predating the field count as undecided, matching the model default.
   const RENEWAL_ORDER = { undecided: 0, not_renewing: 1, renewing: 2 };
   const sortByRenewal = req.query.sort === 'renewal_asc' || req.query.sort === 'renewal_desc';
-  const inMemorySort = sortByOwed || sortByRenewal;
+
+  // Next payment due comes from the Payment aggregate below, computed after
+  // the page is fetched — same reason as owed/renewal, it cannot be part of
+  // the database sort, so the whole filtered set is resolved and paged here.
+  const sortByNextDue = req.query.sort === 'next_due_asc';
+  const inMemorySort = sortByOwed || sortByRenewal || sortByNextDue;
 
   /* Everything except the bulk.
    *
@@ -296,10 +301,18 @@ router.get('/', async (req, res) => {
     if (sortByOwed) {
       const dir = req.query.sort === 'owes_asc' ? 1 : -1;
       data = [...data].sort((a, b) => dir * (Number(a.outstanding || 0) - Number(b.outstanding || 0)));
-    } else {
+    } else if (sortByRenewal) {
       const dir = req.query.sort === 'renewal_desc' ? -1 : 1;
       const rank = (c) => RENEWAL_ORDER[c.renewalIntent || 'undecided'] ?? 0;
       data = [...data].sort((a, b) => dir * (rank(a) - rank(b)));
+    } else {
+      // Soonest due first; nothing due (no nextPaymentDue at all) sorts last
+      // rather than first, where a null would otherwise land.
+      data = [...data].sort((a, b) => {
+        const at = a.nextPaymentDue ? new Date(a.nextPaymentDue).getTime() : Infinity;
+        const bt = b.nextPaymentDue ? new Date(b.nextPaymentDue).getTime() : Infinity;
+        return at - bt;
+      });
     }
     data = data.slice(skip, skip + limit);
   }
