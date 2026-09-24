@@ -141,6 +141,38 @@ export async function buildFacts(inboundText, config) {
 }
 
 /**
+ * Turn fetched WhatsAppMessage docs into the `messages` array the model reads,
+ * then append the message being answered.
+ *
+ * Pure, so the two things that used to go wrong here — a voice note or photo
+ * silently dropping out of history, and the current question going missing or
+ * doubling up — can be asserted directly rather than only observed live.
+ *
+ * `docs` must already be in chronological order (oldest first). A doc's
+ * content is its `text` if it has one, otherwise its `transcript` — a
+ * historical voice note or photo carries its words there, not in `text` (see
+ * the model's own comment on WhatsAppMessage.transcript), and a doc with
+ * neither is something the assistant never actually read and contributes no
+ * content.
+ */
+export function historyToMessages(docs, inboundText) {
+    const messages = docs
+        .map((m) => ({ role: m.direction === 'inbound' ? 'user' : 'assistant', content: String(m.text || m.transcript || '').trim() }))
+        .filter((m) => m.content);
+
+    // The message being answered must always be the last thing the model sees.
+    // In production the webhook has usually stored it already, but depending on
+    // that write ordering meant the model sometimes got no question at all and
+    // just introduced itself.
+    const text = String(inboundText || '').trim();
+    const last = messages[messages.length - 1];
+    if (text && !(last && last.role === 'user' && last.content === text)) {
+        messages.push({ role: 'user', content: text });
+    }
+    return messages;
+}
+
+/**
  * Compose a reply. Returns `{ reply, needsHuman, reason }`; `needsHuman` is the
  * only honest outcome when the model fails, so every failure path sets it
  * rather than sending a guess or nothing at all.
@@ -152,30 +184,26 @@ export async function generateReply({ phoneNormalized, inboundText, config }) {
 
     const history = await WhatsAppMessage.find({
         phoneNormalized,
-        type: 'text',
-        text: { $ne: '' },
         occurredAt: { $gte: new Date(Date.now() - HISTORY_DAYS * 86_400_000) },
+        // A voice note or photo the assistant already answered belongs in
+        // context too — its words live in `transcript`, not `text`, once
+        // understandMedia() has read it (see the `transcript` write further
+        // down). Without this half, a conversation that mixed text with a
+        // voice note or photo lost everything from before that turn: the
+        // model saw only the messages sent as plain text.
+        $or: [
+            { type: 'text', text: { $ne: '' } },
+            { transcript: { $ne: '' } },
+        ],
     })
         // Newest first with a limit takes the most recent slice; reversed below
         // so the model reads it in the order it happened.
         .sort({ occurredAt: -1 })
         .limit(HISTORY_TURNS)
-        .select('direction text')
+        .select('direction text transcript')
         .lean();
 
-    const messages = history
-        .reverse()
-        .map((m) => ({ role: m.direction === 'inbound' ? 'user' : 'assistant', content: m.text }));
-
-    // The message being answered must always be the last thing the model sees.
-    // In production the webhook has usually stored it already, but depending on
-    // that write ordering meant the model sometimes got no question at all and
-    // just introduced itself.
-    const text = String(inboundText || '').trim();
-    const last = messages[messages.length - 1];
-    if (text && !(last && last.role === 'user' && last.content === text)) {
-        messages.push({ role: 'user', content: text });
-    }
+    const messages = historyToMessages(history.reverse(), inboundText);
 
     // The operator writes the voice; these rules are ours and are not editable
     // in Settings, because they are what keeps the assistant from committing
