@@ -78,6 +78,16 @@ const MODELS = [
         cost: '~13×',
         note: 'Best answers of the four, and the readiest to state availability on its own.',
     },
+    {
+        id: 'gpt-6-sol',
+        label: 'GPT-6 Sol',
+        cost: '~13×',
+        // Newer than the eval above and not yet run through the same two
+        // questions — added on request to try against real conversations.
+        // Cost is OpenAI's list price relative to gpt-4o-mini, not a measured
+        // multiple on this prompt like the others above.
+        note: 'Not yet evaluated against the real instructions and price list — try it and see.',
+    },
 ];
 const MODEL_IDS = MODELS.map((m) => m.id);
 
