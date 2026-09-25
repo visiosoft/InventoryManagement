@@ -56,7 +56,6 @@ import aiBotRoutes from './routes/aiBot.js';
 import whatsappFlowTemplateRoutes from './routes/whatsappFlowTemplates.js';
 import campaignRoutes from './routes/campaigns.js';
 import sentEmailRoutes from './routes/sentEmails.js';
-import walkthroughRoutes from './routes/walkthroughs.js';
 import marketingPublicRoutes from './routes/marketingPublic.js';
 import contractsPublicRoutes from './routes/contractsPublic.js';
 import workerRoutes from './routes/workers.js';
@@ -78,7 +77,6 @@ import agreementTemplateRoutes from './routes/agreementTemplate.js';
 import automationRuleRoutes from './routes/automationRules.js';
 import taskRoutes from './routes/tasks.js';
 import salesGoalRoutes from './routes/salesGoals.js';
-import salesTeamRoutes from './routes/salesTeam.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import myDayRoutes from './routes/myDay.js';
 import leadFollowUpRoutes from './routes/leadFollowUp.js';
@@ -86,7 +84,6 @@ import followUpQueueRoutes from './routes/followUpQueue.js';
 import accountsDashboardRoutes from './routes/accountsDashboard.js';
 import exportRoutes from './routes/exports.js';
 import leadRoutingRoutes from './routes/leadRouting.js';
-import activityRoutes from './routes/activity.js';
 import auditLogRoutes from './routes/auditLog.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
@@ -325,7 +322,6 @@ app.use('/api/whatsapp-flow-templates', requireAuth, whatsappFlowTemplateRoutes)
 app.use('/api/marketing', marketingPublicRoutes);
 app.use('/api/campaigns', requireAuth, campaignRoutes);
 app.use('/api/sent-emails', requireAuth, sentEmailRoutes);
-app.use('/api/walkthroughs', requireAuth, walkthroughRoutes);
 app.use('/api/reminder-config', requireAuth, reminderConfigRoutes);
 app.use('/api/message-templates', requireAuth, messageTemplateRoutes);
 app.use('/api/push', requireAuth, pushRoutes);
@@ -333,7 +329,6 @@ app.use('/api/agreement-template', requireAuth, agreementTemplateRoutes);
 app.use('/api/automation-rules', requireAuth, automationRuleRoutes);
 app.use('/api/tasks', requireAuth, taskRoutes);
 app.use('/api/sales-goals', requireAuth, salesGoalRoutes);
-app.use('/api/sales-team', requireAuth, salesTeamRoutes);
 // Signed in is enough: a board only the manager can see recognises nobody.
 app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
 app.use('/api/my-day', requireAuth, myDayRoutes);
@@ -347,7 +342,6 @@ app.use('/api/accounts-dashboard', requireAuth, accountsDashboardRoutes);
 app.use('/api/exports', requireAuth, exportRoutes);
 // Who gets the next WhatsApp lead. Admin only, inside the router.
 app.use('/api/lead-routing', requireAuth, leadRoutingRoutes);
-app.use('/api/activity', requireAuth, activityRoutes);
 app.use('/api/audit-log', requireAuth, auditLogRoutes);
 
 // Central error handler

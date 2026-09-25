@@ -547,7 +547,7 @@ export default function Contracts() {
               )}
             </label>}
 
-            <div data-tour="contracts-list" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {groups.map((g) => (
                 <Fragment key={g.label || 'all'}>
                   {g.label && (

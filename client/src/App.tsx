@@ -90,8 +90,6 @@ import WhatsAppFlowTemplates from './pages/WhatsAppFlowTemplates'
 import AssistantSettings from './pages/AssistantSettings'
 import Marketing from './pages/Marketing'
 import SentEmails from './pages/SentEmails'
-import Walkthroughs from './pages/Walkthroughs'
-import ZohoComparison from './pages/ZohoComparison'
 import Backup from './pages/Backup'
 import AuditLogReport from './pages/AuditLogReport'
 import Leads from './pages/Leads'
@@ -114,9 +112,7 @@ import PurchaseDetail from './pages/PurchaseDetail'
 import Expenses from './pages/Expenses'
 import MovingInventory from './pages/MovingInventory'
 import UserManagement from './pages/UserManagement'
-import SalesTeam from './pages/SalesTeam'
 import Tasks from './pages/Tasks'
-import Diary from './pages/Diary'
 import WhatsApp from './pages/WhatsApp'
 import WhatsAppSetup from './pages/WhatsAppSetup'
 import MovingDashboard from './pages/moving/MovingDashboard'
@@ -265,16 +261,13 @@ export default function App() {
         <Route path="/reports/rates" element={<PermGuard module="reports_units"><RatesReport /></PermGuard>} />
         <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
-        <Route path="/sales-team" element={<AdminGuard><SalesTeam /></AdminGuard>} />
         <Route path="/tasks" element={<TasksGuard><Tasks /></TasksGuard>} />
-        <Route path="/diary" element={<Diary />} />
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />
         <Route path="/audit-log" element={<AdminGuard><AuditLogReport /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/templates" element={<AdminGuard><MessageTemplates /></AdminGuard>} />
         <Route path="/settings/whatsapp-debug" element={<AdminGuard><WhatsAppDebug /></AdminGuard>} />
         <Route path="/settings/agreement" element={<PermGuard module={['settings', 'agreement_templates']}><AgreementTemplate /></PermGuard>} />
-        <Route path="/zoho-comparison" element={<AdminGuard><ZohoComparison /></AdminGuard>} />
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
         <Route path="/settings/automation" element={<AdminGuard><AutomationRules /></AdminGuard>} />
         <Route path="/settings/ai" element={<AdminGuard><AiAssistant /></AdminGuard>} />
@@ -282,7 +275,6 @@ export default function App() {
         <Route path="/settings/assistant" element={<AdminGuard><AssistantSettings /></AdminGuard>} />
         <Route path="/marketing" element={<AdminGuard><Marketing /></AdminGuard>} />
         <Route path="/settings/sent-emails" element={<AdminGuard><SentEmails /></AdminGuard>} />
-        <Route path="/walkthroughs" element={<Walkthroughs />} />
         <Route path="/whatsapp" element={<WhatsApp />} />
         <Route path="/whatsapp/setup" element={<AdminGuard><WhatsAppSetup /></AdminGuard>} />
 

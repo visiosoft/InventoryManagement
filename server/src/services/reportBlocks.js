@@ -334,10 +334,7 @@ export const BLOCKS = {
             const [users, rows] = await Promise.all([
                 User.find({}).select('name email').lean(),
                 Contract.aggregate([
-                    /* Credited by `salesRep` and bucketed on `createdAt`, deliberately
-                       matching routes/salesTeam.js, which is the only other place that
-                       puts money against a person. Two pages disagreeing about a rep's
-                       number is worse than either definition being imperfect.
+                    /* Credited by `salesRep` and bucketed on `createdAt`.
 
                        `totalQuotation` is the deal value; `rate` is only the periodic
                        charge, so summing rate would understate a long contract and

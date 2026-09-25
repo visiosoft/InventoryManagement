@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import {
-  Shuffle, Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck } from 'lucide-react'
+  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -11,7 +11,6 @@ import { SiteGate } from './SiteGate'
 import AppFooter from './AppFooter'
 import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
-import { WalkthroughProvider } from '../walkthroughs/WalkthroughProvider'
 
 const navTop = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' as string | undefined },
@@ -77,17 +76,13 @@ const profileMenuGroups = [
       { to: '/settings/lead-distribution', label: 'Lead Distribution', icon: Shuffle, perm: 'settings', adminOnly: true },
       { to: '/settings/sent-emails', label: 'Sent Emails', icon: Mail, perm: 'settings', adminOnly: true },
       { to: '/marketing', label: 'Marketing', icon: Megaphone, perm: 'settings', adminOnly: true },
-      { to: '/zoho-comparison', label: 'Zoho Comparison', icon: RefreshCw, perm: 'settings', adminOnly: false },
     ],
   },
   {
     label: 'Workspace',
     items: [
       { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: undefined, adminOnly: true },
-      { to: '/diary', label: 'Daily Diary', icon: NotebookPen, perm: undefined, adminOnly: false },
-      { to: '/walkthroughs', label: 'Walkthroughs', icon: Compass, perm: undefined, adminOnly: false },
       { to: '/users', label: 'Users', icon: UserCog, perm: undefined, adminOnly: true },
-      { to: '/sales-team', label: 'Sales Team', icon: Target, perm: undefined, adminOnly: true },
       { to: '/backup', label: 'Backup', icon: DatabaseBackup, perm: undefined, adminOnly: true },
       { to: '/audit-log', label: 'Audit Log', icon: ShieldCheck, perm: undefined, adminOnly: true },
     ],
@@ -279,12 +274,9 @@ const PAGE_TITLES: Record<string, string> = {
   '/settings': 'Settings',
   '/settings/lead-distribution': 'Lead Distribution',
   '/settings/agreement': 'Agreement Template',
-  '/zoho-comparison': 'Zoho Comparison',
   '/approvals': 'Approvals',
   '/users': 'User Management',
-  '/sales-team': 'Sales Team',
   '/tasks': 'Tasks',
-  '/diary': 'Daily Diary',
   '/backup': 'Backup',
   '/moving': 'Moving Dashboard',
   '/moving/schedule': 'Schedule Jobs',
@@ -737,15 +729,6 @@ export default function Layout() {
   )
 
   return (
-    // Only the signed-in app reads walkthrough progress — moved here from
-    // wrapping every <Routes> in App.tsx, where it also sat around the public
-    // share-link pages (renewal, contract signing, moving job sharing) that
-    // never mount Layout. `useQuery` fired GET /walkthroughs/me the instant
-    // any of those pages mounted with a stale token still in localStorage —
-    // which a signed-in admin's own browser is exactly the case for — and the
-    // 401 interceptor wiped the session and bounced a tenant clicking their
-    // renewal link straight to the login screen, no login needed or wanted.
-    <WalkthroughProvider>
     <div className="flex min-h-screen bg-background">
 
       {/* ── Desktop sidebar ─────────────────────────────────────── */}
@@ -995,6 +978,5 @@ export default function Layout() {
           they happen to be on. */}
       <LeadAlerts />
     </div>
-    </WalkthroughProvider>
   )
 }

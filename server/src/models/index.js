@@ -44,13 +44,6 @@ const userSchema = new Schema(
        assumed: it is what stops a restart at 07:30 sending a second one — see
        services/dayBrief.js. */
     dayBriefSentAt: { type: Date, default: null },
-    // Guided walkthroughs. `enabled` defaults true so a new user gets them
-    // without anything being written for them first, which is what "on for any
-    // new user" has to mean. An id absent from `completed` means not yet seen.
-    walkthroughs: {
-      enabled: { type: Boolean, default: true },
-      completed: { type: [String], default: [] },
-    },
     /* Expo push tokens for the mobile app — one per device this person is
        logged into, since a rep can carry both a work and a personal phone.
        services/expoPush.js is the only writer: it adds a token on

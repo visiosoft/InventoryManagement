@@ -18,7 +18,7 @@ const ENTITY_LABELS = {
   'whatsapp-flow-templates': 'WhatsAppFlowTemplate', 'sent-emails': 'SentEmail',
   'site-visits': 'SiteVisit', 'reminder-config': 'ReminderConfig', 'message-templates': 'MessageTemplate',
   'agreement-template': 'AgreementTemplate', 'automation-rules': 'AutomationRule',
-  'sales-goals': 'SalesGoal', 'sales-team': 'SalesTeam', 'my-day': 'MyDay',
+  'sales-goals': 'SalesGoal', 'my-day': 'MyDay',
   'lead-follow-up': 'LeadFollowUp', 'follow-up-queue': 'FollowUpQueue',
   'accounts-dashboard': 'AccountsDashboard', 'lead-routing': 'LeadRoutingRule',
   'sign-moving': 'SignMoving', sign: 'Sign', whatsapp: 'WhatsApp',

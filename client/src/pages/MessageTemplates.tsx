@@ -590,7 +590,7 @@ export default function MessageTemplates() {
       ) : isLoading ? <Spinner /> : (
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
         {/* Template list. One pane at a time on a phone, as above. */}
-        <div className={`space-y-1.5 ${selected ? 'hidden lg:block' : ''}`} data-tour="templates-list">
+        <div className={`space-y-1.5 ${selected ? 'hidden lg:block' : ''}`}>
           {templates.map(t => (
             <button key={t._id} onClick={() => selectTemplate(t)}
               className={`w-full text-left rounded-lg border px-4 py-3 transition-colors cursor-pointer ${selected?._id === t._id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
