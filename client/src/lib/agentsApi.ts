@@ -125,6 +125,7 @@ export const agentsApi = {
   simulate: (body: { leadId?: string; phone?: string; text?: string; trigger: 'inbound' | 'touch'; persist?: boolean; agentId?: string }) =>
     api.post<SimulateResponse>('/agents/simulate', body).then((r) => r.data),
   tick: () => api.post<{ proposed: number; exhausted: number; silenced: number; failed: number }>('/agents/tick').then((r) => r.data),
+  seedTeam: () => api.post<{ team: { name: string; result: string; escalateTo: boolean }[] }>('/agents/seed-team').then((r) => r.data),
   templates: () => api.get<{ configured: boolean; error: string; templates: { name: string; language: string; bodyText: string }[] }>('/agents/templates').then((r) => r.data),
 }
 

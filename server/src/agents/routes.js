@@ -10,6 +10,7 @@ import { BUCKETS, BUCKET_ORDER, describeStage, DEFAULT_CADENCE, nextTouchFor } f
 import { runAgent, findLead, cadenceFor } from './runtime.js';
 import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor } from './service.js';
 import { record, revert, snapshotOf } from './log.js';
+import { seedStarterTeam } from './seed.js';
 import { listWhatsAppTemplates } from '../services/whatsapp.js';
 
 const router = Router();
@@ -88,6 +89,12 @@ router.put('/profiles/:id', admin, wrap(async (req, res) => {
 }));
 
 /* ---------- the team, the inbox, the pipeline ---------- */
+
+// Aisha, Omar, Layla and Sam, with their jobs and permissions. Safe to run
+// again: it updates what is here and keeps an admin's edits.
+router.post('/seed-team', admin, wrap(async (req, res) => {
+    res.json({ team: await seedStarterTeam({ force: req.body?.force === true }) });
+}));
 
 router.get('/team', wrap(async (_req, res) => {
     const agents = await teamStats();

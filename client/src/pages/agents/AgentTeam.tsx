@@ -16,6 +16,11 @@ export default function AgentTeam() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['agents'] }),
     onError: (e) => alert(apiError(e)),
   })
+  const seed = useMutation({
+    mutationFn: agentsApi.seedTeam,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agents'] }),
+    onError: (e) => alert(apiError(e)),
+  })
   const agents = data?.agents.filter((a) => a.isActive) || []
   const buckets = data?.buckets || []
   const ownerOf = (b: string) => agents.find((a) => a.mode !== 'off' && a.ownsBuckets.includes(b as Bucket))
@@ -29,7 +34,13 @@ export default function AgentTeam() {
       {isLoading ? <Spinner /> : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
-            {agents.length === 0 && <Note>No agents yet. Onboard the first one — it takes five steps.</Note>}
+            {agents.length === 0 && (
+              <Panel style={{ gridColumn: '1 / -1', display: 'grid', gap: 8 }}>
+                <b>No agents yet.</b>
+                <span style={{ fontSize: 13, color: C.second }}>Start with the four-agent team — Aisha answers first, Omar follows up, Layla closes, Sam looks after tenants — each with its job and permissions already set. Or onboard one from scratch.</span>
+                <div><Button size="sm" disabled={seed.isPending} onClick={() => seed.mutate()}>{seed.isPending ? 'Adding…' : 'Add the starter team'}</Button></div>
+              </Panel>
+            )}
             {agents.map((a) => (
               <Panel key={a._id} style={{ display: 'grid', gap: 8, borderTop: `4px solid ${agentColor(a)}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
