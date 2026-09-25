@@ -77,6 +77,8 @@ import agreementTemplateRoutes from './routes/agreementTemplate.js';
 import automationRuleRoutes from './routes/automationRules.js';
 import taskRoutes from './routes/tasks.js';
 import salesGoalRoutes from './routes/salesGoals.js';
+import agentRoutes from './agents/routes.js';
+import { runAgentTick } from './agents/service.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import myDayRoutes from './routes/myDay.js';
 import leadFollowUpRoutes from './routes/leadFollowUp.js';
@@ -329,6 +331,9 @@ app.use('/api/agreement-template', requireAuth, agreementTemplateRoutes);
 app.use('/api/automation-rules', requireAuth, automationRuleRoutes);
 app.use('/api/tasks', requireAuth, taskRoutes);
 app.use('/api/sales-goals', requireAuth, salesGoalRoutes);
+// The AI sales agents: profiles, lead files, buckets, the action log. A
+// separate module; shadow mode only in this prototype, nothing sends.
+app.use('/api/agents', requireAuth, agentRoutes);
 // Signed in is enough: a board only the manager can see recognises nobody.
 app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
 app.use('/api/my-day', requireAuth, myDayRoutes);
@@ -445,6 +450,15 @@ async function start() {
   setTimeout(() => setInterval(() => {
     runAiBotTick().catch((e) => console.error('[AI bot]', e.message));
   }, AI_BOT_INTERVAL), 20_000);
+
+  // The sales agents' clock: due follow-up touches, silence into Quiet,
+  // exhausted cadences falling through. A minute is plenty — the shortest
+  // cadence is a day. Does nothing until an agent exists in shadow mode.
+  setTimeout(() => setInterval(() => {
+    runAgentTick().then((out) => {
+      if (out.proposed || out.silenced || out.exhausted) console.log(`[Agents] ${out.proposed} touch(es) proposed, ${out.silenced} went quiet, ${out.exhausted} exhausted`);
+    }).catch((e) => console.error('[Agents]', e.message));
+  }, 60_000), 30_000);
 
   // Keep the inbox summaries current, so "hot leads" answers about today
   // rather than about whichever chats somebody happened to open. Only

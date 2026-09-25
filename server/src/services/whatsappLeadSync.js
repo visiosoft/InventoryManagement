@@ -557,6 +557,14 @@ async function persistMessages(messages) {
                         mediaId: mediaFromRaw(msg.raw)?.id || '',
                     });
                 } catch { /* the assistant must never break message delivery */ }
+                // The sales agent's file on this lead: any reply comes back
+                // to Engaged and cancels scheduled touches; a draft reply is
+                // logged. Shadow mode only — nothing is sent from here. Same
+                // rule as above: it must never break message delivery.
+                try {
+                    const { onInbound } = await import('../agents/service.js');
+                    await onInbound({ phoneNormalized: msg.phoneNormalized, text: msg.text, occurredAt: msg.occurredAt });
+                } catch (e) { console.error('[Agents] inbound:', e?.message || e); }
             }
         } else {
             // A new outbound message we did not send ourselves is a colleague

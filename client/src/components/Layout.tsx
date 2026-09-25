@@ -76,6 +76,7 @@ const profileMenuGroups = [
       { to: '/settings/lead-distribution', label: 'Lead Distribution', icon: Shuffle, perm: 'settings', adminOnly: true },
       { to: '/settings/sent-emails', label: 'Sent Emails', icon: Mail, perm: 'settings', adminOnly: true },
       { to: '/marketing', label: 'Marketing', icon: Megaphone, perm: 'settings', adminOnly: true },
+      { to: '/agents', label: 'AI Agents', icon: Bot, perm: 'settings', adminOnly: true },
     ],
   },
   {
