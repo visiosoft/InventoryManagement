@@ -166,7 +166,12 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
     if (!persist) return result;
 
     // ---- persist the working copy, then log what happened, in order ----
-    const detail = { system, messages, toolCalls: toolLog, rawContent: content, model: result.model, promptVersion: agent.promptVersion, usage, grounded };
+    const detail = {
+        system, messages, toolCalls: toolLog, rawContent: content, model: result.model, promptVersion: agent.promptVersion, usage, grounded,
+        // What the inbox shows and what "approve" sends: kept whole here,
+        // since the summary line is truncated.
+        customerText: isTouch ? '' : String(trigger.text || ''), reply, template: ctx.changes.template || null,
+    };
     const apply = (fields) => { for (const [k, v] of Object.entries(fields)) leadFile[k] = v; };
 
     if (ctx.changes.leadFile) {

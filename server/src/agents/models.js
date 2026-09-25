@@ -36,6 +36,17 @@ export const AGENT_TOOLS = [
 
 const agentProfileSchema = new Schema({
     name: { type: String, required: true, trim: true },
+    // The job in two words — "First response", "Follow-ups", "Closing".
+    role: { type: String, default: '', trim: true },
+    // Which buckets this agent owns. A bucket has at most one owner; a lead
+    // entering a bucket someone else owns is handed to them (see service.js).
+    ownsBuckets: { type: [String], default: [] },
+    languages: { type: [String], default: [] },
+    // The router's fallback when no rule matches. Exactly one agent should
+    // have it; the first created gets it by default.
+    isDefault: { type: Boolean, default: false },
+    dailyBudgetAed: { type: Number, default: 0 },
+    avatarColor: { type: String, default: '' },
     // The job description. Versioned: bumped on every save that changes it,
     // so an action can always say which instructions produced it.
     systemPrompt: { type: String, default: '' },
@@ -108,11 +119,18 @@ export const ACTION_KINDS = [
     'offer_noted',
     'escalated',
     'handed_back',
+    'handoff',          // ownership moved to another agent at a bucket boundary
     'frozen',
     'resumed',
     'reverted',
     'skipped',
+    'approved',         // a person sent a draft as written
+    'edited',           // a person changed a draft, then sent it
+    'dismissed',        // a person threw a draft or proposal away
 ];
+
+/** How a person answered a draft or a proposed touch. */
+export const RESOLUTIONS = ['approved', 'edited', 'dismissed', 'skipped'];
 
 const agentActionSchema = new Schema({
     agent: { type: Schema.Types.ObjectId, ref: 'AgentProfile', index: true },
@@ -136,7 +154,15 @@ const agentActionSchema = new Schema({
     actor: { type: String, enum: ['agent', 'person', 'system'], default: 'agent' },
     user: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     at: { type: Date, default: Date.now, index: true },
+    // For drafts and proposed touches: what a person did with it. Null
+    // means it is still waiting in the inbox.
+    resolution: { type: String, enum: [...RESOLUTIONS, null], default: null },
+    resolvedAt: { type: Date, default: null },
+    resolvedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // The text that actually went out, when a person edited the draft.
+    sentText: { type: String, default: '' },
 });
+agentActionSchema.index({ kind: 1, resolution: 1, at: -1 });
 
 export const AgentProfile = model('AgentProfile', agentProfileSchema);
 export const AgentLeadFile = model('AgentLeadFile', agentLeadFileSchema);

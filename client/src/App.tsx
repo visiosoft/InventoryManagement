@@ -91,8 +91,12 @@ import AssistantSettings from './pages/AssistantSettings'
 import Marketing from './pages/Marketing'
 import SentEmails from './pages/SentEmails'
 import Backup from './pages/Backup'
-import AgentDesk from './pages/agents/AgentDesk'
-import AgentProfiles from './pages/agents/AgentProfiles'
+import AgentInbox from './pages/agents/AgentInbox'
+import AgentPipeline from './pages/agents/AgentPipeline'
+import AgentLead from './pages/agents/AgentLead'
+import AgentTeam from './pages/agents/AgentTeam'
+import AgentOnboarding from './pages/agents/AgentOnboarding'
+import AgentPage from './pages/agents/AgentPage'
 import AuditLogReport from './pages/AuditLogReport'
 import Leads from './pages/Leads'
 import SalesBoard from './pages/SalesBoard'
@@ -265,8 +269,12 @@ export default function App() {
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
         <Route path="/tasks" element={<TasksGuard><Tasks /></TasksGuard>} />
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />
-        <Route path="/agents" element={<AdminGuard><AgentDesk /></AdminGuard>} />
-        <Route path="/agents/profiles" element={<AdminGuard><AgentProfiles /></AdminGuard>} />
+        <Route path="/agents" element={<AdminGuard><AgentInbox /></AdminGuard>} />
+        <Route path="/agents/pipeline" element={<AdminGuard><AgentPipeline /></AdminGuard>} />
+        <Route path="/agents/team" element={<AdminGuard><AgentTeam /></AdminGuard>} />
+        <Route path="/agents/leads/:leadId" element={<AdminGuard><AgentLead /></AdminGuard>} />
+        <Route path="/agents/profiles/:id" element={<AdminGuard><AgentOnboarding /></AdminGuard>} />
+        <Route path="/agents/:agentId" element={<AdminGuard><AgentPage /></AdminGuard>} />
         <Route path="/audit-log" element={<AdminGuard><AuditLogReport /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/templates" element={<AdminGuard><MessageTemplates /></AdminGuard>} />
