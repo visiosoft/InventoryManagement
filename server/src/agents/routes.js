@@ -11,6 +11,8 @@ import { runAgent, findLead, cadenceFor } from './runtime.js';
 import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor } from './service.js';
 import { record, revert, snapshotOf } from './log.js';
 import { seedStarterTeam } from './seed.js';
+import { agentStats, startRehearsal, reviewAgent } from './insights.js';
+import { AgentRehearsal, AgentReview } from './models.js';
 import { listWhatsAppTemplates } from '../services/whatsapp.js';
 
 const router = Router();
@@ -137,6 +139,47 @@ router.get('/pipeline', wrap(async (req, res) => {
             };
         }),
     });
+}));
+
+/* ---------- one agent: how it is doing ---------- */
+
+async function agentById(id) {
+    const profiles = await team();
+    return profiles.find((p) => String(p._id) === String(id)) || null;
+}
+
+router.get('/:id/stats', wrap(async (req, res) => {
+    const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
+    const [stats, rehearsals, reviews] = await Promise.all([
+        agentStats(req.params.id, { days }),
+        AgentRehearsal.find({ agent: req.params.id }).sort({ startedAt: -1 }).limit(3).lean(),
+        AgentReview.find({ agent: req.params.id }).sort({ at: -1 }).limit(3).lean(),
+    ]);
+    res.json({ stats, rehearsals, reviews });
+}));
+
+router.post('/:id/rehearse', admin, wrap(async (req, res) => {
+    const agent = await agentById(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'No such agent' });
+    const running = await AgentRehearsal.findOne({ agent: agent._id, status: 'running' }).lean();
+    if (running) return res.json({ rehearsal: running, alreadyRunning: true });
+    const conversations = Math.min(25, Math.max(1, Number(req.body?.conversations) || 8));
+    const turns = Math.min(5, Math.max(1, Number(req.body?.turns) || 3));
+    const doc = await startRehearsal(agent, { conversations, turns });
+    res.status(202).json({ rehearsal: doc });
+}));
+
+router.get('/:id/rehearsals/:rid', wrap(async (req, res) => {
+    const doc = await AgentRehearsal.findOne({ _id: req.params.rid, agent: req.params.id }).lean();
+    if (!doc) return res.status(404).json({ error: 'No such rehearsal' });
+    res.json(doc);
+}));
+
+router.post('/:id/review', admin, wrap(async (req, res) => {
+    const agent = await agentById(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'No such agent' });
+    const days = Math.min(365, Math.max(1, Number(req.body?.days) || 30));
+    res.status(201).json(await reviewAgent(agent, { days }));
 }));
 
 /* ---------- one lead ---------- */

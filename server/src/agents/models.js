@@ -164,6 +164,66 @@ const agentActionSchema = new Schema({
 });
 agentActionSchema.index({ kind: 1, resolution: 1, at: -1 });
 
+/* A rehearsal: past conversations replayed through an agent, turn by turn,
+   with what a person actually replied at the time beside each draft.
+   Nothing is sent and no lead file is touched. */
+const rehearsalTurnSchema = new Schema({
+    lead: { type: Schema.Types.ObjectId, ref: 'Lead' },
+    leadName: { type: String, default: '' },
+    at: { type: Date },
+    customerText: { type: String, default: '' },
+    agentReply: { type: String, default: '' },
+    needsHuman: { type: Boolean, default: false },
+    reason: { type: String, default: '' },
+    groundedOk: { type: Boolean, default: true },
+    loose: { type: [String], default: [] },
+    tools: { type: [String], default: [] },
+    humanReply: { type: String, default: '' },
+    error: { type: String, default: '' },
+}, { _id: false });
+
+const agentRehearsalSchema = new Schema({
+    agent: { type: Schema.Types.ObjectId, ref: 'AgentProfile', index: true },
+    promptVersion: { type: Number, default: 1 },
+    model: { type: String, default: '' },
+    status: { type: String, enum: ['running', 'done', 'failed'], default: 'running' },
+    params: { conversations: Number, turns: Number },
+    progress: { done: { type: Number, default: 0 }, total: { type: Number, default: 0 } },
+    turns: { type: [rehearsalTurnSchema], default: [] },
+    summary: {
+        turns: { type: Number, default: 0 },
+        grounded: { type: Number, default: 0 },
+        handedOver: { type: Number, default: 0 },
+        withHumanReply: { type: Number, default: 0 },
+        conversations: { type: Number, default: 0 },
+    },
+    error: { type: String, default: '' },
+    startedAt: { type: Date, default: Date.now },
+    finishedAt: { type: Date, default: null },
+});
+
+/* A manager's review of an agent, written by the model from the agent's
+   own record: the numbers, the drafts people changed or threw away, the
+   hand-overs, and the latest rehearsal. */
+const agentReviewSchema = new Schema({
+    agent: { type: Schema.Types.ObjectId, ref: 'AgentProfile', index: true },
+    promptVersion: { type: Number, default: 1 },
+    model: { type: String, default: '' },
+    periodDays: { type: Number, default: 30 },
+    stats: { type: Schema.Types.Mixed, default: null },
+    rehearsal: { type: Schema.Types.ObjectId, ref: 'AgentRehearsal', default: null },
+    review: {
+        summary: { type: String, default: '' },
+        grade: { type: String, default: '' },
+        strengths: { type: [String], default: [] },
+        weaknesses: { type: [String], default: [] },
+        suggestions: { type: [{ section: String, change: String, why: String, text: String, _id: false }], default: [] },
+    },
+    at: { type: Date, default: Date.now },
+});
+
 export const AgentProfile = model('AgentProfile', agentProfileSchema);
+export const AgentRehearsal = model('AgentRehearsal', agentRehearsalSchema);
+export const AgentReview = model('AgentReview', agentReviewSchema);
 export const AgentLeadFile = model('AgentLeadFile', agentLeadFileSchema);
 export const AgentAction = model('AgentAction', agentActionSchema);

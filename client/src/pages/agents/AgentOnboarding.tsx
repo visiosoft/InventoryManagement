@@ -3,33 +3,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Save, Zap } from 'lucide-react'
 import { apiError } from '../../lib/api'
-import { agentsApi, AGENT_COLORS, type AgentProfile, type Decision, type OwnableBucket } from '../../lib/agentsApi'
+import { agentsApi, AGENT_COLORS, JOB_SECTIONS as JOB, composeJob as compose, parseJob as parse, type AgentProfile, type Decision, type OwnableBucket, type JobParts } from '../../lib/agentsApi'
 import { Button, Field, Input, PageHeader, Select, Spinner, Textarea } from '../../components/ui'
 import { AgentNav, Avatar, C, DecisionView, Eyebrow, Note, Panel, Pill, Tag } from './ui'
 
 const STEPS = ['Identity', 'The job', 'Permissions', 'Training', 'On duty'] as const
-const JOB: { key: 'who' | 'talk' | 'sell' | 'hand'; label: string; hint: string }[] = [
-  { key: 'who', label: 'Who you are', hint: 'Name, company, the channel. One or two lines.' },
-  { key: 'talk', label: 'How you talk', hint: 'Tone, length, one question at a time.' },
-  { key: 'sell', label: 'What you sell', hint: 'Units, billing, the rule to always check with tools before quoting.' },
-  { key: 'hand', label: 'When you hand over', hint: 'Contracts, invoices, payments, discounts, complaints, "can I speak to someone".' },
-]
-const STARTER = {
+const STARTER: JobParts = {
   who: 'Aisha, the sales assistant for PurpleBox Storage in Dubai, on WhatsApp.',
   talk: 'Brief and warm. A few short lines, one question at a time. Never ask what the lead file already answers, never re-introduce yourself mid-conversation.',
   sell: 'Self-storage units from 25 to 200 sqft, billed every 4 weeks. Always check availability and price with your tools before quoting. When they are ready, give a full written quotation.',
   hand: 'Existing contracts, invoices, payments, complaints, any discount request, or when they ask for a person.',
-}
-const compose = (p: typeof STARTER) => JOB.map((j) => `## ${j.label}\n${p[j.key].trim()}`).join('\n\n')
-const parse = (prompt: string): typeof STARTER => {
-  const out = { who: '', talk: '', sell: '', hand: '' }
-  const parts = prompt.split(/^## (.+)$/m)
-  if (parts.length < 3) return { ...out, who: prompt }
-  for (let i = 1; i < parts.length; i += 2) {
-    const j = JOB.find((x) => x.label === parts[i].trim())
-    if (j) out[j.key] = (parts[i + 1] || '').trim()
-  }
-  return out
 }
 
 const CAPS: { tier: string; tone: 'ok' | 'amber' | 'danger'; hint: string; items: { tool: string; name: string; hint: string; shadow?: string }[] }[] = [
@@ -48,7 +31,7 @@ const CAPS: { tier: string; tone: 'ok' | 'amber' | 'danger'; hint: string; items
 ]
 
 type Draft = {
-  name: string; role: string; avatarColor: string; model: string; job: typeof STARTER; enabledTools: string[]
+  name: string; role: string; avatarColor: string; model: string; job: JobParts; enabledTools: string[]
   ownsBuckets: OwnableBucket[]; languages: string; whatsappNumbers: string; escalateTo: string; dailyBudgetAed: number; mode: 'off' | 'shadow'; syncLeadStatus: boolean; isDefault: boolean
 }
 const MODELS = [['', 'Same as the server'], ['gpt-4o-mini', 'gpt-4o-mini — cheapest'], ['gpt-4.1-mini', 'gpt-4.1-mini'], ['gpt-4.1', 'gpt-4.1'], ['gpt-6-luna', 'gpt-6-luna — cheaper than gpt-4o-mini, untested here'], ['gpt-6-sol', 'gpt-6-sol — newer, untested here']]

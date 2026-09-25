@@ -108,6 +108,53 @@ export interface SimulateResponse { lead: LeadRef; agent: { _id: string; name: s
 
 export type Resolution = 'approved' | 'edited' | 'dismissed' | 'skipped'
 
+export interface AgentStats {
+  days: number
+  leadsInCare: number; peopleApproached: number; peopleApproachedAllTime: number
+  drafts: number; touchesProposed: number; approved: number; edited: number; dismissed: number; judged: number; approvedRate: number | null
+  handedOver: number; handedIn: number; reverted: number
+  handovers: { key: string; label: string; n: number }[]
+  cameBack: number; toQuoted: number; toBooking: number; won: number
+  buckets: Partial<Record<Bucket, number>>
+  series: { day: string; drafted: number; approved: number; edited: number; dismissed: number }[]
+}
+export interface RehearsalTurn {
+  lead: string; leadName: string; at: string; customerText: string; agentReply: string; needsHuman: boolean; reason: string
+  groundedOk: boolean; loose: string[]; tools: string[]; humanReply: string; error: string
+}
+export interface Rehearsal {
+  _id: string; promptVersion: number; model: string; status: 'running' | 'done' | 'failed'
+  params: { conversations: number; turns: number }; progress: { done: number; total: number }; turns: RehearsalTurn[]
+  summary: { turns: number; grounded: number; handedOver: number; withHumanReply: number; conversations: number }
+  error: string; startedAt: string; finishedAt: string | null
+}
+export type JobSection = 'who' | 'talk' | 'sell' | 'hand'
+export interface Review {
+  _id: string; promptVersion: number; model: string; periodDays: number; at: string
+  review: { summary: string; grade: string; strengths: string[]; weaknesses: string[]; suggestions: { section: JobSection; change: string; why: string; text: string }[] }
+}
+export interface AgentInsights { stats: AgentStats; rehearsals: Rehearsal[]; reviews: Review[] }
+
+/** The instructions are four sections; the onboarding form edits them one at a time. */
+export const JOB_SECTIONS: { key: JobSection; label: string; hint: string }[] = [
+  { key: 'who', label: 'Who you are', hint: 'Name, company, the channel. One or two lines.' },
+  { key: 'talk', label: 'How you talk', hint: 'Tone, length, one question at a time.' },
+  { key: 'sell', label: 'What you sell', hint: 'Units, billing, the rule to always check with tools before quoting.' },
+  { key: 'hand', label: 'When you hand over', hint: 'Contracts, invoices, payments, discounts, complaints, "can I speak to someone".' },
+]
+export type JobParts = Record<JobSection, string>
+export const composeJob = (p: JobParts) => JOB_SECTIONS.map((j) => `## ${j.label}\n${p[j.key].trim()}`).join('\n\n')
+export const parseJob = (prompt: string): JobParts => {
+  const out: JobParts = { who: '', talk: '', sell: '', hand: '' }
+  const parts = prompt.split(/^## (.+)$/m)
+  if (parts.length < 3) return { ...out, who: prompt }
+  for (let i = 1; i < parts.length; i += 2) {
+    const j = JOB_SECTIONS.find((x) => x.label === parts[i].trim())
+    if (j) out[j.key] = (parts[i + 1] || '').trim()
+  }
+  return out
+}
+
 export const agentsApi = {
   team: () => api.get<TeamResponse>('/agents/team').then((r) => r.data),
   inbox: (agent?: string) => api.get<InboxResponse>('/agents/inbox', { params: agent ? { agent } : {} }).then((r) => r.data),
@@ -126,6 +173,10 @@ export const agentsApi = {
     api.post<SimulateResponse>('/agents/simulate', body).then((r) => r.data),
   tick: () => api.post<{ proposed: number; exhausted: number; silenced: number; failed: number }>('/agents/tick').then((r) => r.data),
   seedTeam: () => api.post<{ team: { name: string; result: string; escalateTo: boolean }[] }>('/agents/seed-team').then((r) => r.data),
+  insights: (agentId: string, days = 30) => api.get<AgentInsights>(`/agents/${agentId}/stats`, { params: { days } }).then((r) => r.data),
+  rehearse: (agentId: string, params: { conversations?: number; turns?: number } = {}) => api.post<{ rehearsal: Rehearsal; alreadyRunning?: boolean }>(`/agents/${agentId}/rehearse`, params).then((r) => r.data),
+  rehearsal: (agentId: string, rid: string) => api.get<Rehearsal>(`/agents/${agentId}/rehearsals/${rid}`).then((r) => r.data),
+  review: (agentId: string, days = 30) => api.post<Review>(`/agents/${agentId}/review`, { days }).then((r) => r.data),
   templates: () => api.get<{ configured: boolean; error: string; templates: { name: string; language: string; bodyText: string }[] }>('/agents/templates').then((r) => r.data),
 }
 

@@ -82,9 +82,11 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
         ctx.templates = templates.filter((t) => t.status === 'APPROVED').map((t) => ({ name: t.name, language: t.language, bodyText: t.bodyText, variableCount: t.variableCount }));
     }
 
+    // A rehearsal replays the past: history stops at the moment being
+    // replayed, so the agent cannot see what happened next.
     const history = await WhatsAppMessage.find({
         phoneNormalized: leadFile.phoneNormalized,
-        occurredAt: { $gte: new Date(now.getTime() - HISTORY_DAYS * 86_400_000) },
+        occurredAt: { $gte: new Date(now.getTime() - HISTORY_DAYS * 86_400_000), ...(trigger.until ? { $lte: new Date(trigger.until) } : {}) },
         $or: [{ type: 'text', text: { $ne: '' } }, { transcript: { $ne: '' } }],
     }).sort({ occurredAt: -1 }).limit(HISTORY_TURNS).select('direction text transcript').lean();
     const messages = historyToMessages(history.reverse(), isTouch ? '' : trigger.text);
