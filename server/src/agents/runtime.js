@@ -40,6 +40,19 @@ const RULES = [
     '- Keep a reply under 600 characters, written as a WhatsApp message.',
 ].join('\n');
 
+/** Real corrections a person taught it from a rehearsal (insights.js's
+ *  teachFromRehearsal) — the closest thing this prototype has to training,
+ *  short of a fine-tune. Newest few only: enough to set a tone, not so many
+ *  that the prompt balloons. */
+function trainingExamplesBlock(agent) {
+    const examples = (agent.trainingExamples || []).slice(0, 6);
+    if (!examples.length) return '';
+    return [
+        'EXAMPLES OF REPLIES A PERSON CORRECTED — match this tone and phrasing when the situation is similar:',
+        ...examples.map((e) => `- Customer: "${e.customerText}" → You: "${e.reply}"`),
+    ].join('\n');
+}
+
 function leadFileBlock(file, lead, cadence) {
     const n = file.need || {};
     const lines = [
@@ -106,8 +119,9 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
         'FACTS YOU MAY USE — everything below is from the live system:',
         facts.text || '(no unit data available)',
         RULES,
+        trainingExamplesBlock(agent),
         task,
-    ].join('\n\n');
+    ].filter(Boolean).join('\n\n');
 
     const defs = agentTools(agent.enabledTools);
     const tools = toOpenAiTools(defs);

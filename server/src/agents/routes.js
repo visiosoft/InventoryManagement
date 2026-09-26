@@ -12,7 +12,7 @@ import { runAgent, findLead, cadenceFor } from './runtime.js';
 import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads } from './service.js';
 import { record, revert, snapshotOf } from './log.js';
 import { seedStarterTeam } from './seed.js';
-import { agentStats, startRehearsal, reviewAgent } from './insights.js';
+import { agentStats, startRehearsal, reviewAgent, teachFromRehearsal } from './insights.js';
 import { AgentRehearsal, AgentReview } from './models.js';
 import { listWhatsAppTemplates } from '../services/whatsapp.js';
 
@@ -229,6 +229,16 @@ router.get('/:id/rehearsals/:rid', wrap(async (req, res) => {
     const doc = await AgentRehearsal.findOne({ _id: req.params.rid, agent: req.params.id }).lean();
     if (!doc) return res.status(404).json({ error: 'No such rehearsal' });
     res.json(doc);
+}));
+
+// A rehearsal turn's draft was wrong — a person's own rough answer, cleaned
+// up and kept as a real training example for every future reply.
+router.post('/:id/rehearsals/:rid/turns/:index/train', admin, wrap(async (req, res) => {
+    const agent = await agentById(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'No such agent' });
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0) throw new Error('Bad turn number');
+    res.json(await teachFromRehearsal(agent, req.params.rid, index, req.body?.text || ''));
 }));
 
 router.post('/:id/review', admin, wrap(async (req, res) => {

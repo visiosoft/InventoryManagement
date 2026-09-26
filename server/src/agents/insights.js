@@ -13,7 +13,7 @@
  */
 
 import { Lead, WhatsAppMessage } from '../models/index.js';
-import { AgentAction, AgentLeadFile, AgentRehearsal, AgentReview } from './models.js';
+import { AgentAction, AgentLeadFile, AgentProfile, AgentRehearsal, AgentReview } from './models.js';
 import { chatJson, openaiConfigured, openaiModel } from '../services/openai.js';
 import { runAgent } from './runtime.js';
 import { freshState, BUCKETS } from './buckets.js';
@@ -144,6 +144,49 @@ export async function startRehearsal(agent, { conversations = 8, turns = 3, now 
         await doc.save();
     })();
     return doc;
+}
+
+/* ---------- teaching it from a rehearsal ---------- */
+
+const POLISH_SYSTEM = [
+    'You clean up a rough reply a salesperson typed by hand into a short, correct WhatsApp message.',
+    'Fix grammar and spelling only. Keep the meaning and every fact exactly as given — never add a price, date, unit or promise that was not in the rough text.',
+    'Match a brief, warm WhatsApp tone: a few short lines, no corporate phrasing, no greeting if the conversation has already started.',
+    'Reply with JSON only: {"reply": string}',
+].join('\n');
+
+/**
+ * A person reads a rehearsal turn, decides the agent's draft was wrong, and
+ * types roughly what they would have said instead — this polishes that into
+ * clean wording (same facts, correct English) and keeps it two places: on
+ * the turn itself, for the record, and as a training example on the agent,
+ * so every future reply is composed with real corrections as a style guide
+ * (see runtime.js's trainingExamplesBlock). Newest 20 kept, oldest dropped.
+ */
+export async function teachFromRehearsal(agent, rehearsalId, turnIndex, roughText) {
+    const rehearsal = await AgentRehearsal.findOne({ _id: rehearsalId, agent: agent._id });
+    if (!rehearsal) throw new Error('No such rehearsal');
+    const turn = rehearsal.turns[turnIndex];
+    if (!turn) throw new Error('No such turn');
+    const text = String(roughText || '').trim();
+    if (!text) throw new Error('Write the reply you would actually send');
+
+    let polished = text;
+    if (openaiConfigured()) {
+        const parsed = await chatJson({
+            system: POLISH_SYSTEM,
+            messages: [{ role: 'user', content: `Customer wrote: "${turn.customerText}"\n\nRough reply to clean up: "${text}"` }],
+            maxTokens: 300, temperature: 0.2,
+        }).catch(() => null);
+        if (parsed?.reply) polished = String(parsed.reply).trim();
+    }
+
+    turn.correctedReply = polished;
+    await rehearsal.save();
+    await AgentProfile.updateOne({ _id: agent._id }, {
+        $push: { trainingExamples: { $each: [{ customerText: turn.customerText, reply: polished, addedAt: new Date() }], $position: 0, $slice: 20 } },
+    });
+    return { correctedReply: polished };
 }
 
 /* ---------- the review ---------- */

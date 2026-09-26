@@ -24,7 +24,29 @@ function Bars({ series }: { series: { day: string; drafted: number; approved: nu
   )
 }
 
-function RehearsalView({ r, agentName }: { r: Rehearsal; agentName: string }) {
+function TeachRow({ agentId, rehearsalId, turnIndex, correctedReply }: { agentId: string; rehearsalId: string; turnIndex: number; correctedReply?: string }) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [saved, setSaved] = useState(correctedReply || '')
+  const teach = useMutation({
+    mutationFn: () => agentsApi.teachFromRehearsal(agentId, rehearsalId, turnIndex, text),
+    onSuccess: (r) => { setSaved(r.correctedReply); setOpen(false); setText('') },
+  })
+  if (saved) return <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 8, background: C.okSoft, fontSize: 12 }}><b style={{ color: C.ok }}>Taught:</b> {saved}</div>
+  if (!open) return <button onClick={() => setOpen(true)} style={{ marginTop: 6, border: 'none', background: 'none', cursor: 'pointer', color: C.purple, fontSize: 11.5, fontWeight: 700, padding: 0 }}>Not quite — teach it the right answer</button>
+  return (
+    <div style={{ marginTop: 6, display: 'grid', gap: 6 }}>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Write roughly what you'd actually say — grammar doesn't matter, it gets cleaned up." rows={2}
+        style={{ fontSize: 12.5, padding: '6px 8px', borderRadius: 8, border: `1px solid ${C.line}`, fontFamily: 'inherit', resize: 'vertical' }} />
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={() => teach.mutate()} disabled={teach.isPending || !text.trim()} style={{ border: 'none', borderRadius: 999, padding: '4px 10px', fontSize: 11.5, fontWeight: 700, background: C.purple, color: '#fff', cursor: 'pointer' }}>{teach.isPending ? 'Teaching…' : 'Save as training example'}</button>
+        <button onClick={() => { setOpen(false); setText('') }} style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.muted, fontSize: 11.5 }}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+function RehearsalView({ r, agentName, agentId }: { r: Rehearsal; agentName: string; agentId: string }) {
   const done = r.status === 'done'
   return (
     <div style={{ display: 'grid', gap: 10 }}>
@@ -42,10 +64,16 @@ function RehearsalView({ r, agentName }: { r: Rehearsal; agentName: string }) {
       {r.turns.length > 0 && (
         <div style={{ display: 'grid', gap: 8 }}>
           {r.turns.slice(0, 40).map((t, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, padding: '10px 12px', border: `1px solid ${C.line}`, borderRadius: 10, background: C.card, fontSize: 12.5 }} className="rehearsal-row">
-              <div><div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}><Link to={`/agents/leads/${t.lead}`} style={{ color: C.muted }}>{t.leadName}</Link> · {fmtTime(t.at)}</div><div style={{ color: C.second, whiteSpace: 'pre-line' }}>"{t.customerText}"</div></div>
-              <div><div style={{ fontSize: 11, color: agentColor({ name: agentName }), fontWeight: 700, marginBottom: 3 }}>{agentName} would say {t.needsHuman ? <Tag tone="danger">hand over</Tag> : null}{!t.groundedOk ? <Tag tone="amber">figure not backed</Tag> : null}</div><div style={{ whiteSpace: 'pre-line' }}>{t.error ? <span style={{ color: C.danger }}>{t.error}</span> : t.agentReply || <i style={{ color: C.muted }}>{t.reason || 'no reply'}</i>}</div></div>
-              <div><div style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 3 }}>your rep said</div><div style={{ color: C.second, whiteSpace: 'pre-line' }}>{t.humanReply || <i style={{ color: C.muted }}>no reply recorded</i>}</div></div>
+            <div key={i} style={{ padding: '10px 12px', border: `1px solid ${C.line}`, borderRadius: 10, background: C.card, fontSize: 12.5 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }} className="rehearsal-row">
+                <div><div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}><Link to={`/agents/leads/${t.lead}`} style={{ color: C.muted }}>{t.leadName}</Link> · {fmtTime(t.at)}</div><div style={{ color: C.second, whiteSpace: 'pre-line' }}>"{t.customerText}"</div></div>
+                <div>
+                  <div style={{ fontSize: 11, color: agentColor({ name: agentName }), fontWeight: 700, marginBottom: 3 }}>{agentName} would say {t.needsHuman ? <Tag tone="danger">hand over</Tag> : null}{!t.groundedOk ? <Tag tone="amber">figure not backed</Tag> : null}</div>
+                  <div style={{ whiteSpace: 'pre-line' }}>{t.error ? <span style={{ color: C.danger }}>{t.error}</span> : t.agentReply || <i style={{ color: C.muted }}>{t.reason || 'no reply'}</i>}</div>
+                  {!t.error && <TeachRow agentId={agentId} rehearsalId={r._id} turnIndex={i} correctedReply={t.correctedReply} />}
+                </div>
+                <div><div style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 3 }}>your rep said</div><div style={{ color: C.second, whiteSpace: 'pre-line' }}>{t.humanReply || <i style={{ color: C.muted }}>no reply recorded</i>}</div></div>
+              </div>
             </div>
           ))}
         </div>
@@ -176,7 +204,7 @@ export default function AgentPage() {
                 <div><Eyebrow>Rehearsal</Eyebrow><p style={{ margin: 0, fontSize: 13, color: C.second }}>Replay real past conversations through {a.name} and read its draft beside what your rep actually said. Nothing is sent, nothing is saved to a lead.</p></div>
                 <Button size="sm" disabled={rehearse.isPending || latestRehearsal?.status === 'running'} onClick={() => rehearse.mutate()}><PlayCircle size={13} /> {latestRehearsal?.status === 'running' ? 'Running…' : 'Rehearse on 8 conversations'}</Button>
               </div>
-              <div style={{ marginTop: 12 }}>{latestRehearsal ? <RehearsalView r={latestRehearsal} agentName={a.name} /> : <Note>No rehearsal yet.</Note>}</div>
+              <div style={{ marginTop: 12 }}>{latestRehearsal ? <RehearsalView r={latestRehearsal} agentName={a.name} agentId={agentId} /> : <Note>No rehearsal yet.</Note>}</div>
             </Panel>
           </div>
 

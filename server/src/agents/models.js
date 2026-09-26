@@ -94,6 +94,19 @@ const agentProfileSchema = new Schema({
     // statuses stay theirs. Turn on when the agent's buckets are trusted.
     syncLeadStatus: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
+    // Corrected examples a person taught it from a rehearsal — a customer
+    // message beside the reply a person actually wanted, in clean English.
+    // Fed into every future turn as a style reference (see runtime.js's
+    // trainingExamplesBlock). Capped and newest-first: see insights.js's
+    // teachFromRehearsal, the only writer.
+    trainingExamples: {
+        type: [{
+            customerText: { type: String, default: '' },
+            reply: { type: String, default: '' },
+            addedAt: { type: Date, default: Date.now },
+        }],
+        default: [],
+    },
 }, { timestamps: true });
 agentProfileSchema.plugin(softDeletePlugin);
 
@@ -205,6 +218,9 @@ const rehearsalTurnSchema = new Schema({
     tools: { type: [String], default: [] },
     humanReply: { type: String, default: '' },
     error: { type: String, default: '' },
+    // A person's own corrected reply for this turn, polished into clean
+    // English and matching the agent's voice — see the /train route.
+    correctedReply: { type: String, default: '' },
 }, { _id: false });
 
 const agentRehearsalSchema = new Schema({

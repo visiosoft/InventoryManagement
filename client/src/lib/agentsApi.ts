@@ -137,7 +137,7 @@ export interface AgentStats {
 }
 export interface RehearsalTurn {
   lead: string; leadName: string; at: string; customerText: string; agentReply: string; needsHuman: boolean; reason: string
-  groundedOk: boolean; loose: string[]; tools: string[]; humanReply: string; error: string
+  groundedOk: boolean; loose: string[]; tools: string[]; humanReply: string; error: string; correctedReply?: string
 }
 export interface Rehearsal {
   _id: string; promptVersion: number; model: string; status: 'running' | 'done' | 'failed'
@@ -196,6 +196,7 @@ export const agentsApi = {
   insights: (agentId: string, days = 30) => api.get<AgentInsights>(`/agents/${agentId}/stats`, { params: { days } }).then((r) => r.data),
   rehearse: (agentId: string, params: { conversations?: number; turns?: number } = {}) => api.post<{ rehearsal: Rehearsal; alreadyRunning?: boolean }>(`/agents/${agentId}/rehearse`, params).then((r) => r.data),
   rehearsal: (agentId: string, rid: string) => api.get<Rehearsal>(`/agents/${agentId}/rehearsals/${rid}`).then((r) => r.data),
+  teachFromRehearsal: (agentId: string, rid: string, turnIndex: number, text: string) => api.post<{ correctedReply: string }>(`/agents/${agentId}/rehearsals/${rid}/turns/${turnIndex}/train`, { text }).then((r) => r.data),
   review: (agentId: string, days = 30) => api.post<Review>(`/agents/${agentId}/review`, { days }).then((r) => r.data),
   run: (agentId: string) => api.post<{ summary: string; sorted: number; drafts: number; needsHuman: boolean; reason: string }>(`/agents/${agentId}/run`).then((r) => r.data),
   templates: () => api.get<{ configured: boolean; error: string; templates: { name: string; language: string; bodyText: string }[] }>('/agents/templates').then((r) => r.data),
