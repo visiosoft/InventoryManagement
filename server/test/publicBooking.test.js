@@ -63,7 +63,7 @@ test('reuses an existing customer and lead by phone instead of duplicating them'
   await Unit.create({ unitNumber: 'F1-02', sizeSqf: 25, price: 350, status: 'available' });
   const body = customer({ sizeSqf: 25 });
   await Customer.create({ fullName: 'Already Here', phone: body.phone, phones: [body.phone] });
-  await Lead.create({ firstName: 'Already', lastName: 'Here', fullName: 'Already Here', phone: body.phone, phoneNormalized: body.phone.replace(/\D/g, ''), status: 'new' });
+  await Lead.create({ firstName: 'Already', lastName: 'Here', fullName: 'Already Here', phone: body.phone, phoneNormalized: body.phone.replace(/\D/g, ''), unitsNeeded: 1, status: 'new' });
 
   await request(app).post('/bookings').send(body).expect(201);
 

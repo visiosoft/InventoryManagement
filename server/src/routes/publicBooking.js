@@ -92,6 +92,7 @@ router.post('/', bookingLimiter, async (req, res) => {
             if (!lead) {
                 lead = await Lead.create({
                     firstName, lastName, fullName, phone, phoneNormalized: phone.replace(/\D/g, ''), email,
+                    unitsNeeded: 1,
                     status: 'new', tags: ['website_booking'],
                     timeline: [{ at: new Date(), type: 'note', text: 'Booking started on the website — unit held pending payment.' }],
                 });
