@@ -97,6 +97,7 @@ import AgentLead from './pages/agents/AgentLead'
 import AgentTeam from './pages/agents/AgentTeam'
 import AgentOnboarding from './pages/agents/AgentOnboarding'
 import AgentPage from './pages/agents/AgentPage'
+import AgentGuide from './pages/agents/AgentGuide'
 import AuditLogReport from './pages/AuditLogReport'
 import Leads from './pages/Leads'
 import SalesBoard from './pages/SalesBoard'
@@ -272,6 +273,7 @@ export default function App() {
         <Route path="/agents" element={<AdminGuard><AgentInbox /></AdminGuard>} />
         <Route path="/agents/pipeline" element={<AdminGuard><AgentPipeline /></AdminGuard>} />
         <Route path="/agents/team" element={<AdminGuard><AgentTeam /></AdminGuard>} />
+        <Route path="/agents/guide" element={<AdminGuard><AgentGuide /></AdminGuard>} />
         <Route path="/agents/leads/:leadId" element={<AdminGuard><AgentLead /></AdminGuard>} />
         <Route path="/agents/profiles/:id" element={<AdminGuard><AgentOnboarding /></AdminGuard>} />
         <Route path="/agents/:agentId" element={<AdminGuard><AgentPage /></AdminGuard>} />

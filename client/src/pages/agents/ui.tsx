@@ -96,7 +96,7 @@ export function AgentNav({ counts }: { counts?: { inbox?: number } }) {
       {label}{badge ? <span style={{ marginLeft: 6, background: C.purple, color: '#fff', borderRadius: 999, padding: '0 6px', fontSize: 10.5 }}>{badge}</span> : null}
     </NavLink>
   )
-  return <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>{item('/agents', 'Needs you', counts?.inbox)}{item('/agents/pipeline', 'Pipeline')}{item('/agents/team', 'Team')}</div>
+  return <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>{item('/agents', 'Needs you', counts?.inbox)}{item('/agents/pipeline', 'Pipeline')}{item('/agents/team', 'Team')}{item('/agents/guide', 'Guide')}</div>
 }
 
 /** What an agent decided, laid out so a person can judge it in ten seconds. */
