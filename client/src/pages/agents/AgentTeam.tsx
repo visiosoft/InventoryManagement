@@ -67,7 +67,7 @@ export default function AgentTeam() {
                   <Stat value={a.today.approvedRate === null ? '—' : `${a.today.approvedRate}%`} label="approved as is" tone={a.today.approvedRate !== null && a.today.approvedRate >= 85 ? C.ok : undefined} />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Tag tone={a.mode === 'off' ? 'grey' : 'amber'}>{a.mode === 'off' ? 'off duty' : 'shadow'} · v{a.promptVersion}</Tag>
+                  <Tag tone={a.mode === 'off' ? 'grey' : 'amber'}>{a.mode === 'off' ? 'off duty' : 'drafting for review'} · v{a.promptVersion}</Tag>
                   <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                     {a.kind === 'scheduled' && a.mode !== 'off' && <button onClick={() => run.mutate(a._id)} disabled={run.isPending} title="Run now" style={{ border: 'none', background: 'transparent', color: C.purple, cursor: 'pointer', display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 12, fontWeight: 700, padding: '4px 6px' }}><PlayCircle size={13} /> {run.isPending ? 'Running…' : 'Run now'}</button>}
                     <Link to={`/agents/${a._id}`} style={{ fontSize: 12, color: C.purple, fontWeight: 700, textDecoration: 'none', padding: '4px 6px' }}>Open →</Link>

@@ -137,7 +137,7 @@ export default function AgentPage() {
       <AgentNav />
       <PageHeader
         title={a.name}
-        subtitle={<span><Tag tone={a.mode === 'off' ? 'grey' : 'amber'}>{a.mode === 'off' ? 'off duty' : 'shadow'}</Tag> {a.role} · owns {a.ownsBuckets.map((b) => b === 'tenant' ? <Tag key={b} tone="grey">existing customers</Tag> : <Pill key={b} bucket={b as Bucket} />)} · instructions v{a.promptVersion} · {a.model || 'server model'} · hands over to {esc}</span>}
+        subtitle={<span><Tag tone={a.mode === 'off' ? 'grey' : 'amber'}>{a.mode === 'off' ? 'off duty' : 'drafting for review'}</Tag> {a.role} · owns {a.ownsBuckets.map((b) => b === 'tenant' ? <Tag key={b} tone="grey">existing customers</Tag> : <Pill key={b} bucket={b as Bucket} />)} · instructions v{a.promptVersion} · {a.model || 'server model'} · hands over to {esc}</span>}
         action={<div style={{ display: 'flex', gap: 8 }}><Avatar name={a.name} color={agentColor(a)} size={38} /><Link to={`/agents/profiles/${a._id}`}><Button size="sm" variant="outline"><Pencil size={13} /> Edit</Button></Link></div>}
       />
       {err && <p style={{ color: C.danger, fontSize: 12.5 }}>{err}</p>}

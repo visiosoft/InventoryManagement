@@ -151,6 +151,24 @@ router.post('/actions/:id/resolve', admin, wrap(async (req, res) => {
     res.json(await resolveAction(req.params.id, { resolution, text: req.body?.text || '', user: req.user }));
 }));
 
+// One click for a whole group of proposed touches (same template, same
+// stage) instead of reviewing them one at a time — the group is only ever
+// as safe as a single one, since it is the same pre-approved wording sent
+// to different people. One failure never blocks the rest.
+router.post('/actions/resolve-bulk', admin, wrap(async (req, res) => {
+    const resolution = String(req.body?.resolution || '');
+    if (!RESOLUTIONS.includes(resolution)) throw new Error(`resolution must be one of ${RESOLUTIONS.join(', ')}`);
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.slice(0, 200) : [];
+    if (!ids.length) throw new Error('No items to resolve');
+    let ok = 0;
+    const failed = [];
+    for (const id of ids) {
+        try { await resolveAction(id, { resolution, user: req.user }); ok += 1; }
+        catch (e) { failed.push({ id, error: e.message }); }
+    }
+    res.json({ ok, failed });
+}));
+
 router.get('/pipeline', wrap(async (req, res) => {
     const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
     const stats = await pipelineStats({ days });

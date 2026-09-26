@@ -107,6 +107,42 @@ function TouchRow({ t, onResolve, busy }: { t: InboxTouch; onResolve: (r: Resolu
   )
 }
 
+/** Touches with the same template and stage are the same pre-approved
+ * wording going to different people — safe to review as one group instead
+ * of one at a time, which is what makes a large backlog reviewable. */
+function TouchGroups({ touches, onResolveOne, onResolveGroup, busy }: { touches: InboxTouch[]; onResolveOne: (id: string, r: Resolution) => void; onResolveGroup: (ids: string[], r: Resolution) => void; busy: boolean }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const groups = new Map<string, InboxTouch[]>()
+  for (const t of touches) {
+    const key = t.template ? `${t.template.name} · ${t.stage}` : `no template · ${t.stage}`
+    groups.set(key, [...(groups.get(key) || []), t])
+  }
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      {[...groups.entries()].map(([key, group]) => {
+        const ids = group.filter((t) => t.template).map((t) => t.actionId)
+        const isOpen = open[key]
+        return (
+          <div key={key} style={{ border: `1px solid ${C.line}`, borderRadius: 12, background: C.card, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', flexWrap: 'wrap' }}>
+              <div>
+                <b style={{ fontSize: 13 }}>{key}</b>
+                <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>{group.length} lead{group.length === 1 ? '' : 's'} · same pre-approved wording</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Button size="sm" disabled={busy || !ids.length} onClick={() => onResolveGroup(ids, 'approved')}>Send all {ids.length}</Button>
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => onResolveGroup(group.map((t) => t.actionId), 'skipped')}>Skip all</Button>
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => setOpen({ ...open, [key]: !isOpen })}>{isOpen ? 'Hide' : 'Review one by one'}</Button>
+              </div>
+            </div>
+            {isOpen && <div style={{ display: 'grid', gap: 8, padding: '0 12px 12px' }}>{group.map((t) => <TouchRow key={t.actionId} t={t} busy={busy} onResolve={(r) => onResolveOne(t.actionId, r)} />)}</div>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function AgentInbox() {
   const qc = useQueryClient()
   const [agent, setAgent] = useState('')
@@ -120,6 +156,11 @@ export default function AgentInbox() {
   const resolve = useMutation({
     mutationFn: ({ id, r, text }: { id: string; r: Resolution; text?: string }) => agentsApi.resolve(id, r, text),
     onSuccess: (res, v) => { setErr(''); setOk(v.r === 'approved' || v.r === 'edited' ? (res.sent ? 'Sent.' : 'Done.') : 'Dismissed.'); setTimeout(() => setOk(''), 1500); refresh() },
+    onError: (e) => setErr(apiError(e)),
+  })
+  const resolveBulk = useMutation({
+    mutationFn: ({ ids, r }: { ids: string[]; r: Resolution }) => agentsApi.resolveBulk(ids, r),
+    onSuccess: (res) => { setErr(''); setOk(`${res.ok} done${res.failed.length ? `, ${res.failed.length} failed` : ''}.`); setTimeout(() => setOk(''), 2000); refresh() },
     onError: (e) => setErr(apiError(e)),
   })
   const handBack = useMutation({ mutationFn: (leadId: string) => agentsApi.handBack(leadId), onSuccess: refresh, onError: (e) => setErr(apiError(e)) })
@@ -136,7 +177,7 @@ export default function AgentInbox() {
       <AgentNav counts={{ inbox: total }} />
       <PageHeader
         title="Needs you"
-        subtitle={onDuty.length ? <span>{onDuty.length} agent{onDuty.length === 1 ? '' : 's'} on duty · shadow — they draft and propose, you decide what goes out.</span> : <span>No agent on duty. <Link to="/agents/profiles/new" style={{ color: C.purple, fontWeight: 700 }}>Onboard one</Link> to start.</span>}
+        subtitle={onDuty.length ? <span>{onDuty.length} agent{onDuty.length === 1 ? '' : 's'} on duty — they draft and propose, nothing goes out until you approve it here.</span> : <span>No agent on duty. <Link to="/agents/profiles/new" style={{ color: C.purple, fontWeight: 700 }}>Onboard one</Link> to start.</span>}
         action={<div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}><Stat value={data?.drafts.length ?? '—'} label="drafts to review" /><Stat value={data?.emails.length ?? '—'} label="emails to review" /><Stat value={data?.handed.length ?? '—'} label="handed to you" tone={C.danger} /><Stat value={data?.touches.length ?? '—'} label="follow-ups proposed" tone={C.amber} /></div>}
       />
       {agents.length > 1 && (
@@ -190,11 +231,15 @@ export default function AgentInbox() {
             ))}
           </div>
 
-          <SectionHead title={`Follow-ups proposed · ${data.touches.length}`} hint="approved templates only — the words are already Meta-approved, only the name is filled in" />
-          <div style={{ display: 'grid', gap: 8 }}>
-            {data.touches.length === 0 && <Panel><Note>No follow-ups are due right now.</Note></Panel>}
-            {data.touches.map((t) => <TouchRow key={t.actionId} t={t} busy={resolve.isPending} onResolve={(r) => resolve.mutate({ id: t.actionId, r })} />)}
-          </div>
+          <SectionHead title={`Follow-ups proposed · ${data.touches.length}`} hint="grouped by wording — same template and stage is the same message to different people, safe to send as a group" />
+          {data.touches.length === 0 ? <Panel><Note>No follow-ups are due right now.</Note></Panel> : (
+            <TouchGroups
+              touches={data.touches}
+              busy={resolve.isPending || resolveBulk.isPending}
+              onResolveOne={(id, r) => resolve.mutate({ id, r })}
+              onResolveGroup={(ids, r) => resolveBulk.mutate({ ids, r })}
+            />
+          )}
           {data.reports.length === 0 && data.emails.length === 0 && (
             <Panel style={{ marginTop: 12 }}><Note>Scheduled agents (like Nadia) report here after their first run.</Note></Panel>
           )}

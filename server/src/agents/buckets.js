@@ -13,15 +13,18 @@
  * configured ones in. A bucket with no cadence never gets a next touch.
  */
 
+// Labels are the plain, sales-facing words shown anywhere a person reads
+// them — the keys below (used in code, tests and the database) never
+// change, only these strings, so relabeling is safe to do freely.
 export const BUCKETS = {
     new: { label: 'New', selling: true },
-    engaged: { label: 'Engaged', selling: true },
+    engaged: { label: 'Active', selling: true },
     quoted: { label: 'Quoted', selling: true },
     booking: { label: 'Booking', selling: true },
     won: { label: 'Won', closed: true },
-    quiet: { label: 'Quiet', nurture: true },
-    dormant: { label: 'Dormant', nurture: true },
-    with_person: { label: 'With a person', paused: true },
+    quiet: { label: 'Going quiet', nurture: true },
+    dormant: { label: 'Not responding', nurture: true },
+    with_person: { label: 'Escalated to you', paused: true },
     lost: { label: 'Lost', closed: true },
     do_not_contact: { label: 'Do not contact', closed: true },
 };
