@@ -59,6 +59,19 @@ export function temperatureParam(model, temperature) {
     return LEGACY_MODELS.test(model || '') ? { temperature } : {};
 }
 
+/**
+ * The GPT-6 reasoning models refuse function tools outright unless told not
+ * to reason first: "Function tools with reasoning_effort are not supported
+ * for gpt-6-luna in /v1/chat/completions. To use function tools, use
+ * /v1/responses or set reasoning_effort to 'none'." Every agent turn here
+ * sends tools, so without this every call to a GPT-6 model failed with the
+ * same 400 regardless of the conversation — this was found because Omar's
+ * rehearsal failed on all 24 turns identically.
+ */
+export function reasoningEffortParam(model, hasTools) {
+    return hasTools && !LEGACY_MODELS.test(model || '') ? { reasoning_effort: 'none' } : {};
+}
+
 /** Cheap credential check — lists models, which costs nothing. */
 export async function verifyOpenAIKey(apiKey, model) {
     const { data } = await axios.get(`${API_BASE}/models`, {
@@ -140,17 +153,24 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
 export async function chatWithTools({ system, messages = [], tools = [], model, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
     if (!openaiConfigured()) throw new Error('OpenAI is not configured');
     const chosenModel = model || openaiModel();
-    const { data } = await axios.post(
-        `${API_BASE}/chat/completions`,
-        {
-            model: chosenModel,
-            messages: [{ role: 'system', content: system }, ...messages],
-            ...(tools.length ? { tools, tool_choice: toolChoice } : {}),
-            ...temperatureParam(chosenModel, temperature),
-            ...tokenLimitParam(chosenModel, maxTokens),
-        },
-        { headers: headers(), timeout },
-    );
+    let data;
+    try {
+        ({ data } = await axios.post(
+            `${API_BASE}/chat/completions`,
+            {
+                model: chosenModel,
+                messages: [{ role: 'system', content: system }, ...messages],
+                ...(tools.length ? { tools, tool_choice: toolChoice } : {}),
+                ...temperatureParam(chosenModel, temperature),
+                ...tokenLimitParam(chosenModel, maxTokens),
+                ...reasoningEffortParam(chosenModel, tools.length > 0),
+            },
+            { headers: headers(), timeout },
+        ));
+    } catch (e) {
+        const msg = e.response?.data?.error?.message;
+        throw msg ? new Error(`${chosenModel}: ${msg}`) : e;
+    }
     const message = data?.choices?.[0]?.message || {};
     const toolCalls = (message.tool_calls || []).map((c) => {
         let args = {};
