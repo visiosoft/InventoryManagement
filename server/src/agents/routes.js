@@ -273,7 +273,13 @@ router.post('/leads/:leadId/suggest-again', admin, wrap(async (req, res) => {
     const profiles = await team();
     const agent = profiles.find((p) => String(p._id) === String(file.agent));
     if (!agent || agent.mode === 'off') throw new Error('No agent is on duty for this lead');
-    const decision = await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'inbound', text: String(lastInbound.text || '') }, now: new Date(), persist: true });
+    let decision;
+    try {
+        decision = await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'inbound', text: String(lastInbound.text || '') }, now: new Date(), persist: true });
+    } catch (e) {
+        console.error(`[Agents] suggest-again failed for lead ${lead._id} (${agent.name}):`, e.stack || e.message);
+        throw new Error(`Could not draft a reply: ${e.message}`);
+    }
     res.json({ decision });
 }));
 
