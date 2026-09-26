@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Save, Zap } from 'lucide-react'
 import { apiError } from '../../lib/api'
 import { agentsApi, AGENT_COLORS, JOB_SECTIONS as JOB, composeJob as compose, parseJob as parse, type AgentKind, type AgentProfile, type Cadence, type Decision, type OwnableBucket, type JobParts, type Schedule } from '../../lib/agentsApi'
@@ -8,6 +8,37 @@ import { Button, Field, Input, PageHeader, Select, Spinner, Textarea } from '../
 import { AgentNav, Avatar, C, DecisionView, Eyebrow, Note, Panel, Pill, Tag } from './ui'
 
 const STEPS = ['Identity', 'The job', 'Permissions', 'Training', 'On duty'] as const
+
+/** Plain-language answers to "what does this do, how, and why does it help" —
+ * separate from the editable instructions below, which are the actual prompt
+ * text, not a summary a newbie should have to parse. */
+const ABOUT: Record<string, { what: string; how: string; benefit: string }> = {
+  Aisha: {
+    what: 'Answers a brand-new WhatsApp enquiry the moment it arrives, any hour of the day.',
+    how: 'Learns what they need (size, dates, how long), checks real availability and pricing with her tools, offers one matching unit, and drafts a reply. She never sends it herself — it waits for you in Needs You and in the chat.',
+    benefit: 'No lead waits more than a few seconds for a first, accurate answer, even at 2am on a Friday.',
+  },
+  Omar: {
+    what: 'Follows up with leads who went quiet after a first conversation — nobody chases them by hand.',
+    how: 'A background clock checks every minute for leads whose next follow-up day has arrived (day 3, 7, 14 after going quiet, then 30, 60, 90 after going dormant), and proposes that day’s approved WhatsApp template. Outside the 24-hour reply window, only Meta-approved wording can be sent — he never writes free text for this.',
+    benefit: 'Every lead gets re-approached on a consistent schedule, without anyone having to remember who went quiet and when.',
+  },
+  Layla: {
+    what: 'Takes a lead from "quotation sent" to a signed contract.',
+    how: 'Re-checks price and availability with her tools before repeating any figure to a customer, keeps the lead file current, and hands any discount request straight to a person rather than negotiating herself.',
+    benefit: 'Consistent, fact-checked follow-through on quotes that are already most of the way to a booking.',
+  },
+  Nadia: {
+    what: 'Sorts the shared email inbox every morning and drafts replies to the ones that need one.',
+    how: 'Runs once a day at a fixed time, reads the inbox, sorts each message (lead, tenant, supplier, spam, other), and drafts a reply for anything worth answering. Money, contracts and complaints are flagged for a person, never answered.',
+    benefit: 'The inbox starts the day already triaged, instead of thirty unread messages nobody got to.',
+  },
+  Sam: {
+    what: 'First point of contact for people who are already customers, not new leads.',
+    how: 'Recognises an existing tenant and writes down what they need — a renewal, an invoice question, an access problem — then hands it to accounts with a clear one-line summary. He does not sell anything.',
+    benefit: 'Existing tenants are treated like tenants immediately, instead of being run through a sales script.',
+  },
+}
 const STARTER: JobParts = {
   who: 'Aisha, the sales assistant for PurpleBox Storage in Dubai, on WhatsApp.',
   talk: 'Brief and warm. A few short lines, one question at a time. Never ask what the lead file already answers, never re-introduce yourself mid-conversation.',
@@ -101,7 +132,18 @@ export default function AgentOnboarding() {
     <div>
       <AgentNav />
       <PageHeader title={isNew ? 'Onboard an agent' : `${draft.name || 'Agent'} · edit`} subtitle="Like hiring: who they are, what the job is, what they may do, a trial run, then on duty."
-        action={<div style={{ display: 'flex', gap: 8 }}><Link to="/agents/team"><Button size="sm" variant="outline"><ArrowLeft size={13} /> Team</Button></Link><Button size="sm" disabled={!canSave || save.isPending} onClick={() => save.mutate()}><Save size={13} /> {save.isPending ? 'Saving…' : isNew ? 'Save agent' : 'Save changes'}</Button></div>} />
+        action={<div style={{ display: 'flex', gap: 8 }}><Button size="sm" variant="outline" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/agents/team'))}><ArrowLeft size={13} /> Back</Button><Button size="sm" disabled={!canSave || save.isPending} onClick={() => save.mutate()}><Save size={13} /> {save.isPending ? 'Saving…' : isNew ? 'Save agent' : 'Save changes'}</Button></div>} />
+
+      {!isNew && ABOUT[draft.name] && (
+        <Panel style={{ marginBottom: 16, borderColor: C.purple, background: C.purpleSoft }}>
+          <Eyebrow tone={C.purple}>About {draft.name}</Eyebrow>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+            <div><b style={{ fontSize: 12.5, color: C.ink }}>What it does</b><p style={{ fontSize: 13, color: C.second, margin: '4px 0 0' }}>{ABOUT[draft.name].what}</p></div>
+            <div><b style={{ fontSize: 12.5, color: C.ink }}>How</b><p style={{ fontSize: 13, color: C.second, margin: '4px 0 0' }}>{ABOUT[draft.name].how}</p></div>
+            <div><b style={{ fontSize: 12.5, color: C.ink }}>The benefit</b><p style={{ fontSize: 13, color: C.second, margin: '4px 0 0' }}>{ABOUT[draft.name].benefit}</p></div>
+          </div>
+        </Panel>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 16 }}>
         {STEPS.map((s, i) => (
