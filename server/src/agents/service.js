@@ -235,7 +235,7 @@ export async function runAgentTick({ now = new Date() } = {}) {
 export async function agentStatusForLeads(leadIds = []) {
     const ids = [...new Set(leadIds.filter(Boolean).map(String))];
     if (!ids.length) return new Map();
-    const files = await AgentLeadFile.find({ lead: { $in: ids } }).select('lead bucket frozenAt').lean();
+    const files = await AgentLeadFile.find({ lead: { $in: ids } }).select('lead agent bucket frozenAt').populate('agent', 'name avatarColor').lean();
     if (!files.length) return new Map();
     const fileIds = files.map((f) => f._id);
 
@@ -257,6 +257,8 @@ export async function agentStatusForLeads(leadIds = []) {
             draft: draft?.detail?.reply || '',
             draftActionId: draft ? String(draft._id) : '',
             escalationReason: escalated ? (escByFile.get(String(file._id))?.summary || '').replace(/^Handed to a person:\s*/i, '') : '',
+            agentName: file.agent?.name || '',
+            agentColor: file.agent?.avatarColor || '',
         });
     }
     return out;

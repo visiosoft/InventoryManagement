@@ -516,6 +516,8 @@ export type WhatsAppConversation = {
   botDraft?: string
   botActionId?: string
   botEscalationReason?: string
+  botAgentName?: string
+  botAgentColor?: string
 }
 
 export type WhatsAppCredentials = {

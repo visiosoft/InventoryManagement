@@ -3904,9 +3904,17 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                           <span
                             className="shrink-0 rounded-full px-1.5 py-0.5"
                             style={{ fontSize: 10, fontWeight: 700, background: '#FFF1CC', color: '#8A5A00' }}
-                            title={c.botEscalationReason || 'The assistant handed this over'}
+                            title={`${c.botEscalationReason || 'Handed this over'}${c.botAgentName ? ` — from ${c.botAgentName}` : ''}`}
                           >
                             Needs you
+                          </span>
+                        ) : c.botStatus === 'bot' && c.botAgentName ? (
+                          <span
+                            className="shrink-0 rounded-full px-1.5 py-0.5"
+                            style={{ fontSize: 10, fontWeight: 700, background: '#F3EEFF', color: c.botAgentColor || '#4A1FA0' }}
+                            title={`${c.botAgentName} has a reply ready for you to review`}
+                          >
+                            {c.botAgentName}
                           </span>
                         ) : null}
 
@@ -4270,8 +4278,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               <div className="flex items-start gap-2">
                 <UserCheck size={15} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 1 }} />
                 <div className="min-w-0 flex-1" style={{ fontSize: 12.5, color: '#6B4500' }}>
-                  <span style={{ fontWeight: 700 }}>Waiting for a person.</span>{' '}
-                  {selectedConvo.botEscalationReason || 'The assistant could not answer this one.'}
+                  <span style={{ fontWeight: 700 }}>Waiting for a person{selectedConvo.botAgentName ? ` — from ${selectedConvo.botAgentName}` : ''}.</span>{' '}
+                  {selectedConvo.botEscalationReason || 'The agent could not answer this one.'}
                 </div>
                 {/* Out of the way without handing the thread back: reading the
                     reason is usually all somebody needs, and after that the
@@ -4406,8 +4414,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
           {selectedConvo?.botDraft && selectedConvo.botActionId && (
             <div className="shrink-0 mx-6 mb-2 rounded-xl px-3.5 py-3"
               style={{ background: '#F3EEFF', border: '1px solid #D9CBFA' }}>
-              <div className="flex items-center gap-1.5 mb-1.5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#4A1FA0' }}>
-                <Bot size={13} /> Suggested reply
+              <div className="flex items-center gap-1.5 mb-1.5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: selectedConvo.botAgentColor || '#4A1FA0' }}>
+                <Bot size={13} /> {selectedConvo.botAgentName ? `${selectedConvo.botAgentName} suggests` : 'Suggested reply'}
               </div>
               {editingDraft ? (
                 <Textarea rows={3} value={draftEditText} onChange={(e) => setDraftEditText(e.target.value)} />
