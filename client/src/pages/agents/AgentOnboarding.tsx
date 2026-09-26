@@ -88,6 +88,8 @@ export default function AgentOnboarding() {
     mutationFn: () => agentsApi.simulate({ phone, text: msg, trigger: 'inbound', persist: false, agentId: isNew ? undefined : id }),
     onSuccess: (r) => { setDecision(r.decision); setErr('') }, onError: (e) => setErr(apiError(e)),
   })
+  const wantsTemplates = Boolean(draft?.enabledTools.includes('propose_follow_up_template'))
+  const { data: tpl } = useQuery({ queryKey: ['agents', 'templates'], queryFn: agentsApi.templates, enabled: wantsTemplates })
 
   if (isLoading || !draft || !data) return <Spinner />
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch })
@@ -202,6 +204,25 @@ export default function AgentOnboarding() {
               </div>
             </div>
           ))}
+          {wantsTemplates && (
+            <div>
+              <Eyebrow>Approved WhatsApp templates it can choose from</Eyebrow>
+              {!tpl ? <Note>Loading…</Note> : !tpl.configured ? (
+                <Note>{tpl.error || 'WhatsApp is not configured.'} Set it up under Settings → Integrations → WhatsApp, then come back here.</Note>
+              ) : tpl.templates.length === 0 ? (
+                <Note>{tpl.error || 'No approved templates found in Meta yet — this agent has nothing to send once a follow-up is due.'}</Note>
+              ) : (
+                <div style={{ display: 'grid', gap: 6 }}>
+                  {tpl.templates.map((t) => (
+                    <div key={t.name} style={{ padding: '8px 12px', border: `1px solid ${C.line}`, borderRadius: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><b style={{ fontSize: 12.5 }}>{t.name}</b><span style={{ fontSize: 11, color: C.muted }}>{t.language}</span></div>
+                      {t.bodyText && <div style={{ fontSize: 12, color: C.second, marginTop: 2 }}>{t.bodyText}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </Panel>
       )}
 
