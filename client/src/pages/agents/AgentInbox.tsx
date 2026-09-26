@@ -5,7 +5,7 @@ import { Send, Pencil, X, UserCheck, Undo2 } from 'lucide-react'
 import { apiError } from '../../lib/api'
 import { agentsApi, agoText, needText, agentColor, type InboxDraft, type InboxEmail, type InboxReport, type InboxTouch, type Resolution } from '../../lib/agentsApi'
 import { Button, PageHeader, Spinner, Textarea } from '../../components/ui'
-import { AgentNav, Avatar, AgentChip, C, Draft, Eyebrow, Note, Panel, Pill, Quote, SectionHead, Stat, Tag, Trace } from './ui'
+import { AgentNav, Avatar, AgentChip, C, Draft, Note, Panel, Pill, Quote, SectionHead, Stat, Tag, Trace } from './ui'
 
 const CATEGORY_LABEL: Record<string, string> = { lead: 'leads', tenant: 'tenants', supplier: 'suppliers', newsletter: 'newsletters', spam: 'spam', other: 'other', needs_person: 'for a person' }
 
@@ -166,13 +166,13 @@ export default function AgentInbox() {
 
           <SectionHead title={`Drafts to review · ${data.drafts.length}`} hint="newest first · approve sends it as that agent, edit lets you change it first" />
           <div style={{ display: 'grid', gap: 10 }}>
-            {data.drafts.length === 0 && <Note>Nothing waiting. When a customer writes in, the draft appears here.</Note>}
+            {data.drafts.length === 0 && <Panel><Note>Nothing waiting. When a customer writes in, the draft appears here.</Note></Panel>}
             {data.drafts.map((d) => <DraftCard key={d.actionId} d={d} busy={resolve.isPending} onResolve={(r, text) => resolve.mutate({ id: d.actionId, r, text })} />)}
           </div>
 
           <SectionHead title={`Handed to you · ${data.handed.length}`} hint="the agent stopped and wrote down why — you take it from here" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 10 }}>
-            {data.handed.length === 0 && <Note>Nobody is waiting on a person.</Note>}
+            {data.handed.length === 0 && <Panel style={{ gridColumn: '1 / -1' }}><Note>Nobody is waiting on a person.</Note></Panel>}
             {data.handed.map((h) => (
               <Panel key={h.leadFileId} style={{ display: 'grid', gap: 8, borderLeft: `4px solid ${C.danger}` }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><Avatar name={h.lead.fullName} size={28} color={C.grey} /><b>{h.lead.fullName}</b><Tag tone="danger">{h.why.slice(0, 40) || 'needs a person'}</Tag><AgentChip agent={h.agent} prefix="from " /></div>
@@ -192,10 +192,12 @@ export default function AgentInbox() {
 
           <SectionHead title={`Follow-ups proposed · ${data.touches.length}`} hint="approved templates only — the words are already Meta-approved, only the name is filled in" />
           <div style={{ display: 'grid', gap: 8 }}>
-            {data.touches.length === 0 && <Note>No follow-ups are due right now.</Note>}
+            {data.touches.length === 0 && <Panel><Note>No follow-ups are due right now.</Note></Panel>}
             {data.touches.map((t) => <TouchRow key={t.actionId} t={t} busy={resolve.isPending} onResolve={(r) => resolve.mutate({ id: t.actionId, r })} />)}
           </div>
-          <div style={{ height: 8 }} /><Eyebrow>{data.reports.length === 0 && data.emails.length === 0 ? 'Scheduled agents report here after their first run' : ''}</Eyebrow>
+          {data.reports.length === 0 && data.emails.length === 0 && (
+            <Panel style={{ marginTop: 12 }}><Note>Scheduled agents (like Nadia) report here after their first run.</Note></Panel>
+          )}
         </>
       )}
     </div>
