@@ -175,7 +175,8 @@ export const parseJob = (prompt: string): JobParts => {
 export const agentsApi = {
   team: () => api.get<TeamResponse>('/agents/team').then((r) => r.data),
   inbox: (agent?: string) => api.get<InboxResponse>('/agents/inbox', { params: agent ? { agent } : {} }).then((r) => r.data),
-  resolve: (actionId: string, resolution: Resolution, text = '') => api.post<{ ok: boolean; sent: boolean }>(`/agents/actions/${actionId}/resolve`, { resolution, text }).then((r) => r.data),
+  resolve: (actionId: string, resolution: Resolution, text = '', alreadySent = false) => api.post<{ ok: boolean; sent: boolean }>(`/agents/actions/${actionId}/resolve`, { resolution, text, alreadySent }).then((r) => r.data),
+  suggestAgain: (leadId: string) => api.post<{ decision: unknown }>(`/agents/leads/${leadId}/suggest-again`).then((r) => r.data),
   resolveBulk: (ids: string[], resolution: Resolution) => api.post<{ ok: number; failed: { id: string; error: string }[] }>('/agents/actions/resolve-bulk', { ids, resolution }).then((r) => r.data),
   pipeline: (bucket?: string, days = 30) => api.get<PipelineResponse>('/agents/pipeline', { params: { ...(bucket ? { bucket } : {}), days } }).then((r) => r.data),
   lead: (leadId: string) => api.get<LeadDetail>(`/agents/leads/${leadId}`).then((r) => r.data),

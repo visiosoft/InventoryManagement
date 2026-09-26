@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
-import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate } from '../models/index.js';
+import { WhatsAppMessage, Lead, Customer, User, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate } from '../services/whatsapp.js';
 import { pauseBotForHuman, markFirstResponse } from '../services/aiBot.js';
+import { agentStatusForLeads } from '../agents/service.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
@@ -640,21 +641,23 @@ router.get('/conversations', async (req, res) => {
             return [lead?.owner, lead?.assignedBy];
         }).filter(Boolean).map(String),
     )];
+    const leadIds = [...new Set(
+        hydrate.map((r) => byLeadPhone.get(suffix(r._id))?._id).filter(Boolean).map(String),
+    )];
     const phones = hydrate.map((r) => r._id);
 
-    // The second wave: these three need `visible`, but not each other.
-    const [botThreads, owners, chatLabels, blockedNumbers] = await Promise.all([
-        // The AI assistant's state per thread — whether it has a suggestion
-        // waiting and whether it has handed the conversation over.
-        AiBotThread.find({ phoneNormalized: { $in: phones } })
-            .select('phoneNormalized status draftText escalationReason').lean(),
+    // The second wave: these four need `visible`, but not each other.
+    const [agentStatusByLead, owners, chatLabels, blockedNumbers] = await Promise.all([
+        // The AI agents' state per lead — whether one has a reply waiting or
+        // has handed the conversation to a person. Keyed by lead, not phone:
+        // an agent adopts a Lead, not a raw number.
+        agentStatusForLeads(leadIds),
         ownerIds.length ? User.find({ _id: { $in: ownerIds } }).select('name email').lean() : [],
         WhatsAppChatLabel.find({ phoneNormalized: { $in: phones } })
             .populate('labels', 'name color sortOrder').lean(),
         WhatsAppBlockedNumber.find({ phoneNormalized: { $in: phones } }).select('phoneNormalized').lean(),
     ]);
 
-    const byThread = new Map(botThreads.map((t) => [t.phoneNormalized, t]));
     const byOwner = new Map(owners.map((u) => [String(u._id), u.name || u.email || '']));
     const byLabels = new Map(chatLabels.map((c) => [c.phoneNormalized, c.labels || []]));
     const blockedSet = new Set(blockedNumbers.map((b) => b.phoneNormalized));
@@ -668,7 +671,7 @@ router.get('/conversations', async (req, res) => {
         const lead = byLeadPhone.get(suffix(r._id)) || null;
         const customer = byPhone.get(suffix(r._id)) || null;
         const leadName = isPlaceholderLeadName(lead?.fullName) ? '' : lead.fullName;
-        const bot = byThread.get(r._id) || null;
+        const bot = (lead ? agentStatusByLead.get(String(lead._id)) : null) || null;
         return {
             phoneNormalized: r._id,
             phone: r.phone,
@@ -723,7 +726,8 @@ router.get('/conversations', async (req, res) => {
             labels: byLabels.get(r._id) || [],
             blocked: blockedSet.has(r._id),
             botStatus: bot?.status || '',
-            botDraft: bot?.draftText || '',
+            botDraft: bot?.draft || '',
+            botActionId: bot?.draftActionId || '',
             botEscalationReason: bot?.escalationReason || '',
         };
     };

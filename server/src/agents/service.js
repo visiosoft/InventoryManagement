@@ -224,6 +224,44 @@ export async function runAgentTick({ now = new Date() } = {}) {
     return out;
 }
 
+/**
+ * Per-lead status for the WhatsApp inbox: whether an agent has a reply
+ * waiting, or has handed the conversation to a person. Shaped to slot into
+ * the conversation row the same way the old assistant's `AiBotThread`
+ * lookup did (`status`/`draft`/`escalationReason`), so the chat view's
+ * existing draft box and escalation banner need no redesign — only a new
+ * source of the same three facts, keyed by lead rather than phone.
+ */
+export async function agentStatusForLeads(leadIds = []) {
+    const ids = [...new Set(leadIds.filter(Boolean).map(String))];
+    if (!ids.length) return new Map();
+    const files = await AgentLeadFile.find({ lead: { $in: ids } }).select('lead bucket frozenAt').lean();
+    if (!files.length) return new Map();
+    const fileIds = files.map((f) => f._id);
+
+    const [drafts, escalations] = await Promise.all([
+        AgentAction.find({ leadFile: { $in: fileIds }, kind: 'reply_drafted', resolution: null }).sort({ at: -1 }).select('leadFile detail').lean(),
+        AgentAction.find({ leadFile: { $in: fileIds }, kind: 'escalated' }).sort({ at: -1 }).select('leadFile summary').lean(),
+    ]);
+    const draftByFile = new Map();
+    for (const d of drafts) { const k = String(d.leadFile); if (!draftByFile.has(k)) draftByFile.set(k, d); }
+    const escByFile = new Map();
+    for (const e of escalations) { const k = String(e.leadFile); if (!escByFile.has(k)) escByFile.set(k, e); }
+
+    const out = new Map();
+    for (const file of files) {
+        const draft = draftByFile.get(String(file._id));
+        const escalated = file.bucket === 'with_person';
+        out.set(String(file.lead), {
+            status: file.frozenAt ? 'paused' : escalated ? 'escalated' : draft ? 'bot' : '',
+            draft: draft?.detail?.reply || '',
+            draftActionId: draft ? String(draft._id) : '',
+            escalationReason: escalated ? (escByFile.get(String(file._id))?.summary || '').replace(/^Handed to a person:\s*/i, '') : '',
+        });
+    }
+    return out;
+}
+
 /* ---------- the inbox: what a person needs to answer ---------- */
 
 const lastCustomerLine = (detail) => {
@@ -281,7 +319,7 @@ export async function inbox({ agentId = null } = {}) {
  * A person answers a draft or a proposed touch. Approving sends it as the
  * agent, through the same functions the console and the follow-up page use.
  */
-export async function resolveAction(actionId, { resolution, text = '', user }) {
+export async function resolveAction(actionId, { resolution, text = '', user, alreadySent = false }) {
     const action = await AgentAction.findById(actionId).populate('lead').populate('agent');
     if (!action) throw new Error('That item does not exist');
     if (action.resolution) throw new Error('Already answered');
@@ -299,6 +337,12 @@ export async function resolveAction(actionId, { resolution, text = '', user }) {
         const subject = String(action.detail?.subject || '').trim() || `Re: ${action.detail?.originalSubject || ''}`.trim();
         sent = await sendMail({ to: action.detail?.to, subject, text: body, html: textToHtml(body), context: { kind: 'agent_email_reply', label: agent?.name || '' } });
         action.sentText = body;
+    } else if ((resolution === 'approved' || resolution === 'edited') && action.kind === 'reply_drafted' && alreadySent) {
+        // The chat view sent this itself (e.g. as a voice note) through its
+        // own channel — record the decision without sending or logging a
+        // second WhatsApp message, so the draft still leaves the queue.
+        action.sentText = String(resolution === 'edited' ? text : action.detail?.reply || '').trim();
+        if (file?.bucket === 'new') await applyEvent(file, 'first_reply_sent', { lead, now, actor: 'person', user });
     } else if (resolution === 'approved' || resolution === 'edited') {
         if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured, so nothing can be sent');
         if (action.kind === 'reply_drafted') {

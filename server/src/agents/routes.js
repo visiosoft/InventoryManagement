@@ -4,7 +4,7 @@
  */
 
 import { Router } from 'express';
-import { Lead, User } from '../models/index.js';
+import { Lead, User, WhatsAppMessage } from '../models/index.js';
 import { AgentProfile, AgentLeadFile, AgentAction, AGENT_MODES, AGENT_TOOLS, AGENT_KINDS, CADENCES, RESOLUTIONS } from './models.js';
 import { runJob, describeSchedule } from './jobs.js';
 import { BUCKETS, BUCKET_ORDER, describeStage, DEFAULT_CADENCE, nextTouchFor } from './buckets.js';
@@ -148,7 +148,7 @@ router.get('/inbox', wrap(async (req, res) => {
 router.post('/actions/:id/resolve', admin, wrap(async (req, res) => {
     const resolution = String(req.body?.resolution || '');
     if (!RESOLUTIONS.includes(resolution)) throw new Error(`resolution must be one of ${RESOLUTIONS.join(', ')}`);
-    res.json(await resolveAction(req.params.id, { resolution, text: req.body?.text || '', user: req.user }));
+    res.json(await resolveAction(req.params.id, { resolution, text: req.body?.text || '', user: req.user, alreadySent: req.body?.alreadySent === true }));
 }));
 
 // One click for a whole group of proposed touches (same template, same
@@ -257,6 +257,24 @@ router.post('/leads/:leadId/adopt', admin, wrap(async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'No such lead' });
     const { file, created } = await adoptLead(lead, { user: req.user });
     res.status(created ? 201 : 200).json({ file, created });
+}));
+
+// A fresh draft against the same last inbound message — for the WhatsApp
+// inbox's "Suggest a reply" button, where a dismissed or stale draft
+// leaves nothing to ask the agent to try again with. Any draft still
+// waiting on this lead is dismissed first, so there is only ever one.
+router.post('/leads/:leadId/suggest-again', admin, wrap(async (req, res) => {
+    const lead = await Lead.findById(req.params.leadId).lean();
+    if (!lead) return res.status(404).json({ error: 'No such lead' });
+    const lastInbound = await WhatsAppMessage.findOne({ phoneNormalized: lead.phoneNormalized, direction: 'inbound' }).sort({ occurredAt: -1 }).lean();
+    if (!lastInbound) throw new Error('There is no message yet to reply to');
+    const { file } = await adoptLead(lead, { user: req.user });
+    await AgentAction.updateMany({ leadFile: file._id, kind: 'reply_drafted', resolution: null }, { $set: { resolution: 'dismissed', resolvedAt: new Date(), resolvedBy: req.user?.id || null } });
+    const profiles = await team();
+    const agent = profiles.find((p) => String(p._id) === String(file.agent));
+    if (!agent || agent.mode === 'off') throw new Error('No agent is on duty for this lead');
+    const decision = await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'inbound', text: String(lastInbound.text || '') }, now: new Date(), persist: true });
+    res.json({ decision });
 }));
 
 router.post('/adopt-open', admin, wrap(async (req, res) => {

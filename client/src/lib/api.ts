@@ -508,9 +508,13 @@ export type WhatsAppConversation = {
   // Whether this number is on the block list — see routes/whatsapp.js's
   // block/unblock endpoints and whatsappLeadSync.js's persistMessages.
   blocked?: boolean
-  // AI assistant state for this thread: '' when it has never looked at it.
+  // AI agent state for this lead: '' when no agent has a file on it yet.
+  // Sourced from the Agents system (server/src/agents/service.js's
+  // agentStatusForLeads) — botDraft resolves via POST
+  // /agents/actions/:id/resolve using botActionId, not a phone-keyed route.
   botStatus?: '' | 'bot' | 'escalated' | 'paused'
   botDraft?: string
+  botActionId?: string
   botEscalationReason?: string
 }
 

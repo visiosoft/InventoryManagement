@@ -97,7 +97,7 @@ import { startBackupScheduler } from './services/backup.js';
 import { runFollowUps, pushDueFollowUps } from './services/followUps.js';
 import { sweepUnassignedLeads } from './services/leadRouting.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
-import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
+import { getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
 import { runDayBriefs } from './services/dayBrief.js';
@@ -451,10 +451,13 @@ async function start() {
     runCampaignTick().catch((e) => console.error('[Campaign]', e.message));
   }, 15 * 1000), 25_000);
 
-  const AI_BOT_INTERVAL = 10 * 1000;
-  setTimeout(() => setInterval(() => {
-    runAiBotTick().catch((e) => console.error('[AI bot]', e.message));
-  }, AI_BOT_INTERVAL), 20_000);
+  // The original assistant's own drafting is retired: the Agents system
+  // (below) now drafts and escalates for every inbound message, and its
+  // per-lead status/draft is what the WhatsApp inbox reads (routes/whatsapp.js's
+  // agentStatusForLeads). runAiBotTick is no longer scheduled, but stays
+  // importable — routes/aiBot.js's manual "run a tick now" endpoint and its
+  // settings/preview endpoints are unaffected, and getAiBotConfig still
+  // gates the unrelated auto-summarise and first-contact-video features.
 
   // The sales agents' clock: due follow-up touches, silence into Quiet,
   // exhausted cadences falling through. A minute is plenty — the shortest

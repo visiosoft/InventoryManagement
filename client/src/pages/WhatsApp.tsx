@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel, type LeadScore } from '../lib/api'
+import { agentsApi } from '../lib/agentsApi'
 import { isSalesRepRole } from '../lib/roles'
 import { useAuth } from '../lib/auth'
 import { TaskComposer } from '../components/TaskComposer'
@@ -3279,32 +3280,38 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     onError: (e) => setSendErr(apiError(e)),
   })
 
-  // The draft lives on the thread, not just in this component, so dismissing
-  // it needs a server round-trip. But waiting for onSent's invalidateQueries
-  // to refetch before the card disappears reads as the button not working —
-  // patched into every cached wa-conversations query immediately instead
-  // (same reasoning as the owner-assign patch above), and invalidated after
-  // for consistency with the poll.
+  // The draft is an AgentAction, not just state in this component, so
+  // resolving it needs a server round-trip (POST /agents/actions/:id/resolve).
+  // But waiting for onSent's invalidateQueries to refetch before the card
+  // disappears reads as the button not working — patched into every cached
+  // wa-conversations query immediately instead (same reasoning as the
+  // owner-assign patch above), and invalidated after for consistency with
+  // the poll.
+  const clearDraftInCache = (phone: string) => {
+    qc.setQueriesData<{ list: WhatsAppConversation[] } | undefined>({ queryKey: ['wa-conversations'] }, (old) => {
+      if (!old) return old
+      return {
+        ...old,
+        list: old.list.map((c) => (c.phoneNormalized !== phone ? c : { ...c, botDraft: '', botActionId: '' })),
+      }
+    })
+  }
+  const resolveDraft = useMutation({
+    mutationFn: (payload: { phone: string; actionId: string; resolution: 'approved' | 'edited' | 'dismissed'; text?: string; alreadySent?: boolean }) =>
+      agentsApi.resolve(payload.actionId, payload.resolution, payload.text).then((r) => ({ ...r, phone: payload.phone })),
+    onSuccess: (_data, v) => { setSendErr(''); clearDraftInCache(v.phone); onSent() },
+    onError: (e) => setSendErr(apiError(e)),
+  })
   const dismissDraft = useMutation({
-    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/dismiss-draft`).then((r) => r.data),
-    onSuccess: (_data, phone) => {
-      setSendErr('')
-      qc.setQueriesData<{ list: WhatsAppConversation[] } | undefined>({ queryKey: ['wa-conversations'] }, (old) => {
-        if (!old) return old
-        return {
-          ...old,
-          list: old.list.map((c) => (c.phoneNormalized !== phone ? c : { ...c, botDraft: '' })),
-        }
-      })
-      onSent()
-    },
+    mutationFn: (v: { phone: string; actionId: string }) => agentsApi.resolve(v.actionId, 'dismissed'),
+    onSuccess: (_data, v) => { setSendErr(''); clearDraftInCache(v.phone); onSent() },
     onError: (e) => setSendErr(apiError(e)),
   })
 
-  // Handing a thread over mutes the assistant on it. Without a way back the
-  // mute is permanent, and that customer never gets an automatic reply again.
+  // Handing a thread over mutes the agent on it. Without a way back the mute
+  // is permanent, and that customer never gets an automatic reply again.
   const resumeBot = useMutation({
-    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/resume`).then((r) => r.data),
+    mutationFn: (leadId: string) => agentsApi.handBack(leadId),
     onSuccess: () => { setSendErr(''); onSent() },
     onError: (e) => setSendErr(apiError(e)),
   })
@@ -3358,7 +3365,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
      for another against the same conversation, for one dismissed by accident
      or a wording worth a second try. */
   const suggestAgain = useMutation({
-    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/suggest`),
+    mutationFn: (leadId: string) => agentsApi.suggestAgain(leadId),
     onSuccess: () => { setSendErr(''); refetchConvos() },
     onError: (e) => setSendErr(apiError(e)),
   })
@@ -3372,6 +3379,12 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
   /* Notices somebody has read and put away, by chat. Kept for the session
      only: a thread that escalates again tomorrow should say so again. */
   const [escalationHidden, setEscalationHidden] = useState<Set<string>>(new Set())
+  // Editing a suggested reply in place, rather than the composer — so
+  // "Send edited" resolves the same AgentAction instead of leaving it
+  // pending while a different message went out through the composer.
+  const [editingDraft, setEditingDraft] = useState(false)
+  const [draftEditText, setDraftEditText] = useState('')
+  useEffect(() => setEditingDraft(false), [selectedPhone])
   const [remindOpen, setRemindOpen] = useState(false)
   const [remindDate, setRemindDate] = useState('')
   const remind = useMutation({
@@ -3381,10 +3394,16 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     onError: (e) => setSendErr(apiError(e)),
   })
 
+  // Voice-sends through its own channel (text-to-speech + WhatsApp media),
+  // so the matching agent draft is marked resolved with alreadySent rather
+  // than sent again through resolveDraft's own text-send path.
   const sendVoiceDraft = useMutation({
-    mutationFn: ({ phone, text }: { phone: string; text: string }) =>
-      api.post('/ai-bot/speak-and-send', { phone, text }),
-    onSuccess: () => { setSendErr(''); stickToBottom.current = true; onSent() },
+    mutationFn: async ({ phone, actionId, text }: { phone: string; actionId: string; text: string }) => {
+      const r = await api.post('/ai-bot/speak-and-send', { phone, text })
+      if (actionId) await agentsApi.resolve(actionId, 'approved', '', true).catch(() => null)
+      return r
+    },
+    onSuccess: (_data, v) => { setSendErr(''); stickToBottom.current = true; clearDraftInCache(v.phone); onSent() },
     onError: (e) => setSendErr(apiError(e)),
   })
 
@@ -4272,11 +4291,11 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               <div className="flex justify-end mt-2">
                 <button
                   type="button"
-                  onClick={() => resumeBot.mutate(selectedConvo.phoneNormalized)}
-                  disabled={resumeBot.isPending}
+                  onClick={() => selectedConvo.lead && resumeBot.mutate(selectedConvo.lead._id)}
+                  disabled={resumeBot.isPending || !selectedConvo.lead}
                   className="shrink-0 rounded-full px-3 py-1 cursor-pointer disabled:opacity-50"
                   style={{ background: '#8A5A00', color: '#fff', fontSize: 11.5, fontWeight: 700 }}
-                  title="The assistant will answer this conversation again"
+                  title="The agent will answer this conversation again"
                 >
                   {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
                 </button>
@@ -4366,15 +4385,15 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               Dismissing removes a suggestion for good, which is what it should
               do — but there was then no way to ask for another until the
               customer wrote again. */}
-          {selectedConvo && !selectedConvo.botDraft && selectedConvo.botStatus !== 'escalated' && (
+          {selectedConvo && selectedConvo.lead && !selectedConvo.botDraft && selectedConvo.botStatus !== 'escalated' && selectedConvo.botStatus !== 'paused' && (
             <div className="shrink-0 mx-6 mb-2">
               <button
                 type="button"
-                onClick={() => suggestAgain.mutate(selectedConvo.phoneNormalized)}
+                onClick={() => suggestAgain.mutate(selectedConvo.lead!._id)}
                 disabled={suggestAgain.isPending}
                 className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
                 style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: '#4A1FA0' }}
-                title="Ask the assistant for a reply to their last message"
+                title="Ask the agent for a reply to their last message"
               >
                 {suggestAgain.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                 {suggestAgain.isPending ? 'Thinking…' : 'Suggest a reply'}
@@ -4383,58 +4402,82 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
           )}
 
           {/* A suggested reply. It is never sent on its own — someone reads it
-              and presses Send, or edits it in the composer first. */}
-          {selectedConvo?.botDraft && (
+              and presses Send, or edits it first. */}
+          {selectedConvo?.botDraft && selectedConvo.botActionId && (
             <div className="shrink-0 mx-6 mb-2 rounded-xl px-3.5 py-3"
               style={{ background: '#F3EEFF', border: '1px solid #D9CBFA' }}>
               <div className="flex items-center gap-1.5 mb-1.5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#4A1FA0' }}>
                 <Bot size={13} /> Suggested reply
               </div>
-              <div className="whitespace-pre-wrap" style={{ fontSize: 13, color: MUTED_INK }}>
-                {selectedConvo.botDraft}
-              </div>
+              {editingDraft ? (
+                <Textarea rows={3} value={draftEditText} onChange={(e) => setDraftEditText(e.target.value)} />
+              ) : (
+                <div className="whitespace-pre-wrap" style={{ fontSize: 13, color: MUTED_INK }}>
+                  {selectedConvo.botDraft}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 mt-2.5">
-                <button type="button"
-                  onClick={() => sendText(selectedConvo.botDraft!)}
-                  disabled={send.isPending}
-                  className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
-                  style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
-                  Send
-                </button>
-                {/* Hear it, and send the voice — so what the customer gets is
-                    what was approved, and a spoken reply can be judged before
-                    anybody turns automatic replies on. */}
-                <button type="button"
-                  onClick={() => hearDraft(selectedConvo.botDraft!)}
-                  className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5"
-                  style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}
-                  title={hearing === 'playing' ? 'Stop' : 'Hear this read aloud. Nothing is sent.'}>
-                  {hearing === 'loading' ? <Loader2 size={12} className="animate-spin" />
-                    : hearing === 'playing' ? <Square size={11} />
-                      : <Mic size={12} />}
-                  {hearing === 'loading' ? 'Speaking…' : hearing === 'playing' ? 'Stop' : 'Hear it'}
-                </button>
-                <button type="button"
-                  onClick={() => sendVoiceDraft.mutate({ phone: selectedConvo.phoneNormalized, text: selectedConvo.botDraft! })}
-                  disabled={sendVoiceDraft.isPending}
-                  className="h-7 px-3 rounded-full cursor-pointer disabled:opacity-50"
-                  style={{ border: '1px solid #D9CBFA', background: '#fff', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}
-                  title="Send this as a voice note">
-                  {sendVoiceDraft.isPending ? 'Sending…' : 'Send as voice'}
-                </button>
-                <button type="button"
-                  onClick={() => { insertText(selectedConvo.botDraft!); dismissDraft.mutate(selectedConvo.phoneNormalized) }}
-                  className="h-7 px-3 rounded-full cursor-pointer"
-                  style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}>
-                  Edit
-                </button>
-                <button type="button"
-                  onClick={() => dismissDraft.mutate(selectedConvo.phoneNormalized)}
-                  disabled={dismissDraft.isPending}
-                  className="h-7 px-2.5 rounded-full cursor-pointer disabled:opacity-50"
-                  style={{ fontSize: 12, fontWeight: 600, color: FAINT_INK }}>
-                  {dismissDraft.isPending ? 'Dismissing…' : 'Dismiss'}
-                </button>
+                {editingDraft ? (
+                  <>
+                    <button type="button"
+                      onClick={() => { resolveDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, resolution: 'edited', text: draftEditText }); setEditingDraft(false) }}
+                      disabled={resolveDraft.isPending || !draftEditText.trim()}
+                      className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
+                      style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
+                      Send edited
+                    </button>
+                    <button type="button"
+                      onClick={() => setEditingDraft(false)}
+                      className="h-7 px-3 rounded-full cursor-pointer"
+                      style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button"
+                      onClick={() => resolveDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, resolution: 'approved' })}
+                      disabled={resolveDraft.isPending}
+                      className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
+                      style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
+                      Send
+                    </button>
+                    {/* Hear it, and send the voice — so what the customer gets is
+                        what was approved, and a spoken reply can be judged before
+                        anybody turns automatic replies on. */}
+                    <button type="button"
+                      onClick={() => hearDraft(selectedConvo.botDraft!)}
+                      className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5"
+                      style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}
+                      title={hearing === 'playing' ? 'Stop' : 'Hear this read aloud. Nothing is sent.'}>
+                      {hearing === 'loading' ? <Loader2 size={12} className="animate-spin" />
+                        : hearing === 'playing' ? <Square size={11} />
+                          : <Mic size={12} />}
+                      {hearing === 'loading' ? 'Speaking…' : hearing === 'playing' ? 'Stop' : 'Hear it'}
+                    </button>
+                    <button type="button"
+                      onClick={() => sendVoiceDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, text: selectedConvo.botDraft! })}
+                      disabled={sendVoiceDraft.isPending}
+                      className="h-7 px-3 rounded-full cursor-pointer disabled:opacity-50"
+                      style={{ border: '1px solid #D9CBFA', background: '#fff', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}
+                      title="Send this as a voice note">
+                      {sendVoiceDraft.isPending ? 'Sending…' : 'Send as voice'}
+                    </button>
+                    <button type="button"
+                      onClick={() => { setDraftEditText(selectedConvo.botDraft!); setEditingDraft(true) }}
+                      className="h-7 px-3 rounded-full cursor-pointer"
+                      style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}>
+                      Edit
+                    </button>
+                    <button type="button"
+                      onClick={() => dismissDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId! })}
+                      disabled={dismissDraft.isPending}
+                      className="h-7 px-2.5 rounded-full cursor-pointer disabled:opacity-50"
+                      style={{ fontSize: 12, fontWeight: 600, color: FAINT_INK }}>
+                      {dismissDraft.isPending ? 'Dismissing…' : 'Dismiss'}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}
