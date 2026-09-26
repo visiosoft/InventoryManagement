@@ -795,6 +795,17 @@ const quoteSchema = new Schema(
     notes: { type: String, default: '' },
     status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },
     shareToken: { type: String, default: null },
+    /* A booking made through the public, no-login API for the marketing
+     * website (server/src/routes/publicBooking.js) — the other system's
+     * Stripe checkout is what actually charges the card; this only records
+     * that it told us payment succeeded. `token` is a one-time value scoped
+     * to this single quote, handed back when the hold was created, and is
+     * how confirm-payment proves it is the same caller — not a login. */
+    publicBooking: {
+      token: { type: String, default: null },
+      confirmedAt: { type: Date, default: null },
+      externalReference: { type: String, default: '' },
+    },
     // A Stripe Checkout session for paying this quote online, and when it
     // actually cleared — the webhook sets stripePaidAt, nothing else does.
     stripeCheckoutSessionId: { type: String, default: null },

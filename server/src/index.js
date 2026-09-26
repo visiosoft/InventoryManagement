@@ -106,6 +106,7 @@ import { runLeadSla } from './services/leadSla.js';
 import { runQuietNudge } from './services/quietNudge.js';
 import { runLeadAssignReminder } from './services/leadAssignReminder.js';
 import { releaseLapsedHolds } from './utils/unitStatus.js';
+import publicBookingRoutes from './routes/publicBooking.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
@@ -233,6 +234,10 @@ app.use('/api/crew-portal', crewPortalRoutes);
 app.use('/api/moving-jobs/public-upload', movingJobPublicUpload);
 app.use('/api/moving-jobs/share', movingJobPublicShare);
 app.use('/api/moving-leads/public', movingLeadPublic);
+// The marketing website's booking API — no login, no auth token, by design.
+// See server/src/routes/publicBooking.js for what keeps it from being abused
+// (a per-IP rate limit and an atomic per-unit claim) despite that.
+app.use('/api/public/bookings', publicBookingRoutes);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.
@@ -619,6 +624,19 @@ async function start() {
       console.error('[Units]', e.message);
     }
   }, 60 * 60 * 1000), 90_000);
+
+  /* The same release, every 5 minutes rather than hourly.
+     The public booking API's hold is only 15 minutes — the website should
+     not still be showing a unit as taken 45 minutes after a visitor
+     abandoned the booking because the hourly sweep above hadn't run yet. */
+  setTimeout(() => setInterval(async () => {
+    try {
+      const freed = await releaseLapsedHolds();
+      if (freed.length) console.log(`[Units] released ${freed.length} unit(s): ${freed.join(', ')}`);
+    } catch (e) {
+      console.error('[Units]', e.message);
+    }
+  }, 5 * 60 * 1000), 45_000);
 
   const SWEEP_INTERVAL = 2 * 60 * 1000;
   setTimeout(() => setInterval(async () => {
