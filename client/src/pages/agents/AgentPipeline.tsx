@@ -6,7 +6,6 @@ import { PageHeader, Spinner } from '../../components/ui'
 import { AgentNav, C, DISPLAY, Eyebrow, Note, Panel, Pill, SectionHead } from './ui'
 
 const SELLING: Bucket[] = ['new', 'engaged', 'quoted', 'booking', 'won']
-const NURTURE: Bucket[] = ['quiet', 'dormant', 'with_person', 'lost']
 const pct = (n: number | null | undefined) => (n === null || n === undefined ? '—' : `${n}%`)
 
 export default function AgentPipeline() {
@@ -15,7 +14,7 @@ export default function AgentPipeline() {
   const max = Math.max(1, ...SELLING.map((b) => data?.counts[b] || 0))
   const conv = data?.conversion
 
-  const Stage = ({ b, width, color, right }: { b: Bucket; width: number; color: string; right?: string | null }) => {
+  const Stage = ({ b, width, color, right }: { b: Bucket; width: number; color: string; right?: number | null }) => {
     const on = bucket === b
     const label = data?.buckets.find((x) => x.key === b)?.label || b
     return (
