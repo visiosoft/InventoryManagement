@@ -68,6 +68,42 @@ export async function adoptLead(lead, { user = null, now = new Date(), signals =
     return { file, created: true };
 }
 
+/**
+ * Bring the CRM's existing leads under agent care, all at once. For each
+ * lead with no file yet: bucket it from its current status (same mapping
+ * `adoptLead` uses), anchor it to its real last WhatsApp message so the
+ * silence check and cadence math reflect actual history rather than
+ * "just adopted", and hand it straight to `agent` — bypassing the normal
+ * first-owner routing, since a backlog of cold leads is a follow-up job,
+ * not a fresh-lead one.
+ *
+ * Safe to run more than once: leads that already have a file are skipped,
+ * so a request that times out partway can simply be retried.
+ */
+export async function backfillLegacyLeads({ agent, now = new Date() } = {}) {
+    if (!agent) throw new Error('No agent given to own the backlog');
+    const adopted = [];
+    const already = await AgentLeadFile.distinct('lead');
+    const leads = await Lead.find({ _id: { $nin: already }, status: { $nin: ['won', 'lost', 'already_customer'] } }).lean();
+    for (const lead of leads) {
+        const lastMsg = await WhatsAppMessage.findOne({ phoneNormalized: lead.phoneNormalized }).sort({ occurredAt: -1 }).select('occurredAt').lean();
+        const bucket = bucketForStatus(lead.status);
+        const file = await AgentLeadFile.create({
+            lead: lead._id, agent: agent._id, phoneNormalized: lead.phoneNormalized, bucket, anchorAt: now,
+            lastInboundAt: lastMsg?.occurredAt || null,
+        });
+        file.nextTouchAt = nextTouchFor(file, cadenceFor(agent));
+        await file.save();
+        await record({
+            agent, lead, leadFile: file, kind: 'adopted',
+            summary: `${agent.name} took on ${lead.fullName} (${BUCKETS[bucket].label}, backlog import from status "${lead.status}")`,
+            bucketAfter: bucket, snapshotAfter: snapshotOf(file), actor: 'person', at: now,
+        });
+        adopted.push(file._id);
+    }
+    return { adopted: adopted.length, skipped: already.length };
+}
+
 /* ---------- a bucket event, with handoff ---------- */
 
 export async function applyEvent(file, event, { lead, now = new Date(), actor = 'agent', user = null, why = '' } = {}) {

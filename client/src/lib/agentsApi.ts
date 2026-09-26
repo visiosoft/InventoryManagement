@@ -190,6 +190,7 @@ export const agentsApi = {
     api.post<SimulateResponse>('/agents/simulate', body).then((r) => r.data),
   tick: () => api.post<{ proposed: number; exhausted: number; silenced: number; failed: number }>('/agents/tick').then((r) => r.data),
   seedTeam: () => api.post<{ team: { name: string; result: string; escalateTo: boolean }[] }>('/agents/seed-team').then((r) => r.data),
+  backfillLegacy: (agentId?: string) => api.post<{ adopted: number; skipped: number }>('/agents/backfill-legacy', agentId ? { agentId } : {}).then((r) => r.data),
   insights: (agentId: string, days = 30) => api.get<AgentInsights>(`/agents/${agentId}/stats`, { params: { days } }).then((r) => r.data),
   rehearse: (agentId: string, params: { conversations?: number; turns?: number } = {}) => api.post<{ rehearsal: Rehearsal; alreadyRunning?: boolean }>(`/agents/${agentId}/rehearse`, params).then((r) => r.data),
   rehearsal: (agentId: string, rid: string) => api.get<Rehearsal>(`/agents/${agentId}/rehearsals/${rid}`).then((r) => r.data),

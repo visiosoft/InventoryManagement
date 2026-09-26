@@ -9,7 +9,7 @@ import { AgentProfile, AgentLeadFile, AgentAction, AGENT_MODES, AGENT_TOOLS, AGE
 import { runJob, describeSchedule } from './jobs.js';
 import { BUCKETS, BUCKET_ORDER, describeStage, DEFAULT_CADENCE, nextTouchFor } from './buckets.js';
 import { runAgent, findLead, cadenceFor } from './runtime.js';
-import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor } from './service.js';
+import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads } from './service.js';
 import { record, revert, snapshotOf } from './log.js';
 import { seedStarterTeam } from './seed.js';
 import { agentStats, startRehearsal, reviewAgent } from './insights.js';
@@ -108,6 +108,15 @@ router.put('/profiles/:id', admin, wrap(async (req, res) => {
 // again: it updates what is here and keeps an admin's edits.
 router.post('/seed-team', admin, wrap(async (req, res) => {
     res.json({ team: await seedStarterTeam({ force: req.body?.force === true }) });
+}));
+
+// Adopts every existing CRM lead that has no agent file yet, all handed to
+// one agent (Omar, by default — the follow-ups specialist). Safe to click
+// more than once: already-adopted leads are skipped.
+router.post('/backfill-legacy', admin, wrap(async (req, res) => {
+    const agent = req.body?.agentId ? await AgentProfile.findById(req.body.agentId) : await AgentProfile.findOne({ name: 'Omar' });
+    if (!agent) throw new Error('No agent found to own the backlog — pass agentId, or seed the starter team first');
+    res.json(await backfillLegacyLeads({ agent }));
 }));
 
 router.get('/team', wrap(async (_req, res) => {

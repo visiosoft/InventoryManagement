@@ -26,6 +26,11 @@ export default function AgentTeam() {
     onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['agents'] }); alert(`Done: ${r.sorted} sorted, ${r.drafts} draft${r.drafts === 1 ? '' : 's'} waiting in Needs you.`) },
     onError: (e) => alert(apiError(e)),
   })
+  const backfill = useMutation({
+    mutationFn: () => agentsApi.backfillLegacy(),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['agents'] }); alert(`${r.adopted} lead${r.adopted === 1 ? '' : 's'} handed to Omar for follow-up (shadow — nothing is sent until approved). ${r.skipped} already had an agent.`) },
+    onError: (e) => alert(apiError(e)),
+  })
   const agents = data?.agents.filter((a) => a.isActive) || []
   const buckets = data?.buckets || []
   const ownerOf = (b: string) => agents.find((a) => a.mode !== 'off' && a.ownsBuckets.includes(b as Bucket))
@@ -72,6 +77,16 @@ export default function AgentTeam() {
               </Panel>
             ))}
           </div>
+
+          {agents.length > 0 && (
+            <Panel style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div>
+                <b>Bring in existing leads</b>
+                <div style={{ fontSize: 12.5, color: C.second, marginTop: 2 }}>One-time: every CRM lead with no agent yet is handed to Omar for follow-up, in shadow — drafts and template touches wait in Needs you for approval, nothing sends on its own. Leads already past 24 hours since their last message only ever get an approved template, never a free-text draft. Safe to click more than once — already-adopted leads are skipped.</div>
+              </div>
+              <Button size="sm" disabled={backfill.isPending} onClick={() => { if (confirm('Hand every existing CRM lead with no agent yet to Omar, in shadow mode? Nothing will be sent without your approval.')) backfill.mutate() }}>{backfill.isPending ? 'Bringing them in…' : 'Bring in existing leads'}</Button>
+            </Panel>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12, marginTop: 14 }}>
             <Panel>
