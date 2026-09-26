@@ -11,10 +11,18 @@ export interface Offer { unitNumber: string; monthlyPrice: number | null; from: 
 export interface LeadRef { _id: string; fullName: string; phone: string; temperature?: string; status?: string; createdAt?: string }
 export interface AgentRef { _id: string; name: string; role?: string; avatarColor?: string; promptVersion?: number }
 
+export type AgentKind = 'conversational' | 'scheduled'
+export type Cadence = 'on_request' | 'daily' | 'weekly' | 'monthly'
+export interface Schedule { cadence: Cadence; hour: number; dayOfWeek: number; dayOfMonth: number }
+
 export interface AgentProfile {
   _id: string
   name: string
   role: string
+  kind: AgentKind
+  schedule: Schedule
+  task: string
+  lastRunAt: string | null
   systemPrompt: string
   promptVersion: number
   model: string
@@ -44,6 +52,7 @@ export interface ProfilesResponse {
 
 export interface TeamAgent {
   _id: string; name: string; role: string; mode: 'off' | 'shadow'; promptVersion: number; model: string
+  kind: AgentKind; schedule: Schedule | null; scheduleText: string; lastRunAt: string | null
   ownsBuckets: OwnableBucket[]; languages: string[]; escalateTo: { _id: string; name: string } | string | null
   isDefault: boolean; dailyBudgetAed: number; avatarColor: string; isActive: boolean; leads: number
   today: { drafts: number; proposed: number; approved: number; edited: number; dismissed: number; handed: number; approvedRate: number | null }
@@ -64,7 +73,15 @@ export interface InboxHanded {
   leadFileId: string; lead: LeadRef; agent: AgentRef; previousBucket: Bucket | null; need: LeadNeed; offers: Offer[]
   openQuestions: string[]; lastSummary: string; why: string; at: string
 }
-export interface InboxResponse { drafts: InboxDraft[]; touches: InboxTouch[]; handed: InboxHanded[] }
+export interface InboxEmail {
+  actionId: string; at: string; agent: AgentRef; to: string; subject: string; body: string; why: string
+  from: string; originalSubject: string; customerText: string; grounded: { ok: boolean; loose: string[] } | null; needsHuman: boolean
+}
+export interface InboxReport {
+  actionId: string; at: string; agent: AgentRef; summary: string; text: string
+  items: { id: string; category: string; note: string }[]; draftCount: number; needsHuman: boolean; reason: string
+}
+export interface InboxResponse { drafts: InboxDraft[]; touches: InboxTouch[]; handed: InboxHanded[]; emails: InboxEmail[]; reports: InboxReport[] }
 
 export interface PipelineRow {
   leadFileId: string; leadId: string; name: string; phone: string; temperature: string
@@ -177,6 +194,7 @@ export const agentsApi = {
   rehearse: (agentId: string, params: { conversations?: number; turns?: number } = {}) => api.post<{ rehearsal: Rehearsal; alreadyRunning?: boolean }>(`/agents/${agentId}/rehearse`, params).then((r) => r.data),
   rehearsal: (agentId: string, rid: string) => api.get<Rehearsal>(`/agents/${agentId}/rehearsals/${rid}`).then((r) => r.data),
   review: (agentId: string, days = 30) => api.post<Review>(`/agents/${agentId}/review`, { days }).then((r) => r.data),
+  run: (agentId: string) => api.post<{ summary: string; sorted: number; drafts: number; needsHuman: boolean; reason: string }>(`/agents/${agentId}/run`).then((r) => r.data),
   templates: () => api.get<{ configured: boolean; error: string; templates: { name: string; language: string; bodyText: string }[] }>('/agents/templates').then((r) => r.data),
 }
 

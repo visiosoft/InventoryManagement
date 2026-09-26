@@ -5,7 +5,8 @@
 
 import { Router } from 'express';
 import { Lead, User } from '../models/index.js';
-import { AgentProfile, AgentLeadFile, AgentAction, AGENT_MODES, AGENT_TOOLS, RESOLUTIONS } from './models.js';
+import { AgentProfile, AgentLeadFile, AgentAction, AGENT_MODES, AGENT_TOOLS, AGENT_KINDS, CADENCES, RESOLUTIONS } from './models.js';
+import { runJob, describeSchedule } from './jobs.js';
 import { BUCKETS, BUCKET_ORDER, describeStage, DEFAULT_CADENCE, nextTouchFor } from './buckets.js';
 import { runAgent, findLead, cadenceFor } from './runtime.js';
 import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor } from './service.js';
@@ -25,13 +26,24 @@ const OWNABLE = [...BUCKET_ORDER, 'tenant'];
 router.get('/profiles', wrap(async (_req, res) => {
     const profiles = await AgentProfile.find().populate('escalateTo', 'name email').sort({ createdAt: 1 }).lean();
     const users = await User.find({ isActive: true }).select('name email role').lean();
-    res.json({ profiles, users, tools: AGENT_TOOLS, modes: AGENT_MODES, buckets: OWNABLE, defaultCadence: DEFAULT_CADENCE });
+    res.json({ profiles, users, tools: AGENT_TOOLS, modes: AGENT_MODES, kinds: AGENT_KINDS, cadences: CADENCES, buckets: OWNABLE, defaultCadence: DEFAULT_CADENCE });
 }));
 
 function readProfile(body, existing) {
     const p = {};
     if (body.name !== undefined) p.name = String(body.name || '').trim();
     if (body.role !== undefined) p.role = String(body.role || '').trim();
+    if (body.kind !== undefined && AGENT_KINDS.includes(body.kind)) p.kind = body.kind;
+    if (body.task !== undefined) p.task = String(body.task || '');
+    if (body.schedule && typeof body.schedule === 'object') {
+        const s = body.schedule;
+        p.schedule = {
+            cadence: CADENCES.includes(s.cadence) ? s.cadence : 'on_request',
+            hour: Math.min(23, Math.max(0, Number(s.hour) || 0)),
+            dayOfWeek: Math.min(6, Math.max(0, Number(s.dayOfWeek) || 0)),
+            dayOfMonth: Math.min(28, Math.max(1, Number(s.dayOfMonth) || 1)),
+        };
+    }
     if (body.systemPrompt !== undefined) {
         p.systemPrompt = String(body.systemPrompt || '');
         if (existing && p.systemPrompt !== existing.systemPrompt) p.promptVersion = (existing.promptVersion || 1) + 1;
@@ -100,7 +112,24 @@ router.post('/seed-team', admin, wrap(async (req, res) => {
 
 router.get('/team', wrap(async (_req, res) => {
     const agents = await teamStats();
+    const profiles = await team();
+    for (const a of agents) {
+        const p = profiles.find((x) => String(x._id) === String(a._id));
+        a.kind = p?.kind || 'conversational';
+        a.schedule = p?.schedule || null;
+        a.scheduleText = p?.kind === 'scheduled' ? describeSchedule(p.schedule) : '';
+        a.lastRunAt = p?.lastRunAt || null;
+    }
     res.json({ agents, buckets: BUCKET_ORDER.map((b) => ({ key: b, label: BUCKETS[b].label })) });
+}));
+
+// Run a scheduled agent now, without waiting for its hour.
+router.post('/:id/run', admin, wrap(async (req, res) => {
+    const agent = await agentById(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'No such agent' });
+    if (agent.kind !== 'scheduled') throw new Error('Only a scheduled agent can be run on request');
+    if (agent.mode === 'off') throw new Error(`${agent.name} is off duty`);
+    res.json(await runJob({ agent, reason: 'request' }));
 }));
 
 router.get('/inbox', wrap(async (req, res) => {

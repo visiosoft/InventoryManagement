@@ -15,6 +15,11 @@ import { record, snapshotOf, purgeExpiredDetail } from './log.js';
 import { routeFirstOwner, handoffFor, ownerForBucket } from './team.js';
 import { sendWhatsAppText, whatsappSendConfigured } from '../services/whatsapp.js';
 import { sendQuietFollowUp } from '../services/leadFollowUp.js';
+import { sendMail, mailConfigured } from '../services/mail.js';
+import { runJob, isDue } from './jobs.js';
+
+const escapeHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const textToHtml = (t) => String(t || '').split(/\n{2,}/).map((p) => `<p style="font-size:14px;color:#14081F">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
 
 const SILENCE_MS = 24 * 3600_000;
 const TICK_BATCH = 10;
@@ -128,9 +133,20 @@ export async function onInbound({ phoneNormalized, text, occurredAt, businessNum
 /* ---------- the clock ---------- */
 
 export async function runAgentTick({ now = new Date() } = {}) {
-    const out = { proposed: 0, exhausted: 0, silenced: 0, failed: 0, purged: 0 };
+    const out = { proposed: 0, exhausted: 0, silenced: 0, failed: 0, purged: 0, jobs: 0 };
     const profiles = await team();
     if (!profiles.some((p) => p.mode !== 'off')) return out;
+
+    // Scheduled agents whose hour has come. Stamped before the run so a
+    // slow run cannot be started twice by the next tick.
+    for (const agent of profiles.filter((p) => isDue(p, now))) {
+        try {
+            const { dubaiParts } = await import('./jobs.js');
+            await AgentProfile.updateOne({ _id: agent._id }, { $set: { lastRunDay: dubaiParts(now).dayKey } });
+            await runJob({ agent, now });
+            out.jobs += 1;
+        } catch (e) { out.failed += 1; console.error(`[Agents] ${agent.name}:`, e.message); }
+    }
 
     const stale = await AgentLeadFile.find({
         bucket: 'engaged', frozenAt: null,
@@ -181,13 +197,18 @@ const lastCustomerLine = (detail) => {
 };
 
 export async function inbox({ agentId = null } = {}) {
-    const pending = { kind: { $in: ['reply_drafted', 'touch_proposed'] }, resolution: null, ...(agentId ? { agent: agentId } : {}) };
-    const rows = await AgentAction.find(pending).sort({ at: -1 }).limit(100)
+    const pending = { kind: { $in: ['reply_drafted', 'touch_proposed', 'email_drafted'] }, resolution: null, ...(agentId ? { agent: agentId } : {}) };
+    const rows = await AgentAction.find(pending).sort({ at: -1 }).limit(120)
         .populate('lead', 'fullName phone temperature').populate('agent', 'name role avatarColor').populate('leadFile', 'bucket touchCount need offers frozenAt').lean();
     const profiles = await team();
     const drafts = [];
     const touches = [];
+    const emails = [];
     for (const a of rows) {
+        if (a.kind === 'email_drafted') {
+            emails.push({ actionId: a._id, at: a.at, agent: a.agent, to: a.detail?.to || '', subject: a.detail?.subject || '', body: a.detail?.body || '', why: a.detail?.why || '', from: a.detail?.from || '', originalSubject: a.detail?.originalSubject || '', customerText: a.detail?.customerText || '', grounded: a.detail?.grounded || null, needsHuman: Boolean(a.detail?.grounded && a.detail.grounded.ok === false) });
+            continue;
+        }
         if (!a.lead || !a.leadFile) continue;
         const agent = profiles.find((p) => String(p._id) === String(a.agent?._id));
         const base = {
@@ -206,7 +227,18 @@ export async function inbox({ agentId = null } = {}) {
         const esc = await AgentAction.findOne({ leadFile: f._id, kind: 'escalated' }).sort({ at: -1 }).lean();
         handed.push({ leadFileId: f._id, lead: f.lead, agent: f.agent, previousBucket: f.previousBucket, need: f.need, offers: f.offers, openQuestions: f.openQuestions, lastSummary: f.lastSummary, why: esc?.summary?.replace(/^Handed to a person:\s*/, '') || '', at: esc?.at || f.lastActionAt });
     }
-    return { drafts, touches, handed };
+    // The latest report from each scheduled agent, from the last three days.
+    const since = new Date(Date.now() - 3 * 86_400_000);
+    const reportRows = await AgentAction.find({ kind: 'report', at: { $gte: since }, ...(agentId ? { agent: agentId } : {}) }).sort({ at: -1 }).limit(20).populate('agent', 'name role avatarColor').lean();
+    const seen = new Set();
+    const reports = [];
+    for (const r of reportRows) {
+        const key = String(r.agent?._id);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        reports.push({ actionId: r._id, at: r.at, agent: r.agent, summary: r.summary, text: r.detail?.summary || '', items: r.detail?.items || [], draftCount: r.detail?.draftCount || 0, needsHuman: Boolean(r.detail?.needsHuman), reason: r.detail?.reason || '' });
+    }
+    return { drafts, touches, handed, emails, reports };
 }
 
 /**
@@ -217,14 +249,21 @@ export async function resolveAction(actionId, { resolution, text = '', user }) {
     const action = await AgentAction.findById(actionId).populate('lead').populate('agent');
     if (!action) throw new Error('That item does not exist');
     if (action.resolution) throw new Error('Already answered');
-    if (!['reply_drafted', 'touch_proposed'].includes(action.kind)) throw new Error('Only drafts and proposed touches can be answered');
-    const file = await AgentLeadFile.findById(action.leadFile);
+    if (!['reply_drafted', 'touch_proposed', 'email_drafted'].includes(action.kind)) throw new Error('Only drafts and proposed touches can be answered');
+    const file = action.leadFile ? await AgentLeadFile.findById(action.leadFile) : null;
     const lead = action.lead;
     const agent = action.agent;
     const now = new Date();
     let sent = null;
 
-    if (resolution === 'approved' || resolution === 'edited') {
+    if ((resolution === 'approved' || resolution === 'edited') && action.kind === 'email_drafted') {
+        if (!mailConfigured()) throw new Error('Email is not configured, so nothing can be sent');
+        const body = String(resolution === 'edited' ? text : action.detail?.body || '').trim();
+        if (!body) throw new Error('There is nothing to send');
+        const subject = String(action.detail?.subject || '').trim() || `Re: ${action.detail?.originalSubject || ''}`.trim();
+        sent = await sendMail({ to: action.detail?.to, subject, text: body, html: textToHtml(body), context: { kind: 'agent_email_reply', label: agent?.name || '' } });
+        action.sentText = body;
+    } else if (resolution === 'approved' || resolution === 'edited') {
         if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured, so nothing can be sent');
         if (action.kind === 'reply_drafted') {
             const body = String(resolution === 'edited' ? text : action.detail?.reply || '').trim();
@@ -250,7 +289,7 @@ export async function resolveAction(actionId, { resolution, text = '', user }) {
     action.resolvedBy = user?.id || null;
     await action.save();
 
-    const label = action.kind === 'reply_drafted' ? 'draft' : 'follow-up';
+    const label = action.kind === 'reply_drafted' ? 'draft' : action.kind === 'email_drafted' ? 'email' : 'follow-up';
     await record({
         agent, lead, leadFile: file,
         kind: resolution === 'approved' ? 'approved' : resolution === 'edited' ? 'edited' : 'dismissed',

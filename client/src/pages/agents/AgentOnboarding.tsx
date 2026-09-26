@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Save, Zap } from 'lucide-react'
 import { apiError } from '../../lib/api'
-import { agentsApi, AGENT_COLORS, JOB_SECTIONS as JOB, composeJob as compose, parseJob as parse, type AgentProfile, type Decision, type OwnableBucket, type JobParts } from '../../lib/agentsApi'
+import { agentsApi, AGENT_COLORS, JOB_SECTIONS as JOB, composeJob as compose, parseJob as parse, type AgentKind, type AgentProfile, type Cadence, type Decision, type OwnableBucket, type JobParts, type Schedule } from '../../lib/agentsApi'
 import { Button, Field, Input, PageHeader, Select, Spinner, Textarea } from '../../components/ui'
 import { AgentNav, Avatar, C, DecisionView, Eyebrow, Note, Panel, Pill, Tag } from './ui'
 
@@ -30,8 +30,18 @@ const CAPS: { tier: string; tone: 'ok' | 'amber' | 'danger'; hint: string; items
   { tier: 'Propose · money — a person confirms', tone: 'danger', hint: 'Not in this prototype. Quotation and contract proposals arrive with Phase 2.', items: [] },
 ]
 
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const EMAIL_CAPS: { tool: string; name: string; hint: string }[] = [
+  { tool: 'list_inbox', name: 'See what arrived in the shared inbox', hint: 'Sender, subject and a one-line snippet' },
+  { tool: 'read_email', name: 'Read a message in full', hint: 'When the snippet is not enough' },
+  { tool: 'sort_email', name: 'Sort messages', hint: 'Lead, tenant, supplier, newsletter, spam, other' },
+  { tool: 'draft_reply', name: 'Draft email replies', hint: 'Signed off as the company; a person sends them' },
+  { tool: 'flag_for_person', name: 'Flag a message for a person', hint: 'Money, contracts, complaints, legal' },
+]
+
 type Draft = {
   name: string; role: string; avatarColor: string; model: string; job: JobParts; enabledTools: string[]
+  kind: AgentKind; schedule: Schedule; task: string
   ownsBuckets: OwnableBucket[]; languages: string; whatsappNumbers: string; escalateTo: string; dailyBudgetAed: number; mode: 'off' | 'shadow'; syncLeadStatus: boolean; isDefault: boolean
 }
 const MODELS = [['', 'Same as the server'], ['gpt-4o-mini', 'gpt-4o-mini — cheapest'], ['gpt-4.1-mini', 'gpt-4.1-mini'], ['gpt-4.1', 'gpt-4.1'], ['gpt-6-luna', 'gpt-6-luna — cheaper than gpt-4o-mini, untested here'], ['gpt-6-sol', 'gpt-6-sol — newer, untested here']]
@@ -39,6 +49,7 @@ const BUCKET_OPTIONS: { key: OwnableBucket; label: string }[] = [['new', 'New'],
 
 const toDraft = (p: AgentProfile | null, tools: string[]): Draft => ({
   name: p?.name || '', role: p?.role || '', avatarColor: p?.avatarColor || AGENT_COLORS[0], model: p?.model || '',
+  kind: p?.kind || 'conversational', schedule: p?.schedule || { cadence: 'daily', hour: 7, dayOfWeek: 1, dayOfMonth: 1 }, task: p?.task || '',
   job: p?.systemPrompt ? parse(p.systemPrompt) : STARTER, enabledTools: p ? p.enabledTools : tools.filter((t) => t !== 'propose_quotation'),
   ownsBuckets: p?.ownsBuckets || [], languages: (p?.languages || []).join(', '), whatsappNumbers: (p?.whatsappNumbers || []).join(', '),
   escalateTo: typeof p?.escalateTo === 'object' && p?.escalateTo ? p.escalateTo._id : (p?.escalateTo as string) || '', dailyBudgetAed: p?.dailyBudgetAed || 0,
@@ -64,6 +75,7 @@ export default function AgentOnboarding() {
 
   const body = (d: Draft): Partial<AgentProfile> => ({
     name: d.name, role: d.role, avatarColor: d.avatarColor, model: d.model, systemPrompt: compose(d.job), enabledTools: d.enabledTools,
+    kind: d.kind, schedule: d.schedule, task: d.task,
     ownsBuckets: d.ownsBuckets, languages: list(d.languages), whatsappNumbers: list(d.whatsappNumbers), escalateTo: d.escalateTo || null,
     dailyBudgetAed: d.dailyBudgetAed, mode: d.mode, syncLeadStatus: d.syncLeadStatus, isDefault: d.isDefault,
   })
@@ -106,7 +118,29 @@ export default function AgentOnboarding() {
             <Field label="Name"><Input value={draft.name} onChange={(e) => set({ name: e.target.value })} placeholder="Aisha" /></Field>
             <Field label="The job, in two words"><Input value={draft.role} onChange={(e) => set({ role: e.target.value })} placeholder="First response" /></Field>
             <Field label="Model"><Select value={draft.model} onChange={(e) => set({ model: e.target.value })}>{MODELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></Field>
+            <Field label="How it works">
+              <Select value={draft.kind} onChange={(e) => set({ kind: e.target.value as AgentKind })}>
+                <option value="conversational">Talks to customers — wakes when someone writes</option>
+                <option value="scheduled">Runs a task on a clock — leaves a report and drafts</option>
+              </Select>
+            </Field>
           </div>
+          {draft.kind === 'scheduled' && (
+            <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+                <Field label="Runs">
+                  <Select value={draft.schedule.cadence} onChange={(e) => set({ schedule: { ...draft.schedule, cadence: e.target.value as Cadence } })}>
+                    <option value="daily">Every day</option><option value="weekly">Every week</option><option value="monthly">Every month</option><option value="on_request">Only when asked</option>
+                  </Select>
+                </Field>
+                {draft.schedule.cadence !== 'on_request' && <Field label="At (Dubai time)"><Select value={draft.schedule.hour} onChange={(e) => set({ schedule: { ...draft.schedule, hour: Number(e.target.value) } })}>{Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}</Select></Field>}
+                {draft.schedule.cadence === 'weekly' && <Field label="On"><Select value={draft.schedule.dayOfWeek} onChange={(e) => set({ schedule: { ...draft.schedule, dayOfWeek: Number(e.target.value) } })}>{DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}</Select></Field>}
+                {draft.schedule.cadence === 'monthly' && <Field label="On the"><Select value={draft.schedule.dayOfMonth} onChange={(e) => set({ schedule: { ...draft.schedule, dayOfMonth: Number(e.target.value) } })}>{Array.from({ length: 28 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}</Select></Field>}
+              </div>
+              <Field label="The task, each run"><Textarea rows={4} value={draft.task} onChange={(e) => set({ task: e.target.value })} placeholder="e.g. Go through everything that arrived in the inbox since yesterday. Sort every message. Draft a reply for each one that deserves an answer. Flag anything a person must handle." /></Field>
+              <Note>A run reads through its tools, then leaves a report and any drafts in Needs you. Nothing is sent until a person approves it.</Note>
+            </div>
+          )}
           <div style={{ marginTop: 12 }}>
             <Eyebrow>Colour</Eyebrow>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -134,6 +168,23 @@ export default function AgentOnboarding() {
       {step === 2 && (
         <Panel>
           <Eyebrow>3 · Permissions</Eyebrow>
+          {draft.kind === 'scheduled' && (
+            <div style={{ marginBottom: 14 }}>
+              <Eyebrow tone={C.amber}>The inbox · drafts only, a person sends</Eyebrow>
+              <div style={{ display: 'grid', gap: 6 }}>
+                {EMAIL_CAPS.map((it) => {
+                  const on = draft.enabledTools.includes(it.tool)
+                  return (
+                    <label key={it.tool} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center', padding: '9px 12px', border: `1px solid ${C.line}`, borderRadius: 10, cursor: 'pointer' }}>
+                      <div><b style={{ fontSize: 13 }}>{it.name}</b><span style={{ fontSize: 12, color: C.muted, display: 'block' }}>{it.hint}</span></div>
+                      <input type="checkbox" checked={on} onChange={(e) => set({ enabledTools: e.target.checked ? [...draft.enabledTools, it.tool] : draft.enabledTools.filter((t) => t !== it.tool) })} />
+                    </label>
+                  )
+                })}
+              </div>
+              <Note>Reading the inbox needs Gmail connected with inbox access — Settings → Integrations → Gmail. A connection made before today granted sending only; reconnect once to add reading.</Note>
+            </div>
+          )}
           {CAPS.map((g) => (
             <div key={g.tier} style={{ marginBottom: 14 }}>
               <Eyebrow tone={g.tone === 'ok' ? C.ok : g.tone === 'amber' ? C.amber : C.danger}>{g.tier}</Eyebrow>
@@ -173,6 +224,7 @@ export default function AgentOnboarding() {
         <Panel>
           <Eyebrow>5 · On duty</Eyebrow>
           <div style={{ display: 'grid', gap: 12 }}>
+            {draft.kind === 'scheduled' ? <Note>A scheduled agent owns no leads — it works from its task and its tools, and reports to Needs you.</Note> : (
             <div>
               <div style={{ fontSize: 12.5, fontWeight: 700, color: C.second, marginBottom: 6 }}>Owns these buckets</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -190,6 +242,7 @@ export default function AgentOnboarding() {
               </div>
               <Note>A bucket has one owner. Taking one from another agent reassigns the leads in it as they next move — each move is logged as a handoff.</Note>
             </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
               <Field label="Answers on these numbers (blank = any)"><Input value={draft.whatsappNumbers} onChange={(e) => set({ whatsappNumbers: e.target.value })} placeholder="9714329xxxx" /></Field>
               <Field label="Languages (blank = any)"><Input value={draft.languages} onChange={(e) => set({ languages: e.target.value })} placeholder="en, ar" /></Field>

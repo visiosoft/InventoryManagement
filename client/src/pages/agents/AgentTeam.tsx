@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Plus, Pencil } from 'lucide-react'
+import { Plus, Pencil, PlayCircle } from 'lucide-react'
 import { apiError } from '../../lib/api'
-import { agentsApi, agentColor, type Bucket, type TeamAgent } from '../../lib/agentsApi'
+import { agentsApi, agentColor, agoText, type Bucket, type TeamAgent } from '../../lib/agentsApi'
 import { Button, PageHeader, Spinner } from '../../components/ui'
 import { AgentNav, Avatar, C, Eyebrow, Note, Panel, Pill, Stat, Tag } from './ui'
 
@@ -19,6 +19,11 @@ export default function AgentTeam() {
   const seed = useMutation({
     mutationFn: agentsApi.seedTeam,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['agents'] }),
+    onError: (e) => alert(apiError(e)),
+  })
+  const run = useMutation({
+    mutationFn: (id: string) => agentsApi.run(id),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['agents'] }); alert(`Done: ${r.sorted} sorted, ${r.drafts} draft${r.drafts === 1 ? '' : 's'} waiting in Needs you.`) },
     onError: (e) => alert(apiError(e)),
   })
   const agents = data?.agents.filter((a) => a.isActive) || []
@@ -49,7 +54,7 @@ export default function AgentTeam() {
                     <span style={{ position: 'absolute', top: 2, [a.mode === 'off' ? 'left' : 'right']: 2, width: 16, height: 16, borderRadius: 999, background: '#fff' }} />
                   </button>
                 </div>
-                <div style={{ fontSize: 12.5, color: C.second }}><b style={{ color: C.ink }}>{a.role || 'No role yet'}</b>{a.ownsBuckets.length ? <> · owns {a.ownsBuckets.map((b) => b === 'tenant' ? <Tag key={b} tone="grey">existing customers</Tag> : <Pill key={b} bucket={b} label={buckets.find((x) => x.key === b)?.label} />)}</> : <> · owns nothing yet</>}</div>
+                <div style={{ fontSize: 12.5, color: C.second }}><b style={{ color: C.ink }}>{a.role || 'No role yet'}</b>{a.kind === 'scheduled' ? <> · <Tag tone="grey">{a.scheduleText}</Tag>{a.lastRunAt ? <span style={{ color: C.muted }}> · last ran {agoText(a.lastRunAt)}</span> : null}</> : a.ownsBuckets.length ? <> · owns {a.ownsBuckets.map((b) => b === 'tenant' ? <Tag key={b} tone="grey">existing customers</Tag> : <Pill key={b} bucket={b} label={buckets.find((x) => x.key === b)?.label} />)}</> : <> · owns nothing yet</>}</div>
                 <div style={{ fontSize: 12, color: C.muted }}>{[a.languages.length ? a.languages.join(', ') : '', escName(a) ? `hands to ${escName(a)}` : 'hands to nobody yet', a.isDefault ? 'default' : ''].filter(Boolean).join(' · ')}</div>
                 <div style={{ display: 'flex', gap: 14 }}>
                   <Stat value={a.leads} label="leads" />
@@ -58,7 +63,8 @@ export default function AgentTeam() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Tag tone={a.mode === 'off' ? 'grey' : 'amber'}>{a.mode === 'off' ? 'off duty' : 'shadow'} · v{a.promptVersion}</Tag>
-                  <div style={{ display: 'flex', gap: 4 }}>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    {a.kind === 'scheduled' && a.mode !== 'off' && <button onClick={() => run.mutate(a._id)} disabled={run.isPending} title="Run now" style={{ border: 'none', background: 'transparent', color: C.purple, cursor: 'pointer', display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 12, fontWeight: 700, padding: '4px 6px' }}><PlayCircle size={13} /> {run.isPending ? 'Running…' : 'Run now'}</button>}
                     <Link to={`/agents/${a._id}`} style={{ fontSize: 12, color: C.purple, fontWeight: 700, textDecoration: 'none', padding: '4px 6px' }}>Open →</Link>
                     <Link to={`/agents/profiles/${a._id}`} style={{ fontSize: 12, color: C.muted, textDecoration: 'none', padding: '4px 6px', display: 'inline-flex', gap: 4, alignItems: 'center' }}><Pencil size={11} /> Edit</Link>
                   </div>

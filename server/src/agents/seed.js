@@ -70,6 +70,26 @@ export const STARTER_TEAM = [
         ),
     },
     {
+        name: 'Nadia',
+        role: 'Executive assistant',
+        kind: 'scheduled',
+        schedule: { cadence: 'daily', hour: 7, dayOfWeek: 1, dayOfMonth: 1 },
+        avatarColor: '#0F766E',
+        ownsBuckets: [],
+        languages: [],
+        isDefault: false,
+        dailyBudgetAed: 10,
+        enabledTools: ['list_inbox', 'read_email', 'sort_email', 'draft_reply', 'flag_for_person', 'units_available', 'price_booking', 'escalate'],
+        escalateRole: 'admin',
+        task: 'Go through everything that arrived in the shared inbox since yesterday morning. Sort every message: lead, tenant, supplier, newsletter, spam, other. Draft a reply for each lead and each tenant or supplier with a genuine question, short and signed off as PurpleBox Storage. Flag for a person anything about money, contracts, complaints or legal matters. Finish with a five-line summary of what came in and what you did.',
+        systemPrompt: job(
+            'Nadia, the executive assistant at PurpleBox Storage in Dubai. Every morning at seven you go through the shared inbox so the team starts the day with it sorted and the replies drafted.',
+            'Clear, warm and short. A reply is three or four sentences. Sign off as PurpleBox Storage, never as a named person. Match the sender\'s language.',
+            'Nothing directly — but you know the business: self-storage units from 25 to 200 sqft in Al Quoz, billed every 4 weeks. A lead asking for a price gets a real figure only from your tools; otherwise say a colleague will send a quotation today.',
+            'Money, contracts, invoices, refunds, complaints and legal notices are flagged for a person, never answered. Newsletters and spam are sorted and left alone.',
+        ),
+    },
+    {
         name: 'Sam',
         role: 'Tenants',
         avatarColor: '#4A4357',
@@ -107,7 +127,7 @@ export async function seedStarterTeam({ force = false } = {}) {
         }
         // Keep an admin's edits: the job text only changes when forced, the
         // mode is never touched, and a chosen hand-over person is kept.
-        const patch = { role: fields.role, avatarColor: fields.avatarColor, ownsBuckets: fields.ownsBuckets, languages: fields.languages, isDefault: fields.isDefault, dailyBudgetAed: fields.dailyBudgetAed, enabledTools: fields.enabledTools, isActive: true };
+        const patch = { role: fields.role, avatarColor: fields.avatarColor, ownsBuckets: fields.ownsBuckets, languages: fields.languages, isDefault: fields.isDefault, dailyBudgetAed: fields.dailyBudgetAed, enabledTools: fields.enabledTools, isActive: true, kind: fields.kind || 'conversational', ...(fields.schedule ? { schedule: fields.schedule } : {}), ...(fields.task && !existing.task ? { task: fields.task } : {}) };
         if (!existing.escalateTo && escalateTo) patch.escalateTo = escalateTo;
         if (force && existing.systemPrompt !== fields.systemPrompt) { patch.systemPrompt = fields.systemPrompt; patch.promptVersion = (existing.promptVersion || 1) + 1; }
         Object.assign(existing, patch);

@@ -32,12 +32,35 @@ export const AGENT_TOOLS = [
     'move_bucket',
     'propose_follow_up_template',
     'escalate',
+    // the scheduled desk: email
+    'list_inbox',
+    'read_email',
+    'sort_email',
+    'draft_reply',
+    'flag_for_person',
 ];
+
+/* How a scheduled agent wakes up. A conversational agent wakes when a
+   customer writes; a scheduled one runs its task on a clock and leaves a
+   report and a batch of drafts in the inbox for a person. */
+export const AGENT_KINDS = ['conversational', 'scheduled'];
+export const CADENCES = ['on_request', 'daily', 'weekly', 'monthly'];
 
 const agentProfileSchema = new Schema({
     name: { type: String, required: true, trim: true },
     // The job in two words — "First response", "Follow-ups", "Closing".
     role: { type: String, default: '', trim: true },
+    kind: { type: String, enum: AGENT_KINDS, default: 'conversational' },
+    // For a scheduled agent: when it runs (Dubai time) and what it does.
+    schedule: {
+        cadence: { type: String, enum: CADENCES, default: 'on_request' },
+        hour: { type: Number, default: 7, min: 0, max: 23 },
+        dayOfWeek: { type: Number, default: 1, min: 0, max: 6 },   // 0 = Sunday
+        dayOfMonth: { type: Number, default: 1, min: 1, max: 28 },
+    },
+    task: { type: String, default: '' },
+    lastRunAt: { type: Date, default: null },
+    lastRunDay: { type: String, default: '' },
     // Which buckets this agent owns. A bucket has at most one owner; a lead
     // entering a bucket someone else owns is handed to them (see service.js).
     ownsBuckets: { type: [String], default: [] },
@@ -127,6 +150,8 @@ export const ACTION_KINDS = [
     'approved',         // a person sent a draft as written
     'edited',           // a person changed a draft, then sent it
     'dismissed',        // a person threw a draft or proposal away
+    'report',           // a scheduled run's summary
+    'email_drafted',    // shadow: an email reply waiting for a person
 ];
 
 /** How a person answered a draft or a proposed touch. */

@@ -349,7 +349,10 @@ router.get('/gmail/connect', (_req, res) => {
     const url = gmailOAuthClient().generateAuthUrl({
         access_type: 'offline',
         prompt: 'consent',
-        scope: ['https://www.googleapis.com/auth/gmail.send'],
+        // Send, and read the inbox — the executive assistant agent sorts
+        // it each morning. An older connection granted send only; the
+        // read helpers say so plainly and point here.
+        scope: ['https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/gmail.readonly'],
     });
     res.json({ url });
 });

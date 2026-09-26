@@ -3,9 +3,55 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Send, Pencil, X, UserCheck, Undo2 } from 'lucide-react'
 import { apiError } from '../../lib/api'
-import { agentsApi, agoText, needText, agentColor, type InboxDraft, type InboxTouch, type Resolution } from '../../lib/agentsApi'
+import { agentsApi, agoText, needText, agentColor, type InboxDraft, type InboxEmail, type InboxReport, type InboxTouch, type Resolution } from '../../lib/agentsApi'
 import { Button, PageHeader, Spinner, Textarea } from '../../components/ui'
-import { AgentNav, Avatar, AgentChip, C, Draft, Note, Panel, Pill, Quote, SectionHead, Stat, Tag, Trace } from './ui'
+import { AgentNav, Avatar, AgentChip, C, Draft, Eyebrow, Note, Panel, Pill, Quote, SectionHead, Stat, Tag, Trace } from './ui'
+
+const CATEGORY_LABEL: Record<string, string> = { lead: 'leads', tenant: 'tenants', supplier: 'suppliers', newsletter: 'newsletters', spam: 'spam', other: 'other', needs_person: 'for a person' }
+
+function ReportCard({ r }: { r: InboxReport }) {
+  const counts = r.items.reduce<Record<string, number>>((m, it) => { m[it.category] = (m[it.category] || 0) + 1; return m }, {})
+  const flagged = r.items.filter((it) => it.category === 'needs_person')
+  return (
+    <Panel style={{ display: 'grid', gap: 8, borderLeft: `4px solid ${agentColor(r.agent)}` }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Avatar name={r.agent?.name} color={agentColor(r.agent)} size={28} /><b>{r.agent?.name}</b>
+        <span style={{ fontSize: 12, color: C.muted }}>{agoText(r.at)} · {r.summary}</span>
+      </div>
+      <div style={{ fontSize: 13, color: C.ink, whiteSpace: 'pre-line' }}>{r.text}</div>
+      {Object.keys(counts).length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{Object.entries(counts).map(([k, n]) => <Tag key={k} tone={k === 'needs_person' ? 'danger' : k === 'lead' ? 'purple' : k === 'tenant' ? 'blue' : 'grey'}>{n} {CATEGORY_LABEL[k] || k}</Tag>)}</div>}
+      {flagged.length > 0 && <div style={{ fontSize: 12.5, color: C.second }}><b style={{ color: C.danger }}>For a person:</b> {flagged.map((f) => f.note).join(' · ')}</div>}
+      {r.needsHuman && r.reason && <div style={{ fontSize: 12.5, color: C.danger }}>{r.reason}</div>}
+    </Panel>
+  )
+}
+
+function EmailCard({ e, onResolve, busy }: { e: InboxEmail; onResolve: (r: Resolution, text?: string) => void; busy: boolean }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(e.body)
+  return (
+    <Panel style={{ display: 'grid', gap: 10, borderColor: e.needsHuman ? C.amber : C.line }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <b>{e.from || e.to}</b> <span style={{ fontSize: 12, color: C.muted }}>· {e.originalSubject || e.subject}</span>
+          <div style={{ fontSize: 12, color: C.muted }}>{agoText(e.at)} · <AgentChip agent={e.agent} /> drafted · {e.why}</div>
+        </div>
+        <Tag tone={e.needsHuman ? 'amber' : 'ok'}>{e.needsHuman ? 'check a figure' : 'confident'}</Tag>
+      </div>
+      {e.customerText && <Quote>{e.customerText.slice(0, 600)}{e.customerText.length > 600 ? '…' : ''}</Quote>}
+      <div style={{ fontSize: 12, color: C.muted }}>To {e.to} · Subject: {e.subject}</div>
+      {editing ? <Textarea rows={6} value={text} onChange={(x) => setText(x.target.value)} /> : <Draft>{e.body}</Draft>}
+      {e.grounded && !e.grounded.ok && <div style={{ fontSize: 12.5, color: C.danger }}>Figures not backed by a tool result: {e.grounded.loose.join(', ')}</div>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {editing ? (
+          <><Button size="sm" disabled={busy || !text.trim()} onClick={() => onResolve('edited', text)}><Send size={13} /> Send edited</Button><Button size="sm" variant="outline" onClick={() => { setEditing(false); setText(e.body) }}>Cancel</Button></>
+        ) : (
+          <><Button size="sm" disabled={busy} onClick={() => onResolve('approved')}><Send size={13} /> Send as {e.agent?.name}</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing(true)}><Pencil size={13} /> Edit</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => onResolve('dismissed')}><X size={13} /> Dismiss</Button></>
+        )}
+      </div>
+    </Panel>
+  )
+}
 
 function DraftCard({ d, onResolve, busy }: { d: InboxDraft; onResolve: (r: Resolution, text?: string) => void; busy: boolean }) {
   const [editing, setEditing] = useState(false)
@@ -81,8 +127,8 @@ export default function AgentInbox() {
   const agents = team.data?.agents.filter((a) => a.isActive) || []
   const onDuty = agents.filter((a) => a.mode !== 'off')
   const totals = (all.data && agent ? all.data : inbox.data)
-  const countFor = (id: string) => totals ? [...totals.drafts, ...totals.touches].filter((x) => String(x.agent?._id) === id).length + totals.handed.filter((h) => String(h.agent?._id) === id).length : 0
-  const total = totals ? totals.drafts.length + totals.touches.length + totals.handed.length : 0
+  const countFor = (id: string) => totals ? [...totals.drafts, ...totals.touches, ...totals.emails].filter((x) => String(x.agent?._id) === id).length + totals.handed.filter((h) => String(h.agent?._id) === id).length : 0
+  const total = totals ? totals.drafts.length + totals.touches.length + totals.handed.length + totals.emails.length : 0
   const data = inbox.data
 
   return (
@@ -91,7 +137,7 @@ export default function AgentInbox() {
       <PageHeader
         title="Needs you"
         subtitle={onDuty.length ? <span>{onDuty.length} agent{onDuty.length === 1 ? '' : 's'} on duty · shadow — they draft and propose, you decide what goes out.</span> : <span>No agent on duty. <Link to="/agents/profiles/new" style={{ color: C.purple, fontWeight: 700 }}>Onboard one</Link> to start.</span>}
-        action={<div style={{ display: 'flex', gap: 22 }}><Stat value={data?.drafts.length ?? '—'} label="drafts to review" /><Stat value={data?.handed.length ?? '—'} label="handed to you" tone={C.danger} /><Stat value={data?.touches.length ?? '—'} label="follow-ups proposed" tone={C.amber} /></div>}
+        action={<div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}><Stat value={data?.drafts.length ?? '—'} label="drafts to review" /><Stat value={data?.emails.length ?? '—'} label="emails to review" /><Stat value={data?.handed.length ?? '—'} label="handed to you" tone={C.danger} /><Stat value={data?.touches.length ?? '—'} label="follow-ups proposed" tone={C.amber} /></div>}
       />
       {agents.length > 1 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
@@ -104,6 +150,20 @@ export default function AgentInbox() {
       {(err || ok) && <p style={{ fontSize: 12.5, color: err ? C.danger : C.ok, margin: '6px 0' }}>{err || ok}</p>}
       {inbox.isLoading ? <Spinner /> : !data ? null : (
         <>
+          {data.reports.length > 0 && (
+            <>
+              <SectionHead title="This morning's desk" hint="what the scheduled agents did on their last run" />
+              <div style={{ display: 'grid', gap: 10 }}>{data.reports.map((r) => <ReportCard key={r.actionId} r={r} />)}</div>
+            </>
+          )}
+
+          {data.emails.length > 0 && (
+            <>
+              <SectionHead title={`Email replies to review · ${data.emails.length}`} hint="approve sends it from the shared mailbox, signed off as the company" />
+              <div style={{ display: 'grid', gap: 10 }}>{data.emails.map((e) => <EmailCard key={e.actionId} e={e} busy={resolve.isPending} onResolve={(r, text) => resolve.mutate({ id: e.actionId, r, text })} />)}</div>
+            </>
+          )}
+
           <SectionHead title={`Drafts to review · ${data.drafts.length}`} hint="newest first · approve sends it as that agent, edit lets you change it first" />
           <div style={{ display: 'grid', gap: 10 }}>
             {data.drafts.length === 0 && <Note>Nothing waiting. When a customer writes in, the draft appears here.</Note>}
@@ -135,6 +195,7 @@ export default function AgentInbox() {
             {data.touches.length === 0 && <Note>No follow-ups are due right now.</Note>}
             {data.touches.map((t) => <TouchRow key={t.actionId} t={t} busy={resolve.isPending} onResolve={(r) => resolve.mutate({ id: t.actionId, r })} />)}
           </div>
+          <div style={{ height: 8 }} /><Eyebrow>{data.reports.length === 0 && data.emails.length === 0 ? 'Scheduled agents report here after their first run' : ''}</Eyebrow>
         </>
       )}
     </div>
