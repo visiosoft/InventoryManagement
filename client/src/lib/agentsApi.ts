@@ -70,7 +70,7 @@ export interface InboxTouch {
   template: { name: string; intent: string; bodyText?: string; language?: string } | null; summary: string
 }
 export interface InboxHanded {
-  leadFileId: string; lead: LeadRef; agent: AgentRef; previousBucket: Bucket | null; need: LeadNeed; offers: Offer[]
+  leadFileId: string; lead: LeadRef; agent: AgentRef; phoneNormalized: string; previousBucket: Bucket | null; need: LeadNeed; offers: Offer[]
   openQuestions: string[]; lastSummary: string; why: string; at: string
 }
 export interface InboxEmail {

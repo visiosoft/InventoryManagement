@@ -301,7 +301,7 @@ export async function inbox({ agentId = null } = {}) {
     const handed = [];
     for (const f of handedFiles) {
         const esc = await AgentAction.findOne({ leadFile: f._id, kind: 'escalated' }).sort({ at: -1 }).lean();
-        handed.push({ leadFileId: f._id, lead: f.lead, agent: f.agent, previousBucket: f.previousBucket, need: f.need, offers: f.offers, openQuestions: f.openQuestions, lastSummary: f.lastSummary, why: esc?.summary?.replace(/^Handed to a person:\s*/, '') || '', at: esc?.at || f.lastActionAt });
+        handed.push({ leadFileId: f._id, lead: f.lead, agent: f.agent, phoneNormalized: f.phoneNormalized, previousBucket: f.previousBucket, need: f.need, offers: f.offers, openQuestions: f.openQuestions, lastSummary: f.lastSummary, why: esc?.summary?.replace(/^Handed to a person:\s*/, '') || '', at: esc?.at || f.lastActionAt });
     }
     // The latest report from each scheduled agent, from the last three days.
     const since = new Date(Date.now() - 3 * 86_400_000);

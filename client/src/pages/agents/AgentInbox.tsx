@@ -223,9 +223,10 @@ export default function AgentInbox() {
                   {h.why && <div><b style={{ color: C.ink }}>Why:</b> {h.why}</div>}
                   {h.lastSummary && <div><b style={{ color: C.ink }}>Where it stands:</b> {h.lastSummary}</div>}
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Link to={`/agents/leads/${h.lead._id}`}><Button size="sm"><UserCheck size={13} /> Take over</Button></Link>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Link to={`/whatsapp?phone=${h.phoneNormalized}`}><Button size="sm"><UserCheck size={13} /> Take over — open chat</Button></Link>
                   <Button size="sm" variant="outline" disabled={handBack.isPending} onClick={() => handBack.mutate(h.lead._id)}><Undo2 size={13} /> Hand back to {h.agent?.name || 'the agent'}</Button>
+                  <Link to={`/agents/leads/${h.lead._id}`} style={{ fontSize: 12, color: C.muted, textDecoration: 'none' }}>lead file →</Link>
                 </div>
               </Panel>
             ))}
