@@ -44,8 +44,16 @@ test('entering a bucket someone else owns hands the lead over', () => {
     assert.equal(toOmar.name, 'Omar');
 });
 
-test('coming back to Engaged never changes hands, and neither does going to a person', () => {
-    assert.equal(handoffFor(team, { currentAgentId: 'o', bucketBefore: 'quiet', bucketAfter: 'engaged', event: 'inbound' }), null);
+test('a reply out of Quiet/Dormant hands back to whoever owns live leads', () => {
+    assert.equal(handoffFor(team, { currentAgentId: 'o', bucketBefore: 'quiet', bucketAfter: 'engaged', event: 'inbound' }).name, 'Aisha');
+    assert.equal(handoffFor(team, { currentAgentId: 'o', bucketBefore: 'dormant', bucketAfter: 'engaged', event: 'inbound' }).name, 'Aisha');
+    // Already Aisha's — no handoff to log against herself.
+    assert.equal(handoffFor(team, { currentAgentId: 'a', bucketBefore: 'quiet', bucketAfter: 'engaged', event: 'inbound' }), null);
+});
+
+test('a reply from an active deal stays with whoever is closing it, and nothing hands off on the way to a person', () => {
+    assert.equal(handoffFor(team, { currentAgentId: 'l', bucketBefore: 'quoted', bucketAfter: 'engaged', event: 'inbound' }), null);
+    assert.equal(handoffFor(team, { currentAgentId: 'l', bucketBefore: 'booking', bucketAfter: 'engaged', event: 'inbound' }), null);
     assert.equal(handoffFor(team, { currentAgentId: 'l', bucketBefore: 'quoted', bucketAfter: 'with_person', event: 'escalate' }), null);
 });
 

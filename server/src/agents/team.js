@@ -55,12 +55,25 @@ export function routeFirstOwner(profiles, signals = {}) {
 
 /**
  * After a bucket move: does ownership change? Returns the new owner, or
- * null when the lead stays where it is. Never moves a lead on the way back
- * to Engaged, and never moves one that is with a person.
+ * null when the lead stays where it is.
+ *
+ * A reply that pulls a lead back to Engaged from a follow-up bucket
+ * (Quiet/Dormant) is a fresh conversation, not the continuation of a
+ * chase — it goes to whoever answers live leads, same as this lead's very
+ * first message would have; the follow-up agent's own job is done the
+ * moment someone actually answers. A reply from an active deal
+ * (Quoted/Booking) is different: that agent is already mid-conversation,
+ * so continuity wins there. Never moves a lead on the way to With a person.
  */
 export function handoffFor(profiles, { currentAgentId, bucketBefore, bucketAfter, event }) {
     if (bucketAfter === bucketBefore) return null;
-    if (event === 'inbound' || bucketAfter === 'engaged' || bucketAfter === 'with_person') return null;
+    if (bucketAfter === 'with_person') return null;
+    if (event === 'inbound' && bucketAfter === 'engaged' && ['quiet', 'dormant'].includes(bucketBefore)) {
+        const owner = ownerForBucket(profiles, 'engaged');
+        if (!owner || String(owner._id) === String(currentAgentId)) return null;
+        return owner;
+    }
+    if (event === 'inbound' || bucketAfter === 'engaged') return null;
     const owner = ownerForBucket(profiles, bucketAfter);
     if (!owner) return null;
     if (String(owner._id) === String(currentAgentId)) return null;
