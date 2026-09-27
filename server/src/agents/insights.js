@@ -12,10 +12,11 @@
  * The pure helpers at the top are what the tests cover.
  */
 
-import { Lead, WhatsAppMessage } from '../models/index.js';
+import { Lead, WhatsAppMessage, Customer } from '../models/index.js';
 import { AgentAction, AgentLeadFile, AgentProfile, AgentRehearsal, AgentReview } from './models.js';
 import { chatJson, openaiConfigured, openaiModel } from '../services/openai.js';
 import { runAgent } from './runtime.js';
+import { tenantPhoneSuffixes } from './service.js';
 import { freshState, BUCKETS } from './buckets.js';
 
 /* ---------- pure ---------- */
@@ -132,8 +133,15 @@ async function pickGapConversations({ limit, now }) {
         { $sort: { last: -1 } },
         { $limit: limit * 4 },
     ]);
+    // A touch-only agent never actually gets a signed tenant's number — the
+    // real routing sends those to whoever owns tenants — so rehearsing
+    // against one tests a scenario that can't happen. Same suffix rule as
+    // reassignTenantsToOwner, since a tenant's number is stored just as
+    // inconsistently here (+971…, 0…, 971…).
+    const tenantSuffixes = await tenantPhoneSuffixes();
     const out = [];
     for (const r of rows) {
+        if (tenantSuffixes.has(String(r._id || '').replace(/\D/g, '').slice(-9))) continue;
         const lead = await Lead.findOne({ phoneNormalized: r._id }).sort({ createdAt: -1 }).select('fullName phoneNormalized status').lean();
         if (lead) out.push(lead);
         if (out.length >= limit) break;

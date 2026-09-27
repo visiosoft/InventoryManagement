@@ -129,19 +129,31 @@ export async function backfillLegacyLeads({ agent, now = new Date() } = {}) {
  * only ever decides first-contact routing (see team.js's routeFirstOwner),
  * it is not a lifecycle stage the state machine itself manages.
  */
+/**
+ * The last-nine-digits of every phone number that belongs to a real,
+ * signed tenant — the same suffix-matching rule the WhatsApp inbox and the
+ * Zoho matcher already use for a number stored inconsistently
+ * (+971…, 0…, 971…). Shared with rehearsal (insights.js), which must never
+ * test an agent against a conversation it would never actually be given.
+ */
+export async function tenantPhoneSuffixes() {
+    const customers = await Customer.find({ stage: { $ne: 'prospect' } }).select('phone phones').lean();
+    const suffixes = new Set();
+    for (const c of customers) {
+        for (const p of [...(c.phones || []), c.phone]) {
+            const d = String(p || '').replace(/\D/g, '');
+            if (d.length >= 9) suffixes.add(d.slice(-9));
+        }
+    }
+    return suffixes;
+}
+
 export async function reassignTenantsToOwner({ now = new Date() } = {}) {
     const profiles = await team();
     const tenantOwner = ownerForBucket(profiles, 'tenant');
     if (!tenantOwner) return { moved: 0, checked: 0, reason: 'No agent owns tenants' };
 
-    const customers = await Customer.find({ stage: { $ne: 'prospect' } }).select('phone phones').lean();
-    const tenantSuffixes = new Set();
-    for (const c of customers) {
-        for (const p of [...(c.phones || []), c.phone]) {
-            const d = String(p || '').replace(/\D/g, '');
-            if (d.length >= 9) tenantSuffixes.add(d.slice(-9));
-        }
-    }
+    const tenantSuffixes = await tenantPhoneSuffixes();
     if (!tenantSuffixes.size) return { moved: 0, checked: 0 };
 
     const files = await AgentLeadFile.find({ bucket: { $nin: ['won', 'lost', 'do_not_contact'] }, agent: { $ne: tenantOwner._id } })
