@@ -9,7 +9,7 @@ import { AgentProfile, AgentLeadFile, AgentAction, AGENT_MODES, AGENT_TOOLS, AGE
 import { runJob, describeSchedule } from './jobs.js';
 import { BUCKETS, BUCKET_ORDER, describeStage, DEFAULT_CADENCE, nextTouchFor } from './buckets.js';
 import { runAgent, findLead, cadenceFor } from './runtime.js';
-import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads } from './service.js';
+import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads, agentPlan } from './service.js';
 import { record, revert, snapshotOf } from './log.js';
 import { seedStarterTeam } from './seed.js';
 import { agentStats, startRehearsal, reviewAgent, teachFromRehearsal } from './insights.js';
@@ -217,6 +217,13 @@ router.get('/:id/stats', wrap(async (req, res) => {
         AgentReview.find({ agent: req.params.id }).sort({ at: -1 }).limit(3).lean(),
     ]);
     res.json({ stats, rehearsals, reviews });
+}));
+
+// The daily standup: what it sent today, what's waiting for review, and
+// what's scheduled today/tomorrow/the day after, by lead.
+router.get('/:id/plan', wrap(async (req, res) => {
+    const days = Math.min(7, Math.max(1, Number(req.query.days) || 3));
+    res.json(await agentPlan(req.params.id, { days }));
 }));
 
 router.post('/:id/rehearse', admin, wrap(async (req, res) => {

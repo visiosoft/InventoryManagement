@@ -436,6 +436,55 @@ export async function teamStats({ now = new Date() } = {}) {
     });
 }
 
+/**
+ * A daily standup for one agent: what it already sent today, what's
+ * waiting for your review right now, and what's scheduled for today,
+ * tomorrow and the day after — by lead, with the stage that sets each
+ * touch's intent (early check-in, middle offer, last question).
+ *
+ * The stage is known in advance; the exact template is not — that is
+ * chosen live from the lead's file when the touch actually runs. To see
+ * it before it happens, dry-run it with POST /agents/simulate
+ * (trigger:'touch', persist:false) against a specific lead.
+ */
+export async function agentPlan(agentId, { now = new Date(), days = 3 } = {}) {
+    const dayStart = new Date(now); dayStart.setUTCHours(dayStart.getUTCHours() - 4, 0, 0, 0); // Dubai midnight, roughly
+    const profiles = await team();
+    const agent = profiles.find((p) => String(p._id) === String(agentId));
+    if (!agent) throw new Error('No such agent');
+
+    const todayActions = await AgentAction.find({ agent: agentId, kind: 'touch_proposed', at: { $gte: dayStart } }).select('resolution').lean();
+    const sentToday = todayActions.filter((a) => a.resolution === 'approved' || a.resolution === 'edited').length;
+    const skippedToday = todayActions.filter((a) => a.resolution === 'dismissed' || a.resolution === 'skipped').length;
+    const waitingNow = await AgentAction.countDocuments({ agent: agentId, kind: 'touch_proposed', resolution: null });
+
+    const files = await AgentLeadFile.find({ agent: agentId, frozenAt: null, nextTouchAt: { $ne: null } })
+        .populate('lead', 'fullName phone')
+        .sort({ nextTouchAt: 1 })
+        .limit(500)
+        .lean();
+
+    const cadence = cadenceFor(agent);
+    const dayKeyOf = (d) => new Date(new Date(d).getTime() + 4 * 3600_000).toISOString().slice(0, 10);
+    const todayKey = dayKeyOf(now);
+
+    const byDay = new Map();
+    let overdueCount = 0;
+    for (const f of files) {
+        const k = dayKeyOf(f.nextTouchAt);
+        if (k < todayKey) { overdueCount += 1; continue; }
+        if (!byDay.has(k)) byDay.set(k, []);
+        byDay.get(k).push({
+            leadId: f.lead?._id || null, name: f.lead?.fullName || 'Unknown', phone: f.lead?.phone || '',
+            bucket: f.bucket, bucketLabel: BUCKETS[f.bucket]?.label || f.bucket, stage: describeStage(f, cadence), nextTouchAt: f.nextTouchAt,
+        });
+    }
+    const upcoming = [...byDay.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).slice(0, days)
+        .map(([date, leads]) => ({ date, isToday: date === todayKey, count: leads.length, leads: leads.slice(0, 50) }));
+
+    return { agentId, agentName: agent.name, sentToday, skippedToday, waitingNow, overdueCount, upcoming };
+}
+
 export async function conversationFor(phoneNormalized, { limit = 60 } = {}) {
     const rows = await WhatsAppMessage.find({ phoneNormalized, $or: [{ type: 'text', text: { $ne: '' } }, { transcript: { $ne: '' } }] })
         .sort({ occurredAt: -1 }).limit(limit).select('direction text transcript type occurredAt sentByAi').lean();

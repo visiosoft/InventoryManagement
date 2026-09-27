@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { Pencil, PlayCircle, Sparkles, Plus } from 'lucide-react'
 import { apiError } from '../../lib/api'
-import { agentsApi, agentColor, agoText, composeJob, parseJob, JOB_SECTIONS, type Bucket, type Rehearsal, type Review } from '../../lib/agentsApi'
+import { agentsApi, agentColor, agoText, composeJob, parseJob, JOB_SECTIONS, type AgentPlan, type Bucket, type PlanLead, type Rehearsal, type Review } from '../../lib/agentsApi'
 import { Button, PageHeader, Spinner } from '../../components/ui'
-import { AgentNav, Avatar, C, DISPLAY, Eyebrow, Note, Panel, Pill, Stat, Tag, fmtTime } from './ui'
+import { AgentNav, Avatar, C, DecisionView, DISPLAY, Eyebrow, Note, Panel, Pill, Stat, Tag, fmtTime } from './ui'
 
 const pct = (n: number | null | undefined) => (n === null || n === undefined ? '—' : `${n}%`)
 
@@ -42,6 +42,52 @@ function TeachRow({ agentId, rehearsalId, turnIndex, correctedReply }: { agentId
         <button onClick={() => teach.mutate()} disabled={teach.isPending || !text.trim()} style={{ border: 'none', borderRadius: 999, padding: '4px 10px', fontSize: 11.5, fontWeight: 700, background: C.purple, color: '#fff', cursor: 'pointer' }}>{teach.isPending ? 'Teaching…' : 'Save as training example'}</button>
         <button onClick={() => { setOpen(false); setText('') }} style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.muted, fontSize: 11.5 }}>Cancel</button>
       </div>
+    </div>
+  )
+}
+
+function PlanRow({ agentId, lead }: { agentId: string; lead: PlanLead }) {
+  const [decision, setDecision] = useState<import('../../lib/agentsApi').Decision | null>(null)
+  const preview = useMutation({
+    mutationFn: () => agentsApi.simulate({ leadId: lead.leadId || undefined, trigger: 'touch', persist: false, agentId }),
+    onSuccess: (r) => setDecision(r.decision),
+  })
+  return (
+    <div style={{ display: 'grid', gap: 8, padding: '8px 10px', border: `1px solid ${C.line}`, borderRadius: 10, background: C.card }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 13 }}>
+          {lead.leadId ? <Link to={`/agents/leads/${lead.leadId}`} style={{ fontWeight: 700, color: C.ink, textDecoration: 'none' }}>{lead.name}</Link> : <b>{lead.name}</b>}
+          <span style={{ fontSize: 11.5, color: C.muted, marginLeft: 6 }}><Pill bucket={lead.bucket} label={lead.bucketLabel} /> · {lead.stage}</span>
+        </div>
+        {lead.leadId && (
+          <Button size="sm" variant="outline" disabled={preview.isPending} onClick={() => preview.mutate()}>
+            {preview.isPending ? 'Thinking…' : decision ? 'Preview again' : 'Preview what it will send'}
+          </Button>
+        )}
+      </div>
+      {decision && <DecisionView d={decision} />}
+    </div>
+  )
+}
+
+function PlanView({ agentId, plan }: { agentId: string; plan: AgentPlan }) {
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+        <Stat value={plan.sentToday} label="sent today" tone={C.ok} />
+        <Stat value={plan.waitingNow} label="waiting for your review" tone={C.amber} />
+        <Stat value={plan.skippedToday} label="skipped today" />
+        {plan.overdueCount > 0 && <Stat value={plan.overdueCount} label="overdue — the clock will catch these up shortly" tone={C.danger} />}
+      </div>
+      {plan.upcoming.length === 0 && <Note>Nothing scheduled in the next few days.</Note>}
+      {plan.upcoming.map((day) => (
+        <div key={day.date}>
+          <Eyebrow>{day.isToday ? 'Today' : new Date(day.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })} · {day.count} due</Eyebrow>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {day.leads.map((l) => <PlanRow key={l.leadId || l.name} agentId={agentId} lead={l} />)}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -125,6 +171,7 @@ export default function AgentPage() {
   const [live, setLive] = useState<Rehearsal | null>(null)
   const team = useQuery({ queryKey: ['agents', 'team'], queryFn: agentsApi.team })
   const insights = useQuery({ queryKey: ['agents', 'insights', agentId], queryFn: () => agentsApi.insights(agentId, 30), enabled: Boolean(agentId) })
+  const plan = useQuery({ queryKey: ['agents', 'plan', agentId], queryFn: () => agentsApi.plan(agentId, 3), enabled: Boolean(agentId) })
   const profiles = useQuery({ queryKey: ['agents', 'profiles'], queryFn: agentsApi.profiles })
   const a = team.data?.agents.find((x) => x._id === agentId)
   const refresh = () => qc.invalidateQueries({ queryKey: ['agents'] })
@@ -189,6 +236,13 @@ export default function AgentPage() {
             <div style={{ marginTop: 14 }}><Eyebrow>Drafted per day, and how much of it went out as written</Eyebrow><Bars series={s.series} /></div>
             <Note>{s.approvedRate === null ? 'The approval rate appears once people have answered drafts in Needs you.' : `${pct(s.approvedRate)} of ${s.judged} answered drafts went out untouched. Above 85% for two weeks is the signal to move FAQ and pricing replies to live.`}</Note>
           </Panel>
+
+          {(nurture || closing) && (
+            <Panel style={{ marginTop: 12 }}>
+              <Eyebrow>The standup — what {a.name} did, is doing, and plans to do</Eyebrow>
+              {plan.isLoading || !plan.data ? <Spinner /> : <PlanView agentId={agentId} plan={plan.data} />}
+            </Panel>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr)', gap: 12, marginTop: 12 }} className="agent-page-grid">
             <Panel>
