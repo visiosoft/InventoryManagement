@@ -12,28 +12,33 @@ const STEPS = ['Identity', 'The job', 'Permissions', 'Training', 'On duty'] as c
 /** Plain-language answers to "what does this do, how, and why does it help" —
  * separate from the editable instructions below, which are the actual prompt
  * text, not a summary a newbie should have to parse. */
-const ABOUT: Record<string, { what: string; how: string; benefit: string }> = {
+const ABOUT: Record<string, { image: string; what: string; how: string; benefit: string }> = {
   Aisha: {
+    image: '/agents/aisha.webp',
     what: 'Answers a brand-new WhatsApp enquiry the moment it arrives, any hour of the day.',
     how: 'Learns what they need (size, dates, how long), checks real availability and pricing with her tools, offers one matching unit, and drafts a reply. She never sends it herself — it waits for you in Needs You and in the chat.',
     benefit: 'No lead waits more than a few seconds for a first, accurate answer, even at 2am on a Friday.',
   },
   Omar: {
+    image: '/agents/omar.webp',
     what: 'Follows up with leads who went quiet after a first conversation — nobody chases them by hand.',
     how: 'A background clock checks every minute for leads whose next follow-up day has arrived (day 3, 7, 14 after going quiet, then 30, 60, 90 after going dormant), and proposes that day’s approved WhatsApp template. Outside the 24-hour reply window, only Meta-approved wording can be sent — he never writes free text for this.',
     benefit: 'Every lead gets re-approached on a consistent schedule, without anyone having to remember who went quiet and when.',
   },
   Layla: {
+    image: '/agents/layla.webp',
     what: 'Takes a lead from "quotation sent" to a signed contract.',
     how: 'Re-checks price and availability with her tools before repeating any figure to a customer, keeps the lead file current, and hands any discount request straight to a person rather than negotiating herself.',
     benefit: 'Consistent, fact-checked follow-through on quotes that are already most of the way to a booking.',
   },
   Nadia: {
+    image: '/agents/nadia.webp',
     what: 'Sorts the shared email inbox every morning and drafts replies to the ones that need one.',
     how: 'Runs once a day at a fixed time, reads the inbox, sorts each message (lead, tenant, supplier, spam, other), and drafts a reply for anything worth answering. Money, contracts and complaints are flagged for a person, never answered.',
     benefit: 'The inbox starts the day already triaged, instead of thirty unread messages nobody got to.',
   },
   Sam: {
+    image: '/agents/sam.webp',
     what: 'First point of contact for people who are already customers, not new leads.',
     how: 'Recognises an existing tenant and writes down what they need — a renewal, an invoice question, an access problem — then hands it to accounts with a clear one-line summary. He does not sell anything.',
     benefit: 'Existing tenants are treated like tenants immediately, instead of being run through a sales script.',
@@ -137,11 +142,15 @@ export default function AgentOnboarding() {
       {!isNew && ABOUT[draft.name] && (
         <Panel style={{ marginBottom: 16, borderColor: C.purple, background: C.purpleSoft }}>
           <Eyebrow tone={C.purple}>About {draft.name}</Eyebrow>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-            <div><b style={{ fontSize: 12.5, color: C.ink }}>What it does</b><p style={{ fontSize: 13, color: C.second, margin: '4px 0 0' }}>{ABOUT[draft.name].what}</p></div>
-            <div><b style={{ fontSize: 12.5, color: C.ink }}>How</b><p style={{ fontSize: 13, color: C.second, margin: '4px 0 0' }}>{ABOUT[draft.name].how}</p></div>
-            <div><b style={{ fontSize: 12.5, color: C.ink }}>The benefit</b><p style={{ fontSize: 13, color: C.second, margin: '4px 0 0' }}>{ABOUT[draft.name].benefit}</p></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 16, alignItems: 'start' }} className="agent-about-grid">
+            <img src={ABOUT[draft.name].image} alt={`${draft.name} illustration`} style={{ width: 120, height: 120, borderRadius: 16, objectFit: 'cover', background: '#fff', border: `1px solid ${C.line}` }} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+              <div><b style={{ fontSize: 12.5, color: C.ink }}>What it does</b><p style={{ fontSize: 13, color: C.second, margin: '4px 0 0' }}>{ABOUT[draft.name].what}</p></div>
+              <div><b style={{ fontSize: 12.5, color: C.ink }}>How</b><p style={{ fontSize: 13, color: C.second, margin: '4px 0 0' }}>{ABOUT[draft.name].how}</p></div>
+              <div><b style={{ fontSize: 12.5, color: C.ink }}>The benefit</b><p style={{ fontSize: 13, color: C.second, margin: '4px 0 0' }}>{ABOUT[draft.name].benefit}</p></div>
+            </div>
           </div>
+          <style>{`@media (max-width: 640px) { .agent-about-grid { grid-template-columns: 1fr !important; } .agent-about-grid img { margin: 0 auto; } }`}</style>
         </Panel>
       )}
 
