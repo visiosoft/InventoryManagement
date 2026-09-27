@@ -158,14 +158,16 @@ function BoardView({ board }: { board: AgentBoard }) {
 
 function RehearsalView({ r, agentName, agentId }: { r: Rehearsal; agentName: string; agentId: string }) {
   const done = r.status === 'done'
+  const isTouch = r.mode === 'touch'
   return (
     <div style={{ display: 'grid', gap: 10 }}>
+      {isTouch && <Note>{agentName} only ever fires on the follow-up clock, never on a live reply — this replays real silences from your history and shows which template it would pick, not how it would answer a message.</Note>}
       <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
         {r.status === 'running' && <Tag tone="amber">running · {r.progress.done} of {r.progress.total || '…'} turns</Tag>}
         {r.status === 'failed' && <Tag tone="danger">failed: {r.error}</Tag>}
         {done && <>
           <Stat value={r.summary.conversations} label="conversations replayed" />
-          <Stat value={r.summary.turns} label="customer messages" />
+          <Stat value={r.summary.turns} label={isTouch ? 'silences replayed' : 'customer messages'} />
           <Stat value={pct(r.summary.turns ? Math.round((r.summary.grounded / r.summary.turns) * 100) : null)} label="figures all backed" tone={C.ok} />
           <Stat value={pct(r.summary.turns ? Math.round((r.summary.handedOver / r.summary.turns) * 100) : null)} label="handed to a person" tone={C.amber} />
           <span style={{ fontSize: 12, color: C.muted }}>instructions v{r.promptVersion} · {r.model} · {agoText(r.finishedAt || r.startedAt)}</span>
@@ -176,13 +178,13 @@ function RehearsalView({ r, agentName, agentId }: { r: Rehearsal; agentName: str
           {r.turns.slice(0, 40).map((t, i) => (
             <div key={i} style={{ padding: '10px 12px', border: `1px solid ${C.line}`, borderRadius: 10, background: C.card, fontSize: 12.5 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }} className="rehearsal-row">
-                <div><div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}><Link to={`/agents/leads/${t.lead}`} style={{ color: C.muted }}>{t.leadName}</Link> · {fmtTime(t.at)}</div><div style={{ color: C.second, whiteSpace: 'pre-line' }}>"{t.customerText}"</div></div>
+                <div><div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}><Link to={`/agents/leads/${t.lead}`} style={{ color: C.muted }}>{t.leadName}</Link> · {fmtTime(t.at)}</div><div style={{ color: C.second, whiteSpace: 'pre-line' }}>{isTouch ? t.customerText : `"${t.customerText}"`}</div></div>
                 <div>
-                  <div style={{ fontSize: 11, color: agentColor({ name: agentName }), fontWeight: 700, marginBottom: 3 }}>{agentName} would say {t.needsHuman ? <Tag tone="danger">hand over</Tag> : null}{!t.groundedOk ? <Tag tone="amber">figure not backed</Tag> : null}</div>
+                  <div style={{ fontSize: 11, color: agentColor({ name: agentName }), fontWeight: 700, marginBottom: 3 }}>{agentName} would {isTouch ? 'send' : 'say'} {t.needsHuman ? <Tag tone="danger">hand over</Tag> : null}{!t.groundedOk ? <Tag tone="amber">figure not backed</Tag> : null}</div>
                   <div style={{ whiteSpace: 'pre-line' }}>{t.error ? <span style={{ color: C.danger }}>{t.error}</span> : t.agentReply || <i style={{ color: C.muted }}>{t.reason || 'no reply'}</i>}</div>
-                  {!t.error && <TeachRow agentId={agentId} rehearsalId={r._id} turnIndex={i} correctedReply={t.correctedReply} />}
+                  {!t.error && !isTouch && <TeachRow agentId={agentId} rehearsalId={r._id} turnIndex={i} correctedReply={t.correctedReply} />}
                 </div>
-                <div><div style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 3 }}>your rep said</div><div style={{ color: C.second, whiteSpace: 'pre-line' }}>{t.humanReply || <i style={{ color: C.muted }}>no reply recorded</i>}</div></div>
+                <div><div style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 3 }}>{isTouch ? 'what actually happened next' : 'your rep said'}</div><div style={{ color: C.second, whiteSpace: 'pre-line' }}>{t.humanReply || <i style={{ color: C.muted }}>{isTouch ? 'nothing — the thread just ended' : 'no reply recorded'}</i>}</div></div>
               </div>
             </div>
           ))}

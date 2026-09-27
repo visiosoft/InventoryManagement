@@ -140,7 +140,7 @@ export interface RehearsalTurn {
   groundedOk: boolean; loose: string[]; tools: string[]; humanReply: string; error: string; correctedReply?: string
 }
 export interface Rehearsal {
-  _id: string; promptVersion: number; model: string; status: 'running' | 'done' | 'failed'
+  _id: string; promptVersion: number; model: string; status: 'running' | 'done' | 'failed'; mode?: 'inbound' | 'touch'
   params: { conversations: number; turns: number }; progress: { done: number; total: number }; turns: RehearsalTurn[]
   summary: { turns: number; grounded: number; handedOver: number; withHumanReply: number; conversations: number }
   error: string; startedAt: string; finishedAt: string | null

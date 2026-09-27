@@ -228,6 +228,10 @@ const agentRehearsalSchema = new Schema({
     promptVersion: { type: Number, default: 1 },
     model: { type: String, default: '' },
     status: { type: String, enum: ['running', 'done', 'failed'], default: 'running' },
+    // A touch-only agent (owns just Quiet/Dormant, never talks live) is
+    // rehearsed against real silence gaps and the template it would pick,
+    // not against a customer message it would never actually answer live.
+    mode: { type: String, enum: ['inbound', 'touch'], default: 'inbound' },
     params: { conversations: Number, turns: Number },
     progress: { done: { type: Number, default: 0 }, total: { type: Number, default: 0 } },
     turns: { type: [rehearsalTurnSchema], default: [] },

@@ -106,35 +106,114 @@ async function pickConversations({ limit, now }) {
     return out;
 }
 
+/** True for an agent that only ever fires on the cadence clock (Omar) —
+ * never on a live inbound message — so rehearsing it against "how would
+ * you answer this message" tests something it would never actually do.
+ * Layla also proposes templates, but her main job is a live conversation
+ * about a quote already in hand, so she still rehearses that way. */
+function isTouchOnlyAgent(agent) {
+    const owns = agent.ownsBuckets || [];
+    return owns.length > 0 && owns.every((b) => ['quiet', 'dormant'].includes(b));
+}
+
+const GAP_DAYS = 3;
+const REHEARSAL_WINDOW_DAYS = 150;
+
+/** Conversations with at least one real silence of GAP_DAYS+ between two
+ * messages — the actual moment a touch would have fired. */
+async function pickGapConversations({ limit, now }) {
+    const since = new Date(now.getTime() - REHEARSAL_WINDOW_DAYS * 86_400_000);
+    const rows = await WhatsAppMessage.aggregate([
+        { $match: { occurredAt: { $gte: since }, type: 'text', text: { $ne: '' } } },
+        { $sort: { occurredAt: 1 } },
+        { $group: { _id: '$phoneNormalized', at: { $push: '$occurredAt' }, last: { $max: '$occurredAt' } } },
+        { $addFields: { hasGap: { $anyElementTrue: { $map: { input: { $range: [1, { $size: '$at' }] }, as: 'i', in: { $gte: [{ $subtract: [{ $arrayElemAt: ['$at', '$$i'] }, { $arrayElemAt: ['$at', { $subtract: ['$$i', 1] }] }] }, GAP_DAYS * 86_400_000] } } } } } },
+        { $match: { hasGap: true } },
+        { $sort: { last: -1 } },
+        { $limit: limit * 4 },
+    ]);
+    const out = [];
+    for (const r of rows) {
+        const lead = await Lead.findOne({ phoneNormalized: r._id }).sort({ createdAt: -1 }).select('fullName phoneNormalized status').lean();
+        if (lead) out.push(lead);
+        if (out.length >= limit) break;
+    }
+    return out;
+}
+
+async function runInboundRehearsal(doc, agent, { conversations, turns, now }) {
+    const leads = await pickConversations({ limit: conversations, now });
+    doc.progress.total = leads.length * turns;
+    await doc.save();
+    for (const lead of leads) {
+        const msgs = await WhatsAppMessage.find({ phoneNormalized: lead.phoneNormalized, type: 'text', text: { $ne: '' }, occurredAt: { $gte: new Date(now.getTime() - 90 * 86_400_000) } })
+            .sort({ occurredAt: 1 }).select('direction text occurredAt sentByAi').lean();
+        const inbound = msgs.filter((m) => m.direction === 'inbound').slice(0, turns);
+        for (const m of inbound) {
+            const humanReply = msgs.find((x) => x.direction === 'outbound' && !x.sentByAi && x.occurredAt > m.occurredAt && x.occurredAt - m.occurredAt < 48 * 3600_000);
+            const turn = { lead: lead._id, leadName: lead.fullName, at: m.occurredAt, customerText: m.text, humanReply: humanReply?.text || '' };
+            try {
+                const file = { ...freshState(m.occurredAt), phoneNormalized: lead.phoneNormalized, need: {}, offers: [], openQuestions: [], lastSummary: '' };
+                const d = await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'inbound', text: m.text, until: m.occurredAt }, now: new Date(m.occurredAt), persist: false });
+                Object.assign(turn, { agentReply: d.reply, needsHuman: d.needsHuman, reason: d.reason, groundedOk: d.grounded.ok, loose: d.grounded.loose, tools: d.toolCalls.map((c) => c.name) });
+            } catch (e) {
+                turn.error = e.message;
+            }
+            doc.turns.push(turn);
+            doc.progress.done += 1;
+            await doc.save();
+        }
+    }
+}
+
+/** For a touch-only agent: replay real silence gaps and see which
+ * template (if any) it would pick, beside what genuinely happened next —
+ * the customer wrote back, a rep manually followed up, or nothing at all. */
+async function runTouchRehearsal(doc, agent, { conversations, turns, now }) {
+    const leads = await pickGapConversations({ limit: conversations, now });
+    doc.progress.total = leads.length * turns;
+    await doc.save();
+    for (const lead of leads) {
+        const msgs = await WhatsAppMessage.find({ phoneNormalized: lead.phoneNormalized, type: 'text', text: { $ne: '' }, occurredAt: { $gte: new Date(now.getTime() - REHEARSAL_WINDOW_DAYS * 86_400_000) } })
+            .sort({ occurredAt: 1 }).select('direction text occurredAt sentByAi').lean();
+        const gaps = [];
+        for (let i = 0; i < msgs.length - 1; i++) {
+            if (new Date(msgs[i + 1].occurredAt) - new Date(msgs[i].occurredAt) >= GAP_DAYS * 86_400_000) gaps.push({ gapStart: msgs[i].occurredAt, next: msgs[i + 1] });
+        }
+        for (const g of gaps.slice(0, turns)) {
+            const days = Math.round((new Date(g.next.occurredAt) - new Date(g.gapStart)) / 86_400_000);
+            const whatHappened = g.next.direction === 'inbound'
+                ? `They wrote back after ${days} day${days === 1 ? '' : 's'}: "${String(g.next.text).slice(0, 140)}"`
+                : g.next.sentByAi ? '' : `Your rep followed up after ${days} day${days === 1 ? '' : 's'}: "${String(g.next.text).slice(0, 140)}"`;
+            const turn = { lead: lead._id, leadName: lead.fullName, at: g.gapStart, customerText: `Silent since ${new Date(g.gapStart).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`, humanReply: whatHappened };
+            try {
+                const file = { ...freshState(g.gapStart), bucket: 'quiet', phoneNormalized: lead.phoneNormalized, need: {}, offers: [], openQuestions: [], lastSummary: '' };
+                const d = await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'touch', text: '', until: g.gapStart }, now: new Date(g.gapStart), persist: false });
+                Object.assign(turn, {
+                    agentReply: d.template ? `${d.template.name} — ${d.template.intent}` : '',
+                    needsHuman: d.needsHuman, reason: d.reason, groundedOk: d.grounded.ok, loose: d.grounded.loose, tools: d.toolCalls.map((c) => c.name),
+                });
+            } catch (e) {
+                turn.error = e.message;
+            }
+            doc.turns.push(turn);
+            doc.progress.done += 1;
+            await doc.save();
+        }
+    }
+}
+
 export async function startRehearsal(agent, { conversations = 8, turns = 3, now = new Date() } = {}) {
-    const doc = await AgentRehearsal.create({ agent: agent._id, promptVersion: agent.promptVersion, model: agent.model || openaiModel(), params: { conversations, turns } });
+    const mode = isTouchOnlyAgent(agent) ? 'touch' : 'inbound';
+    const doc = await AgentRehearsal.create({ agent: agent._id, promptVersion: agent.promptVersion, model: agent.model || openaiModel(), mode, params: { conversations, turns } });
     // Runs on its own; the page polls. A failure is recorded, never thrown.
     (async () => {
         try {
-            const leads = await pickConversations({ limit: conversations, now });
-            doc.progress.total = leads.length * turns;
-            await doc.save();
-            for (const lead of leads) {
-                const msgs = await WhatsAppMessage.find({ phoneNormalized: lead.phoneNormalized, type: 'text', text: { $ne: '' }, occurredAt: { $gte: new Date(now.getTime() - 90 * 86_400_000) } })
-                    .sort({ occurredAt: 1 }).select('direction text occurredAt sentByAi').lean();
-                const inbound = msgs.filter((m) => m.direction === 'inbound').slice(0, turns);
-                for (const m of inbound) {
-                    const humanReply = msgs.find((x) => x.direction === 'outbound' && !x.sentByAi && x.occurredAt > m.occurredAt && x.occurredAt - m.occurredAt < 48 * 3600_000);
-                    const turn = { lead: lead._id, leadName: lead.fullName, at: m.occurredAt, customerText: m.text, humanReply: humanReply?.text || '' };
-                    try {
-                        const file = { ...freshState(m.occurredAt), phoneNormalized: lead.phoneNormalized, need: {}, offers: [], openQuestions: [], lastSummary: '' };
-                        const d = await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'inbound', text: m.text, until: m.occurredAt }, now: new Date(m.occurredAt), persist: false });
-                        Object.assign(turn, { agentReply: d.reply, needsHuman: d.needsHuman, reason: d.reason, groundedOk: d.grounded.ok, loose: d.grounded.loose, tools: d.toolCalls.map((c) => c.name) });
-                    } catch (e) {
-                        turn.error = e.message;
-                    }
-                    doc.turns.push(turn);
-                    doc.progress.done += 1;
-                    await doc.save();
-                }
-            }
+            if (mode === 'touch') await runTouchRehearsal(doc, agent, { conversations, turns, now });
+            else await runInboundRehearsal(doc, agent, { conversations, turns, now });
+            const leadCount = new Set(doc.turns.map((t) => String(t.lead))).size;
             const t = doc.turns.filter((x) => !x.error);
-            doc.summary = { turns: t.length, grounded: t.filter((x) => x.groundedOk).length, handedOver: t.filter((x) => x.needsHuman).length, withHumanReply: t.filter((x) => x.humanReply).length, conversations: leads.length };
+            doc.summary = { turns: t.length, grounded: t.filter((x) => x.groundedOk).length, handedOver: t.filter((x) => x.needsHuman).length, withHumanReply: t.filter((x) => x.humanReply).length, conversations: leadCount };
             doc.status = 'done';
         } catch (e) {
             doc.status = 'failed';
