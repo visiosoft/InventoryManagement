@@ -7,7 +7,7 @@
  * through the same WhatsApp functions the console uses.
  */
 
-import { Lead, WhatsAppMessage } from '../models/index.js';
+import { Lead, WhatsAppMessage, Customer } from '../models/index.js';
 import { AgentProfile, AgentLeadFile, AgentAction } from './models.js';
 import { transition, nextTouchFor, BUCKETS, BUCKET_ORDER, LEAD_STATUS_FOR, describeStage } from './buckets.js';
 import { runAgent, cadenceFor } from './runtime.js';
@@ -113,6 +113,61 @@ export async function backfillLegacyLeads({ agent, now = new Date() } = {}) {
         adopted.push(file._id);
     }
     return { adopted: adopted.length, skipped: already.length };
+}
+
+/**
+ * Leads sitting in a sales agent's queue who turn out to already be a
+ * signed tenant — a Customer record with `stage !== 'prospect'` (the only
+ * thing that ever promotes one, per services/customerStage.js: a signed
+ * contract, never a status field) matching their phone — move to whoever
+ * owns the tenant bucket instead. The backfill and normal adoption route
+ * by the lead's own CRM status, which does not always catch up once
+ * someone actually signs; Omar reading their real conversation and
+ * correctly refusing to send a cold-lead template is what surfaces this.
+ *
+ * Moved to Engaged with no cadence, not a "tenant" bucket — that value
+ * only ever decides first-contact routing (see team.js's routeFirstOwner),
+ * it is not a lifecycle stage the state machine itself manages.
+ */
+export async function reassignTenantsToOwner({ now = new Date() } = {}) {
+    const profiles = await team();
+    const tenantOwner = ownerForBucket(profiles, 'tenant');
+    if (!tenantOwner) return { moved: 0, checked: 0, reason: 'No agent owns tenants' };
+
+    const customers = await Customer.find({ stage: { $ne: 'prospect' } }).select('phone phones').lean();
+    const tenantSuffixes = new Set();
+    for (const c of customers) {
+        for (const p of [...(c.phones || []), c.phone]) {
+            const d = String(p || '').replace(/\D/g, '');
+            if (d.length >= 9) tenantSuffixes.add(d.slice(-9));
+        }
+    }
+    if (!tenantSuffixes.size) return { moved: 0, checked: 0 };
+
+    const files = await AgentLeadFile.find({ bucket: { $nin: ['won', 'lost', 'do_not_contact'] }, agent: { $ne: tenantOwner._id } })
+        .select('lead agent phoneNormalized bucket frozenAt').lean();
+    let moved = 0;
+    for (const f of files) {
+        const suffix = String(f.phoneNormalized || '').replace(/\D/g, '').slice(-9);
+        if (!suffix || !tenantSuffixes.has(suffix)) continue;
+        const file = await AgentLeadFile.findById(f._id);
+        const before = snapshotOf(file);
+        const fromAgent = await agentOf(file);
+        file.agent = tenantOwner._id;
+        file.bucket = 'engaged';
+        file.previousBucket = before.bucket;
+        file.touchCount = 0;
+        file.nextTouchAt = null;
+        await file.save();
+        await record({
+            agent: tenantOwner, lead: file.lead, leadFile: file, kind: 'handoff',
+            summary: `Moved to ${tenantOwner.name}: this number is already a signed tenant, not a prospect — ${fromAgent?.name || 'the previous agent'} would have been following up on a closed deal.`,
+            detail: { from: fromAgent?._id || null, to: tenantOwner._id },
+            bucketBefore: before.bucket, bucketAfter: 'engaged', snapshotBefore: before, snapshotAfter: snapshotOf(file), revertible: true, actor: 'system', at: now,
+        });
+        moved += 1;
+    }
+    return { moved, checked: files.length };
 }
 
 /* ---------- a bucket event, with handoff ---------- */

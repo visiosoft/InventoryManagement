@@ -31,6 +31,11 @@ export default function AgentTeam() {
     onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['agents'] }); alert(`${r.adopted} lead${r.adopted === 1 ? '' : 's'} handed to Omar for follow-up (shadow — nothing is sent until approved). ${r.skipped} already had an agent.`) },
     onError: (e) => alert(apiError(e)),
   })
+  const reassignTenants = useMutation({
+    mutationFn: () => agentsApi.reassignTenants(),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['agents'] }); alert(`${r.moved} lead${r.moved === 1 ? '' : 's'} moved — they're already signed tenants, not prospects. Checked ${r.checked} leads outside the tenant queue.`) },
+    onError: (e) => alert(apiError(e)),
+  })
   const agents = data?.agents.filter((a) => a.isActive) || []
   const buckets = data?.buckets || []
   const ownerOf = (b: string) => agents.find((a) => a.mode !== 'off' && a.ownsBuckets.includes(b as Bucket))
@@ -92,6 +97,16 @@ export default function AgentTeam() {
                 <div style={{ fontSize: 12.5, color: C.second, marginTop: 2 }}>One-time: every CRM lead with no agent yet is handed to Omar for follow-up, in shadow — drafts and template touches wait in Needs you for approval, nothing sends on its own. Leads already past 24 hours since their last message only ever get an approved template, never a free-text draft. Safe to click more than once — already-adopted leads are skipped.</div>
               </div>
               <Button size="sm" disabled={backfill.isPending} onClick={() => { if (confirm('Hand every existing CRM lead with no agent yet to Omar, in shadow mode? Nothing will be sent without your approval.')) backfill.mutate() }}>{backfill.isPending ? 'Bringing them in…' : 'Bring in existing leads'}</Button>
+            </Panel>
+          )}
+
+          {agents.length > 0 && (
+            <Panel style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div>
+                <b>Move signed tenants out of the sales queue</b>
+                <div style={{ fontSize: 12.5, color: C.second, marginTop: 2 }}>Some leads turn out to already be tenants with a signed contract — the CRM status just never caught up. Checks every real Customer record and moves any match from a sales agent's queue to whoever owns tenants, so they stop getting cold-lead follow-ups. Safe to click more than once.</div>
+              </div>
+              <Button size="sm" variant="outline" disabled={reassignTenants.isPending} onClick={() => reassignTenants.mutate()}>{reassignTenants.isPending ? 'Checking…' : 'Move signed tenants'}</Button>
             </Panel>
           )}
 

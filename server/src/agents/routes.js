@@ -9,7 +9,7 @@ import { AgentProfile, AgentLeadFile, AgentAction, AGENT_MODES, AGENT_TOOLS, AGE
 import { runJob, describeSchedule } from './jobs.js';
 import { BUCKETS, BUCKET_ORDER, describeStage, DEFAULT_CADENCE, nextTouchFor } from './buckets.js';
 import { runAgent, findLead, cadenceFor } from './runtime.js';
-import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads, agentPlan, agentBoard } from './service.js';
+import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads, reassignTenantsToOwner, agentPlan, agentBoard } from './service.js';
 import { record, revert, snapshotOf } from './log.js';
 import { seedStarterTeam } from './seed.js';
 import { agentStats, startRehearsal, reviewAgent, teachFromRehearsal } from './insights.js';
@@ -117,6 +117,13 @@ router.post('/backfill-legacy', admin, wrap(async (req, res) => {
     const agent = req.body?.agentId ? await AgentProfile.findById(req.body.agentId) : await AgentProfile.findOne({ name: 'Omar' });
     if (!agent) throw new Error('No agent found to own the backlog — pass agentId, or seed the starter team first');
     res.json(await backfillLegacyLeads({ agent }));
+}));
+
+// Moves leads that turn out to already be signed tenants (per the real
+// Customer record, not the lead's own status) out of a sales agent's
+// queue and to whoever owns tenants. Safe to click more than once.
+router.post('/reassign-tenants', admin, wrap(async (_req, res) => {
+    res.json(await reassignTenantsToOwner());
 }));
 
 router.get('/team', wrap(async (_req, res) => {

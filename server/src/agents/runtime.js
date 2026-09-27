@@ -132,10 +132,19 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
     let usage = null;
 
     for (let round = 0; round <= (agent.maxToolRounds || 4); round++) {
+        // A touch has no "just reply" option — the whole point of the turn
+        // is to either propose a template or escalate. Forcing this only on
+        // round 0 was not enough: the model can spend round 0 on an
+        // exploratory tool (update_lead_file, move_bucket) and then answer
+        // with bare JSON on round 1 without ever calling either — which is
+        // what let a touch fall through to "no template chosen" even when
+        // its own reasoning said a template fit fine. So keep forcing a
+        // tool call every round until it has actually committed to one.
+        const mustCommit = isTouch && !ctx.changes.template && !ctx.changes.escalate;
         const res = await chatWithTools({
             system, messages: convo, tools, model: agent.model || undefined,
             temperature: 0.3, maxTokens: 700,
-            toolChoice: round === 0 && !isTouch && messages.length > 0 ? 'auto' : 'auto',
+            toolChoice: mustCommit ? 'required' : 'auto',
         });
         usage = res.usage || usage;
         if (!res.toolCalls.length) { content = res.content; break; }

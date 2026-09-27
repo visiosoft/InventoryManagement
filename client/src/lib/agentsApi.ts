@@ -201,6 +201,7 @@ export const agentsApi = {
   tick: () => api.post<{ proposed: number; exhausted: number; silenced: number; failed: number }>('/agents/tick').then((r) => r.data),
   seedTeam: () => api.post<{ team: { name: string; result: string; escalateTo: boolean }[] }>('/agents/seed-team').then((r) => r.data),
   backfillLegacy: (agentId?: string) => api.post<{ adopted: number; skipped: number }>('/agents/backfill-legacy', agentId ? { agentId } : {}).then((r) => r.data),
+  reassignTenants: () => api.post<{ moved: number; checked: number }>('/agents/reassign-tenants').then((r) => r.data),
   insights: (agentId: string, days = 30) => api.get<AgentInsights>(`/agents/${agentId}/stats`, { params: { days } }).then((r) => r.data),
   plan: (agentId: string, days = 3) => api.get<AgentPlan>(`/agents/${agentId}/plan`, { params: { days } }).then((r) => r.data),
   board: (agentId: string) => api.get<AgentBoard>(`/agents/${agentId}/board`).then((r) => r.data),
