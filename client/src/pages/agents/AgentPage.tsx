@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { Pencil, PlayCircle, Sparkles, Plus } from 'lucide-react'
+import { ChevronRight, Pencil, PlayCircle, Sparkles, Plus } from 'lucide-react'
 import { apiError } from '../../lib/api'
-import { agentsApi, agentColor, agoText, composeJob, dueText, parseJob, JOB_SECTIONS, type AgentBoard, type AgentPlan, type Bucket, type PlanLead, type Rehearsal, type Review } from '../../lib/agentsApi'
+import { agentsApi, agentColor, agoText, composeJob, dueText, parseJob, BUCKET_TONE, JOB_SECTIONS, type AgentBoard, type AgentPlan, type Bucket, type PlanLead, type Rehearsal, type Review } from '../../lib/agentsApi'
 import { Button, PageHeader, Spinner } from '../../components/ui'
 import { AgentNav, Avatar, C, DecisionView, DISPLAY, Eyebrow, Note, Panel, Pill, Stat, Tag, fmtTime } from './ui'
 
@@ -96,32 +96,62 @@ function PlanView({ agentId, plan }: { agentId: string; plan: AgentPlan }) {
  * actually sends, then it's read straight off touchCount into the next
  * column on the board's next load. Nothing here is dragged by hand; the
  * board shows what the clock has already decided. */
-function BoardView({ board }: { board: AgentBoard }) {
+function StageDots({ index, total, color }: { index: number; total: number; color: string }) {
   return (
-    <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
-      {board.columns.map((col) => (
-        <div key={col.key} style={{ flex: '0 0 220px', border: `1px solid ${C.line}`, borderRadius: 12, background: C.page, display: 'flex', flexDirection: 'column', maxHeight: 420 }}>
-          <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.line}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Pill bucket={col.bucket} label={col.bucketLabel} />
-              <b style={{ fontFamily: DISPLAY, fontSize: 15 }}>{col.count}</b>
-            </div>
-            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>{col.stageLabel} · day {col.dueDays}</div>
-          </div>
-          <div style={{ overflowY: 'auto', padding: 8, display: 'grid', gap: 6 }}>
-            {col.leads.length === 0 && <span style={{ fontSize: 11.5, color: C.muted, padding: '4px 2px' }}>Nobody here</span>}
-            {col.leads.map((l) => (
-              <Link key={l.leadId || l.name} to={l.leadId ? `/agents/leads/${l.leadId}` : '#'} style={{ textDecoration: 'none', color: 'inherit' }}>
-                <div style={{ padding: '6px 8px', borderRadius: 8, background: C.card, border: `1px solid ${C.line}`, fontSize: 12 }}>
-                  <div style={{ fontWeight: 700, color: C.ink }}>{l.name}</div>
-                  <div style={{ color: C.muted, fontSize: 11 }}>{dueText(l.nextTouchAt)}</div>
-                </div>
-              </Link>
-            ))}
-            {col.count > col.leads.length && <span style={{ fontSize: 11, color: C.muted, padding: '2px' }}>and {col.count - col.leads.length} more</span>}
-          </div>
-        </div>
+    <div style={{ display: 'flex', gap: 3 }}>
+      {Array.from({ length: total }, (_, i) => (
+        <span key={i} style={{ width: 6, height: 6, borderRadius: 999, background: i <= index ? color : `${color}33` }} />
       ))}
+    </div>
+  )
+}
+
+function BoardView({ board }: { board: AgentBoard }) {
+  const initials = (name: string) => name.split(/\s+/).map((s) => s[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+  return (
+    <div style={{ display: 'flex', gap: 4, overflowX: 'auto', paddingBottom: 6 }}>
+      {board.columns.map((col, ci) => {
+        const tone = BUCKET_TONE[col.bucket]
+        return (
+          <div key={col.key} style={{ display: 'flex', alignItems: 'stretch', gap: 4 }}>
+            <div style={{ flex: '0 0 232px', borderRadius: 16, background: C.card, boxShadow: '0 1px 2px rgba(20,8,31,0.06), 0 8px 20px -12px rgba(20,8,31,0.15)', display: 'flex', flexDirection: 'column', maxHeight: 440, overflow: 'hidden' }}>
+              <div style={{ height: 5, background: `linear-gradient(90deg, ${tone.fg}, ${tone.fg}99)` }} />
+              <div style={{ padding: '12px 14px 10px', background: `linear-gradient(180deg, ${tone.bg}, ${C.card})` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: tone.fg }}>{col.bucketLabel}</div>
+                    <div style={{ fontSize: 12, color: C.second, marginTop: 2, fontWeight: 600 }}>{col.stageLabel}</div>
+                  </div>
+                  <span style={{ width: 30, height: 30, borderRadius: 999, background: tone.fg, color: '#fff', display: 'grid', placeItems: 'center', fontFamily: DISPLAY, fontWeight: 800, fontSize: 14, flex: 'none' }}>{col.count}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                  <StageDots index={col.stageIndex} total={col.stageTotal} color={tone.fg} />
+                  <span style={{ fontSize: 10.5, color: C.muted }}>day {col.dueDays}</span>
+                </div>
+              </div>
+              <div style={{ overflowY: 'auto', padding: 10, display: 'grid', gap: 7, flex: 1 }}>
+                {col.leads.length === 0 && <div style={{ fontSize: 11.5, color: C.muted, padding: '10px 2px', textAlign: 'center' }}>Nobody here yet</div>}
+                {col.leads.map((l) => (
+                  <Link key={l.leadId || l.name} to={l.leadId ? `/agents/leads/${l.leadId}` : '#'} style={{ textDecoration: 'none', color: 'inherit' }}>
+                    <div className="board-card" style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 9px', borderRadius: 11, background: C.page, border: `1px solid ${C.line}`, fontSize: 12, transition: 'box-shadow .15s, transform .15s' }}>
+                      <span style={{ width: 26, height: 26, borderRadius: 999, background: `${tone.fg}22`, color: tone.fg, display: 'grid', placeItems: 'center', fontFamily: DISPLAY, fontWeight: 800, fontSize: 10.5, flex: 'none' }}>{initials(l.name)}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name}</div>
+                        <div style={{ color: C.muted, fontSize: 10.5 }}>{dueText(l.nextTouchAt)}</div>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+                {col.count > col.leads.length && <div style={{ fontSize: 11, color: C.muted, textAlign: 'center', padding: '2px' }}>and {col.count - col.leads.length} more</div>}
+              </div>
+            </div>
+            {ci < board.columns.length - 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', color: C.line, flex: 'none' }}><ChevronRight size={16} /></div>
+            )}
+          </div>
+        )
+      })}
+      <style>{`.board-card:hover { box-shadow: 0 4px 14px -6px rgba(20,8,31,.25); transform: translateY(-1px); }`}</style>
     </div>
   )
 }
@@ -274,15 +304,15 @@ export default function AgentPage() {
 
           {(nurture || closing) && (
             <Panel style={{ marginTop: 12 }}>
-              <Eyebrow>The standup — what {a.name} did, is doing, and plans to do</Eyebrow>
-              {plan.isLoading || !plan.data ? <Spinner /> : <PlanView agentId={agentId} plan={plan.data} />}
+              <Eyebrow>The follow-up board — one column per stage, a lead moves right the moment its touch sends</Eyebrow>
+              {board.isLoading || !board.data ? <Spinner /> : board.data.columns.length === 0 ? <Note>Nothing cadenced yet.</Note> : <BoardView board={board.data} />}
             </Panel>
           )}
 
           {(nurture || closing) && (
             <Panel style={{ marginTop: 12 }}>
-              <Eyebrow>The follow-up board — one column per stage, a lead moves right the moment its touch sends</Eyebrow>
-              {board.isLoading || !board.data ? <Spinner /> : board.data.columns.length === 0 ? <Note>Nothing cadenced yet.</Note> : <BoardView board={board.data} />}
+              <Eyebrow>The standup — what {a.name} did, is doing, and plans to do</Eyebrow>
+              {plan.isLoading || !plan.data ? <Spinner /> : <PlanView agentId={agentId} plan={plan.data} />}
             </Panel>
           )}
 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
-import { Pause, Play, RotateCcw, Undo2, UserCheck, Zap } from 'lucide-react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, Pause, Play, RotateCcw, Undo2, UserCheck, Zap } from 'lucide-react'
 import { apiError } from '../../lib/api'
 import { agentsApi, agoText, dueText, needText, agentColor, type AgentAction, type Decision } from '../../lib/agentsApi'
 import { Button, PageHeader, Spinner, Textarea } from '../../components/ui'
@@ -14,6 +14,7 @@ function plain(a: AgentAction) {
 
 export default function AgentLead() {
   const { leadId = '' } = useParams()
+  const nav = useNavigate()
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({ queryKey: ['agents', 'lead', leadId], queryFn: () => agentsApi.lead(leadId), enabled: Boolean(leadId) })
   const [text, setText] = useState('')
@@ -39,6 +40,7 @@ export default function AgentLead() {
         subtitle={<span>{f.lead.phone} · <Pill bucket={f.bucket} label={f.bucketLabel} /> {f.stage && <span style={{ color: C.muted }}>{f.stage}</span>} · owned by <b style={{ color: agentColor(f.agent) }}>{f.agent?.name}</b>{f.frozenAt ? <Tag tone="danger">follow-ups stopped</Tag> : null}</span>}
         action={
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button size="sm" variant="outline" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/agents'))}><ArrowLeft size={13} /> Back</Button>
             {f.bucket === 'with_person' && <Button size="sm" onClick={() => act.mutate(() => agentsApi.handBack(leadId))}><UserCheck size={13} /> Hand back to {f.agent?.name}</Button>}
             <Button size="sm" variant="outline" onClick={() => act.mutate(() => agentsApi.freeze(leadId, Boolean(f.frozenAt)))}>{f.frozenAt ? <><Play size={13} /> Resume follow-ups</> : <><Pause size={13} /> Stop follow-ups</>}</Button>
             <Link to={`/leads/${f.lead._id}`}><Button size="sm" variant="outline">Open in Leads →</Button></Link>

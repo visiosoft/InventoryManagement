@@ -157,7 +157,7 @@ export interface PlanDay { date: string; isToday: boolean; count: number; leads:
 export interface AgentPlan { agentId: string; agentName: string; sentToday: number; skippedToday: number; waitingNow: number; overdueCount: number; upcoming: PlanDay[] }
 
 export interface BoardLead { leadId: string | null; name: string; phone: string; nextTouchAt: string }
-export interface BoardColumn { key: string; bucket: Bucket; bucketLabel: string; stageLabel: string; dueDays: number; count: number; leads: BoardLead[] }
+export interface BoardColumn { key: string; bucket: Bucket; bucketLabel: string; stageLabel: string; stageIndex: number; stageTotal: number; dueDays: number; count: number; leads: BoardLead[] }
 export interface AgentBoard { agentId: string; agentName: string; columns: BoardColumn[] }
 
 /** The instructions are four sections; the onboarding form edits them one at a time. */

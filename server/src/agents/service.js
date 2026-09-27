@@ -24,6 +24,17 @@ const textToHtml = (t) => String(t || '').split(/\n{2,}/).map((p) => `<p style="
 const SILENCE_MS = 24 * 3600_000;
 const TICK_BATCH = 10;
 
+// "WhatsApp Contact 5521" is the placeholder every inbound chat gets before
+// anyone names it — never worth showing over a real name. Their own
+// WhatsApp profile name beats a bare number, same fallback order the
+// WhatsApp inbox itself uses (see routes/whatsapp.js's isPlaceholderLeadName).
+const isPlaceholderLeadName = (n) => !n || /^whatsapp\s*contact/i.test(String(n).trim());
+const displayNameOf = (lead) => {
+    if (lead?.fullName && !isPlaceholderLeadName(lead.fullName)) return lead.fullName;
+    if (lead?.whatsappProfileName) return lead.whatsappProfileName;
+    return lead?.phone || 'Unknown';
+};
+
 /* ---------- the team ---------- */
 
 let teamCache = { at: 0, profiles: [] };
@@ -474,7 +485,7 @@ export async function agentPlan(agentId, { now = new Date(), days = 3 } = {}) {
     const waitingNow = await AgentAction.countDocuments({ agent: agentId, kind: 'touch_proposed', resolution: null });
 
     const files = await AgentLeadFile.find({ agent: agentId, frozenAt: null, nextTouchAt: { $ne: null } })
-        .populate('lead', 'fullName phone')
+        .populate('lead', 'fullName phone whatsappProfileName')
         .sort({ nextTouchAt: 1 })
         .limit(500)
         .lean();
@@ -490,7 +501,7 @@ export async function agentPlan(agentId, { now = new Date(), days = 3 } = {}) {
         if (k < todayKey) { overdueCount += 1; continue; }
         if (!byDay.has(k)) byDay.set(k, []);
         byDay.get(k).push({
-            leadId: f.lead?._id || null, name: f.lead?.fullName || 'Unknown', phone: f.lead?.phone || '',
+            leadId: f.lead?._id || null, name: displayNameOf(f.lead), phone: f.lead?.phone || '',
             bucket: f.bucket, bucketLabel: BUCKETS[f.bucket]?.label || f.bucket, stage: describeStage(f, cadence), nextTouchAt: f.nextTouchAt,
         });
     }
@@ -517,7 +528,7 @@ export async function agentBoard(agentId, { limit = 40 } = {}) {
     if (!cadencedBuckets.length) return { agentId, agentName: agent.name, columns: [] };
 
     const files = await AgentLeadFile.find({ agent: agentId, bucket: { $in: cadencedBuckets }, frozenAt: null })
-        .populate('lead', 'fullName phone')
+        .populate('lead', 'fullName phone whatsappProfileName')
         .select('lead bucket touchCount nextTouchAt')
         .sort({ nextTouchAt: 1 })
         .lean();
@@ -529,8 +540,8 @@ export async function agentBoard(agentId, { limit = 40 } = {}) {
             const inStage = files.filter((f) => f.bucket === bucket && f.touchCount === i);
             columns.push({
                 key: `${bucket}-${i}`, bucket, bucketLabel: BUCKETS[bucket]?.label || bucket,
-                stageLabel: `Touch ${i + 1} of ${stages.length}`, dueDays: stages[i], count: inStage.length,
-                leads: inStage.slice(0, limit).map((f) => ({ leadId: f.lead?._id || null, name: f.lead?.fullName || 'Unknown', phone: f.lead?.phone || '', nextTouchAt: f.nextTouchAt })),
+                stageLabel: `Touch ${i + 1} of ${stages.length}`, stageIndex: i, stageTotal: stages.length, dueDays: stages[i], count: inStage.length,
+                leads: inStage.slice(0, limit).map((f) => ({ leadId: f.lead?._id || null, name: displayNameOf(f.lead), phone: f.lead?.phone || '', nextTouchAt: f.nextTouchAt })),
             });
         }
     }
