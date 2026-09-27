@@ -500,6 +500,43 @@ export async function agentPlan(agentId, { now = new Date(), days = 3 } = {}) {
     return { agentId, agentName: agent.name, sentToday, skippedToday, waitingNow, overdueCount, upcoming };
 }
 
+/**
+ * The follow-up sequence as a board: one column per stage of every cadenced
+ * bucket this agent owns (Quiet touch 1/2/3, Dormant touch 1/2/3, and so
+ * on), each holding the leads currently sitting at that stage. A lead
+ * moves one column right the moment its touch actually sends — touchCount
+ * is the only thing that changes, so the board is read straight off it
+ * rather than kept as separate state that could drift from reality.
+ */
+export async function agentBoard(agentId, { limit = 40 } = {}) {
+    const profiles = await team();
+    const agent = profiles.find((p) => String(p._id) === String(agentId));
+    if (!agent) throw new Error('No such agent');
+    const cadence = cadenceFor(agent);
+    const cadencedBuckets = (agent.ownsBuckets || []).filter((b) => Array.isArray(cadence[b]) && cadence[b].length);
+    if (!cadencedBuckets.length) return { agentId, agentName: agent.name, columns: [] };
+
+    const files = await AgentLeadFile.find({ agent: agentId, bucket: { $in: cadencedBuckets }, frozenAt: null })
+        .populate('lead', 'fullName phone')
+        .select('lead bucket touchCount nextTouchAt')
+        .sort({ nextTouchAt: 1 })
+        .lean();
+
+    const columns = [];
+    for (const bucket of cadencedBuckets) {
+        const stages = cadence[bucket];
+        for (let i = 0; i < stages.length; i++) {
+            const inStage = files.filter((f) => f.bucket === bucket && f.touchCount === i);
+            columns.push({
+                key: `${bucket}-${i}`, bucket, bucketLabel: BUCKETS[bucket]?.label || bucket,
+                stageLabel: `Touch ${i + 1} of ${stages.length}`, dueDays: stages[i], count: inStage.length,
+                leads: inStage.slice(0, limit).map((f) => ({ leadId: f.lead?._id || null, name: f.lead?.fullName || 'Unknown', phone: f.lead?.phone || '', nextTouchAt: f.nextTouchAt })),
+            });
+        }
+    }
+    return { agentId, agentName: agent.name, columns };
+}
+
 export async function conversationFor(phoneNormalized, { limit = 60 } = {}) {
     const rows = await WhatsAppMessage.find({ phoneNormalized, $or: [{ type: 'text', text: { $ne: '' } }, { transcript: { $ne: '' } }] })
         .sort({ occurredAt: -1 }).limit(limit).select('direction text transcript type occurredAt sentByAi').lean();

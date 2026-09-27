@@ -156,6 +156,10 @@ export interface PlanLead { leadId: string | null; name: string; phone: string; 
 export interface PlanDay { date: string; isToday: boolean; count: number; leads: PlanLead[] }
 export interface AgentPlan { agentId: string; agentName: string; sentToday: number; skippedToday: number; waitingNow: number; overdueCount: number; upcoming: PlanDay[] }
 
+export interface BoardLead { leadId: string | null; name: string; phone: string; nextTouchAt: string }
+export interface BoardColumn { key: string; bucket: Bucket; bucketLabel: string; stageLabel: string; dueDays: number; count: number; leads: BoardLead[] }
+export interface AgentBoard { agentId: string; agentName: string; columns: BoardColumn[] }
+
 /** The instructions are four sections; the onboarding form edits them one at a time. */
 export const JOB_SECTIONS: { key: JobSection; label: string; hint: string }[] = [
   { key: 'who', label: 'Who you are', hint: 'Name, company, the channel. One or two lines.' },
@@ -199,6 +203,7 @@ export const agentsApi = {
   backfillLegacy: (agentId?: string) => api.post<{ adopted: number; skipped: number }>('/agents/backfill-legacy', agentId ? { agentId } : {}).then((r) => r.data),
   insights: (agentId: string, days = 30) => api.get<AgentInsights>(`/agents/${agentId}/stats`, { params: { days } }).then((r) => r.data),
   plan: (agentId: string, days = 3) => api.get<AgentPlan>(`/agents/${agentId}/plan`, { params: { days } }).then((r) => r.data),
+  board: (agentId: string) => api.get<AgentBoard>(`/agents/${agentId}/board`).then((r) => r.data),
   rehearse: (agentId: string, params: { conversations?: number; turns?: number } = {}) => api.post<{ rehearsal: Rehearsal; alreadyRunning?: boolean }>(`/agents/${agentId}/rehearse`, params).then((r) => r.data),
   rehearsal: (agentId: string, rid: string) => api.get<Rehearsal>(`/agents/${agentId}/rehearsals/${rid}`).then((r) => r.data),
   teachFromRehearsal: (agentId: string, rid: string, turnIndex: number, text: string) => api.post<{ correctedReply: string }>(`/agents/${agentId}/rehearsals/${rid}/turns/${turnIndex}/train`, { text }).then((r) => r.data),

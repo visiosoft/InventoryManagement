@@ -9,7 +9,7 @@ import { AgentProfile, AgentLeadFile, AgentAction, AGENT_MODES, AGENT_TOOLS, AGE
 import { runJob, describeSchedule } from './jobs.js';
 import { BUCKETS, BUCKET_ORDER, describeStage, DEFAULT_CADENCE, nextTouchFor } from './buckets.js';
 import { runAgent, findLead, cadenceFor } from './runtime.js';
-import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads, agentPlan } from './service.js';
+import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads, agentPlan, agentBoard } from './service.js';
 import { record, revert, snapshotOf } from './log.js';
 import { seedStarterTeam } from './seed.js';
 import { agentStats, startRehearsal, reviewAgent, teachFromRehearsal } from './insights.js';
@@ -224,6 +224,12 @@ router.get('/:id/stats', wrap(async (req, res) => {
 router.get('/:id/plan', wrap(async (req, res) => {
     const days = Math.min(7, Math.max(1, Number(req.query.days) || 3));
     res.json(await agentPlan(req.params.id, { days }));
+}));
+
+// The follow-up sequence as a board: one column per cadence stage, leads
+// move a column each time their touch actually sends.
+router.get('/:id/board', wrap(async (req, res) => {
+    res.json(await agentBoard(req.params.id));
 }));
 
 router.post('/:id/rehearse', admin, wrap(async (req, res) => {

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { Pencil, PlayCircle, Sparkles, Plus } from 'lucide-react'
 import { apiError } from '../../lib/api'
-import { agentsApi, agentColor, agoText, composeJob, parseJob, JOB_SECTIONS, type AgentPlan, type Bucket, type PlanLead, type Rehearsal, type Review } from '../../lib/agentsApi'
+import { agentsApi, agentColor, agoText, composeJob, dueText, parseJob, JOB_SECTIONS, type AgentBoard, type AgentPlan, type Bucket, type PlanLead, type Rehearsal, type Review } from '../../lib/agentsApi'
 import { Button, PageHeader, Spinner } from '../../components/ui'
 import { AgentNav, Avatar, C, DecisionView, DISPLAY, Eyebrow, Note, Panel, Pill, Stat, Tag, fmtTime } from './ui'
 
@@ -92,6 +92,40 @@ function PlanView({ agentId, plan }: { agentId: string; plan: AgentPlan }) {
   )
 }
 
+/** One column per cadence stage — a lead sits here until its touch
+ * actually sends, then it's read straight off touchCount into the next
+ * column on the board's next load. Nothing here is dragged by hand; the
+ * board shows what the clock has already decided. */
+function BoardView({ board }: { board: AgentBoard }) {
+  return (
+    <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+      {board.columns.map((col) => (
+        <div key={col.key} style={{ flex: '0 0 220px', border: `1px solid ${C.line}`, borderRadius: 12, background: C.page, display: 'flex', flexDirection: 'column', maxHeight: 420 }}>
+          <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.line}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Pill bucket={col.bucket} label={col.bucketLabel} />
+              <b style={{ fontFamily: DISPLAY, fontSize: 15 }}>{col.count}</b>
+            </div>
+            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>{col.stageLabel} · day {col.dueDays}</div>
+          </div>
+          <div style={{ overflowY: 'auto', padding: 8, display: 'grid', gap: 6 }}>
+            {col.leads.length === 0 && <span style={{ fontSize: 11.5, color: C.muted, padding: '4px 2px' }}>Nobody here</span>}
+            {col.leads.map((l) => (
+              <Link key={l.leadId || l.name} to={l.leadId ? `/agents/leads/${l.leadId}` : '#'} style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div style={{ padding: '6px 8px', borderRadius: 8, background: C.card, border: `1px solid ${C.line}`, fontSize: 12 }}>
+                  <div style={{ fontWeight: 700, color: C.ink }}>{l.name}</div>
+                  <div style={{ color: C.muted, fontSize: 11 }}>{dueText(l.nextTouchAt)}</div>
+                </div>
+              </Link>
+            ))}
+            {col.count > col.leads.length && <span style={{ fontSize: 11, color: C.muted, padding: '2px' }}>and {col.count - col.leads.length} more</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function RehearsalView({ r, agentName, agentId }: { r: Rehearsal; agentName: string; agentId: string }) {
   const done = r.status === 'done'
   return (
@@ -172,6 +206,7 @@ export default function AgentPage() {
   const team = useQuery({ queryKey: ['agents', 'team'], queryFn: agentsApi.team })
   const insights = useQuery({ queryKey: ['agents', 'insights', agentId], queryFn: () => agentsApi.insights(agentId, 30), enabled: Boolean(agentId) })
   const plan = useQuery({ queryKey: ['agents', 'plan', agentId], queryFn: () => agentsApi.plan(agentId, 3), enabled: Boolean(agentId) })
+  const board = useQuery({ queryKey: ['agents', 'board', agentId], queryFn: () => agentsApi.board(agentId), enabled: Boolean(agentId) })
   const profiles = useQuery({ queryKey: ['agents', 'profiles'], queryFn: agentsApi.profiles })
   const a = team.data?.agents.find((x) => x._id === agentId)
   const refresh = () => qc.invalidateQueries({ queryKey: ['agents'] })
@@ -241,6 +276,13 @@ export default function AgentPage() {
             <Panel style={{ marginTop: 12 }}>
               <Eyebrow>The standup — what {a.name} did, is doing, and plans to do</Eyebrow>
               {plan.isLoading || !plan.data ? <Spinner /> : <PlanView agentId={agentId} plan={plan.data} />}
+            </Panel>
+          )}
+
+          {(nurture || closing) && (
+            <Panel style={{ marginTop: 12 }}>
+              <Eyebrow>The follow-up board — one column per stage, a lead moves right the moment its touch sends</Eyebrow>
+              {board.isLoading || !board.data ? <Spinner /> : board.data.columns.length === 0 ? <Note>Nothing cadenced yet.</Note> : <BoardView board={board.data} />}
             </Panel>
           )}
 
