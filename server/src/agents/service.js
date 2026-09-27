@@ -169,7 +169,7 @@ export async function onInbound({ phoneNormalized, text, occurredAt, businessNum
 /* ---------- the clock ---------- */
 
 export async function runAgentTick({ now = new Date() } = {}) {
-    const out = { proposed: 0, exhausted: 0, silenced: 0, failed: 0, purged: 0, jobs: 0 };
+    const out = { proposed: 0, exhausted: 0, silenced: 0, reengaged: 0, failed: 0, purged: 0, jobs: 0 };
     const profiles = await team();
     if (!profiles.some((p) => p.mode !== 'off')) return out;
 
@@ -207,6 +207,21 @@ export async function runAgentTick({ now = new Date() } = {}) {
                 continue;
             }
             if (!agent || agent.mode === 'off') { file.nextTouchAt = null; await file.save(); continue; }
+
+            // A reply this bucket never actually processed as one — almost
+            // always a message from before this lead was adopted (the
+            // legacy backfill anchors on real history, but doesn't replay
+            // it through the state machine). Treat it as the inbound event
+            // it always was, rather than touching someone who already
+            // answered and then handing them to a person for no real reason.
+            const latestInbound = await WhatsAppMessage.findOne({ phoneNormalized: file.phoneNormalized, direction: 'inbound' }).sort({ occurredAt: -1 }).select('occurredAt').lean();
+            if (latestInbound && (!file.lastInboundAt || new Date(latestInbound.occurredAt) > new Date(file.lastInboundAt))) {
+                file.lastInboundAt = latestInbound.occurredAt;
+                const r = await applyEvent(file, 'inbound', { lead, now });
+                if (r.changed) out.reengaged += 1;
+                continue;
+            }
+
             const cadence = cadenceFor(agent);
             await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'touch', text: '' }, now });
             out.proposed += 1;

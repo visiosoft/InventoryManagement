@@ -364,7 +364,26 @@ router.post('/simulate', admin, wrap(async (req, res) => {
     const persist = req.body?.persist !== false;
     const now = new Date();
     if (persist && kind === 'inbound') { file.lastInboundAt = now; await applyEvent(file, 'inbound', { lead, now }); }
-    const decision = await runAgent({ agent, lead, leadFile: file, trigger: { kind, text }, now, persist });
+
+    let decision;
+    if (kind === 'touch') {
+        // Same check runAgentTick makes: a reply this bucket never actually
+        // processed means the touch would never really fire — the lead
+        // would already be back in Active by the time the clock got here.
+        const bucketBefore = file.bucket;
+        const latestInbound = await WhatsAppMessage.findOne({ phoneNormalized: file.phoneNormalized, direction: 'inbound' }).sort({ occurredAt: -1 }).select('occurredAt').lean();
+        if (latestInbound && (!file.lastInboundAt || new Date(latestInbound.occurredAt) > new Date(file.lastInboundAt))) {
+            if (persist) { file.lastInboundAt = latestInbound.occurredAt; await applyEvent(file, 'inbound', { lead, now }); }
+            decision = {
+                mode: agent.mode, trigger: 'touch', reply: '', needsHuman: false,
+                reason: 'A reply arrived that was never processed as one — this lead is already back in Active, so no touch would actually be sent.',
+                summary: 'Would re-engage instead of touching', template: null,
+                bucketBefore, bucketAfter: persist ? file.bucket : 'engaged',
+                toolCalls: [], grounded: { ok: true, loose: [] }, model: agent.model || '', promptVersion: agent.promptVersion, usage: null,
+            };
+        }
+    }
+    decision ??= await runAgent({ agent, lead, leadFile: file, trigger: { kind, text }, now, persist });
     res.json({ lead: { _id: lead._id, fullName: lead.fullName, phone: lead.phone }, agent: { _id: agent._id, name: agent.name }, decision, file: { bucket: file.bucket, need: file.need, offers: file.offers, openQuestions: file.openQuestions } });
 }));
 
