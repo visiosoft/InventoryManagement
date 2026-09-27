@@ -24,7 +24,23 @@ export function Pill({ bucket, label }: { bucket: Bucket; label?: string }) {
   return <span style={{ display: 'inline-flex', background: t.bg, color: t.fg, borderRadius: 999, padding: '2px 9px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{label || bucket}</span>
 }
 
+/** Generated illustrations for the starter team — see AgentOnboarding.tsx's
+ * "About" panel, where these were first added. Anyone onboarded from
+ * scratch has no illustration yet, so Avatar's initials remain the
+ * fallback everywhere this is used. */
+export const AGENT_ILLUSTRATION: Record<string, string> = {
+  Aisha: '/agents/aisha.webp',
+  Omar: '/agents/omar.webp',
+  Layla: '/agents/layla.webp',
+  Nadia: '/agents/nadia.webp',
+  Sam: '/agents/sam.webp',
+}
+
 export function Avatar({ name, color, size = 36 }: { name?: string; color?: string; size?: number }) {
+  const illustration = name ? AGENT_ILLUSTRATION[name] : undefined
+  if (illustration) {
+    return <img src={illustration} alt={name} style={{ width: size, height: size, borderRadius: 999, objectFit: 'cover', flex: 'none', border: `1px solid ${C.line}` }} />
+  }
   const initials = (name || '?').split(/\s+/).map((s) => s[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
   const c = color || agentColor({ name })
   return (
