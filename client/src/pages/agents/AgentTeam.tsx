@@ -4,7 +4,7 @@ import { Plus, Pencil, PlayCircle } from 'lucide-react'
 import { apiError } from '../../lib/api'
 import { agentsApi, agentColor, agoText, type Bucket, type TeamAgent } from '../../lib/agentsApi'
 import { Button, PageHeader, Spinner } from '../../components/ui'
-import { AgentNav, Avatar, C, Eyebrow, Note, Panel, Pill, Stat, Tag } from './ui'
+import { AgentNav, Avatar, C, Eyebrow, Note, Panel, Pill, Stat, Tag, TeamPoster } from './ui'
 
 const escName = (a: TeamAgent) => (typeof a.escalateTo === 'object' && a.escalateTo ? a.escalateTo.name : '')
 
@@ -43,6 +43,13 @@ export default function AgentTeam() {
         action={<Link to="/agents/profiles/new"><Button size="sm"><Plus size={13} /> Onboard an agent</Button></Link>} />
       {isLoading ? <Spinner /> : (
         <>
+          {agents.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <Eyebrow>Meet the team — what each one actually does</Eyebrow>
+              <TeamPoster agents={agents} />
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
             {agents.length === 0 && (
               <Panel style={{ gridColumn: '1 / -1', display: 'grid', gap: 8 }}>

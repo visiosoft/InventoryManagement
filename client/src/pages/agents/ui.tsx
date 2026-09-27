@@ -48,6 +48,48 @@ export function Avatar({ name, color, size = 36 }: { name?: string; color?: stri
   )
 }
 
+/** Two-line, poster-card capability summaries — a condensed version of
+ * AgentOnboarding.tsx's fuller "About" text, for a glance rather than a
+ * read. Order here is the order the poster below shows them in. */
+export const AGENT_CAPABILITY: Record<string, string[]> = {
+  Aisha: ['Answers a new WhatsApp enquiry instantly, any hour', 'Checks real availability and pricing before quoting'],
+  Omar: ['Follows up leads that went quiet, on a fixed schedule', 'Only ever sends Meta-approved templates, never free text'],
+  Layla: ['Takes a sent quotation through to a signed contract', 'Re-checks price and availability before repeating a figure'],
+  Nadia: ['Sorts the shared email inbox every morning at 7am', 'Drafts replies; flags money and contracts for a person'],
+  Sam: ['First contact for existing tenants, not new leads', 'Logs the request and hands it to accounts with a summary'],
+}
+
+/** The "meet the team" poster: one numbered card per agent, illustration
+ * plus what it actually does — the at-a-glance explainer a newcomer asked
+ * for, in the style of a workplace-safety infographic. Order follows the
+ * order a lead actually moves through them. */
+export function TeamPoster({ agents }: { agents: { name: string; role?: string; avatarColor?: string }[] }) {
+  const known = agents.filter((a) => AGENT_ILLUSTRATION[a.name])
+  if (!known.length) return null
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+      {known.map((a, i) => {
+        const color = a.avatarColor || agentColor(a)
+        return (
+          <div key={a.name} style={{ border: `2px solid ${color}33`, borderRadius: 14, overflow: 'hidden', background: C.card }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: `${color}1A` }}>
+              <span style={{ width: 22, height: 22, borderRadius: 999, background: color, color: '#fff', display: 'grid', placeItems: 'center', fontFamily: DISPLAY, fontWeight: 800, fontSize: 12 }}>{i + 1}</span>
+              <b style={{ fontFamily: DISPLAY, fontSize: 14, color: C.ink }}>{a.name}</b>
+              {a.role && <span style={{ fontSize: 11.5, color: C.muted }}>· {a.role}</span>}
+            </div>
+            <div style={{ display: 'flex', gap: 10, padding: 12, alignItems: 'flex-start' }}>
+              <img src={AGENT_ILLUSTRATION[a.name]} alt={a.name} style={{ width: 64, height: 64, borderRadius: 10, objectFit: 'cover', flex: 'none' }} />
+              <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: C.second, lineHeight: 1.5 }}>
+                {(AGENT_CAPABILITY[a.name] || []).map((line) => <li key={line}>{line}</li>)}
+              </ul>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function AgentChip({ agent, prefix = '' }: { agent?: { name?: string; avatarColor?: string } | null; prefix?: string }) {
   if (!agent?.name) return null
   return <span style={{ fontSize: 12, color: C.muted }}>{prefix}<b style={{ color: agentColor(agent) }}>{agent.name}</b></span>
