@@ -148,7 +148,12 @@ router.get('/inbox', wrap(async (req, res) => {
 router.post('/actions/:id/resolve', admin, wrap(async (req, res) => {
     const resolution = String(req.body?.resolution || '');
     if (!RESOLUTIONS.includes(resolution)) throw new Error(`resolution must be one of ${RESOLUTIONS.join(', ')}`);
-    res.json(await resolveAction(req.params.id, { resolution, text: req.body?.text || '', user: req.user, alreadySent: req.body?.alreadySent === true }));
+    try {
+        res.json(await resolveAction(req.params.id, { resolution, text: req.body?.text || '', user: req.user, alreadySent: req.body?.alreadySent === true }));
+    } catch (e) {
+        console.error(`[Agents] resolve ${req.params.id} (${resolution}) failed:`, e.stack || e.message);
+        throw e;
+    }
 }));
 
 // One click for a whole group of proposed touches (same template, same

@@ -1712,17 +1712,21 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
       setErr('')
       setOpen(false)
       const ownerName = result.ownerName || choices.find((p) => p._id === result.ownerId)?.name || ''
-      qc.setQueriesData<{ list: WhatsAppConversation[] } | undefined>({ queryKey: ['wa-conversations'] }, (old) => {
-        if (!old) return old
-        return {
-          ...old,
-          list: old.list.map((c) => (c.phoneNormalized !== convo.phoneNormalized ? c : {
-            ...c,
-            lead: result.createdLead
-              ? { _id: result.createdLead._id, fullName: result.createdLead.fullName, status: result.createdLead.status, ownerId: result.ownerId, ownerName, assigned: true }
-              : c.lead ? { ...c.lead, ownerId: result.ownerId, ownerName, assigned: true, autoAssigned: false } : c.lead,
-          })),
-        }
+      const assigned = (c: WhatsAppConversation) => (c.phoneNormalized !== convo.phoneNormalized ? c : {
+        ...c,
+        lead: result.createdLead
+          ? { _id: result.createdLead._id, fullName: result.createdLead.fullName, status: result.createdLead.status, ownerId: result.ownerId, ownerName, assigned: true }
+          : c.lead ? { ...c.lead, ownerId: result.ownerId, ownerName, assigned: true, autoAssigned: false } : c.lead,
+      })
+      // Two shapes live under this prefix: the inbox keeps a paged
+      // { list, total, matched } and the bell keeps a bare array under its
+      // own ['wa-conversations','bell'] key, still prefix-matched here —
+      // patch whichever shape this entry actually is.
+      qc.setQueriesData({ queryKey: ['wa-conversations'] }, (old: unknown) => {
+        if (Array.isArray(old)) return old.map(assigned)
+        const paged = old as { list?: WhatsAppConversation[] } | undefined
+        if (paged && Array.isArray(paged.list)) return { ...paged, list: paged.list.map(assigned) }
+        return old
       })
       onChanged()
     },
@@ -3288,12 +3292,16 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
   // owner-assign patch above), and invalidated after for consistency with
   // the poll.
   const clearDraftInCache = (phone: string) => {
-    qc.setQueriesData<{ list: WhatsAppConversation[] } | undefined>({ queryKey: ['wa-conversations'] }, (old) => {
-      if (!old) return old
-      return {
-        ...old,
-        list: old.list.map((c) => (c.phoneNormalized !== phone ? c : { ...c, botDraft: '', botActionId: '' })),
-      }
+    const cleared = (c: WhatsAppConversation) => (c.phoneNormalized !== phone ? c : { ...c, botDraft: '', botActionId: '' })
+    // Two shapes live under this prefix: the inbox keeps a paged
+    // { list, total, matched } and the bell (WhatsAppBell.tsx) keeps a bare
+    // array under its own ['wa-conversations','bell'] key, still prefix-matched
+    // by this query filter — patch whichever shape this entry actually is.
+    qc.setQueriesData({ queryKey: ['wa-conversations'] }, (old: unknown) => {
+      if (Array.isArray(old)) return old.map(cleared)
+      const paged = old as { list?: WhatsAppConversation[] } | undefined
+      if (paged && Array.isArray(paged.list)) return { ...paged, list: paged.list.map(cleared) }
+      return old
     })
   }
   const resolveDraft = useMutation({
