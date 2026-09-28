@@ -320,7 +320,7 @@ export async function sendQuietFollowUp({ leadIds, template, extraVars = [], byU
             const variableCount = Math.max(0, Number(template.variableCount) || 0);
             const variables = variableCount === 0 ? [] : [greetingNameFor(lead), ...extraVars.map((v) => String(v ?? ''))].slice(0, variableCount);
 
-            await sendWhatsAppTemplate({ to: phone, name, language: lang, variables });
+            const payload = await sendWhatsAppTemplate({ to: phone, name, language: lang, variables });
 
             await LeadFollowUp.create({
                 lead: leadId, phoneNormalized: lead.phoneNormalized, sentBy, sentByName,
@@ -331,7 +331,11 @@ export async function sendQuietFollowUp({ leadIds, template, extraVars = [], byU
             await Lead.updateOne({ _id: leadId }, {
                 $push: { timeline: { type: 'whatsapp_message', text: `Follow-up "${template.label}" sent after going quiet`, at: new Date() } },
             });
-            sent.push({ leadId, name: lead.fullName, to: phone });
+            // The real id from Meta, so a caller that also logs a
+            // WhatsAppMessage (see agents/service.js resolveAction) can use
+            // it instead of an empty string — messageId has a unique index,
+            // so more than one send with '' collides on the very next one.
+            sent.push({ leadId, name: lead.fullName, to: phone, messageId: payload?.messages?.[0]?.id || '' });
         } catch (e) {
             await LeadFollowUp.create({
                 lead: leadId, phoneNormalized: lead?.phoneNormalized || '', sentBy, sentByName,

@@ -503,8 +503,12 @@ export async function resolveAction(actionId, { resolution, text = '', user, alr
             // WhatsAppMessage, so without this the send is real but invisible
             // in the conversation thread — the same gap reply_drafted above
             // doesn't have, since it writes one directly.
+            // messageId has a unique index — an empty string is still a
+            // present value there (not "missing"), so more than one send
+            // with '' collides on the very next one. Fall back to something
+            // guaranteed unique to this action rather than risk that again.
             await WhatsAppMessage.create({
-                messageId: '', phone: file.phoneNormalized, phoneNormalized: file.phoneNormalized,
+                messageId: r.sent?.[0]?.messageId || `agent-touch-${action._id}`, phone: file.phoneNormalized, phoneNormalized: file.phoneNormalized,
                 direction: 'outbound', type: 'template', text: tpl.bodyText || `[${tpl.name}]`, status: 'sent', occurredAt: now, sentByAi: true, raw: r,
             });
             action.sentText = tpl.bodyText || tpl.name;
