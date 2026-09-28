@@ -64,6 +64,23 @@ async function agentOf(file) {
     return profiles.find((p) => String(p._id) === String(file.agent)) || null;
 }
 
+/** A touch's stage only moves on once a person has actually resolved it —
+ *  approved, edited, skipped or dismissed — never at proposal time, so the
+ *  follow-up board and the next due date can't run ahead of a real
+ *  decision. Mirrors what the inline transition in runAgentTick used to do
+ *  right after drafting, before that was real. */
+async function advanceTouchStage(file, lead, now) {
+    const agent = await agentOf(file);
+    const cadence = cadenceFor(agent);
+    const r = transition(file, 'touch_sent', { now, cadence });
+    if (!r.changed) return;
+    Object.assign(file, r.state);
+    await file.save();
+    if (!nextTouchFor(file, cadence)) {
+        await applyEvent(file, 'exhausted', { lead, now, actor: 'system' }).catch(() => {});
+    }
+}
+
 /* ---------- a lead joins ---------- */
 
 const bucketForStatus = (status) => (['won', 'already_customer'].includes(status) ? 'won'
@@ -288,7 +305,11 @@ export async function runAgentTick({ now = new Date() } = {}) {
     }
 
     const cadenced = ['quoted', 'booking', 'quiet', 'dormant'];
-    const due = await AgentLeadFile.find({ nextTouchAt: { $lte: now }, frozenAt: null, bucket: { $in: cadenced } }).limit(TICK_BATCH);
+    // A file with an unresolved touch_proposed action is already waiting in
+    // Needs you — re-proposing it here before a person has approved, skipped
+    // or been capped out on it would duplicate the same stage's draft.
+    const alreadyProposed = await AgentAction.find({ kind: 'touch_proposed', resolution: null }).distinct('leadFile');
+    const due = await AgentLeadFile.find({ nextTouchAt: { $lte: now }, frozenAt: null, bucket: { $in: cadenced }, _id: { $nin: alreadyProposed } }).limit(TICK_BATCH);
     for (const file of due) {
         try {
             const lead = await Lead.findById(file.lead).lean();
@@ -313,16 +334,12 @@ export async function runAgentTick({ now = new Date() } = {}) {
                 continue;
             }
 
-            const cadence = cadenceFor(agent);
+            // Proposing is not sending: touchCount only advances once a
+            // person actually resolves this in Needs you (advanceTouchStage,
+            // called from resolveAction) — otherwise the board and the
+            // cadence would move on before the message ever went out.
             await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'touch', text: '' }, now });
             out.proposed += 1;
-            const r = transition(file, 'touch_sent', { now, cadence });
-            Object.assign(file, r.state);
-            await file.save();
-            if (!nextTouchFor(file, cadence)) {
-                const ex = await applyEvent(file, 'exhausted', { lead, now, actor: 'system' });
-                if (ex.changed) out.exhausted += 1;
-            }
         } catch (e) { out.failed += 1; console.error('[Agents] touch:', e.message); }
     }
 
@@ -473,8 +490,19 @@ export async function resolveAction(actionId, { resolution, text = '', user, alr
             const r = await sendQuietFollowUp({ leadIds: [String(lead._id)], template: { name: tpl.name, label: tpl.name, language: tpl.language || 'en', variableCount: 1 }, byUser: user });
             if (r.failed?.length) throw new Error(r.failed[0].reason || 'The template could not be sent');
             sent = r;
+            // sendQuietFollowUp logs its own LeadFollowUp record but not a
+            // WhatsAppMessage, so without this the send is real but invisible
+            // in the conversation thread — the same gap reply_drafted above
+            // doesn't have, since it writes one directly.
+            await WhatsAppMessage.create({
+                messageId: '', phone: file.phoneNormalized, phoneNormalized: file.phoneNormalized,
+                direction: 'outbound', type: 'template', text: tpl.bodyText || `[${tpl.name}]`, status: 'sent', occurredAt: now, sentByAi: true, raw: r,
+            });
+            action.sentText = tpl.bodyText || tpl.name;
         }
     }
+
+    if (action.kind === 'touch_proposed' && file) await advanceTouchStage(file, lead, now);
 
     action.resolution = resolution;
     action.resolvedAt = now;

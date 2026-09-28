@@ -137,7 +137,14 @@ export function transition(state, event, { now = new Date(), cadence = DEFAULT_C
         case 'touch_sent': {
             const stages = cadence[b];
             if (!stages) return same();
-            const next = { ...state, touchCount: state.touchCount + 1, anchorAt: now };
+            // `state` is a live Mongoose document when this runs for real (see
+            // applyEvent/advanceTouchStage) — `{...state}` on one copies none
+            // of its schema fields (they live behind getters, not as own
+            // enumerable properties), so `next.bucket` would silently come out
+            // undefined and nextTouchFor below would always return null. Every
+            // other case here sets `bucket` explicitly via enter(); this one
+            // never changes bucket, so it must carry it over itself.
+            const next = { ...state, bucket: b, touchCount: state.touchCount + 1, anchorAt: now };
             next.nextTouchAt = nextTouchFor(next, cadence);
             return { state: next, changed: true, reason: `${describeStage(state, cadence)} sent` };
         }
