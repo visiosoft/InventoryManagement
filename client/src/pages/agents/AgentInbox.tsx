@@ -107,6 +107,30 @@ function TouchRow({ t, onResolve, busy }: { t: InboxTouch; onResolve: (r: Resolu
   )
 }
 
+/** One list, one button: everyone a touch-only agent is about to message
+ * today, across every stage/template group, reviewed and sent in a single
+ * click instead of opening each group. The daily send cap still applies
+ * underneath — resolveBulk tolerates a per-item failure once it's hit, so
+ * this never sends more than the cap allows even if you click once. */
+function TouchesOverview({ touches, onApproveAll, busy }: { touches: InboxTouch[]; onApproveAll: (ids: string[]) => void; busy: boolean }) {
+  const sendable = touches.filter((t) => t.template)
+  const blocked = touches.length - sendable.length
+  if (!touches.length) return null
+  return (
+    <Panel style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap', marginBottom: 10 }}>
+      <div style={{ minWidth: 220 }}>
+        <b style={{ fontSize: 13.5 }}>{sendable.length} follow-up{sendable.length === 1 ? '' : 's'} ready to send</b>
+        <div style={{ fontSize: 12.5, color: C.second, marginTop: 4, lineHeight: 1.6 }}>
+          {sendable.slice(0, 12).map((t) => <span key={t.actionId} style={{ display: 'inline-block', background: C.greySoft, borderRadius: 999, padding: '2px 9px', marginRight: 5, marginBottom: 5 }}>{t.lead.fullName} <span style={{ color: C.muted }}>· {t.stage}</span></span>)}
+          {sendable.length > 12 && <span style={{ color: C.muted }}>+{sendable.length - 12} more</span>}
+        </div>
+        {blocked > 0 && <div style={{ fontSize: 12, color: C.danger, marginTop: 4 }}>{blocked} more waiting on a template — review those below</div>}
+      </div>
+      <Button disabled={busy || !sendable.length} onClick={() => onApproveAll(sendable.map((t) => t.actionId))}><Send size={13} /> Send all {sendable.length}</Button>
+    </Panel>
+  )
+}
+
 /** Touches with the same template and stage are the same pre-approved
  * wording going to different people — safe to review as one group instead
  * of one at a time, which is what makes a large backlog reviewable. */
@@ -160,7 +184,13 @@ export default function AgentInbox() {
   })
   const resolveBulk = useMutation({
     mutationFn: ({ ids, r }: { ids: string[]; r: Resolution }) => agentsApi.resolveBulk(ids, r),
-    onSuccess: (res) => { setErr(''); setOk(`${res.ok} done${res.failed.length ? `, ${res.failed.length} failed` : ''}.`); setTimeout(() => setOk(''), 2000); refresh() },
+    onSuccess: (res) => {
+      setErr('')
+      const reason = res.failed[0]?.error || ''
+      setOk(`${res.ok} sent${res.failed.length ? ` · ${res.failed.length} held back${reason ? ` — ${reason}` : ''}` : '.'}`)
+      setTimeout(() => setOk(''), 4000)
+      refresh()
+    },
     onError: (e) => setErr(apiError(e)),
   })
   const handBack = useMutation({ mutationFn: (leadId: string) => agentsApi.handBack(leadId), onSuccess: refresh, onError: (e) => setErr(apiError(e)) })
@@ -232,14 +262,17 @@ export default function AgentInbox() {
             ))}
           </div>
 
-          <SectionHead title={`Follow-ups proposed · ${data.touches.length}`} hint="grouped by wording — same template and stage is the same message to different people, safe to send as a group" />
+          <SectionHead title={`Follow-ups proposed · ${data.touches.length}`} hint="review the list, then one click sends every one of them" />
           {data.touches.length === 0 ? <Panel><Note>No follow-ups are due right now.</Note></Panel> : (
-            <TouchGroups
-              touches={data.touches}
-              busy={resolve.isPending || resolveBulk.isPending}
-              onResolveOne={(id, r) => resolve.mutate({ id, r })}
-              onResolveGroup={(ids, r) => resolveBulk.mutate({ ids, r })}
-            />
+            <>
+              <TouchesOverview touches={data.touches} busy={resolve.isPending || resolveBulk.isPending} onApproveAll={(ids) => resolveBulk.mutate({ ids, r: 'approved' })} />
+              <TouchGroups
+                touches={data.touches}
+                busy={resolve.isPending || resolveBulk.isPending}
+                onResolveOne={(id, r) => resolve.mutate({ id, r })}
+                onResolveGroup={(ids, r) => resolveBulk.mutate({ ids, r })}
+              />
+            </>
           )}
           {data.reports.length === 0 && data.emails.length === 0 && (
             <Panel style={{ marginTop: 12 }}><Note>Scheduled agents (like Nadia) report here after their first run.</Note></Panel>
