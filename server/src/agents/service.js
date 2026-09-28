@@ -460,6 +460,9 @@ export async function resolveAction(actionId, { resolution, text = '', user, alr
         const body = String(resolution === 'edited' ? text : action.detail?.body || '').trim();
         if (!body) throw new Error('There is nothing to send');
         const subject = String(action.detail?.subject || '').trim() || `Re: ${action.detail?.originalSubject || ''}`.trim();
+        // The send is the one irreversible step — everything past this
+        // point (below) must never be able to make this function throw,
+        // or a person retrying what looks like a failure sends it again.
         sent = await sendMail({ to: action.detail?.to, subject, text: body, html: textToHtml(body), context: { kind: 'agent_email_reply', label: agent?.name || '' } });
         action.sentText = body;
     } else if ((resolution === 'approved' || resolution === 'edited') && action.kind === 'reply_drafted' && alreadySent) {
@@ -467,19 +470,13 @@ export async function resolveAction(actionId, { resolution, text = '', user, alr
         // own channel — record the decision without sending or logging a
         // second WhatsApp message, so the draft still leaves the queue.
         action.sentText = String(resolution === 'edited' ? text : action.detail?.reply || '').trim();
-        if (file?.bucket === 'new') await applyEvent(file, 'first_reply_sent', { lead, now, actor: 'person', user });
     } else if (resolution === 'approved' || resolution === 'edited') {
         if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured, so nothing can be sent');
         if (action.kind === 'reply_drafted') {
             const body = String(resolution === 'edited' ? text : action.detail?.reply || '').trim();
             if (!body) throw new Error('There is nothing to send');
             sent = await sendWhatsAppText({ to: file.phoneNormalized, body });
-            await WhatsAppMessage.create({
-                messageId: sent?.messages?.[0]?.id || '', phone: file.phoneNormalized, phoneNormalized: file.phoneNormalized,
-                direction: 'outbound', type: 'text', text: body, status: 'sent', occurredAt: now, sentByAi: true, raw: sent,
-            });
             action.sentText = body;
-            if (file.bucket === 'new') await applyEvent(file, 'first_reply_sent', { lead, now, actor: 'person', user });
         } else {
             const tpl = action.detail?.template;
             if (!tpl?.name) throw new Error('This touch has no approved template to send');
@@ -499,23 +496,44 @@ export async function resolveAction(actionId, { resolution, text = '', user, alr
             const r = await sendQuietFollowUp({ leadIds: [String(lead._id)], template: { name: tpl.name, label: tpl.name, language: meta.language || tpl.language || 'en', variableCount: meta.variableCount }, byUser: user });
             if (r.failed?.length) throw new Error(r.failed[0].reason || 'The template could not be sent');
             sent = r;
-            // sendQuietFollowUp logs its own LeadFollowUp record but not a
-            // WhatsAppMessage, so without this the send is real but invisible
-            // in the conversation thread — the same gap reply_drafted above
-            // doesn't have, since it writes one directly.
-            // messageId has a unique index — an empty string is still a
-            // present value there (not "missing"), so more than one send
-            // with '' collides on the very next one. Fall back to something
-            // guaranteed unique to this action rather than risk that again.
-            await WhatsAppMessage.create({
-                messageId: r.sent?.[0]?.messageId || `agent-touch-${action._id}`, phone: file.phoneNormalized, phoneNormalized: file.phoneNormalized,
-                direction: 'outbound', type: 'template', text: tpl.bodyText || `[${tpl.name}]`, status: 'sent', occurredAt: now, sentByAi: true, raw: r,
-            });
             action.sentText = tpl.bodyText || tpl.name;
         }
     }
 
-    if (action.kind === 'touch_proposed' && file) await advanceTouchStage(file, lead, now);
+    // Everything below here runs after the message (if any) has already
+    // gone out for real and cannot be undone. A failure in any of this
+    // bookkeeping must be swallowed, not thrown — throwing here previously
+    // left the action looking unresolved after a real send had already
+    // succeeded, which is exactly what led a person to retry and send the
+    // same message to the same customer a second time.
+    try {
+        if (sent && action.kind === 'reply_drafted' && !alreadySent) {
+            await WhatsAppMessage.create({
+                messageId: sent?.messages?.[0]?.id || `agent-reply-${action._id}`, phone: file.phoneNormalized, phoneNormalized: file.phoneNormalized,
+                direction: 'outbound', type: 'text', text: action.sentText, status: 'sent', occurredAt: now, sentByAi: true, raw: sent,
+            });
+        }
+        if (sent && action.kind === 'touch_proposed') {
+            // sendQuietFollowUp logs its own LeadFollowUp record but not a
+            // WhatsAppMessage, so without this the send is real but invisible
+            // in the conversation thread — the same gap reply_drafted above
+            // doesn't have, since it writes one directly. messageId has a
+            // unique index — an empty string is still a present value there
+            // (not "missing"), so more than one send with '' collides on the
+            // very next one; fall back to something scoped to this action.
+            const tpl = action.detail?.template;
+            await WhatsAppMessage.create({
+                messageId: sent.sent?.[0]?.messageId || `agent-touch-${action._id}`, phone: file.phoneNormalized, phoneNormalized: file.phoneNormalized,
+                direction: 'outbound', type: 'template', text: action.sentText || tpl?.name || '', status: 'sent', occurredAt: now, sentByAi: true, raw: sent,
+            });
+        }
+        if ((resolution === 'approved' || resolution === 'edited') && action.kind === 'reply_drafted' && file?.bucket === 'new') {
+            await applyEvent(file, 'first_reply_sent', { lead, now, actor: 'person', user });
+        }
+        if (action.kind === 'touch_proposed' && file) await advanceTouchStage(file, lead, now);
+    } catch (e) {
+        console.error(`[Agents] resolveAction ${actionId} post-send bookkeeping failed (the send itself already succeeded):`, e.stack || e.message);
+    }
 
     action.resolution = resolution;
     action.resolvedAt = now;
@@ -523,15 +541,19 @@ export async function resolveAction(actionId, { resolution, text = '', user, alr
     await action.save();
 
     const label = action.kind === 'reply_drafted' ? 'draft' : action.kind === 'email_drafted' ? 'email' : 'follow-up';
-    await record({
-        agent, lead, leadFile: file,
-        kind: resolution === 'approved' ? 'approved' : resolution === 'edited' ? 'edited' : 'dismissed',
-        summary: resolution === 'approved' ? `${user?.name || 'A person'} sent ${agent?.name || 'the agent'}'s ${label} as written`
-            : resolution === 'edited' ? `${user?.name || 'A person'} edited ${agent?.name || 'the agent'}'s ${label} and sent it`
-                : `${user?.name || 'A person'} ${resolution === 'skipped' ? 'skipped' : 'dismissed'} ${agent?.name || 'the agent'}'s ${label}`,
-        detail: { of: action._id, sentText: action.sentText || '', template: action.detail?.template || null },
-        bucketBefore: file?.bucket, bucketAfter: file?.bucket, actor: 'person', user, at: now,
-    });
+    try {
+        await record({
+            agent, lead, leadFile: file,
+            kind: resolution === 'approved' ? 'approved' : resolution === 'edited' ? 'edited' : 'dismissed',
+            summary: resolution === 'approved' ? `${user?.name || 'A person'} sent ${agent?.name || 'the agent'}'s ${label} as written`
+                : resolution === 'edited' ? `${user?.name || 'A person'} edited ${agent?.name || 'the agent'}'s ${label} and sent it`
+                    : `${user?.name || 'A person'} ${resolution === 'skipped' ? 'skipped' : 'dismissed'} ${agent?.name || 'the agent'}'s ${label}`,
+            detail: { of: action._id, sentText: action.sentText || '', template: action.detail?.template || null },
+            bucketBefore: file?.bucket, bucketAfter: file?.bucket, actor: 'person', user, at: now,
+        });
+    } catch (e) {
+        console.error(`[Agents] resolveAction ${actionId} activity log failed (already resolved and saved):`, e.stack || e.message);
+    }
     return { ok: true, sent: Boolean(sent) };
 }
 

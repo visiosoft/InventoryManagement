@@ -121,7 +121,7 @@ function TouchesOverview({ touches, onApproveAll, busy }: { touches: InboxTouch[
       <div style={{ minWidth: 220 }}>
         <b style={{ fontSize: 13.5 }}>{sendable.length} follow-up{sendable.length === 1 ? '' : 's'} ready to send</b>
         <div style={{ fontSize: 12.5, color: C.second, marginTop: 4, lineHeight: 1.6 }}>
-          {sendable.slice(0, 12).map((t) => <span key={t.actionId} style={{ display: 'inline-block', background: C.greySoft, borderRadius: 999, padding: '2px 9px', marginRight: 5, marginBottom: 5 }}>{t.lead.fullName} <span style={{ color: C.muted }}>· {t.stage}</span></span>)}
+          {sendable.slice(0, 12).map((t) => <span key={t.actionId} style={{ display: 'inline-block', background: C.greySoft, borderRadius: 999, padding: '2px 9px', marginRight: 5, marginBottom: 5 }}>{t.lead.fullName} <span style={{ color: C.muted }}>· {t.agent?.name || 'unassigned'} · {t.stage}</span></span>)}
           {sendable.length > 12 && <span style={{ color: C.muted }}>+{sendable.length - 12} more</span>}
         </div>
         {blocked > 0 && <div style={{ fontSize: 12, color: C.danger, marginTop: 4 }}>{blocked} more waiting on a template — review those below</div>}
@@ -131,14 +131,20 @@ function TouchesOverview({ touches, onApproveAll, busy }: { touches: InboxTouch[
   )
 }
 
-/** Touches with the same template and stage are the same pre-approved
- * wording going to different people — safe to review as one group instead
- * of one at a time, which is what makes a large backlog reviewable. */
+/** Touches with the same agent, template and stage are the same
+ * pre-approved wording going to different people — safe to review as one
+ * group instead of one at a time, which is what makes a large backlog
+ * reviewable. Grouping must include the agent: two different agents (e.g.
+ * Omar on Quiet, Layla on Quoted) can independently pick a template that
+ * happens to share a name and land on the same stage label ("touch 2 of
+ * 3") — without the agent in the key, their leads would silently merge
+ * into one "Send all" card with no visible sign they belong to different
+ * people's pipelines. */
 function TouchGroups({ touches, onResolveOne, onResolveGroup, busy }: { touches: InboxTouch[]; onResolveOne: (id: string, r: Resolution) => void; onResolveGroup: (ids: string[], r: Resolution) => void; busy: boolean }) {
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const groups = new Map<string, InboxTouch[]>()
   for (const t of touches) {
-    const key = t.template ? `${t.template.name} · ${t.stage}` : `no template · ${t.stage}`
+    const key = `${t.agent?._id || 'unassigned'} · ${t.template ? t.template.name : 'no template'} · ${t.stage}`
     groups.set(key, [...(groups.get(key) || []), t])
   }
   return (
@@ -146,11 +152,12 @@ function TouchGroups({ touches, onResolveOne, onResolveGroup, busy }: { touches:
       {[...groups.entries()].map(([key, group]) => {
         const ids = group.filter((t) => t.template).map((t) => t.actionId)
         const isOpen = open[key]
+        const label = `${group[0].agent?.name || 'Unassigned'}: ${group[0].template ? group[0].template.name : 'no template'} · ${group[0].stage}`
         return (
           <div key={key} style={{ border: `1px solid ${C.line}`, borderRadius: 12, background: C.card, overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', flexWrap: 'wrap' }}>
               <div>
-                <b style={{ fontSize: 13 }}>{key}</b>
+                <b style={{ fontSize: 13 }}>{label}</b>
                 <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>{group.length} lead{group.length === 1 ? '' : 's'} · same pre-approved wording</span>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
