@@ -313,7 +313,12 @@ export async function sendQuietFollowUp({ leadIds, template, extraVars = [], byU
             const phone = lead.phone || lead.phoneNormalized;
             if (!phone) throw new Error('No phone number on file');
             const reasonRow = reasons.get(leadId);
-            const variables = [greetingNameFor(lead), ...extraVars.map((v) => String(v ?? ''))];
+            // WhatsApp rejects the send outright (#132000) if the variable
+            // count doesn't match the template exactly — a 0-variable
+            // template (pure static text) must get none, not the name we
+            // default to for every other template here.
+            const variableCount = Math.max(0, Number(template.variableCount) || 0);
+            const variables = variableCount === 0 ? [] : [greetingNameFor(lead), ...extraVars.map((v) => String(v ?? ''))].slice(0, variableCount);
 
             await sendWhatsAppTemplate({ to: phone, name, language: lang, variables });
 

@@ -13,7 +13,7 @@ import { transition, nextTouchFor, BUCKETS, BUCKET_ORDER, LEAD_STATUS_FOR, descr
 import { runAgent, cadenceFor } from './runtime.js';
 import { record, snapshotOf, purgeExpiredDetail } from './log.js';
 import { routeFirstOwner, handoffFor, ownerForBucket } from './team.js';
-import { sendWhatsAppText, whatsappSendConfigured } from '../services/whatsapp.js';
+import { sendWhatsAppText, whatsappSendConfigured, listWhatsAppTemplates } from '../services/whatsapp.js';
 import { sendQuietFollowUp } from '../services/leadFollowUp.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
 import { runJob, isDue } from './jobs.js';
@@ -487,7 +487,16 @@ export async function resolveAction(actionId, { resolution, text = '', user, alr
             if (cap > 0 && (await touchSendsToday(agent._id, now)) >= cap) {
                 throw new Error(`${agent?.name || 'This agent'}'s daily send cap (${cap}) is reached for today — the rest will still be here tomorrow, or raise the cap in Team settings`);
             }
-            const r = await sendQuietFollowUp({ leadIds: [String(lead._id)], template: { name: tpl.name, label: tpl.name, language: tpl.language || 'en', variableCount: 1 }, byUser: user });
+            // The variableCount cached on the proposal can be stale or
+            // simply wrong (it was, which is what sent WhatsApp #132000 —
+            // "number of parameters does not match"). Re-read it from Meta's
+            // own approved list right before sending, the same rule the
+            // manual quiet-leads send already follows: never trust the
+            // dropdown, only what Meta says the template actually needs.
+            const { templates: live = [] } = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
+            const meta = live.find((t) => t.name === tpl.name && String(t.status).toUpperCase() === 'APPROVED');
+            if (!meta) throw new Error(`"${tpl.name}" is no longer an approved template — refresh and try again`);
+            const r = await sendQuietFollowUp({ leadIds: [String(lead._id)], template: { name: tpl.name, label: tpl.name, language: meta.language || tpl.language || 'en', variableCount: meta.variableCount }, byUser: user });
             if (r.failed?.length) throw new Error(r.failed[0].reason || 'The template could not be sent');
             sent = r;
             // sendQuietFollowUp logs its own LeadFollowUp record but not a

@@ -92,7 +92,12 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
 
     if (isTouch) {
         const { templates = [] } = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
-        ctx.templates = templates.filter((t) => t.status === 'APPROVED').map((t) => ({ name: t.name, language: t.language, bodyText: t.bodyText, variableCount: t.variableCount }));
+        // A touch only ever fills one variable — the customer's first name —
+        // there is no person in this flow to supply anything past that, so a
+        // template needing 2+ variables can never be sent correctly here and
+        // must never be offered (offering it just turns into a WhatsApp
+        // #132000 failure, or worse, a mismatched send).
+        ctx.templates = templates.filter((t) => t.status === 'APPROVED' && (Number(t.variableCount) || 0) <= 1).map((t) => ({ name: t.name, language: t.language, bodyText: t.bodyText, variableCount: t.variableCount }));
     }
 
     // A rehearsal replays the past: history stops at the moment being
