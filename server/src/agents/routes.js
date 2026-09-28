@@ -69,6 +69,7 @@ function readProfile(body, existing) {
     if (body.syncLeadStatus !== undefined) p.syncLeadStatus = Boolean(body.syncLeadStatus);
     if (body.isDefault !== undefined) p.isDefault = Boolean(body.isDefault);
     if (body.dailyBudgetAed !== undefined) p.dailyBudgetAed = Math.max(0, Number(body.dailyBudgetAed) || 0);
+    if (body.dailyTouchCap !== undefined) p.dailyTouchCap = Math.max(0, Number(body.dailyTouchCap) || 0);
     if (body.avatarColor !== undefined) p.avatarColor = String(body.avatarColor || '').slice(0, 20);
     if (body.isActive !== undefined) p.isActive = Boolean(body.isActive);
     return p;

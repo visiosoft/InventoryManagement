@@ -74,11 +74,12 @@ function PlanView({ agentId, plan }: { agentId: string; plan: AgentPlan }) {
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-        <Stat value={plan.sentToday} label="sent today" tone={C.ok} />
+        <Stat value={plan.dailyTouchCap > 0 ? `${plan.sentToday}/${plan.dailyTouchCap}` : plan.sentToday} label="sent today" tone={plan.capReached ? C.danger : C.ok} />
         <Stat value={plan.waitingNow} label="waiting for your review" tone={C.amber} />
         <Stat value={plan.skippedToday} label="skipped today" />
         {plan.overdueCount > 0 && <Stat value={plan.overdueCount} label="overdue — the clock will catch these up shortly" tone={C.danger} />}
       </div>
+      {plan.capReached && <Note>Today's real-send cap ({plan.dailyTouchCap}) is reached — anything still waiting will hold until tomorrow, or raise the cap in this agent's settings.</Note>}
       {plan.upcoming.length === 0 && <Note>Nothing scheduled in the next few days.</Note>}
       {plan.upcoming.map((day) => (
         <div key={day.date}>

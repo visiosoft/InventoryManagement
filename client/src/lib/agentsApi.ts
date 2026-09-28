@@ -37,6 +37,7 @@ export interface AgentProfile {
   syncLeadStatus: boolean
   isDefault: boolean
   dailyBudgetAed: number
+  dailyTouchCap: number
   avatarColor: string
   isActive: boolean
 }
@@ -154,7 +155,7 @@ export interface AgentInsights { stats: AgentStats; rehearsals: Rehearsal[]; rev
 
 export interface PlanLead { leadId: string | null; name: string; phone: string; bucket: Bucket; bucketLabel: string; stage: string; nextTouchAt: string }
 export interface PlanDay { date: string; isToday: boolean; count: number; leads: PlanLead[] }
-export interface AgentPlan { agentId: string; agentName: string; sentToday: number; skippedToday: number; waitingNow: number; overdueCount: number; upcoming: PlanDay[] }
+export interface AgentPlan { agentId: string; agentName: string; sentToday: number; skippedToday: number; waitingNow: number; overdueCount: number; upcoming: PlanDay[]; dailyTouchCap: number; capReached: boolean }
 
 export interface BoardLead { leadId: string | null; name: string; phone: string; nextTouchAt: string }
 export interface BoardColumn { key: string; bucket: Bucket; bucketLabel: string; stageLabel: string; stageIndex: number; stageTotal: number; dueDays: number; count: number; leads: BoardLead[] }

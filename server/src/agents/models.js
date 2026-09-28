@@ -69,6 +69,10 @@ const agentProfileSchema = new Schema({
     // have it; the first created gets it by default.
     isDefault: { type: Boolean, default: false },
     dailyBudgetAed: { type: Number, default: 0 },
+    // Real WhatsApp sends approved for this agent's proposed touches, per
+    // Dubai day (0 = no cap). Guards a new agent's first days live, so one
+    // bad "send all" click can't reach the whole cold-lead list at once.
+    dailyTouchCap: { type: Number, default: 20 },
     avatarColor: { type: String, default: '' },
     // The job description. Versioned: bumped on every save that changes it,
     // so an action can always say which instructions produced it.

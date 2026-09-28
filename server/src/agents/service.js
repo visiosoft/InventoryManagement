@@ -24,6 +24,19 @@ const textToHtml = (t) => String(t || '').split(/\n{2,}/).map((p) => `<p style="
 const SILENCE_MS = 24 * 3600_000;
 const TICK_BATCH = 10;
 
+function dubaiDayStart(now = new Date()) {
+    const d = new Date(now); d.setUTCHours(d.getUTCHours() - 4, 0, 0, 0); // Dubai midnight, roughly
+    return d;
+}
+
+/** Real WhatsApp template sends already approved for this agent today —
+ *  what dailyTouchCap is measured against. */
+async function touchSendsToday(agentId, now = new Date()) {
+    return AgentAction.countDocuments({
+        agent: agentId, kind: 'touch_proposed', resolution: { $in: ['approved', 'edited'] }, resolvedAt: { $gte: dubaiDayStart(now) },
+    });
+}
+
 // "WhatsApp Contact 5521" is the placeholder every inbound chat gets before
 // anyone names it — never worth showing over a real name. Their own
 // WhatsApp profile name beats a bare number, same fallback order the
@@ -453,6 +466,10 @@ export async function resolveAction(actionId, { resolution, text = '', user, alr
         } else {
             const tpl = action.detail?.template;
             if (!tpl?.name) throw new Error('This touch has no approved template to send');
+            const cap = Number(agent?.dailyTouchCap || 0);
+            if (cap > 0 && (await touchSendsToday(agent._id, now)) >= cap) {
+                throw new Error(`${agent?.name || 'This agent'}'s daily send cap (${cap}) is reached for today — the rest will still be here tomorrow, or raise the cap in Team settings`);
+            }
             const r = await sendQuietFollowUp({ leadIds: [String(lead._id)], template: { name: tpl.name, label: tpl.name, language: tpl.language || 'en', variableCount: 1 }, byUser: user });
             if (r.failed?.length) throw new Error(r.failed[0].reason || 'The template could not be sent');
             sent = r;
@@ -541,15 +558,16 @@ export async function teamStats({ now = new Date() } = {}) {
  * (trigger:'touch', persist:false) against a specific lead.
  */
 export async function agentPlan(agentId, { now = new Date(), days = 3 } = {}) {
-    const dayStart = new Date(now); dayStart.setUTCHours(dayStart.getUTCHours() - 4, 0, 0, 0); // Dubai midnight, roughly
+    const dayStart = dubaiDayStart(now);
     const profiles = await team();
     const agent = profiles.find((p) => String(p._id) === String(agentId));
     if (!agent) throw new Error('No such agent');
 
     const todayActions = await AgentAction.find({ agent: agentId, kind: 'touch_proposed', at: { $gte: dayStart } }).select('resolution').lean();
-    const sentToday = todayActions.filter((a) => a.resolution === 'approved' || a.resolution === 'edited').length;
+    const sentToday = await touchSendsToday(agentId, now);
     const skippedToday = todayActions.filter((a) => a.resolution === 'dismissed' || a.resolution === 'skipped').length;
     const waitingNow = await AgentAction.countDocuments({ agent: agentId, kind: 'touch_proposed', resolution: null });
+    const dailyTouchCap = Number(agent.dailyTouchCap || 0);
 
     const files = await AgentLeadFile.find({ agent: agentId, frozenAt: null, nextTouchAt: { $ne: null } })
         .populate('lead', 'fullName phone whatsappProfileName')
@@ -575,7 +593,10 @@ export async function agentPlan(agentId, { now = new Date(), days = 3 } = {}) {
     const upcoming = [...byDay.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).slice(0, days)
         .map(([date, leads]) => ({ date, isToday: date === todayKey, count: leads.length, leads: leads.slice(0, 50) }));
 
-    return { agentId, agentName: agent.name, sentToday, skippedToday, waitingNow, overdueCount, upcoming };
+    return {
+        agentId, agentName: agent.name, sentToday, skippedToday, waitingNow, overdueCount, upcoming,
+        dailyTouchCap, capReached: dailyTouchCap > 0 && sentToday >= dailyTouchCap,
+    };
 }
 
 /**
