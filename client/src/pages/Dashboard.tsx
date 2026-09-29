@@ -301,11 +301,9 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-[18px]">
-            {/* Occupancy — one card: the headline %, the bar, and the three
-                numbers behind it (Booked/Reserved/Vacant), instead of four
-                separate tiles. Lettable total = available + occupied +
-                reserved, same definition the old separate tiles used —
-                maintenance units are excluded because they cannot be let. */}
+            {/* Occupancy — redesigned look (chevron + label, "X% of Y"
+                header, big %, bar), Booked/Reserved/Vacant kept as their
+                own separate cards right after it, same as before. */}
             {(() => {
               const lettable = stats.byStatus.available + stats.byStatus.occupied + stats.byStatus.reserved
               return (
@@ -320,23 +318,28 @@ export default function Dashboard() {
                   <div style={{ height: 8, borderRadius: 999, background: 'rgba(255,255,255,.14)', overflow: 'hidden' }}>
                     <div style={{ width: `${stats.occupancyPct}%`, height: '100%', borderRadius: 999, background: 'linear-gradient(90deg, #7C4DFF, #A78BFA)' }} />
                   </div>
-                  <div className="grid grid-cols-3 gap-2" style={{ borderTop: '1px solid rgba(255,255,255,.14)', paddingTop: 14 }}>
-                    <div>
-                      <div style={{ ...HEADING, fontWeight: 700, fontSize: 21 }}>{stats.byStatus.occupied}</div>
-                      <div style={{ fontSize: 10.5, color: '#B9A8E8', marginTop: 2 }}>Booked</div>
-                    </div>
-                    <div>
-                      <div style={{ ...HEADING, fontWeight: 700, fontSize: 21 }}>{stats.byStatus.reserved}</div>
-                      <div style={{ fontSize: 10.5, color: '#B9A8E8', marginTop: 2 }}>Reserved</div>
-                    </div>
-                    <div onClick={() => { setSizeFilter(null); setMovePanel('available') }} style={{ cursor: 'pointer' }}>
-                      <div style={{ ...HEADING, fontWeight: 700, fontSize: 21 }}>{stats.byStatus.available}</div>
-                      <div style={{ fontSize: 10.5, color: '#B9A8E8', marginTop: 2 }}>Vacant</div>
-                    </div>
-                  </div>
                 </div>
               )
             })()}
+
+            <KpiTile label="Booked" value={stats.byStatus.occupied} footer={`${stats.activeContracts} active contracts`} />
+
+            <KpiTile label="Reserved" value={stats.byStatus.reserved} footer="held, not moved in yet" />
+
+            {/* Vacant — the same units the old Available card counted, named
+                the way the team asks for them. */}
+            <KpiTile
+              label="Vacant"
+              value={stats.byStatus.available}
+              onClick={() => { setSizeFilter(null); setMovePanel('available') }}
+              footer={
+                <div className="flex flex-wrap gap-1" onClick={e => e.stopPropagation()}>
+                  {stats.bySize.filter(s => s.available > 0).slice(0, 3).map(s => (
+                    <button key={s.sizeSqf} onClick={() => { setSizeFilter(parseInt(s.sizeSqf)); setMovePanel('available') }} style={{ fontSize: 10, fontWeight: 600, padding: '3px 6px', borderRadius: 6, background: PURPLE_LIGHT, color: '#4A1FA0', cursor: 'pointer', border: 'none' }} className="hover:opacity-80">{s.available}×{s.sizeSqf.replace(' sq ft', '')}</button>
+                  ))}
+                </div>
+              }
+            />
 
             {/* Moving out this month.
                 Deliberately not the old Move-outs figure, which counted
