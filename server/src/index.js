@@ -233,7 +233,9 @@ app.use('/api/crew-auth', crewAuthRoutes);
 app.use('/api/crew-portal', crewPortalRoutes);
 app.use('/api/moving-jobs/public-upload', movingJobPublicUpload);
 app.use('/api/moving-jobs/share', movingJobPublicShare);
-app.use('/api/moving-leads/public', movingLeadPublic);
+// WordPress's admin-ajax.php posts application/x-www-form-urlencoded, which
+// nothing else in this app sends — scoped here rather than added globally.
+app.use('/api/moving-leads/public', express.urlencoded({ extended: true }), movingLeadPublic);
 // The marketing website's booking API — no login, no auth token, by design.
 // See server/src/routes/publicBooking.js for what keeps it from being abused
 // (a per-IP rate limit and an atomic per-unit claim) despite that.

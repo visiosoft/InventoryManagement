@@ -27,7 +27,7 @@ const ALLOWED_TAGS = new Set([
     'personal_storage', 'business_storage',
     'urgent', 'site_visit_required', 'price_sensitive', 'unresponsive',
 ]);
-const ALLOWED_SOURCE = new Set(['manual', 'whatsapp', 'referral', 'walk_in', 'other']);
+const ALLOWED_SOURCE = new Set(['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']);
 const ALLOWED_DURATION_UNIT = new Set(['week', 'month']);
 
 function normalizePhone(input) {

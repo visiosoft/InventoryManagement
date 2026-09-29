@@ -21,7 +21,7 @@ const MUTED = '#756E80'
 const PURPLE = '#5B2BC9'
 
 const SIZE_OPTIONS = [10, 25, 35, 50, 75, 100, 150, 200]
-const LEAD_SOURCE_OPTIONS = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
+const LEAD_SOURCE_OPTIONS = ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']
 const labelize = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 
 interface ExpiringContract {

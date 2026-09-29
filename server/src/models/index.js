@@ -319,7 +319,7 @@ const leadSchema = new Schema(
     leadScoreOverrideForLeadType: { type: String, default: '' },
     source: {
       type: String,
-      enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'other'],
+      enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other'],
       default: 'manual',
     },
     leadDateTime: { type: Date, default: Date.now },

@@ -59,7 +59,7 @@ export interface Customer {
 
 export type LeadStatus = 'new' | 'contact_attempted' | 'contacted' | 'site_visit_scheduled' | 'follow_up_scheduled' | 'quotation_sent' | 'won' | 'lost'
 export type LeadTemperature = '' | 'hot' | 'warm' | 'cold'
-export type LeadSource = 'manual' | 'whatsapp' | 'referral' | 'walk_in' | 'other'
+export type LeadSource = 'manual' | 'whatsapp' | 'referral' | 'walk_in' | 'website' | 'other'
 export type DurationUnit = 'week' | 'month'
 
 export interface LeadComment {

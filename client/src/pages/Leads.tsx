@@ -83,7 +83,7 @@ const LEADS_CSS = `
 `
 
 const LEAD_STATUSES: LeadStatus[] = ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']
-const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
+const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']
 
 type WorkloadRow = { _id: string; name: string; count: number }
 type LeadStats = {
@@ -1137,6 +1137,7 @@ export default function Leads() {
         whatsapp: { bg: '#DCF3E3', fg: '#1F7A4C' },
         referral: { bg: '#EDE3CF', fg: '#4A4357' },
         walk_in: { bg: '#F6F0E4', fg: '#4A4357' },
+        website: { bg: '#DCEBF7', fg: '#1B5C8A' },
         manual: { bg: '#F7F3FF', fg: '#5B2BC9' },
         other: { bg: '#F6F0E4', fg: '#4A4357' },
     }
