@@ -3,9 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, GripVertical } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead, type WebsiteLead, type WebsiteAnalytics } from '../lib/api'
+import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead, type WebsiteLead, type WebsiteAnalytics, type MonthFunnelStage } from '../lib/api'
 import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
-import { EmptyState, Skeleton, Table, Th, Td, Button, Badge, SlideOver, Pagination } from '../components/ui'
+import { EmptyState, Skeleton, Table, Th, Td, Button, Badge, SlideOver, Pagination, statusLabel } from '../components/ui'
 import { CHART_STYLE } from './reports/shared'
 import { formatDate, formatMoney } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
@@ -21,6 +21,7 @@ type WidgetId =
   | 'stats'
   | 'high-intent-leads'
   | 'website-leads-today'
+  | 'lead-funnel'
   | 'website-analytics'
   | 'units-by-size'
   | 'floor-occupancy'
@@ -31,6 +32,7 @@ const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
 const DEFAULT_LAYOUT: WidgetId[] = [
   'stats',
+  'lead-funnel',
   'high-intent-leads',
   'website-leads-today',
   'website-analytics',
@@ -168,6 +170,7 @@ export default function Dashboard() {
   const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
   const [sizeFilter, setSizeFilter] = useState<number | null>(null)
   const [showQuiet, setShowQuiet] = useState(false)
+  const [funnelStage, setFunnelStage] = useState<{ stage: MonthFunnelStage; label: string } | null>(null)
   const ROWS_PER_PAGE = 8
   const [highIntentPage, setHighIntentPage] = useState(1)
   const [websiteLeadsPage, setWebsiteLeadsPage] = useState(1)
@@ -225,11 +228,28 @@ export default function Dashboard() {
     staleTime: 60_000,
   })
 
+  // How this month's leads are doing, and how many follow-ups are already
+  // past due — own card, own load like the two lead cards above it.
+  const { data: monthFunnel, isLoading: monthFunnelLoading, isError: monthFunnelIsError, refetch: refetchMonthFunnel } = useQuery({
+    queryKey: ['lead-month-funnel'],
+    queryFn: () => leadApi.monthFunnel(),
+    staleTime: 60_000,
+  })
+
+  // The leads behind whichever funnel row was clicked — fetched only once a
+  // row is open, so the card itself stays as light as it was.
+  const { data: funnelLeads, isLoading: funnelLeadsLoading, isError: funnelLeadsIsError, refetch: refetchFunnelLeads } = useQuery({
+    queryKey: ['lead-month-funnel-leads', funnelStage?.stage],
+    queryFn: () => leadApi.monthFunnelLeads(funnelStage!.stage),
+    enabled: !!funnelStage,
+    staleTime: 30_000,
+  })
+
   // Own card, own load — a slow or failing GA4 call must never hold up the
   // rest of the dashboard. Reports { configured: false } instead of an
   // error until the service account key and property ID are set, which the
   // widget below turns into a "connect Google Analytics" message.
-  const { data: websiteAnalytics, isLoading: websiteAnalyticsLoading } = useQuery<WebsiteAnalytics>({
+  const { data: websiteAnalytics, isLoading: websiteAnalyticsLoading, error: websiteAnalyticsError } = useQuery<WebsiteAnalytics>({
     queryKey: ['website-analytics'],
     queryFn: () => api.get('/reports/website-analytics', { params: { days: 30 } }).then((r) => r.data),
     staleTime: 5 * 60_000,
@@ -458,9 +478,85 @@ export default function Dashboard() {
             )}
           </WidgetShell>
         ),
+        'lead-funnel': (
+          <WidgetShell id="lead-funnel" title="Lead funnel" subtitle={monthFunnel ? `Leads that came in during ${monthFunnel.monthLabel}, by where they are now` : 'This month'} {...dragHandlers}>
+            {monthFunnelLoading ? <Skeleton className="h-[200px]" /> : monthFunnelIsError || !monthFunnel ? (
+              <div className="flex items-center justify-between gap-3 flex-wrap py-4">
+                <span className="text-sm text-muted-foreground">Couldn&rsquo;t load the funnel.</span>
+                <Button onClick={() => refetchMonthFunnel()}>Retry</Button>
+              </div>
+            ) : (() => {
+              const f = monthFunnel
+              const rows: { stage: MonthFunnelStage; label: string; value: number; color: string }[] = [
+                { stage: 'total', label: 'New leads', value: f.total, color: '#5B2BC9' },
+                { stage: 'untouched', label: 'Untouched', value: f.untouched, color: '#A78BFA' },
+                { stage: 'inProgress', label: 'Being worked', value: f.inProgress, color: '#4C8CE4' },
+                { stage: 'quotationSent', label: 'Quotation sent', value: f.quotationSent, color: '#F59E0B' },
+                { stage: 'won', label: 'Won', value: f.won, color: '#10b981' },
+                { stage: 'lost', label: 'Lost', value: f.lost, color: '#94a3b8' },
+              ]
+              const max = Math.max(1, f.total)
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 20 }} className="max-[900px]:grid-cols-1">
+                  <div style={{ display: 'grid', gap: 9 }}>
+                    {rows.map((r) => (
+                      <div
+                        key={r.label}
+                        role="button"
+                        tabIndex={0}
+                        title={`Show the ${r.value} lead${r.value !== 1 ? 's' : ''}`}
+                        onClick={() => setFunnelStage({ stage: r.stage, label: r.label })}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFunnelStage({ stage: r.stage, label: r.label }) } }}
+                        className="hover:bg-muted/40 rounded-lg cursor-pointer -mx-2 px-2 py-0.5"
+                        style={{ display: 'grid', gridTemplateColumns: '110px 1fr 36px', alignItems: 'center', gap: 10 }}
+                      >
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: INK }}>{r.label}</span>
+                        <div style={{ height: 10, borderRadius: 999, background: '#F1EFE8' }}>
+                          <div style={{ width: `${r.value > 0 ? Math.max(3, (r.value / max) * 100) : 0}%`, height: '100%', borderRadius: 999, background: r.color }} />
+                        </div>
+                        <span style={{ fontSize: 12.5, color: MUTED_CLR, textAlign: 'right' }}>{r.value}</span>
+                      </div>
+                    ))}
+                    {f.alreadyCustomer > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setFunnelStage({ stage: 'alreadyCustomer', label: 'Already customers' })}
+                        className="hover:underline text-left"
+                        style={{ fontSize: 11, color: MUTED_CLR }}
+                      >
+                        {f.alreadyCustomer} more were already customers.
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
+                    <div style={{ background: PURPLE_LIGHT, borderRadius: 18, padding: 18 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: MUTED_CLR }}>Win rate this month</div>
+                      <div style={{ ...HEADING, fontWeight: 800, fontSize: 32, lineHeight: 1.1, color: INK, marginTop: 6 }}>{f.winRatePct}%</div>
+                      <div style={{ fontSize: 11.5, color: '#4A4357', marginTop: 2 }}>{f.won} won of {f.total - f.alreadyCustomer}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFunnelStage({ stage: 'overdue', label: 'Overdue follow-ups' })}
+                      className="hover:shadow-md transition-shadow text-left w-full"
+                      style={{ background: f.overdueFollowUps > 0 ? '#FFF1F0' : PURPLE_LIGHT, borderRadius: 18, padding: 18, display: 'block', border: f.overdueFollowUps > 0 ? '1px solid #F5C2BE' : '1px solid transparent' }}
+                    >
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: MUTED_CLR }}>Overdue follow-ups</div>
+                      <div style={{ ...HEADING, fontWeight: 800, fontSize: 32, lineHeight: 1.1, color: f.overdueFollowUps > 0 ? '#B91C1C' : INK, marginTop: 6 }}>{f.overdueFollowUps}</div>
+                      <div style={{ fontSize: 11.5, color: '#4A4357', marginTop: 2 }}>open leads past their follow-up date &middot; view →</div>
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
+          </WidgetShell>
+        ),
         'website-analytics': (
           <WidgetShell id="website-analytics" title="Website analytics" subtitle="From Google Analytics" {...dragHandlers}>
-            {websiteAnalyticsLoading ? <Skeleton className="h-[220px]" /> : !websiteAnalytics || !websiteAnalytics.configured ? (
+            {websiteAnalyticsLoading ? <Skeleton className="h-[220px]" /> : websiteAnalyticsError ? (
+              <p style={{ fontSize: 12.5, color: '#B91C1C', padding: '8px 0' }}>
+                Couldn't load Google Analytics: {apiError(websiteAnalyticsError)}
+              </p>
+            ) : !websiteAnalytics || !websiteAnalytics.configured ? (
               <p style={{ fontSize: 12.5, color: MUTED_CLR, padding: '8px 0' }}>
                 Google Analytics isn't connected yet — add a GA4 service account key and property ID on the server to see visits and countries here.
               </p>
@@ -648,7 +744,8 @@ export default function Dashboard() {
     [statsLoading, statsIsError, stats, statsError, refetchStats, floorLoading, floorIsError, floor, refetchFloor,
       expiringLoading, expiringIsError, expiringContracts, refetchExpiring, tasksLoading, teamTasks, quiet,
       highIntentLoading, highIntent, highIntentPage, websiteLeadsLoading, websiteLeads, websiteLeadsPage,
-      websiteAnalyticsLoading, websiteAnalytics,
+      websiteAnalyticsLoading, websiteAnalytics, websiteAnalyticsError,
+      monthFunnelLoading, monthFunnelIsError, monthFunnel, refetchMonthFunnel,
       onDrop, onDragStart, onDragOver]
   )
 
@@ -752,6 +849,54 @@ export default function Dashboard() {
           )
         })}
       </div>
+
+      {/* Leads behind a funnel row */}
+      <SlideOver
+        open={!!funnelStage}
+        onClose={() => setFunnelStage(null)}
+        title={funnelStage ? `${funnelStage.label}${funnelLeads ? ` · ${funnelLeads.total}` : ''}` : ''}
+      >
+        {funnelLeadsLoading ? (
+          <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+        ) : funnelLeadsIsError || !funnelLeads ? (
+          <div className="flex items-center justify-between gap-3 flex-wrap py-4">
+            <span className="text-sm text-muted-foreground">Couldn&rsquo;t load these leads.</span>
+            <Button onClick={() => refetchFunnelLeads()}>Retry</Button>
+          </div>
+        ) : funnelLeads.items.length === 0 ? (
+          <EmptyState message="No leads here." />
+        ) : (
+          <div className="space-y-2">
+            {funnelStage?.stage === 'overdue' && (
+              <Link to="/follow-ups" className="block text-xs font-medium text-primary hover:underline pb-1">Open the Follow-Ups page →</Link>
+            )}
+            {funnelLeads.items.map((l) => {
+              const overdueDays = funnelStage?.stage === 'overdue' && l.followUpAt
+                ? Math.max(1, Math.floor((Date.now() - new Date(l.followUpAt).getTime()) / 86400000))
+                : null
+              return (
+                <Link key={l._id} to={`/leads/${l._id}`} className="block rounded-lg border border-border px-3 py-2.5 hover:bg-muted/40">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium truncate">{l.name}</span>
+                    <Badge tone={l.status === 'won' ? 'green' : l.status === 'lost' ? 'gray' : l.status === 'quotation_sent' ? 'amber' : 'blue'}>{statusLabel(l.status)}</Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-x-2">
+                    {l.phone && <span>{l.phone}</span>}
+                    {l.owner && <span>· {l.owner}</span>}
+                    {l.source && <span>· {l.source}</span>}
+                    {overdueDays !== null
+                      ? <span className="text-destructive font-medium">· follow-up {overdueDays}d overdue</span>
+                      : l.at && <span>· {formatDate(l.at)}</span>}
+                  </div>
+                </Link>
+              )
+            })}
+            {funnelLeads.total > funnelLeads.items.length && (
+              <p className="text-xs text-muted-foreground pt-1">Showing the first {funnelLeads.items.length} of {funnelLeads.total}.</p>
+            )}
+          </div>
+        )}
+      </SlideOver>
 
       {/* Detail panel */}
       <SlideOver

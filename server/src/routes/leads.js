@@ -462,6 +462,136 @@ router.get('/funnel', async (req, res) => {
 });
 
 /**
+ * This month's lead funnel for the Dashboard: of the leads that came in this
+ * Dubai calendar month, where each one is now — untouched, being worked,
+ * quotation sent, won, lost — plus the follow-ups already past due. Unlike
+ * /funnel above (an all-time snapshot with time-in-stage), this is a
+ * "how is this month going" read. Stages are current status, not history:
+ * Lead.status isn't a strict pipeline (see services/leadFunnel.js). Overdue
+ * follow-ups are the whole open backlog, not just this month's leads — a
+ * follow-up promised last month is still overdue today.
+ */
+/** Shared by /month-funnel and its drill-down list, so a row's count and the
+ *  leads listed behind it are always the same set. */
+function monthFunnelScope(req) {
+    const OFFSET = 4 * 3600_000; // Dubai is UTC+4, no DST
+    const now = new Date();
+    const local = new Date(now.getTime() + OFFSET);
+    const monthStart = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - OFFSET);
+    const monthEnd = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 1) - OFFSET);
+    const base = { fullName: { $not: /^whatsapp\s*contact/i } };
+    if (isSalesRep(req)) base.owner = new mongoose.Types.ObjectId(req.user.id);
+    return { now, monthStart, monthEnd, base };
+}
+
+const MONTH_FUNNEL_STAGES = {
+    total: null,
+    untouched: ['new', null],
+    inProgress: ['contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled'],
+    quotationSent: ['quotation_sent'],
+    won: ['won'],
+    lost: ['lost'],
+    alreadyCustomer: ['already_customer'],
+};
+
+router.get('/month-funnel', async (req, res) => {
+    try {
+        const { now, monthStart, monthEnd, base } = monthFunnelScope(req);
+
+        const [byStatus, overdueFollowUps] = await Promise.all([
+            Lead.aggregate([
+                { $match: { ...base, leadDateTime: { $gte: monthStart, $lt: monthEnd } } },
+                { $group: { _id: { $ifNull: ['$status', 'new'] }, n: { $sum: 1 } } },
+            ]),
+            Lead.countDocuments({
+                ...base,
+                status: { $nin: ['won', 'lost', 'already_customer'] },
+                followUpAt: { $ne: null, $lte: now },
+            }),
+        ]);
+
+        const n = (...keys) => keys.reduce((sum, k) => sum + (byStatus.find((r) => r._id === k)?.n || 0), 0);
+        const total = byStatus.reduce((sum, r) => sum + r.n, 0);
+        const won = n('won');
+        const lost = n('lost');
+        const alreadyCustomer = n('already_customer');
+        const decided = total - alreadyCustomer;
+        res.json({
+            monthLabel: monthStart.toLocaleString('en-GB', { month: 'long', timeZone: 'Asia/Dubai' }),
+            total,
+            untouched: n('new'),
+            inProgress: n('contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled'),
+            quotationSent: n('quotation_sent'),
+            won,
+            lost,
+            alreadyCustomer,
+            winRatePct: decided > 0 ? Math.round((won / decided) * 100) : 0,
+            overdueFollowUps,
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * The leads behind one row of the month funnel — `?stage=` is a key of
+ * MONTH_FUNNEL_STAGES, or `overdue` for the follow-ups already past due.
+ * Capped so a big month stays a quick read; `total` says how many there are.
+ */
+router.get('/month-funnel/leads', async (req, res) => {
+    try {
+        const stage = String(req.query.stage || 'total');
+        const { now, monthStart, monthEnd, base } = monthFunnelScope(req);
+        const LIMIT = 200;
+
+        let filter;
+        let sort;
+        if (stage === 'overdue') {
+            filter = {
+                ...base,
+                status: { $nin: ['won', 'lost', 'already_customer'] },
+                followUpAt: { $ne: null, $lte: now },
+            };
+            sort = { followUpAt: 1 }; // longest overdue first
+        } else if (stage in MONTH_FUNNEL_STAGES) {
+            filter = { ...base, leadDateTime: { $gte: monthStart, $lt: monthEnd } };
+            if (MONTH_FUNNEL_STAGES[stage]) filter.status = { $in: MONTH_FUNNEL_STAGES[stage] };
+            sort = { leadDateTime: -1 };
+        } else {
+            return res.status(400).json({ error: 'Unknown stage' });
+        }
+
+        const [total, leads] = await Promise.all([
+            Lead.countDocuments(filter),
+            Lead.find(filter)
+                .sort(sort)
+                .limit(LIMIT)
+                .select('fullName phone status source temperature leadDateTime followUpAt owner')
+                .populate('owner', 'name email')
+                .lean(),
+        ]);
+
+        res.json({
+            stage,
+            total,
+            items: leads.map((l) => ({
+                _id: String(l._id),
+                name: l.fullName || 'Unnamed lead',
+                phone: l.phone || '',
+                status: l.status || 'new',
+                source: l.source || '',
+                temperature: l.temperature || '',
+                at: l.leadDateTime || null,
+                followUpAt: l.followUpAt || null,
+                owner: l.owner?.name || l.owner?.email || '',
+            })),
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
  * High-scoring leads from today or yesterday — the dashboard's "these are
  * the ones to work" list. See services/leadScore.js's highIntentToday()
  * for how it's built; the usual rep/admin scope applies.

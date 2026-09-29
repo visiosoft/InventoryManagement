@@ -126,6 +126,13 @@ export const leadApi = {
    *  and how long they've been there. Server: routes/leads.js's GET /funnel,
    *  logic in services/leadFunnel.js. */
   funnel: () => api.get<LeadFunnel>('/leads/funnel').then((r) => r.data),
+  /** This Dubai month's leads by where they are now, plus overdue
+   *  follow-ups. Server: routes/leads.js's GET /month-funnel. */
+  monthFunnel: () => api.get<MonthFunnel>('/leads/month-funnel').then((r) => r.data),
+  /** The leads behind one funnel row (`stage` is a MonthFunnelStage, or
+   *  'overdue'). Server: routes/leads.js's GET /month-funnel/leads. */
+  monthFunnelLeads: (stage: MonthFunnelStage) =>
+    api.get<MonthFunnelLeads>('/leads/month-funnel/leads', { params: { stage } }).then((r) => r.data),
   /** How good a lead this is — see services/leadScore.js. Read-only. */
   score: (id: string) => api.get<LeadScore>(`/leads/${id}/score`).then((r) => r.data),
   /** A rep's own confirmation or correction of the score. `decision: ''`
@@ -262,6 +269,39 @@ export interface LeadFunnel {
   alreadyCustomer: number
   since: string
   stages: LeadFunnelStage[]
+}
+
+export interface MonthFunnel {
+  monthLabel: string
+  total: number
+  untouched: number
+  inProgress: number
+  quotationSent: number
+  won: number
+  lost: number
+  alreadyCustomer: number
+  winRatePct: number
+  overdueFollowUps: number
+}
+
+export type MonthFunnelStage = 'total' | 'untouched' | 'inProgress' | 'quotationSent' | 'won' | 'lost' | 'alreadyCustomer' | 'overdue'
+
+export interface MonthFunnelLead {
+  _id: string
+  name: string
+  phone: string
+  status: string
+  source: string
+  temperature: string
+  at: string | null
+  followUpAt: string | null
+  owner: string
+}
+
+export interface MonthFunnelLeads {
+  stage: MonthFunnelStage
+  total: number
+  items: MonthFunnelLead[]
 }
 
 export const integrationApi = {
