@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, GripVertical } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead } from '../lib/api'
+import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead, type WebsiteLead } from '../lib/api'
 import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
 import { EmptyState, Skeleton, Table, Th, Td, Button, Badge, SlideOver } from '../components/ui'
 import { CHART_STYLE } from './reports/shared'
@@ -20,6 +20,7 @@ const PURPLE_LIGHT = '#F7F3FF'
 type WidgetId =
   | 'stats'
   | 'high-intent-leads'
+  | 'website-leads-today'
   | 'units-by-size'
   | 'floor-occupancy'
   | 'expiring-contracts'
@@ -30,6 +31,7 @@ const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 const DEFAULT_LAYOUT: WidgetId[] = [
   'stats',
   'high-intent-leads',
+  'website-leads-today',
   'units-by-size',
   'floor-occupancy',
   'expiring-contracts',
@@ -209,6 +211,15 @@ export default function Dashboard() {
     staleTime: 60_000,
   })
 
+  // Everyone who filled in a landing-page form today — a straight list, no
+  // AI scoring, so a lead shows up here the instant it lands rather than
+  // waiting on the next conversation-summary pass high-intent-leads needs.
+  const { data: websiteLeads, isLoading: websiteLeadsLoading } = useQuery({
+    queryKey: ['website-leads-today'],
+    queryFn: () => leadApi.newFromWebsiteToday(),
+    staleTime: 60_000,
+  })
+
   // Contract-expiry reminders waiting on approval — admin-only.
   type PendingExpiryGroup = { step: number; stepLabel: string; rows: unknown[] }
   const { data: pendingExpiry } = useQuery<{ groups: PendingExpiryGroup[]; total: number }>({
@@ -382,6 +393,44 @@ export default function Dashboard() {
             )}
           </WidgetShell>
         ),
+        'website-leads-today': (
+          <WidgetShell id="website-leads-today" title="New leads from the website — today" subtitle="Submitted through a purplebox.ae landing page" {...dragHandlers}>
+            {websiteLeadsLoading ? <Skeleton className="h-[160px]" /> : !websiteLeads || websiteLeads.items.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: MUTED_CLR, padding: '8px 0' }}>
+                Nothing from the website yet today.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gap: 6 }}>
+                {websiteLeads.items.slice(0, 8).map((l: WebsiteLead) => (
+                  <Link
+                    key={l.leadId}
+                    to={`/leads/${l.leadId}`}
+                    className="flex items-start gap-3 hover:opacity-80 transition-opacity"
+                    style={{ padding: '8px 10px', borderRadius: 10, background: '#FAF8F5', textDecoration: 'none' }}
+                  >
+                    <span
+                      className="shrink-0 rounded-full flex items-center justify-center"
+                      style={{ width: 34, height: 34, background: '#DCEBF7', color: '#1B5C8A', fontSize: 15, fontWeight: 800 }}
+                    >
+                      {l.name.charAt(0).toUpperCase() || '?'}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate" style={{ fontSize: 13, fontWeight: 700, color: INK }}>{l.name}</span>
+                        <span style={{ fontSize: 10.5, color: MUTED_CLR, whiteSpace: 'nowrap' }}>{l.phone}</span>
+                      </div>
+                      <div className="truncate" style={{ fontSize: 11.5, color: MUTED_CLR }}>{l.notes.split('\n')[0] || 'No further details'}</div>
+                    </div>
+                    <span style={{ fontSize: 10.5, color: MUTED_CLR, whiteSpace: 'nowrap' }}>{new Date(l.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                  </Link>
+                ))}
+                {websiteLeads.items.length > 8 && (
+                  <div style={{ fontSize: 11.5, color: MUTED_CLR, padding: '2px 10px' }}>and {websiteLeads.items.length - 8} more</div>
+                )}
+              </div>
+            )}
+          </WidgetShell>
+        ),
         'units-by-size': (
           <WidgetShell id="units-by-size" title="Units by size" subtitle="Available vs occupied per size" {...dragHandlers}>
             {statsLoading ? <Skeleton className="h-[240px]" /> : statsIsError || !stats ? (
@@ -506,7 +555,7 @@ export default function Dashboard() {
     },
     [statsLoading, statsIsError, stats, statsError, refetchStats, floorLoading, floorIsError, floor, refetchFloor,
       expiringLoading, expiringIsError, expiringContracts, refetchExpiring, tasksLoading, teamTasks, quiet,
-      highIntentLoading, highIntent,
+      highIntentLoading, highIntent, websiteLeadsLoading, websiteLeads,
       onDrop, onDragStart, onDragOver]
   )
 

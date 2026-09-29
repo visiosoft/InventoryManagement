@@ -164,6 +164,10 @@ export const leadApi = {
    *  everyone's. */
   highIntentToday: (opts?: { mine?: boolean }) =>
     api.get<{ items: HighIntentLead[] }>('/leads/high-intent', { params: opts?.mine ? { mine: '1' } : undefined }).then((r) => r.data),
+  /** Today's leads from the purplebox.ae landing pages — source: 'website',
+   *  written by routes/movingLeads.js's public form handler. */
+  newFromWebsiteToday: () =>
+    api.get<{ items: WebsiteLead[] }>('/leads/new-from-website').then((r) => r.data),
 }
 
 export interface HighIntentLead {
@@ -176,6 +180,17 @@ export interface HighIntentLead {
   score: number
   reason: string
   nextAction: string | null
+}
+
+export interface WebsiteLead {
+  leadId: string
+  name: string
+  phone: string
+  email: string
+  status: string
+  notes: string
+  at: string
+  ownerName: string
 }
 
 export type LeadScoreBand = 'high' | 'medium' | 'low'

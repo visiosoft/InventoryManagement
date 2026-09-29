@@ -13,6 +13,7 @@ import { buildFunnel } from '../services/leadFunnel.js';
 import { scoreForLead, highIntentToday, intakeChecklist } from '../services/leadScore.js';
 import { summariseConversation } from '../services/conversationSummary.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
+import { dubaiDayRange } from '../services/automationEngine.js';
 
 const router = Router();
 
@@ -468,6 +469,33 @@ router.get('/high-intent', async (req, res) => {
         // the page does not.
         const ownerId = isSalesRep(req) || req.query.mine === '1' ? req.user.id : null;
         res.json({ items: await highIntentToday({ ownerId }) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Today's leads from the purplebox.ae landing pages (see
+ * routes/movingLeads.js's publicLeadRouter, the only thing that ever
+ * writes source: 'website') — the dashboard's "keep an eye on the
+ * website" widget. `leadDateTime`, not `createdAt`: it's the same "when
+ * the lead happened" field every other lead-date query in this file uses.
+ */
+router.get('/new-from-website', async (req, res) => {
+    try {
+        const { start, end } = dubaiDayRange(new Date());
+        const leads = await Lead.find({ source: 'website', leadDateTime: { $gte: start, $lt: end } })
+            .populate('owner', 'name')
+            .sort({ leadDateTime: -1 })
+            .select('fullName phone email status notes leadDateTime owner')
+            .lean();
+        res.json({
+            items: leads.map((l) => ({
+                leadId: l._id, name: l.fullName, phone: l.phone, email: l.email,
+                status: l.status, notes: l.notes || '', at: l.leadDateTime,
+                ownerName: l.owner?.name || 'Unassigned',
+            })),
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
