@@ -311,7 +311,7 @@ app.use('/api/sites', requireAuth, siteRoutes);
 app.use(
   '/api/integrations',
   (req, res, next) =>
-    req.path.startsWith('/whatsapp/webhook') || req.path.startsWith('/drive/callback') || req.path.startsWith('/drive/connect') || req.path.startsWith('/gmail/callback')
+    req.path.startsWith('/whatsapp/webhook') || req.path.startsWith('/drive/callback') || req.path.startsWith('/drive/connect') || req.path.startsWith('/gmail/callback') || req.path.startsWith('/analytics/callback')
       ? next()
       : requireAuth(req, res, next),
   integrationRoutes
