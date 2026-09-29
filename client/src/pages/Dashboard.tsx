@@ -3,13 +3,12 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, GripVertical } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead, type WebsiteLead, type WebsiteAnalytics, type MonthFunnelStage } from '../lib/api'
+import { api, apiError, leadApi, type HighIntentLead, type WebsiteLead, type WebsiteAnalytics, type MonthFunnelStage } from '../lib/api'
 import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
 import { EmptyState, Skeleton, Table, Th, Td, Button, Badge, SlideOver, Pagination, statusLabel } from '../components/ui'
 import { CHART_STYLE } from './reports/shared'
 import { formatDate, formatMoney } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
-import QuietLeadsModal from '../components/QuietLeadsModal'
 import { useAuth } from '../lib/auth'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -169,7 +168,6 @@ export default function Dashboard() {
   const [, setDragged] = useState<WidgetId | null>(null)
   const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
   const [sizeFilter, setSizeFilter] = useState<number | null>(null)
-  const [showQuiet, setShowQuiet] = useState(false)
   const [funnelStage, setFunnelStage] = useState<{ stage: MonthFunnelStage; label: string } | null>(null)
   const ROWS_PER_PAGE = 8
   const [highIntentPage, setHighIntentPage] = useState(1)
@@ -196,17 +194,6 @@ export default function Dashboard() {
     queryKey: ['dashboard-expiring'],
     queryFn: () => api.get('/reports/expiring', { params: { days: 15 } }).then((r) => r.data),
     staleTime: 5 * 60_000,
-  })
-
-  /* Every rep's quiet-lead backlog, rolled up — the count feeds the pinned
-   * "Dormant leads" KPI tile below. It is the heaviest thing this page asks
-   * for (every open lead in the company, not one rep's few dozen). Its own
-   * card, its own load — no reason left to hold it back behind anything
-   * else on the page. */
-  const { data: quiet } = useQuery({
-    queryKey: ['lead-follow-up-summary'],
-    queryFn: () => leadFollowUpApi.summary(),
-    staleTime: 60_000,
   })
 
   // Who to actually follow up with — every other lead widget on this page
@@ -373,21 +360,6 @@ export default function Dashboard() {
               }
             />
 
-            {/* Leads gone quiet — pinned here rather than left as a
-                draggable/removable widget. That system reads its order from
-                a layout array saved in each browser's own localStorage, and
-                for an admin who already had a saved dashboard layout before
-                this existed, a widget added later could end up anywhere in
-                it, or effectively invisible without scrolling past
-                everything else. A KPI tile in this fixed row has no such
-                array to be missing from — it is exactly as visible as
-                Occupancy or Vacant, every time, for every admin. */}
-            <KpiTile
-              label="Dormant leads"
-              value={quiet?.total ?? '—'}
-              onClick={() => setShowQuiet(true)}
-              footer={quiet === undefined ? 'loading…' : quiet.total > 0 ? 'we spoke last, nothing came back — review & send →' : 'nobody, good sign'}
-            />
           </div>
         ),
         'high-intent-leads': (
@@ -742,7 +714,7 @@ export default function Dashboard() {
       })
     },
     [statsLoading, statsIsError, stats, statsError, refetchStats, floorLoading, floorIsError, floor, refetchFloor,
-      expiringLoading, expiringIsError, expiringContracts, refetchExpiring, tasksLoading, teamTasks, quiet,
+      expiringLoading, expiringIsError, expiringContracts, refetchExpiring, tasksLoading, teamTasks,
       highIntentLoading, highIntent, highIntentPage, websiteLeadsLoading, websiteLeads, websiteLeadsPage,
       websiteAnalyticsLoading, websiteAnalytics, websiteAnalyticsError,
       monthFunnelLoading, monthFunnelIsError, monthFunnel, refetchMonthFunnel,
@@ -959,8 +931,6 @@ export default function Dashboard() {
           </div>
         )}
       </SlideOver>
-
-      {showQuiet && <QuietLeadsModal onClose={() => setShowQuiet(false)} scope="all" />}
     </div>
   )
 }
