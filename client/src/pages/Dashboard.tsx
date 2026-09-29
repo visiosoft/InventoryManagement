@@ -5,7 +5,7 @@ import { AlertTriangle, GripVertical } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead, type WebsiteLead } from '../lib/api'
 import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
-import { EmptyState, Skeleton, Table, Th, Td, Button, Badge, SlideOver } from '../components/ui'
+import { EmptyState, Skeleton, Table, Th, Td, Button, Badge, SlideOver, Pagination } from '../components/ui'
 import { CHART_STYLE } from './reports/shared'
 import { formatDate, formatMoney } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
@@ -166,6 +166,9 @@ export default function Dashboard() {
   const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
   const [sizeFilter, setSizeFilter] = useState<number | null>(null)
   const [showQuiet, setShowQuiet] = useState(false)
+  const ROWS_PER_PAGE = 8
+  const [highIntentPage, setHighIntentPage] = useState(1)
+  const [websiteLeadsPage, setWebsiteLeadsPage] = useState(1)
 
   // Every card below fetches its own slice, independently, so whichever
   // answers first shows first instead of the whole page waiting on the
@@ -363,7 +366,7 @@ export default function Dashboard() {
               </p>
             ) : (
               <div style={{ display: 'grid', gap: 6 }}>
-                {highIntent.items.slice(0, 8).map((l: HighIntentLead) => (
+                {highIntent.items.slice((highIntentPage - 1) * ROWS_PER_PAGE, highIntentPage * ROWS_PER_PAGE).map((l: HighIntentLead) => (
                   <Link
                     key={l.leadId}
                     to={`/whatsapp?phone=${l.phone}`}
@@ -386,8 +389,14 @@ export default function Dashboard() {
                     </div>
                   </Link>
                 ))}
-                {highIntent.items.length > 8 && (
-                  <div style={{ fontSize: 11.5, color: MUTED_CLR, padding: '2px 10px' }}>and {highIntent.items.length - 8} more</div>
+                {highIntent.items.length > ROWS_PER_PAGE && (
+                  <Pagination
+                    page={highIntentPage}
+                    pages={Math.ceil(highIntent.items.length / ROWS_PER_PAGE)}
+                    total={highIntent.items.length}
+                    limit={ROWS_PER_PAGE}
+                    onPage={setHighIntentPage}
+                  />
                 )}
               </div>
             )}
@@ -401,7 +410,7 @@ export default function Dashboard() {
               </p>
             ) : (
               <div style={{ display: 'grid', gap: 6 }}>
-                {websiteLeads.items.slice(0, 8).map((l: WebsiteLead) => (
+                {websiteLeads.items.slice((websiteLeadsPage - 1) * ROWS_PER_PAGE, websiteLeadsPage * ROWS_PER_PAGE).map((l: WebsiteLead) => (
                   <Link
                     key={l.leadId}
                     to={`/leads/${l.leadId}`}
@@ -424,8 +433,14 @@ export default function Dashboard() {
                     <span style={{ fontSize: 10.5, color: MUTED_CLR, whiteSpace: 'nowrap' }}>{new Date(l.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
                   </Link>
                 ))}
-                {websiteLeads.items.length > 8 && (
-                  <div style={{ fontSize: 11.5, color: MUTED_CLR, padding: '2px 10px' }}>and {websiteLeads.items.length - 8} more</div>
+                {websiteLeads.items.length > ROWS_PER_PAGE && (
+                  <Pagination
+                    page={websiteLeadsPage}
+                    pages={Math.ceil(websiteLeads.items.length / ROWS_PER_PAGE)}
+                    total={websiteLeads.items.length}
+                    limit={ROWS_PER_PAGE}
+                    onPage={setWebsiteLeadsPage}
+                  />
                 )}
               </div>
             )}
@@ -555,7 +570,7 @@ export default function Dashboard() {
     },
     [statsLoading, statsIsError, stats, statsError, refetchStats, floorLoading, floorIsError, floor, refetchFloor,
       expiringLoading, expiringIsError, expiringContracts, refetchExpiring, tasksLoading, teamTasks, quiet,
-      highIntentLoading, highIntent, websiteLeadsLoading, websiteLeads,
+      highIntentLoading, highIntent, highIntentPage, websiteLeadsLoading, websiteLeads, websiteLeadsPage,
       onDrop, onDragStart, onDragOver]
   )
 
@@ -600,6 +615,19 @@ export default function Dashboard() {
                   <GripVertical size={13} /> Overview
                 </div>
                 {widgets[id]}
+              </div>
+            )
+          }
+
+          if (id === 'high-intent-leads' || id === 'website-leads-today') {
+            const peerIds: WidgetId[] = ['high-intent-leads', 'website-leads-today']
+            const first = peerIds.find((x) => layout.includes(x))
+            if (id !== first) return null
+            return (
+              <div key="leads-grid" className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
+                {peerIds.filter((x) => layout.includes(x)).map((x) => (
+                  <div key={x}>{widgets[x]}</div>
+                ))}
               </div>
             )
           }
