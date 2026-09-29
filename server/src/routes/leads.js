@@ -232,10 +232,11 @@ router.get('/', async (req, res) => {
     // (no pagination UI there — it filters/searches client-side over
     // everything) rather than paging like the admin Leads table does. 500
     // was too low once a rep's own count passed it — their list silently
-    // truncated with no sign anything was missing. 3000 comfortably covers
-    // a single rep's realistic lifetime total; the admin table's own
-    // request (25-100) never comes close to either number.
-    const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 3000);
+    // truncated with no sign anything was missing. Matches that page's own
+    // requested limit, so raising one without the other can't quietly cap
+    // things again; the admin table's own request (25-100) never comes
+    // close to either number.
+    const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 30_000);
     const skip = (page - 1) * limit;
 
     // Exclude heavy subdocuments (timeline, comments) — the detail endpoint loads them.
