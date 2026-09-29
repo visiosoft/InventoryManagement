@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, GripVertical } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead, type WebsiteLead } from '../lib/api'
+import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead, type WebsiteLead, type WebsiteAnalytics } from '../lib/api'
 import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
 import { EmptyState, Skeleton, Table, Th, Td, Button, Badge, SlideOver, Pagination } from '../components/ui'
 import { CHART_STYLE } from './reports/shared'
@@ -21,6 +21,7 @@ type WidgetId =
   | 'stats'
   | 'high-intent-leads'
   | 'website-leads-today'
+  | 'website-analytics'
   | 'units-by-size'
   | 'floor-occupancy'
   | 'expiring-contracts'
@@ -32,6 +33,7 @@ const DEFAULT_LAYOUT: WidgetId[] = [
   'stats',
   'high-intent-leads',
   'website-leads-today',
+  'website-analytics',
   'units-by-size',
   'floor-occupancy',
   'expiring-contracts',
@@ -221,6 +223,16 @@ export default function Dashboard() {
     queryKey: ['website-leads-today'],
     queryFn: () => leadApi.newFromWebsiteToday(),
     staleTime: 60_000,
+  })
+
+  // Own card, own load — a slow or failing GA4 call must never hold up the
+  // rest of the dashboard. Reports { configured: false } instead of an
+  // error until the service account key and property ID are set, which the
+  // widget below turns into a "connect Google Analytics" message.
+  const { data: websiteAnalytics, isLoading: websiteAnalyticsLoading } = useQuery<WebsiteAnalytics>({
+    queryKey: ['website-analytics'],
+    queryFn: () => api.get('/reports/website-analytics', { params: { days: 30 } }).then((r) => r.data),
+    staleTime: 5 * 60_000,
   })
 
   // Contract-expiry reminders waiting on approval — admin-only.
@@ -446,6 +458,71 @@ export default function Dashboard() {
             )}
           </WidgetShell>
         ),
+        'website-analytics': (
+          <WidgetShell id="website-analytics" title="Website analytics" subtitle="From Google Analytics" {...dragHandlers}>
+            {websiteAnalyticsLoading ? <Skeleton className="h-[220px]" /> : !websiteAnalytics || !websiteAnalytics.configured ? (
+              <p style={{ fontSize: 12.5, color: MUTED_CLR, padding: '8px 0' }}>
+                Google Analytics isn't connected yet — add a GA4 service account key and property ID on the server to see visits and countries here.
+              </p>
+            ) : (() => {
+              const today = websiteAnalytics.today!
+              const byCountry = websiteAnalytics.byCountry || []
+              const trend = websiteAnalytics.trend || []
+              const maxCountry = Math.max(1, ...byCountry.map((c) => c.sessions))
+              const maxTrend = Math.max(1, ...trend.map((t) => t.sessions))
+              const points = trend.map((t, i) => {
+                const x = trend.length > 1 ? (i / (trend.length - 1)) * 640 : 0
+                const y = 130 - (t.sessions / maxTrend) * 120
+                return `${x.toFixed(1)},${y.toFixed(1)}`
+              }).join(' ')
+              return (
+                <div style={{ display: 'grid', gap: 16 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 16 }} className="max-[900px]:grid-cols-1">
+                    <div style={{ background: '#1A0B33', borderRadius: 18, padding: 20, display: 'flex', flexDirection: 'column', gap: 10, color: '#fff' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>Website visits today</div>
+                      <div style={{ ...HEADING, fontWeight: 800, fontSize: 40, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{today.sessions}</div>
+                      <div style={{ fontSize: 11.5, color: '#D8CCF5' }}>{today.users} users &middot; {today.newVisitorPct}% new visitors</div>
+                      {today.vsYesterdayPct !== null && (
+                        <span style={{ fontSize: 10.5, background: 'rgba(255,255,255,.12)', color: today.vsYesterdayPct >= 0 ? '#DCFCE7' : '#FED7D7', padding: '3px 9px', borderRadius: 999, fontWeight: 700, alignSelf: 'flex-start' }}>
+                          {today.vsYesterdayPct >= 0 ? '▲' : '▼'} {Math.abs(today.vsYesterdayPct)}% vs yesterday
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11.5, color: MUTED_CLR, marginBottom: 10 }}>Visits by country &middot; last {websiteAnalytics.days} days &middot; {websiteAnalytics.totalSessionsInRange} total</div>
+                      {byCountry.length === 0 ? (
+                        <p style={{ fontSize: 12.5, color: MUTED_CLR }}>No visits recorded in this range yet.</p>
+                      ) : (
+                        <div style={{ display: 'grid', gap: 8 }}>
+                          {byCountry.slice(0, 6).map((c) => (
+                            <div key={c.country} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 44px', alignItems: 'center', gap: 10 }}>
+                              <span className="truncate" style={{ fontSize: 12.5, fontWeight: 700, color: INK }}>{c.country}</span>
+                              <div style={{ height: 8, borderRadius: 999, background: '#F1EFE8' }}><div style={{ width: `${Math.max(4, (c.sessions / maxCountry) * 100)}%`, height: '100%', borderRadius: 999, background: '#5B2BC9' }} /></div>
+                              <span style={{ fontSize: 11.5, color: MUTED_CLR, textAlign: 'right' }}>{c.sessions}</span>
+                            </div>
+                          ))}
+                          {byCountry.length > 6 && <div style={{ fontSize: 11, color: MUTED_CLR }}>and {byCountry.length - 6} more countries</div>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {trend.length > 1 && (
+                    <div>
+                      <div style={{ fontSize: 11.5, color: MUTED_CLR, marginBottom: 6 }}>Sessions per day</div>
+                      <svg viewBox="0 0 640 140" style={{ width: '100%', height: 120, display: 'block' }}>
+                        <polyline points={points} fill="none" stroke="#5B2BC9" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                        <line x1={0} y1={130} x2={640} y2={130} stroke="#F1EFE8" strokeWidth={1} />
+                      </svg>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: MUTED_CLR, marginTop: 2 }}>
+                        <span>{trend[0].date}</span><span>{trend[trend.length - 1].date}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+          </WidgetShell>
+        ),
         'units-by-size': (
           <WidgetShell id="units-by-size" title="Units by size" subtitle="Available vs occupied per size" {...dragHandlers}>
             {statsLoading ? <Skeleton className="h-[240px]" /> : statsIsError || !stats ? (
@@ -571,6 +648,7 @@ export default function Dashboard() {
     [statsLoading, statsIsError, stats, statsError, refetchStats, floorLoading, floorIsError, floor, refetchFloor,
       expiringLoading, expiringIsError, expiringContracts, refetchExpiring, tasksLoading, teamTasks, quiet,
       highIntentLoading, highIntent, highIntentPage, websiteLeadsLoading, websiteLeads, websiteLeadsPage,
+      websiteAnalyticsLoading, websiteAnalytics,
       onDrop, onDragStart, onDragOver]
   )
 

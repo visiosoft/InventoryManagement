@@ -118,6 +118,7 @@ export interface IntegrationStatus {
   zoho: { configured: boolean }
   drive: { configured: boolean; folderId?: string; method?: string }
   gmail: { configured: boolean }
+  analytics: { configured: boolean; propertyId?: string; missing?: string[]; method?: string }
   /** keyHint is a masked fragment — the key itself never leaves the server. */
   openai?: { configured: boolean; model: string; keyHint: string }
   whatsapp: { configured: boolean; missing?: string[] }

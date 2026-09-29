@@ -193,6 +193,16 @@ export interface WebsiteLead {
   ownerName: string
 }
 
+export interface WebsiteAnalytics {
+  configured: boolean
+  missing?: string[]
+  today?: { sessions: number; users: number; newUsers: number; newVisitorPct: number; vsYesterdayPct: number | null }
+  byCountry?: { country: string; sessions: number }[]
+  totalSessionsInRange?: number
+  trend?: { date: string; sessions: number }[]
+  days?: number
+}
+
 export type LeadScoreBand = 'high' | 'medium' | 'low'
 export interface LeadScoreSignals {
   leadType?: string
@@ -260,6 +270,8 @@ export const integrationApi = {
     api.get<{ url: string }>('/integrations/drive/connect').then((r) => r.data),
   connectGmail: () =>
     api.get<{ url: string }>('/integrations/gmail/connect').then((r) => r.data),
+  connectAnalytics: () =>
+    api.get<{ url: string }>('/integrations/analytics/connect').then((r) => r.data),
   connectStripe: (body: { secretKey?: string; webhookSecret?: string; publishableKey?: string }) =>
     api.post<{ ok: true; configured: boolean; webhookConfigured: boolean; embeddedConfigured: boolean }>('/integrations/stripe/connect', body).then((r) => r.data),
   disconnectStripe: () =>

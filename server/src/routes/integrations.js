@@ -12,6 +12,7 @@ import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppL
 import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey, stripePublishableKey, stripeEmbeddedConfigured } from '../services/stripe.js';
 import { updateEnvFile } from '../utils/env.js';
 import { openaiConfigured, openaiModel, openaiKeyHint, verifyOpenAIKey, parseAvailabilityQuery } from '../services/openai.js';
+import { analyticsConfigured, analyticsMissing } from '../services/googleAnalytics.js';
 
 const router = Router();
 
@@ -26,6 +27,12 @@ router.get('/status', async (_req, res) => {
                 : '',
         },
         gmail: { configured: gmailConfigured() },
+        analytics: {
+            configured: analyticsConfigured(),
+            propertyId: process.env.GA4_PROPERTY_ID || '',
+            missing: analyticsMissing(),
+            method: analyticsConfigured() ? (process.env.GOOGLE_ANALYTICS_SERVICE_ACCOUNT_FILE ? 'service_account' : 'oauth') : '',
+        },
         // The key itself is never sent to the client — only a masked hint.
         openai: { configured: openaiConfigured(), model: openaiModel(), keyHint: openaiKeyHint() },
         // Deep link into Zoho Books' own invoice composer, so staff who raise
@@ -374,6 +381,60 @@ router.get('/gmail/callback', async (req, res) => {
     } catch (err) {
         const msg = err?.message || 'Unknown error';
         res.redirect(`${clientOrigin}/settings?gmailError=${encodeURIComponent(msg)}`);
+    }
+});
+
+// ── Google Analytics (GA4 Data API) OAuth ───────────────────────────────────
+//
+// Reuses the same OAuth client Drive/Contacts already use — Google doesn't
+// scope-lock a client, so this just asks for one more permission under it.
+// The Google account the person signs in with here still needs Viewer
+// access added directly on the GA4 property (Admin > Property Access
+// Management) — being able to log in as that account and being allowed to
+// read that specific property are two separate grants; this flow only
+// covers the first.
+
+function analyticsOAuthClient() {
+    const clientId = process.env.GOOGLE_ANALYTICS_CLIENT_ID || process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_ANALYTICS_CLIENT_SECRET || process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
+    const callbackUrl = `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5010}`}/api/integrations/analytics/callback`;
+    return new google.auth.OAuth2(clientId, clientSecret, callbackUrl);
+}
+
+router.get('/analytics/connect', (_req, res) => {
+    const clientId = process.env.GOOGLE_ANALYTICS_CLIENT_ID || process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_ANALYTICS_CLIENT_SECRET || process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+        return res.status(400).json({ error: 'Google OAuth credentials not configured. Connect Google Drive first, or set GOOGLE_ANALYTICS_CLIENT_ID/SECRET.' });
+    }
+    if (!process.env.GA4_PROPERTY_ID) {
+        return res.status(400).json({ error: 'Set GA4_PROPERTY_ID in .env first — the GA4 property to read, from Analytics Admin > Property details.' });
+    }
+    const url = analyticsOAuthClient().generateAuthUrl({
+        access_type: 'offline',
+        prompt: 'consent',
+        scope: ['https://www.googleapis.com/auth/analytics.readonly'],
+    });
+    res.json({ url });
+});
+
+router.get('/analytics/callback', async (req, res) => {
+    const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+    if (req.query.error) {
+        return res.redirect(`${clientOrigin}/settings?analyticsError=${encodeURIComponent(req.query.error)}`);
+    }
+    try {
+        const oauth2 = analyticsOAuthClient();
+        const { tokens } = await oauth2.getToken(String(req.query.code || ''));
+        if (!tokens.refresh_token) {
+            return res.redirect(`${clientOrigin}/settings?analyticsError=${encodeURIComponent('No refresh token returned. Revoke access at myaccount.google.com and try again.')}`);
+        }
+        updateEnvFile({ GOOGLE_ANALYTICS_REFRESH_TOKEN: tokens.refresh_token });
+        process.env.GOOGLE_ANALYTICS_REFRESH_TOKEN = tokens.refresh_token;
+        res.redirect(`${clientOrigin}/settings?analyticsConnected=1`);
+    } catch (err) {
+        const msg = err?.message || 'Unknown error';
+        res.redirect(`${clientOrigin}/settings?analyticsError=${encodeURIComponent(msg)}`);
     }
 });
 
