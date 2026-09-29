@@ -307,7 +307,7 @@ export default function Dashboard() {
             {(() => {
               const lettable = stats.byStatus.available + stats.byStatus.occupied + stats.byStatus.reserved
               return (
-                <div style={{ padding: 24, borderRadius: 22, background: '#1A0B33', color: '#FFF', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 8px 24px rgba(20,8,31,.10)' }}>
+                <div className="col-span-2" style={{ padding: 24, borderRadius: 22, background: '#1A0B33', color: '#FFF', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 8px 24px rgba(20,8,31,.10)' }}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>
                       <ChevronDown size={13} aria-hidden="true" /> Occupancy
