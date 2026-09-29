@@ -318,6 +318,20 @@ export default function Dashboard() {
                   <div style={{ height: 8, borderRadius: 999, background: 'rgba(255,255,255,.14)', overflow: 'hidden' }}>
                     <div style={{ width: `${stats.occupancyPct}%`, height: '100%', borderRadius: 999, background: 'linear-gradient(90deg, #7C4DFF, #A78BFA)' }} />
                   </div>
+                  <div className="grid grid-cols-3 gap-2" style={{ borderTop: '1px solid rgba(255,255,255,.14)', paddingTop: 14 }}>
+                    <div>
+                      <div style={{ ...HEADING, fontWeight: 700, fontSize: 21 }}>{stats.byStatus.occupied}</div>
+                      <div style={{ fontSize: 10.5, color: '#B9A8E8', marginTop: 2 }}>Booked</div>
+                    </div>
+                    <div>
+                      <div style={{ ...HEADING, fontWeight: 700, fontSize: 21 }}>{stats.byStatus.reserved}</div>
+                      <div style={{ fontSize: 10.5, color: '#B9A8E8', marginTop: 2 }}>Reserved</div>
+                    </div>
+                    <div>
+                      <div style={{ ...HEADING, fontWeight: 700, fontSize: 21 }}>{stats.byStatus.available}</div>
+                      <div style={{ fontSize: 10.5, color: '#B9A8E8', marginTop: 2 }}>Vacant</div>
+                    </div>
+                  </div>
                 </div>
               )
             })()}
