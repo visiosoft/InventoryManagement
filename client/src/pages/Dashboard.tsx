@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, GripVertical } from 'lucide-react'
+import { AlertTriangle, GripVertical, ChevronDown } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError, leadApi, type HighIntentLead, type WebsiteLead, type WebsiteAnalytics, type MonthFunnelStage } from '../lib/api'
 import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
@@ -301,46 +301,42 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-[18px]">
-            {/* Occupancy - dark card */}
-            <div style={{ padding: 24, borderRadius: 22, background: '#1A0B33', color: '#FFF', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 8px 24px rgba(20,8,31,.10)' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>Occupancy</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.04em' }}>{stats.occupancyPct}%</div>
-              {/* Spell out what is being counted.
-                  It read "145 of 304 units", which looks wrong against a
-                  facility of 305: the 145 quietly includes reserved units as
-                  well as occupied ones, and the 304 quietly leaves out
-                  anything under maintenance, which cannot be let. Both are the
-                  right way to measure occupancy — they just were not said. */}
-              <div style={{ fontSize: 11, color: '#DDD0FF' }}>
-                {stats.byStatus.occupied + stats.byStatus.reserved} taken
-                {stats.byStatus.reserved > 0 && ` (${stats.byStatus.occupied} in, ${stats.byStatus.reserved} reserved)`}
-                {' of '}
-                {stats.byStatus.available + stats.byStatus.occupied + stats.byStatus.reserved} lettable
-                {stats.byStatus.maintenance > 0 && ` · ${stats.byStatus.maintenance} under maintenance`}
-              </div>
-              <div style={{ height: 6, borderRadius: 999, background: 'rgba(255,255,255,.14)', overflow: 'hidden', display: 'flex' }}>
-                <div style={{ width: `${stats.occupancyPct}%`, background: 'linear-gradient(90deg, #7C4DFF, #A78BFA)' }} />
-              </div>
-            </div>
-
-            <KpiTile label="Booked" value={stats.byStatus.occupied} footer={`${stats.activeContracts} active contracts`} />
-
-            <KpiTile label="Reserved" value={stats.byStatus.reserved} footer="held, not moved in yet" />
-
-            {/* Vacant — the same units the old Available card counted, named
-                the way the team asks for them. */}
-            <KpiTile
-              label="Vacant"
-              value={stats.byStatus.available}
-              onClick={() => { setSizeFilter(null); setMovePanel('available') }}
-              footer={
-                <div className="flex flex-wrap gap-1" onClick={e => e.stopPropagation()}>
-                  {stats.bySize.filter(s => s.available > 0).slice(0, 3).map(s => (
-                    <button key={s.sizeSqf} onClick={() => { setSizeFilter(parseInt(s.sizeSqf)); setMovePanel('available') }} style={{ fontSize: 10, fontWeight: 600, padding: '3px 6px', borderRadius: 6, background: PURPLE_LIGHT, color: '#4A1FA0', cursor: 'pointer', border: 'none' }} className="hover:opacity-80">{s.available}×{s.sizeSqf.replace(' sq ft', '')}</button>
-                  ))}
+            {/* Occupancy — one card: the headline %, the bar, and the three
+                numbers behind it (Booked/Reserved/Vacant), instead of four
+                separate tiles. Lettable total = available + occupied +
+                reserved, same definition the old separate tiles used —
+                maintenance units are excluded because they cannot be let. */}
+            {(() => {
+              const lettable = stats.byStatus.available + stats.byStatus.occupied + stats.byStatus.reserved
+              return (
+                <div style={{ padding: 24, borderRadius: 22, background: '#1A0B33', color: '#FFF', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 8px 24px rgba(20,8,31,.10)' }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>
+                      <ChevronDown size={13} aria-hidden="true" /> Occupancy
+                    </div>
+                    <div style={{ fontSize: 11, color: '#B9A8E8' }}>{stats.occupancyPct}% of {lettable}</div>
+                  </div>
+                  <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.04em' }}>{stats.occupancyPct}%</div>
+                  <div style={{ height: 8, borderRadius: 999, background: 'rgba(255,255,255,.14)', overflow: 'hidden' }}>
+                    <div style={{ width: `${stats.occupancyPct}%`, height: '100%', borderRadius: 999, background: 'linear-gradient(90deg, #7C4DFF, #A78BFA)' }} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2" style={{ borderTop: '1px solid rgba(255,255,255,.14)', paddingTop: 14 }}>
+                    <div>
+                      <div style={{ ...HEADING, fontWeight: 700, fontSize: 21 }}>{stats.byStatus.occupied}</div>
+                      <div style={{ fontSize: 10.5, color: '#B9A8E8', marginTop: 2 }}>Booked</div>
+                    </div>
+                    <div>
+                      <div style={{ ...HEADING, fontWeight: 700, fontSize: 21 }}>{stats.byStatus.reserved}</div>
+                      <div style={{ fontSize: 10.5, color: '#B9A8E8', marginTop: 2 }}>Reserved</div>
+                    </div>
+                    <div onClick={() => { setSizeFilter(null); setMovePanel('available') }} style={{ cursor: 'pointer' }}>
+                      <div style={{ ...HEADING, fontWeight: 700, fontSize: 21 }}>{stats.byStatus.available}</div>
+                      <div style={{ fontSize: 10.5, color: '#B9A8E8', marginTop: 2 }}>Vacant</div>
+                    </div>
+                  </div>
                 </div>
-              }
-            />
+              )
+            })()}
 
             {/* Moving out this month.
                 Deliberately not the old Move-outs figure, which counted
