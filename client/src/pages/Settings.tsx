@@ -582,6 +582,7 @@ export default function Settings() {
                   <option value="gpt-4o">gpt-4o</option>
                   <option value="gpt-6-luna">gpt-6-luna — cheaper than gpt-4o-mini, untested here</option>
                   <option value="gpt-6-sol">gpt-6-sol — newer, untested here</option>
+                  <option value="gpt-6-astra">gpt-6-astra — untested here</option>
                 </Select>
               </Field>
             </div>

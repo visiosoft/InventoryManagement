@@ -76,7 +76,7 @@ type Draft = {
   kind: AgentKind; schedule: Schedule; task: string
   ownsBuckets: OwnableBucket[]; languages: string; whatsappNumbers: string; escalateTo: string; dailyBudgetAed: number; dailyTouchCap: number; mode: 'off' | 'shadow'; syncLeadStatus: boolean; isDefault: boolean
 }
-const MODELS = [['', 'Same as the server'], ['gpt-4o-mini', 'gpt-4o-mini — cheapest'], ['gpt-4.1-mini', 'gpt-4.1-mini'], ['gpt-4.1', 'gpt-4.1'], ['gpt-6-luna', 'gpt-6-luna — cheaper than gpt-4o-mini, untested here'], ['gpt-6-sol', 'gpt-6-sol — newer, untested here']]
+const MODELS = [['', 'Same as the server'], ['gpt-4o-mini', 'gpt-4o-mini — cheapest'], ['gpt-4.1-mini', 'gpt-4.1-mini'], ['gpt-4.1', 'gpt-4.1'], ['gpt-6-luna', 'gpt-6-luna — cheaper than gpt-4o-mini, untested here'], ['gpt-6-sol', 'gpt-6-sol — newer, untested here'], ['gpt-6-astra', 'gpt-6-astra — untested here']]
 const BUCKET_OPTIONS: { key: OwnableBucket; label: string }[] = [['new', 'New'], ['engaged', 'Engaged'], ['quoted', 'Quoted'], ['booking', 'Booking'], ['quiet', 'Quiet'], ['dormant', 'Dormant'], ['tenant', 'Existing customers']].map(([key, label]) => ({ key: key as OwnableBucket, label }))
 
 const toDraft = (p: AgentProfile | null, tools: string[]): Draft => ({
