@@ -1084,12 +1084,12 @@ export default function PersonProfile() {
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     onBlur={() => { if (notes !== (lead.notes || '')) patchLead.mutate({ notes }) }}
-                    rows={5}
+                    rows={12}
                     placeholder="What they are storing, what was agreed, who referred them."
                     style={{
                       width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff',
                       padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', color: INK,
-                      resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5,
+                      resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5, minHeight: 240,
                     }}
                   />
                   <p style={{ fontSize: 12, color: FAINT, marginTop: 6 }}>
