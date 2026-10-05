@@ -9,6 +9,7 @@ import { formatMoney } from '../lib/utils'
 import { useAuth } from '../lib/auth'
 import UnitPricing from './UnitPricing'
 import BulkUnitPricing from './BulkUnitPricing'
+import WebsitePricing from './WebsitePricing'
 
 
 // ---- Products / Services Card ----
@@ -153,7 +154,7 @@ export default function Settings() {
   const isAdmin = user?.role === 'admin'
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
-  const activeTab = isAdmin && (requestedTab === 'pricing' || requestedTab === 'bulk-pricing') ? requestedTab : 'general'
+  const activeTab = isAdmin && (requestedTab === 'pricing' || requestedTab === 'bulk-pricing' || requestedTab === 'website-pricing') ? requestedTab : 'general'
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [gmailMsg, setGmailMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [analyticsMsg, setAnalyticsMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -254,6 +255,13 @@ export default function Settings() {
           >
             Bulk Pricing
           </button>
+          <button
+            type="button"
+            onClick={() => setSearchParams((p) => { p.set('tab', 'website-pricing'); return p })}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === 'website-pricing' ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Website Prices
+          </button>
         </div>
       )}
 
@@ -261,6 +269,8 @@ export default function Settings() {
         <UnitPricing embedded />
       ) : activeTab === 'bulk-pricing' ? (
         <BulkUnitPricing embedded />
+      ) : activeTab === 'website-pricing' ? (
+        <WebsitePricing embedded />
       ) : (
     <>
       <ProductsCard />

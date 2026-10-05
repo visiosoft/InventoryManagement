@@ -209,6 +209,51 @@ router.put('/bulk-price', async (req, res) => {
   res.json({ matched: units.length, updated, skipped });
 });
 
+// Set the price and/or the discount for every unit of one size, on every
+// floor — what the website's price list is made of, so it is set per size.
+//
+//  - discountPct (admin only) is applied to every unit of the size. It is the
+//    percentage off the first 4 weeks, and is not locked the way a price is.
+//  - price follows the same rule as /bulk-price: units with no price are
+//    filled in; a unit that already has a different price only changes when an
+//    admin passes `override`.
+router.put('/size-pricing', async (req, res) => {
+  const { sizeSqf, price, discountPct, override } = req.body;
+  const size = Number(sizeSqf);
+  if (!(size > 0)) return res.status(400).json({ error: 'sizeSqf is required' });
+  const hasPrice = price !== undefined && price !== null && price !== '';
+  const hasDiscount = discountPct !== undefined && discountPct !== null && discountPct !== '';
+  if (!hasPrice && !hasDiscount) return res.status(400).json({ error: 'Give a price, a discount, or both' });
+
+  const isAdmin = req.user?.role === 'admin';
+  if (hasDiscount) {
+    if (!isAdmin) return res.status(403).json({ error: 'Only an admin can change discounts' });
+    const d = Number(discountPct);
+    if (!(d >= 0 && d <= 100)) return res.status(400).json({ error: 'Discount must be between 0 and 100' });
+  }
+  if (hasPrice && !(Number(price) > 0)) return res.status(400).json({ error: 'Price must be more than 0' });
+
+  const units = await Unit.find({ sizeSqf: size });
+  let priceUpdated = 0;
+  let priceSkipped = 0;
+  let discountUpdated = 0;
+  for (const unit of units) {
+    let dirty = false;
+    if (hasPrice) {
+      if (unit.price == null) { unit.price = Number(price); dirty = true; priceUpdated++; }
+      else if (Number(unit.price) !== Number(price)) {
+        if (isAdmin && override === true) { unit.price = Number(price); dirty = true; priceUpdated++; }
+        else priceSkipped++;
+      }
+    }
+    if (hasDiscount && Number(unit.discountPct || 0) !== Number(discountPct)) {
+      unit.discountPct = Number(discountPct); dirty = true; discountUpdated++;
+    }
+    if (dirty) await unit.save();
+  }
+  res.json({ matched: units.length, priceUpdated, priceSkipped, discountUpdated });
+});
+
 router.put('/:id', async (req, res) => {
   const unit = await Unit.findById(req.params.id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
