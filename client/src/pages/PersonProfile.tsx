@@ -139,15 +139,6 @@ function Card({ title, action, children }: { title: string; action?: React.React
   )
 }
 
-function Detail({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div className="flex justify-between items-center gap-3">
-      <span style={{ fontSize: 13, color: FAINT }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: 600, color: value ? INK : FAINT, textAlign: 'right' }}>{value || '—'}</span>
-    </div>
-  )
-}
-
 function Field({ label, value, onChange, type = 'text' }: {
   label: string; value: string; onChange: (v: string) => void; type?: string
 }) {
@@ -535,14 +526,23 @@ export default function PersonProfile() {
                     )}
                     {email && <span>{email}</span>}
                   </div>
+                  {/* Only what is actually on file: a row of dashes says
+                      nothing. Small label over value, wrapping as needed. */}
                   {customer && (
-                    <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', columnGap: 28, rowGap: 6, maxWidth: 760, marginTop: 10 }}>
-                      <Detail label="Company" value={customer.company} />
-                      <Detail label="Nationality" value={customer.nationality} />
-                      <Detail label="Emergency contact" value={customer.emergencyNumber} />
-                      <Detail label="Emirates ID" value={customer.emiratesId} />
-                      <Detail label="ID expiry" value={customer.eidExpiry ? formatDate(customer.eidExpiry) : ''} />
-                      <Detail label="Address" value={customer.address} />
+                    <div className="flex flex-wrap" style={{ gap: '12px 32px', marginTop: 14 }}>
+                      {([
+                        ['Company', customer.company],
+                        ['Nationality', customer.nationality],
+                        ['Emergency contact', customer.emergencyNumber],
+                        ['Emirates ID', customer.emiratesId],
+                        ['ID expiry', customer.eidExpiry ? formatDate(customer.eidExpiry) : ''],
+                        ['Address', customer.address],
+                      ] as const).filter(([, v]) => v).map(([label, v]) => (
+                        <div key={label} style={{ maxWidth: 280 }}>
+                          <div style={{ fontSize: 11.5, color: FAINT, marginBottom: 2 }}>{label}</div>
+                          <div style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{v}</div>
+                        </div>
+                      ))}
                     </div>
                   )}
                   {(lead || customer) && (
