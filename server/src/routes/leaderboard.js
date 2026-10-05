@@ -1,15 +1,15 @@
 /**
  * How many of the leads sent to somebody actually closed.
  *
- * Deliberately readable by anybody signed in, unlike /sales-team, which is
- * manager-only. Recognition that only the manager can see is not recognition.
+ * Deliberately readable by anybody signed in. Recognition that only a
+ * manager can see is not recognition.
  *
  * The counting is kept honest by two decisions:
  *
  *   - "Closed" is a contract, not a status somebody set on themselves. It is
- *     counted off Contract.salesRep, the same field and the same bucketing as
- *     routes/salesTeam.js and the rep_performance report block, so two pages
- *     cannot tell a rep different numbers.
+ *     counted off Contract.salesRep, the same field and bucketing the
+ *     rep_performance report block uses, so two pages cannot tell a rep
+ *     different numbers.
  *   - "Received" is leads that were deliberately handed to them (assignedAt),
  *     not every lead that carries their name. Every WhatsApp conversation
  *     auto-creates a lead with a default owner, and on this database that is

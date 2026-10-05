@@ -2,17 +2,19 @@ import { transitionError, recordLeadTransition, applyTransitionDetails } from '.
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Quote, Task, User, WhatsAppMessage } from '../models/index.js';
-import { notifyLeadAssigned, pendingAssignmentBadge } from '../services/leadNotify.js';
+import { notifyLeadAssigned, notifyBulkReassignment, pendingAssignmentBadge } from '../services/leadNotify.js';
 import { resolvePlaceholderNames } from '../services/leadNames.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask } from '../services/followUps.js';
 import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
 import { summarise } from '../services/speedToLead.js';
 import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
+import { QUEUE_SINCE } from '../services/followUpQueue.js';
 import { buildFunnel, buildForecast } from '../services/leadFunnel.js';
 import { scoreForLead, highIntentToday, intakeChecklist } from '../services/leadScore.js';
 import { summariseConversation } from '../services/conversationSummary.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
+import { dubaiDayRange } from '../services/automationEngine.js';
 
 const router = Router();
 
@@ -27,7 +29,7 @@ const ALLOWED_TAGS = new Set([
     'personal_storage', 'business_storage',
     'urgent', 'site_visit_required', 'price_sensitive', 'unresponsive',
 ]);
-const ALLOWED_SOURCE = new Set(['manual', 'whatsapp', 'referral', 'walk_in', 'other']);
+const ALLOWED_SOURCE = new Set(['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']);
 const ALLOWED_DURATION_UNIT = new Set(['week', 'month']);
 
 function normalizePhone(input) {
@@ -90,6 +92,11 @@ function cleanBody(body) {
 async function validateOwner(ownerId) {
     const owner = await User.findById(ownerId).select('_id');
     return Boolean(owner);
+}
+
+async function ownerName(ownerId) {
+    const owner = await User.findById(ownerId).select('name email');
+    return owner?.name || owner?.email || 'a former rep';
 }
 
 // Sales reps only ever see/touch leads assigned to them — enforced server-side
@@ -240,7 +247,15 @@ async function latestLeadQuotes(leads) {
 router.get('/', async (req, res) => {
     const filter = buildLeadListFilter(req);
     const page = Math.max(1, Number(req.query.page) || 1);
-    const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 500);
+    // "My Leads" (SalesBoard.tsx) fetches a rep's whole list in one request
+    // (no pagination UI there — it filters/searches client-side over
+    // everything) rather than paging like the admin Leads table does. 500
+    // was too low once a rep's own count passed it — their list silently
+    // truncated with no sign anything was missing. Matches that page's own
+    // requested limit, so raising one without the other can't quietly cap
+    // things again; the admin table's own request (25-100) never comes
+    // close to either number.
+    const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 30_000);
     const skip = (page - 1) * limit;
 
     // Exclude heavy subdocuments (timeline, comments) — the detail endpoint loads them.
@@ -451,6 +466,9 @@ router.get('/waiting', async (req, res) => {
 router.get('/funnel', async (req, res) => {
     try {
         const filter = buildLeadListFilter(req);
+        // Same cutoff as the Follow-Ups queue: older leads predate reliable
+        // tracking. An explicit date range on the list overrides it.
+        if (!filter.leadDateTime) filter.createdAt = { $gte: QUEUE_SINCE };
 
         const leads = await Lead.find(filter)
             .select('status source owner lossReason lossCompetitor reopenAt expectedCloseAt createdAt leadDateTime timeline')
@@ -459,7 +477,137 @@ router.get('/funnel', async (req, res) => {
 
         const funnel = buildFunnel(leads);
         const quotes = await latestLeadQuotes(leads);
-        res.json({ ...funnel, forecast: buildForecast(leads, quotes, funnel.history), since: req.query.from || null });
+        res.json({ ...funnel, forecast: buildForecast(leads, quotes, funnel.history), since: req.query.from || QUEUE_SINCE });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * This month's lead funnel for the Dashboard: of the leads that came in this
+ * Dubai calendar month, where each one is now — untouched, being worked,
+ * quotation sent, won, lost — plus the follow-ups already past due. Unlike
+ * /funnel above (an all-time snapshot with time-in-stage), this is a
+ * "how is this month going" read. Stages are current status, not history:
+ * Lead.status isn't a strict pipeline (see services/leadFunnel.js). Overdue
+ * follow-ups are the whole open backlog, not just this month's leads — a
+ * follow-up promised last month is still overdue today.
+ */
+/** Shared by /month-funnel and its drill-down list, so a row's count and the
+ *  leads listed behind it are always the same set. */
+function monthFunnelScope(req) {
+    const OFFSET = 4 * 3600_000; // Dubai is UTC+4, no DST
+    const now = new Date();
+    const local = new Date(now.getTime() + OFFSET);
+    const monthStart = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - OFFSET);
+    const monthEnd = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 1) - OFFSET);
+    const base = { fullName: { $not: /^whatsapp\s*contact/i } };
+    if (isSalesRep(req)) base.owner = new mongoose.Types.ObjectId(req.user.id);
+    return { now, monthStart, monthEnd, base };
+}
+
+const MONTH_FUNNEL_STAGES = {
+    total: null,
+    untouched: ['new', null],
+    inProgress: ['contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled'],
+    quotationSent: ['quotation_sent'],
+    won: ['won'],
+    lost: ['lost'],
+    alreadyCustomer: ['already_customer'],
+};
+
+router.get('/month-funnel', async (req, res) => {
+    try {
+        const { now, monthStart, monthEnd, base } = monthFunnelScope(req);
+
+        const [byStatus, overdueFollowUps] = await Promise.all([
+            Lead.aggregate([
+                { $match: { ...base, leadDateTime: { $gte: monthStart, $lt: monthEnd } } },
+                { $group: { _id: { $ifNull: ['$status', 'new'] }, n: { $sum: 1 } } },
+            ]),
+            Lead.countDocuments({
+                ...base,
+                status: { $nin: ['won', 'lost', 'already_customer'] },
+                followUpAt: { $ne: null, $lte: now },
+            }),
+        ]);
+
+        const n = (...keys) => keys.reduce((sum, k) => sum + (byStatus.find((r) => r._id === k)?.n || 0), 0);
+        const total = byStatus.reduce((sum, r) => sum + r.n, 0);
+        const won = n('won');
+        const lost = n('lost');
+        const alreadyCustomer = n('already_customer');
+        const decided = total - alreadyCustomer;
+        res.json({
+            monthLabel: monthStart.toLocaleString('en-GB', { month: 'long', timeZone: 'Asia/Dubai' }),
+            total,
+            untouched: n('new'),
+            inProgress: n('contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled'),
+            quotationSent: n('quotation_sent'),
+            won,
+            lost,
+            alreadyCustomer,
+            winRatePct: decided > 0 ? Math.round((won / decided) * 100) : 0,
+            overdueFollowUps,
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * The leads behind one row of the month funnel — `?stage=` is a key of
+ * MONTH_FUNNEL_STAGES, or `overdue` for the follow-ups already past due.
+ * Capped so a big month stays a quick read; `total` says how many there are.
+ */
+router.get('/month-funnel/leads', async (req, res) => {
+    try {
+        const stage = String(req.query.stage || 'total');
+        const { now, monthStart, monthEnd, base } = monthFunnelScope(req);
+        const LIMIT = 200;
+
+        let filter;
+        let sort;
+        if (stage === 'overdue') {
+            filter = {
+                ...base,
+                status: { $nin: ['won', 'lost', 'already_customer'] },
+                followUpAt: { $ne: null, $lte: now },
+            };
+            sort = { followUpAt: 1 }; // longest overdue first
+        } else if (stage in MONTH_FUNNEL_STAGES) {
+            filter = { ...base, leadDateTime: { $gte: monthStart, $lt: monthEnd } };
+            if (MONTH_FUNNEL_STAGES[stage]) filter.status = { $in: MONTH_FUNNEL_STAGES[stage] };
+            sort = { leadDateTime: -1 };
+        } else {
+            return res.status(400).json({ error: 'Unknown stage' });
+        }
+
+        const [total, leads] = await Promise.all([
+            Lead.countDocuments(filter),
+            Lead.find(filter)
+                .sort(sort)
+                .limit(LIMIT)
+                .select('fullName phone status source temperature leadDateTime followUpAt owner')
+                .populate('owner', 'name email')
+                .lean(),
+        ]);
+
+        res.json({
+            stage,
+            total,
+            items: leads.map((l) => ({
+                _id: String(l._id),
+                name: l.fullName || 'Unnamed lead',
+                phone: l.phone || '',
+                status: l.status || 'new',
+                source: l.source || '',
+                temperature: l.temperature || '',
+                at: l.leadDateTime || null,
+                followUpAt: l.followUpAt || null,
+                owner: l.owner?.name || l.owner?.email || '',
+            })),
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -481,6 +629,33 @@ router.get('/high-intent', async (req, res) => {
         // the page does not.
         const ownerId = isSalesRep(req) || req.query.mine === '1' ? req.user.id : null;
         res.json({ items: await highIntentToday({ ownerId }) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Today's leads from the purplebox.ae landing pages (see
+ * routes/movingLeads.js's publicLeadRouter, the only thing that ever
+ * writes source: 'website') — the dashboard's "keep an eye on the
+ * website" widget. `leadDateTime`, not `createdAt`: it's the same "when
+ * the lead happened" field every other lead-date query in this file uses.
+ */
+router.get('/new-from-website', async (req, res) => {
+    try {
+        const { start, end } = dubaiDayRange(new Date());
+        const leads = await Lead.find({ source: 'website', leadDateTime: { $gte: start, $lt: end } })
+            .populate('owner', 'name')
+            .sort({ leadDateTime: -1 })
+            .select('fullName phone email status notes leadDateTime owner')
+            .lean();
+        res.json({
+            items: leads.map((l) => ({
+                leadId: l._id, name: l.fullName, phone: l.phone, email: l.email,
+                status: l.status, notes: l.notes || '', at: l.leadDateTime,
+                ownerName: l.owner?.name || 'Unassigned',
+            })),
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1158,6 +1333,55 @@ router.put('/:id', async (req, res) => {
         const conflict = ['DocumentNotFoundError', 'VersionError'].includes(e.name);
         res.status(conflict ? 409 : 500).json({ error: conflict ? 'This lead changed while saving. Refresh and try again.' : e.message });
     }
+});
+
+/* Moving one rep's whole book to another in one action — the case the
+ * per-lead owner field never had an answer for: a rep is terminated or
+ * removed, or a manager just wants to rebalance, and doing it lead-by-lead
+ * (or via the filter + select-all + bulk-assign workflow already on the
+ * board) does not scale past a handful. Admin-only: this is a management
+ * action, not something a rep does to their own queue. */
+router.post('/reassign', async (req, res) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+    const fromOwner = String(req.body?.fromOwner || '');
+    if (!fromOwner) return res.status(400).json({ error: 'Choose the rep to move leads away from' });
+    const toOwner = req.body?.toOwner ? String(req.body.toOwner) : null;
+    if (toOwner && toOwner === fromOwner) return res.status(400).json({ error: 'Choose a different rep to receive the leads' });
+    if (toOwner) {
+        const receiving = await User.findById(toOwner).select('isActive');
+        if (!receiving) return res.status(400).json({ error: 'Lead owner not found' });
+        if (!receiving.isActive) return res.status(400).json({ error: 'That rep is inactive — reactivate them first, or choose someone else' });
+    }
+
+    const filter = { owner: fromOwner };
+    if (req.body?.status) {
+        if (!ALLOWED_STATUS.has(req.body.status)) return res.status(400).json({ error: 'Invalid lead status' });
+        filter.status = req.body.status;
+    }
+    const count = await Lead.countDocuments(filter);
+    if (!count) return res.json({ reassigned: 0 });
+
+    const userName = req.user.name || req.user.email || 'an admin';
+    const timelineText = toOwner
+        ? `Reassigned by ${userName} — bulk transfer`
+        : `Left unassigned by ${userName} — bulk transfer`;
+    await Lead.updateMany(filter, {
+        $set: {
+            owner: toOwner, ownerSeenAt: null, assignedAt: toOwner ? new Date() : null,
+            firstResponseAt: null, assignedBy: toOwner ? req.user.id : null, autoAssigned: false,
+        },
+        $push: { timeline: { type: 'updated', text: timelineText, user: req.user.id, at: new Date() } },
+    });
+
+    // One notification for the whole transfer, not one per lead — a rep
+    // inheriting 40 leads at once should not get 40 push notifications for
+    // it (see leadNotify.js's own reasoning for capping/collapsing these).
+    if (toOwner) {
+        notifyBulkReassignment({ toOwner, count, fromOwnerName: await ownerName(fromOwner) })
+            .catch((e) => console.error('[Leads] bulk reassign notify failed:', e.message));
+    }
+
+    res.json({ reassigned: count });
 });
 
 router.patch('/:id/status', async (req, res) => {

@@ -21,6 +21,7 @@ const MODULE_GROUPS = [
       { key: 'moving_inventory', label: 'Moving Ops' },
       { key: 'contracts',        label: 'Contracts' },
       { key: 'documents',        label: 'Documents' },
+      { key: 'agreement_templates', label: 'Agreement Templates' },
     ],
   },
   {
@@ -198,6 +199,16 @@ function UserModal({ editing, onClose, onDone }: {
   const isAdmin = role === 'admin'
   const isSalesRep = isSalesRepRole(role)
 
+  // Deactivating a rep never touches their leads on its own — this just
+  // surfaces that so it isn't discovered later as leads silently owned by
+  // someone who can no longer log in. Only worth asking for once there's a
+  // rep to check and a reason to (being turned off).
+  const leadCount = useQuery<number>({
+    queryKey: ['user-lead-count', editing?._id],
+    queryFn: () => api.get('/leads', { params: { owner: editing!._id, limit: 1 } }).then(r => r.data.total ?? 0),
+    enabled: !isNew && isSalesRep && !isActive && !!editing?._id,
+  })
+
   function changeRole(next: string) {
     setRole(next)
     if (isSalesRepRole(next)) setPerms(['sales_board'])
@@ -257,6 +268,12 @@ function UserModal({ editing, onClose, onDone }: {
               </Select>
             </Field>
           )}
+          {!isActive && !!leadCount.data && (
+            <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+              Still owns {leadCount.data} lead{leadCount.data === 1 ? '' : 's'} — deactivating doesn't move these off their board.
+              Use <span className="font-semibold">Reassign leads</span> on the Leads page to hand them to someone else.
+            </p>
+          )}
 
           {isAdmin && (
             <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-start gap-2 text-sm">
@@ -267,21 +284,27 @@ function UserModal({ editing, onClose, onDone }: {
           {isSalesRep && (
             <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-start gap-2 text-sm">
               <ShieldCheck size={15} className="text-primary shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">Sales reps automatically get their own "My Leads" board (only leads assigned to them), plus read access to the Unit Map, Customers, and Moving Schedule.</span>
+              <span className="text-muted-foreground">Sales reps always keep their own "My Leads" board and Unit Map access, whatever is unticked below — everything else is optional.</span>
             </div>
           )}
         </div>
 
-        {/* Right: permissions */}
-        {!isSalesRep && (
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-              Module access
-            </div>
-            <PermissionGrid permissions={permissions}
-              onChange={setPerms} disabled={false} />
+        {/* Right: permissions — every role, including sales reps/accounts,
+            can be granted any module here. Sales reps used to have this
+            panel hidden entirely, silently capped at the fixed default set
+            (sales_board, units, customers, contracts, moving_schedule) with
+            no way for an admin to give one rep something extra (e.g.
+            agreement_templates) without also giving it to every rep by
+            changing the default. The server's ROLE_FLOOR still force-keeps
+            sales_board/units even if unticked here, so this can't lock a rep
+            out of their own board. */}
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+            Module access
           </div>
-        )}
+          <PermissionGrid permissions={permissions}
+            onChange={setPerms} disabled={false} />
+        </div>
       </div>
 
       {/* Footer */}

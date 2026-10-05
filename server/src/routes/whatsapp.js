@@ -1,10 +1,10 @@
-import { recordLeadTransition } from '../services/leadTransitions.js';
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
-import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate } from '../models/index.js';
+import { WhatsAppMessage, Lead, Customer, User, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate } from '../services/whatsapp.js';
 import { pauseBotForHuman, markFirstResponse } from '../services/aiBot.js';
+import { agentStatusForLeads } from '../agents/service.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
@@ -13,6 +13,7 @@ import { videoNeedsHosting } from '../services/videoThumbnail.js';
 import { summariseConversation, summariseRecent } from '../services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay } from '../services/dailyDigest.js';
 import { DailyDigest } from '../models/index.js';
+import { beforeCursorFilter } from '../services/messageCursor.js';
 import { askInbox } from '../services/inboxAsk.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 
@@ -168,20 +169,22 @@ router.get('/messages', async (req, res) => {
         q.phoneNormalized = phone.replace(/\D/g, '');
     }
 
-    /* One conversation comes back whole.
-     *
-     * The limit defaulted to 100 for both cases, so opening a chat with more
-     * than a hundred messages silently dropped its oldest ones. The history was
-     * in the database the whole time — it was simply never sent. A single
-     * thread is naturally bounded, so it gets a ceiling high enough not to bite
-     * rather than a page size.
-     *
-     * The whole-inbox feed keeps a small one: it drives unread counts and the
-     * ping, and does not need every message ever sent to do that.
+    /* A single conversation used to come back whole, with the limit raised to
+     * 5000 so a long thread's oldest messages were never silently dropped —
+     * but that meant opening (and every 5-second poll of) a long-running chat
+     * fetched and re-rendered thousands of messages every time, which is what
+     * actually made the console feel frozen. Back to a small page (matching
+     * the whole-inbox feed's own limit) plus a `before` cursor, so the
+     * console loads the recent window fast and pages backward into history
+     * only when someone actually scrolls up looking for it — nothing is any
+     * less reachable than it was, it just isn't pulled up front.
      */
-    const limit = phone
-        ? Math.min(Math.max(Number(req.query.limit) || 2000, 1), 5000)
-        : Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+
+    if (req.query.before) {
+        const cursor = await WhatsAppMessage.findById(req.query.before).select('occurredAt').lean();
+        if (cursor) Object.assign(q, beforeCursorFilter(cursor));
+    }
 
     /* No populate on `lead` here.
      *
@@ -638,21 +641,23 @@ router.get('/conversations', async (req, res) => {
             return [lead?.owner, lead?.assignedBy];
         }).filter(Boolean).map(String),
     )];
+    const leadIds = [...new Set(
+        hydrate.map((r) => byLeadPhone.get(suffix(r._id))?._id).filter(Boolean).map(String),
+    )];
     const phones = hydrate.map((r) => r._id);
 
-    // The second wave: these three need `visible`, but not each other.
-    const [botThreads, owners, chatLabels, blockedNumbers] = await Promise.all([
-        // The AI assistant's state per thread — whether it has a suggestion
-        // waiting and whether it has handed the conversation over.
-        AiBotThread.find({ phoneNormalized: { $in: phones } })
-            .select('phoneNormalized status draftText escalationReason').lean(),
+    // The second wave: these four need `visible`, but not each other.
+    const [agentStatusByLead, owners, chatLabels, blockedNumbers] = await Promise.all([
+        // The AI agents' state per lead — whether one has a reply waiting or
+        // has handed the conversation to a person. Keyed by lead, not phone:
+        // an agent adopts a Lead, not a raw number.
+        agentStatusForLeads(leadIds),
         ownerIds.length ? User.find({ _id: { $in: ownerIds } }).select('name email').lean() : [],
         WhatsAppChatLabel.find({ phoneNormalized: { $in: phones } })
             .populate('labels', 'name color sortOrder').lean(),
         WhatsAppBlockedNumber.find({ phoneNormalized: { $in: phones } }).select('phoneNormalized').lean(),
     ]);
 
-    const byThread = new Map(botThreads.map((t) => [t.phoneNormalized, t]));
     const byOwner = new Map(owners.map((u) => [String(u._id), u.name || u.email || '']));
     const byLabels = new Map(chatLabels.map((c) => [c.phoneNormalized, c.labels || []]));
     const blockedSet = new Set(blockedNumbers.map((b) => b.phoneNormalized));
@@ -666,7 +671,7 @@ router.get('/conversations', async (req, res) => {
         const lead = byLeadPhone.get(suffix(r._id)) || null;
         const customer = byPhone.get(suffix(r._id)) || null;
         const leadName = isPlaceholderLeadName(lead?.fullName) ? '' : lead.fullName;
-        const bot = byThread.get(r._id) || null;
+        const bot = (lead ? agentStatusByLead.get(String(lead._id)) : null) || null;
         return {
             phoneNormalized: r._id,
             phone: r.phone,
@@ -721,8 +726,11 @@ router.get('/conversations', async (req, res) => {
             labels: byLabels.get(r._id) || [],
             blocked: blockedSet.has(r._id),
             botStatus: bot?.status || '',
-            botDraft: bot?.draftText || '',
+            botDraft: bot?.draft || '',
+            botActionId: bot?.draftActionId || '',
             botEscalationReason: bot?.escalationReason || '',
+            botAgentName: bot?.agentName || '',
+            botAgentColor: bot?.agentColor || '',
         };
     };
 
@@ -788,7 +796,7 @@ router.post('/:phone/remind', async (req, res) => {
         // Only from a stage that is behind it: somebody at "quotation sent"
         // has got further than "following up" and must not be walked back.
         if (['new', 'contacted', 'contact_attempted'].includes(lead.status)) {
-            recordLeadTransition(lead, 'follow_up_scheduled', req.user.id);
+            lead.status = 'follow_up_scheduled';
         }
         const when = at.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' });
         lead.timeline.push({

@@ -66,10 +66,24 @@ function emphasiseLeadIn(text) {
   return text;
 }
 
+// A narrow, whole-block placeholder — [image: https://...] on its own line
+// — rather than accepting a real <img> tag in the body text: the file-level
+// comment above explains why raw HTML from a template is never trusted here.
+// This keeps that guarantee (the URL is the only thing that varies, and it's
+// still validated to be http(s)) while letting an admin drop in a picture
+// the same casual way they already drop in a link. routes/messageTemplates.js's
+// /email-image upload endpoint hands back a URL in exactly this shape.
+const IMAGE_BLOCK = /^\[image:\s*(https?:\/\/[^\s\]]+)\s*\]$/i;
+
 function paragraphsHtml(bodyText) {
   const blocks = String(bodyText || '').trim().split(/\n{2,}/);
   return blocks
     .map((block) => {
+      const imageMatch = block.trim().match(IMAGE_BLOCK);
+      if (imageMatch) {
+        const url = escapeHtml(imageMatch[1]);
+        return `<div style="text-align:center;margin:0 0 18px;"><img src="${url}" alt="" style="max-width:100%;height:auto;border:0;display:inline-block;"></div>`;
+      }
       const html = linkify(emphasiseLeadIn(escapeHtml(block))).replace(/\n/g, '<br>');
       return `<p style="margin:0 0 18px;font-family:${BODY_FONT};font-size:15.5px;line-height:1.7;color:#4A4357;word-break:break-word;overflow-wrap:anywhere;">${html}</p>`;
     })

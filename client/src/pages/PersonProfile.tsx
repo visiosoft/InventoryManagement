@@ -1,10 +1,9 @@
-import LeadStageDialog from '../components/LeadStageDialog'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Calendar, Clock, FileText, MessageCircle, MessageSquare,
-  ClipboardList, ExternalLink, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
+  ClipboardList, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
@@ -13,13 +12,13 @@ import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
 import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
-import { dubaiToday, toDubaiDatetimeLocal, fromDubaiDatetimeLocal } from '../lib/timezone'
+import { dubaiToday } from '../lib/timezone'
 import {
   CHANNELS, OUTCOMES, channelOf, outcomeOf, sequenceState, suggestedNextDate,
   type Attempt, type AttemptChannel, type AttemptOutcome, type FollowUpPlan,
 } from '../lib/attempts'
 
-const LEAD_SOURCES = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
+const LEAD_SOURCES = ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']
 
 const INK = '#14081F'
 const INK_2 = '#4A4357'
@@ -77,11 +76,6 @@ const EVENT_STYLE: Record<string, { icon: typeof Pencil; bg: string; color: stri
 
 type Owner = { _id: string; name: string; email: string }
 type Lead = {
-  updatedAt?: string
-  expectedCloseAt?: string | null
-  lossReason?: string
-  lossCompetitor?: string
-  reopenAt?: string | null
   _id: string; fullName: string; email: string; phone: string; whatsappNo: string
   phoneNormalized: string; status: string; owner: Owner | null; notes: string
   leadDateTime: string; source: string
@@ -142,15 +136,6 @@ function Card({ title, action, children }: { title: string; action?: React.React
         {action}
       </div>
       {children}
-    </div>
-  )
-}
-
-function Detail({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div className="flex justify-between items-center gap-3">
-      <span style={{ fontSize: 13, color: FAINT }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: 600, color: value ? INK : FAINT, textAlign: 'right' }}>{value || '—'}</span>
     </div>
   )
 }
@@ -231,6 +216,7 @@ export default function PersonProfile() {
   // The standing note on the lead — what this person is about, not a dated
   // entry in the timeline below.
   const [notes, setNotes] = useState('')
+  const [stageNote, setStageNote] = useState('')
   // The attempt being logged, if one is.
   const [logging, setLogging] = useState(false)
   const [attempt, setAttempt] = useState<{ channel: AttemptChannel; outcome: AttemptOutcome; note: string; nextAt: string }>(
@@ -308,10 +294,21 @@ export default function PersonProfile() {
     setErr(apiError(e))
   }
 
+  const setStatus = useMutation({
+    mutationFn: ({ status, comment }: { status: string; comment?: string }) =>
+      api.patch(`/leads/${data!.lead!._id}/status`, { status, comment }),
+    onMutate: async (vars) => {
+      setErr(''); setPendingStage(''); setStageNote('')
+      return showNow({ status: vars.status })
+    },
+    onError: (e, _vars, ctx) => putBack(e, ctx),
+    onSettled: () => refresh(),
+  })
+
   // Temperature, tags and the follow-up date all go through the same update,
   // so one edit cannot half-apply.
   const patchLead = useMutation({
-    mutationFn: (body: Record<string, unknown>) => api.put(`/leads/${data!.lead!._id}`, { ...body, expectedUpdatedAt: data!.lead!.updatedAt }),
+    mutationFn: (body: Record<string, unknown>) => api.put(`/leads/${data!.lead!._id}`, body),
     onMutate: async (body: Record<string, unknown>) => {
       setErr('')
       // owner arrives as an id but is rendered as a record, so it is swapped
@@ -488,10 +485,10 @@ export default function PersonProfile() {
       </div>
 
       {/* ── Header card ───────────────────────────────────────────────────── */}
-      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '26px 28px', marginBottom: 20 }}>
+      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '22px 26px', marginBottom: 20 }}>
         <div className="flex items-start justify-between flex-wrap" style={{ gap: 20 }}>
           <div className="flex items-start" style={{ gap: 16, flex: '1 1 420px', minWidth: 0 }}>
-            <div style={{ width: 56, height: 56, borderRadius: 999, background: PURPLE_100, color: DEEP, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 18, flex: '0 0 auto' }}>
+            <div style={{ width: 48, height: 48, borderRadius: 999, background: PURPLE_100, color: DEEP, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 16, flex: '0 0 auto' }}>
               {initials}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -520,23 +517,35 @@ export default function PersonProfile() {
                   live on the customer record, and editing the lead behind
                   them would change nothing anybody can see. */}
               {!editing ? (
-                <div style={{ marginTop: 10 }}>
-                  {/* A single narrow column left a header card mostly empty
-                      on anything wider than a phone — this fills the row
-                      the name already claims, wrapping to more columns as
-                      the window grows rather than fixed at one width. */}
-                  <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', columnGap: 28, rowGap: 6, maxWidth: 760 }}>
-                    <Detail label="Phone" value={phone} />
-                    <Detail label="WhatsApp" value={lead?.whatsappNo || phone} />
-                    {customer && <>
-                      <Detail label="Company" value={customer.company} />
-                      <Detail label="Nationality" value={customer.nationality} />
-                      <Detail label="Emergency contact" value={customer.emergencyNumber} />
-                      <Detail label="Emirates ID" value={customer.emiratesId} />
-                      <Detail label="ID expiry" value={customer.eidExpiry ? formatDate(customer.eidExpiry) : ''} />
-                      <Detail label="Address" value={customer.address} />
-                    </>}
+                <div style={{ marginTop: 12 }}>
+                  {/* Less is more: two numbers are a line, not a table. The
+                      fuller grid is for customers, who actually have more. */}
+                  <div className="flex items-center flex-wrap" style={{ gap: '4px 18px', fontSize: 14, color: INK_2 }}>
+                    <span className="inline-flex items-center" style={{ gap: 6 }}><Phone size={13} style={{ color: FAINT }} /> {phone || '—'}</span>
+                    {waNumber && waNumber !== (phone || '').replace(/\D/g, '') && (
+                      <span className="inline-flex items-center" style={{ gap: 6 }}><MessageCircle size={13} style={{ color: FAINT }} /> {lead?.whatsappNo}</span>
+                    )}
+                    {email && <span>{email}</span>}
                   </div>
+                  {/* Only what is actually on file: a row of dashes says
+                      nothing. Small label over value, wrapping as needed. */}
+                  {customer && (
+                    <div className="flex flex-wrap" style={{ gap: '12px 32px', marginTop: 14 }}>
+                      {([
+                        ['Company', customer.company],
+                        ['Nationality', customer.nationality],
+                        ['Emergency contact', customer.emergencyNumber],
+                        ['Emirates ID', customer.emiratesId],
+                        ['ID expiry', customer.eidExpiry ? formatDate(customer.eidExpiry) : ''],
+                        ['Address', customer.address],
+                      ] as const).filter(([, v]) => v).map(([label, v]) => (
+                        <div key={label} style={{ maxWidth: 280 }}>
+                          <div style={{ fontSize: 11.5, color: FAINT, marginBottom: 2 }}>{label}</div>
+                          <div style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {(lead || customer) && (
                     <button
                       type="button"
@@ -636,24 +645,12 @@ export default function PersonProfile() {
             {waNumber && (
               <Link
                 to={`/whatsapp?phone=${waNumber}`}
-                title="Open the conversation in PurpleBox"
+                title="Open the WhatsApp conversation in PurpleBox"
                 className="inline-flex items-center cursor-pointer"
-                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, color: DEEP, fontWeight: 600, fontSize: 13 }}
+                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13 }}
               >
-                <MessageCircle size={13} /> Chat
+                <MessageCircle size={13} /> WhatsApp
               </Link>
-            )}
-            {waNumber && (
-              <a
-                href={`https://wa.me/${waNumber}`}
-                target="_blank"
-                rel="noreferrer"
-                title="Open WhatsApp in a new tab"
-                className="inline-flex items-center"
-                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(22,163,74,.28)', background: 'rgba(22,163,74,.09)', color: '#047857', fontWeight: 600, fontSize: 13 }}
-              >
-                <MessageCircle size={13} /> WhatsApp <ExternalLink size={11} style={{ opacity: 0.7 }} />
-              </a>
             )}
             {/* Raising a task about somebody was only possible from their chat,
                 which is the wrong place to be when you are reading their
@@ -662,10 +659,10 @@ export default function PersonProfile() {
               type="button"
               onClick={() => setTaskOpen(true)}
               className="inline-flex items-center cursor-pointer"
-              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid #F5DFB8', background: '#FFF7E6', color: '#B45309', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
+              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
               title="Create a task about this lead"
             >
-              <ClipboardList size={13} /> Create a task
+              <ClipboardList size={13} /> Task
             </button>
             {/* Available at both stages: the wizard creates the customer when a
                 lead is booked, which is the point at which they become one. */}
@@ -690,14 +687,14 @@ export default function PersonProfile() {
       {/* ── Body: details and ownership beside the running account ────────── */}
       <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
 
-        <div className="flex flex-col" style={{ flex: '1 1 340px', maxWidth: 380, gap: 20 }}>
+        <div className="flex flex-col" style={{ flex: '1 1 300px', maxWidth: 360, gap: 20, order: 2 }}>
           {/* When we next deal with this person, kept beside who they are
               rather than buried among the pipeline controls. Only ever shows
               the date the stage in play is actually about. */}
-          {lead && (attempts.length > 0 || (!['won', 'lost', 'already_customer'].includes(shownStage))) && (
+          {lead && (attempts.length > 0 || (shownStage !== 'won' && shownStage !== 'lost')) && (
             <Card
               title="Follow-up"
-              action={!logging && !['won', 'lost', 'already_customer'].includes(shownStage) ? (
+              action={!logging && shownStage !== 'won' && shownStage !== 'lost' ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -721,7 +718,7 @@ export default function PersonProfile() {
 
                 {/* Where the chase has got to, in one line. The number is
                     counted from the attempts, so it cannot disagree with them. */}
-                {!['won', 'lost', 'already_customer'].includes(shownStage) && (
+                {shownStage !== 'won' && shownStage !== 'lost' && (
                   <div className="flex items-baseline justify-between" style={{ gap: 8 }}>
                     <span style={{ fontSize: 14, fontWeight: 700 }}>
                       {seq.exhausted ? `All ${seq.total} attempts made` : seq.label}
@@ -910,7 +907,7 @@ export default function PersonProfile() {
 
                 {/* What is still planned, so the rest of the chase is not a
                     surprise. Greyed — these have not happened. */}
-                {!seq.exhausted && seq.nextStep && !['won', 'lost', 'already_customer'].includes(shownStage)
+                {!seq.exhausted && seq.nextStep && shownStage !== 'won' && shownStage !== 'lost'
                   && (plan?.steps ?? []).slice(attempts.length).map((st, i) => (
                   <div key={`${st.label}-${i}`} className="flex items-center" style={{ gap: 12, opacity: 0.55 }}>
                     <div style={{ width: 26, height: 26, borderRadius: 999, border: `1px dashed ${LINE_STRONG}`, color: FAINT, display: 'grid', placeItems: 'center', fontSize: 11.5, fontWeight: 700, flex: '0 0 auto' }}>
@@ -930,7 +927,7 @@ export default function PersonProfile() {
                       after it moves on, because the reminder is still live and
                       hiding it outright left a task on somebody's board that
                       could not be reached from here. */}
-                  {shownStage !== 'follow_up_scheduled' && lead.followUpAt && !['won', 'lost', 'already_customer'].includes(shownStage) && (
+                  {shownStage !== 'follow_up_scheduled' && lead.followUpAt && shownStage !== 'won' && shownStage !== 'lost' && (
                     <div style={{ minWidth: 0 }}>
                       <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
                       <div className="flex items-center justify-between" style={{ gap: 8, padding: '9px 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff' }}>
@@ -973,7 +970,7 @@ export default function PersonProfile() {
                   {/* Still shown once the stage moves on, because the visit is
                       booked and its task is live — the same reason the follow-up
                       keeps a line of its own. */}
-                  {shownStage !== 'site_visit_scheduled' && lead.siteVisitAt && !['won', 'lost', 'already_customer'].includes(shownStage) && (
+                  {shownStage !== 'site_visit_scheduled' && lead.siteVisitAt && shownStage !== 'won' && shownStage !== 'lost' && (
                     <div style={{ minWidth: 0 }}>
                       <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Site visit</span>
                       <div className="flex items-center justify-between" style={{ gap: 8, padding: '9px 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff' }}>
@@ -1088,16 +1085,16 @@ export default function PersonProfile() {
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     onBlur={() => { if (notes !== (lead.notes || '')) patchLead.mutate({ notes }) }}
-                    rows={4}
-                    placeholder="Anything worth knowing about this person — what they are storing, what was agreed, who referred them."
+                    rows={12}
+                    placeholder="What they are storing, what was agreed, who referred them."
                     style={{
                       width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff',
                       padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', color: INK,
-                      resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5,
+                      resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5, minHeight: 240,
                     }}
                   />
                   <p style={{ fontSize: 12, color: FAINT, marginTop: 6 }}>
-                    Saved when you click away. Clearing the box removes the note.
+                    Saves when you click away.
                   </p>
                 </>
               ) : (
@@ -1108,7 +1105,7 @@ export default function PersonProfile() {
         </div>
 
         {/* ── The running account ─────────────────────────────────────────── */}
-        <div className="flex flex-col" style={{ flex: '2 1 480px', gap: 20 }}>
+        <div className="flex flex-col" style={{ flex: '3 1 480px', gap: 20, order: 1, minWidth: 0 }}>
           {/* The conversation, on the page about the person.
               Rendered by the console itself rather than a copy of it, so the
               history, the live updates, quick replies, voice notes,
@@ -1146,16 +1143,16 @@ export default function PersonProfile() {
 
           {pane === 'details' && (<>
           {lead && (
-            <Card title="Ownership & status">
-              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16, alignItems: 'start' }}>
+            <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: 22 }}>
+              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, alignItems: 'start' }}>
                 <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Assigned to</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: FAINT, display: 'block', marginBottom: 6 }}>Assigned to</span>
                   {isAdmin ? (
                     <select
                       value={lead.owner?._id ?? ''}
                       onChange={(e) => assign.mutate(e.target.value)}
                       className="cursor-pointer"
-                      style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+                      style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
                     >
                       <option value="">Nobody</option>
                       {assignable.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
@@ -1166,23 +1163,23 @@ export default function PersonProfile() {
                       {/* Reps work their own leads and do not hand them on, so
                           say who can rather than leaving a name that looks
                           editable and is not. */}
-                      <p style={{ fontSize: 12.5, color: FAINT, marginTop: 4 }}>An admin can move this to somebody else.</p>
+                      
                     </>
                   )}
                 </div>
 
                 <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Stage</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: FAINT, display: 'block', marginBottom: 6 }}>Stage</span>
                   <select
                     value={pendingStage || lead.status}
                     onChange={(e) => {
                       const next = e.target.value
                       // Same stage again is not a change worth recording.
-                      if (next === lead.status) { setPendingStage(''); return }
+                      if (next === lead.status) { setPendingStage(''); setStageNote(''); return }
                       setPendingStage(next)
                     }}
                     className="cursor-pointer"
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+                    style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
                   >
                     {LEAD_STATUS_FLOW.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
@@ -1201,7 +1198,7 @@ export default function PersonProfile() {
                     themselves, so every size that exists can be picked and
                     each says how many are free. */}
                 <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Size they need</span>
+                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Size needed</span>
                   <select
                     value={lead.storageSizeValue ? String(lead.storageSizeValue) : ''}
                     onChange={(e) => patchLead.mutate({
@@ -1209,7 +1206,7 @@ export default function PersonProfile() {
                       storageSizeUnit: 'sqft',
                     })}
                     className="cursor-pointer"
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
+                    style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
                   >
                     <option value="">Not asked yet</option>
                     {/* Asked, and they genuinely do not know — which is a
@@ -1242,26 +1239,45 @@ export default function PersonProfile() {
 
                     Full width rather than inside the Stage cell: squeezed into
                     a quarter of the card it was a textarea three words wide. */}
-                {pendingStage && <LeadStageDialog leadId={lead._id} expectedStatus={lead.status} nextStatus={pendingStage} onClose={() => setPendingStage('')} onSaved={refresh} />}
-
+                {pendingStage && (
+                  <div style={{ gridColumn: '1 / -1', borderRadius: 12, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, padding: 14 }}>
+                    <p style={{ fontSize: 13, color: INK_2, marginBottom: 8 }}>
+                      Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((s) => s.value === pendingStage)?.label}</b> — what happened?
+                    </p>
+                    <textarea
+                      value={stageNote}
+                      onChange={(e) => setStageNote(e.target.value)}
+                      rows={2}
+                      autoFocus
+                      placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
+                      style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                    />
+                    <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
+                      <button
+                        type="button"
+                        disabled={setStatus.isPending}
+                        onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
+                      >
+                        {setStatus.isPending ? 'Saving…' : 'Save stage'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={setStatus.isPending}
+                        onClick={() => { setPendingStage(''); setStageNote('') }}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
 
               </div>
-            </Card>
+            </div>
           )}
-
-          {lead && <Card title="Opportunity planning">
-            <form key={`${lead._id}:${lead.expectedCloseAt || ''}`} className="space-y-3" onSubmit={event => {
-              event.preventDefault()
-              const form = new FormData(event.currentTarget)
-              patchLead.mutate({ expectedCloseAt: fromDubaiDatetimeLocal(String(form.get('expectedCloseAt') || '')) || null })
-            }}>
-              <label className="block text-sm">Expected close date (Dubai time)
-                <input name="expectedCloseAt" type="datetime-local" defaultValue={toDubaiDatetimeLocal(lead.expectedCloseAt || undefined)} className="mt-2 block w-full rounded-lg border border-gray-300 p-2" />
-              </label>
-              <button type="submit" disabled={patchLead.isPending} className="rounded-lg bg-[#5B2BC9] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{patchLead.isPending ? 'Saving?' : 'Save close date'}</button>
-              {lead.status === 'lost' && <p className="text-sm text-gray-600">Loss reason: {statusLabel(lead.lossReason || 'not_recorded')}{lead.lossCompetitor ? ` ? ${lead.lossCompetitor}` : ''}{lead.reopenAt ? ` ? Revisit ${formatDateTime(lead.reopenAt)}` : ''}</p>}
-            </form>
-          </Card>}
 
           {lead && (
             <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '22px 26px' }}>
@@ -1271,7 +1287,7 @@ export default function PersonProfile() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="What was said, what was promised, why they have gone quiet"
-                style={{ width: '100%', minHeight: 76, padding: '12px 14px', borderRadius: 16, border: `1px solid ${LINE_STRONG}`, fontFamily: 'inherit', fontSize: 14, color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                style={{ width: '100%', minHeight: 60, padding: '10px 14px', borderRadius: 14, border: `1px solid ${LINE_STRONG}`, fontFamily: 'inherit', fontSize: 14, color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
               />
               <div className="flex justify-end" style={{ marginTop: 10 }}>
                 <button
@@ -1280,7 +1296,7 @@ export default function PersonProfile() {
                   disabled={!note.trim() || addNote.isPending}
                   className="cursor-pointer disabled:cursor-default"
                   style={{
-                    height: 40, padding: '0 20px', borderRadius: 999, border: 'none', fontWeight: 700, fontSize: 14,
+                    height: 36, padding: '0 18px', borderRadius: 999, border: 'none', fontWeight: 700, fontSize: 13,
                     fontFamily: 'inherit', color: '#fff',
                     background: !note.trim() || addNote.isPending ? PURPLE_200 : PURPLE,
                   }}
@@ -1289,7 +1305,7 @@ export default function PersonProfile() {
                 </button>
               </div>
 
-              <div style={{ height: 1, background: LINE, margin: '22px 0' }} />
+              <div style={{ height: 1, background: LINE, margin: '18px 0 6px' }} />
 
               {timeline.length === 0 ? (
                 <p style={{ fontSize: 14, color: FAINT }}>Nothing recorded yet.</p>

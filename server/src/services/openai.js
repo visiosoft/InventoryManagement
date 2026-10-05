@@ -33,6 +33,126 @@ function headers() {
     };
 }
 
+/**
+ * The GPT-6 family (and GPT-5 before it) rejects two parameters every call
+ * here used to send unconditionally:
+ *
+ *  - `max_tokens` — "Unsupported parameter: 'max_tokens' is not supported
+ *    with this model. Use 'max_completion_tokens' instead."
+ *  - a non-default `temperature` — "Unsupported value: 'temperature' does
+ *    not support 0.3 with this model. Only the default (1) value is
+ *    supported." — these models only ever run at temperature 1, so the
+ *    parameter has to be left out entirely rather than sent as 1, in case a
+ *    future model accepts the parameter but not that exact value.
+ *
+ * Both failures surfaced back to back the moment the WhatsApp assistant was
+ * switched to gpt-6-sol. Only gpt-4o/gpt-4.1/gpt-3.5 and earlier still take
+ * the old max_tokens name and a chosen temperature, so this is a lookup keyed
+ * on what is actually selected, not a blanket rename that would need
+ * flipping back later.
+ */
+const LEGACY_MODELS = /^(gpt-4|gpt-3\.5)/;
+export function tokenLimitParam(model, n) {
+    return LEGACY_MODELS.test(model || '') ? { max_tokens: n } : { max_completion_tokens: n };
+}
+export function temperatureParam(model, temperature) {
+    return LEGACY_MODELS.test(model || '') ? { temperature } : {};
+}
+
+/**
+ * The GPT-6 reasoning models refuse function tools outright unless told not
+ * to reason first: "Function tools with reasoning_effort are not supported
+ * for gpt-6-luna in /v1/chat/completions. To use function tools, use
+ * /v1/responses or set reasoning_effort to 'none'." Every agent turn here
+ * sends tools, so without this every call to a GPT-6 model failed with the
+ * same 400 regardless of the conversation — this was found because Omar's
+ * rehearsal failed on all 24 turns identically.
+ */
+export function reasoningEffortParam(model, hasTools) {
+    // gpt-6-astra is the exception, and has no setting that works here: it
+    // rejects 'none' ("does not support 'none' with this model. Supported
+    // values are: 'low', 'medium', 'high', and 'xhigh'") and rejects tools
+    // alongside any other value ("Function tools with reasoning_effort are
+    // not supported for gpt-6-astra in /v1/chat/completions"). Its tool turns
+    // go to /v1/responses instead — see usesResponsesApi.
+    if (usesResponsesApi(model, hasTools)) return {};
+    return hasTools && !LEGACY_MODELS.test(model || '') ? { reasoning_effort: 'none' } : {};
+}
+
+/** Models whose function-tool turns only work on /v1/responses. */
+export function usesResponsesApi(model, hasTools) {
+    return Boolean(hasTools) && /^gpt-6-astra/.test(model || '');
+}
+
+/**
+ * Chat Completions messages -> Responses API input items. Callers keep one
+ * conversation format (an assistant message carrying `tool_calls`, then
+ * `role: 'tool'` results); this is the only place that knows the Responses
+ * API spells the same thing as function_call / function_call_output items.
+ */
+export function toResponsesInput(messages) {
+    const input = [];
+    for (const m of messages) {
+        if (m.role === 'tool') {
+            input.push({ type: 'function_call_output', call_id: m.tool_call_id, output: String(m.content ?? '') });
+        } else if (m.role === 'assistant') {
+            if (m.content) input.push({ role: 'assistant', content: String(m.content) });
+            for (const c of m.tool_calls || []) {
+                input.push({ type: 'function_call', call_id: c.id, name: c.function?.name || '', arguments: c.function?.arguments || '{}' });
+            }
+        } else {
+            input.push({ role: m.role === 'system' ? 'developer' : 'user', content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '') });
+        }
+    }
+    return input;
+}
+
+async function chatWithToolsResponses({ system, messages, tools, model, maxTokens, timeout, toolChoice }) {
+    let data;
+    try {
+        ({ data } = await axios.post(
+            `${API_BASE}/responses`,
+            {
+                model,
+                instructions: system,
+                input: toResponsesInput(messages),
+                tools: tools.map((t) => ({ type: 'function', name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
+                tool_choice: toolChoice,
+                max_output_tokens: maxTokens,
+                reasoning: { effort: 'low' },
+                store: false,
+            },
+            { headers: headers(), timeout },
+        ));
+    } catch (e) {
+        const msg = e.response?.data?.error?.message;
+        throw msg ? new Error(`${model}: ${msg}`) : e;
+    }
+    const output = data?.output || [];
+    const content = output
+        .filter((o) => o.type === 'message')
+        .flatMap((o) => o.content || [])
+        .filter((c) => c.type === 'output_text')
+        .map((c) => c.text)
+        .join('');
+    const calls = output.filter((o) => o.type === 'function_call');
+    const toolCalls = calls.map((c) => {
+        let args = {};
+        try { args = JSON.parse(c.arguments || '{}'); } catch { args = {}; }
+        return { id: c.call_id, name: c.name || '', args };
+    });
+    // Handed back in Chat Completions shape so the caller can push it onto
+    // its conversation unchanged.
+    const message = {
+        role: 'assistant',
+        content: content || null,
+        ...(calls.length ? { tool_calls: calls.map((c) => ({ id: c.call_id, type: 'function', function: { name: c.name, arguments: c.arguments || '{}' } })) } : {}),
+    };
+    const u = data?.usage;
+    const usage = u ? { prompt_tokens: u.input_tokens, completion_tokens: u.output_tokens, total_tokens: u.total_tokens } : null;
+    return { content, toolCalls, message, usage };
+}
+
 /** Cheap credential check — lists models, which costs nothing. */
 export async function verifyOpenAIKey(apiKey, model) {
     const { data } = await axios.get(`${API_BASE}/models`, {
@@ -58,17 +178,18 @@ export async function verifyOpenAIKey(apiKey, model) {
  * empty answer.
  */
 export async function chatJson({ system, messages = [], temperature = 0, maxTokens = 400, timeout = 30000, model }) {
+    const chosenModel = model || openaiModel();
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {
             // The caller's choice, then the server's, then the default. The
             // assistant picks its own on the settings page; everything else
             // here is happy with whatever the server is set to.
-            model: model || openaiModel(),
+            model: chosenModel,
             messages: [{ role: 'system', content: system }, ...messages],
             response_format: { type: 'json_object' },
-            temperature,
-            max_tokens: maxTokens,
+            ...temperatureParam(chosenModel, temperature),
+            ...tokenLimitParam(chosenModel, maxTokens),
         },
         { headers: headers(), timeout },
     );
@@ -112,17 +233,28 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
  */
 export async function chatWithTools({ system, messages = [], tools = [], model, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
     if (!openaiConfigured()) throw new Error('OpenAI is not configured');
-    const { data } = await axios.post(
-        `${API_BASE}/chat/completions`,
-        {
-            model: model || openaiModel(),
-            messages: [{ role: 'system', content: system }, ...messages],
-            ...(tools.length ? { tools, tool_choice: toolChoice } : {}),
-            temperature,
-            max_tokens: maxTokens,
-        },
-        { headers: headers(), timeout },
-    );
+    const chosenModel = model || openaiModel();
+    if (usesResponsesApi(chosenModel, tools.length > 0)) {
+        return chatWithToolsResponses({ system, messages, tools, model: chosenModel, maxTokens, timeout, toolChoice });
+    }
+    let data;
+    try {
+        ({ data } = await axios.post(
+            `${API_BASE}/chat/completions`,
+            {
+                model: chosenModel,
+                messages: [{ role: 'system', content: system }, ...messages],
+                ...(tools.length ? { tools, tool_choice: toolChoice } : {}),
+                ...temperatureParam(chosenModel, temperature),
+                ...tokenLimitParam(chosenModel, maxTokens),
+                ...reasoningEffortParam(chosenModel, tools.length > 0),
+            },
+            { headers: headers(), timeout },
+        ));
+    } catch (e) {
+        const msg = e.response?.data?.error?.message;
+        throw msg ? new Error(`${chosenModel}: ${msg}`) : e;
+    }
     const message = data?.choices?.[0]?.message || {};
     const toolCalls = (message.tool_calls || []).map((c) => {
         let args = {};
@@ -133,13 +265,14 @@ export async function chatWithTools({ system, messages = [], tools = [], model, 
 }
 
 export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000, model }) {
+    const chosenModel = model || openaiModel();
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {
             // Whatever the assistant is set to reads its photos too: one model
             // for the conversation, so a picture and the words about it are
             // not understood by two different things.
-            model: model || openaiModel(),
+            model: chosenModel,
             messages: [
                 { role: 'system', content: system },
                 {
@@ -151,8 +284,8 @@ export async function visionJson({ system, imageBase64, mimeType, prompt = '', m
                 },
             ],
             response_format: { type: 'json_object' },
-            temperature: 0,
-            max_tokens: maxTokens,
+            ...temperatureParam(chosenModel, 0),
+            ...tokenLimitParam(chosenModel, maxTokens),
         },
         { headers: headers(), timeout },
     );
@@ -203,8 +336,8 @@ export async function parseAvailabilityQuery(text, context = {}) {
                 { role: 'user', content: String(text || '').slice(0, 500) },
             ],
             response_format: { type: 'json_object' },
-            temperature: 0,
-            max_tokens: 200,
+            ...temperatureParam(openaiModel(), 0),
+            ...tokenLimitParam(openaiModel(), 200),
         },
         { headers: headers(), timeout: 20000 },
     );

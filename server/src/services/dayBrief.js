@@ -75,10 +75,12 @@ export function waitedFor(since, now = new Date()) {
  * @param today    the same, due today
  * @param waiting  [{ name, phone, since }]
  * @param stuck    team-wide, for managers: [{ taskNo, title, dueDate, who }]
+ * @param agents   managers only: { pending, escalatedNow, sentLast24h } from agents/digest.js
  * @returns { subject, text, html, push, empty }
  */
-export function buildDayBrief({ user, overdue = [], today = [], waiting = [], stuck = [], appUrl = '', now = new Date() }) {
-   const empty = !overdue.length && !today.length && !waiting.length && !stuck.length;
+export function buildDayBrief({ user, overdue = [], today = [], waiting = [], stuck = [], agents = null, appUrl = '', now = new Date() }) {
+   const agentItems = (agents?.pending || 0) + (agents?.escalatedNow || 0);
+   const empty = !overdue.length && !today.length && !waiting.length && !stuck.length && !agentItems;
    const firstName = String(user?.name || '').trim().split(/\s+/)[0] || 'there';
 
    /* The subject line is the whole message for most people — it is what shows
@@ -87,6 +89,7 @@ export function buildDayBrief({ user, overdue = [], today = [], waiting = [], st
    if (overdue.length) parts.push(`${overdue.length} overdue`);
    if (today.length) parts.push(`${today.length} due today`);
    if (waiting.length) parts.push(`${waiting.length} waiting on a reply`);
+   if (agentItems) parts.push(`${agentItems} agent item${agentItems === 1 ? '' : 's'}`);
    /* A manager with nothing of their own still has the team's stuck work to
       look at, and "all clear" over a list of eleven late tasks reads as a lie.
       Their own work leads where they have some; the team's is the subject
@@ -123,6 +126,10 @@ export function buildDayBrief({ user, overdue = [], today = [], waiting = [], st
          ...stuck.slice(0, LIST_LIMIT).map((t) => `${taskLine(t)} — ${t.who}, ${lateness(t.dueDate, now)}`),
          ...more(stuck), '',
       ] : []),
+      ...(agentItems ? [
+         `AI agents: ${agents.pending} waiting for your review, ${agents.escalatedNow} escalated to you${agents.sentLast24h ? `, ${agents.sentLast24h} sent in the last 24h` : ''}.`,
+         '',
+      ] : []),
       appUrl ? `Open the board: ${appUrl}/tasks` : 'Open the board in PurpleBox.',
       '',
       'PurpleBox',
@@ -149,6 +156,10 @@ export function buildDayBrief({ user, overdue = [], today = [], waiting = [], st
       ${section(`Due today (${today.length})`, today.map((t) => ({ left: label(t), right: '' })), '#14081F')}
       ${section(`Waiting for a reply (${waiting.length})`, waiting.map((w) => ({ left: w.name, right: `waiting ${waitedFor(w.since, now)}` })), '#9A3412')}
       ${section(`Stuck ${ESCALATE_AFTER_DAYS}+ days, across the team (${stuck.length})`, stuck.map((t) => ({ left: `${label(t)} — ${t.who}`, right: lateness(t.dueDate, now) })), '#B91C1C')}
+      ${agentItems ? `
+      <p style="font-size:13px;font-weight:700;color:#5B2BC9;margin:16px 0 6px">AI agents</p>
+      <p style="font-size:13px;color:#14081F;margin:0">${agents.pending} waiting for your review, ${agents.escalatedNow} escalated to you${agents.sentLast24h ? `, ${agents.sentLast24h} sent in the last 24h` : ''}.</p>
+      ` : ''}
       ${appUrl ? `<p style="margin-top:18px"><a href="${escapeHtml(`${appUrl}/tasks`)}" style="background:#5B2BC9;color:#fff;text-decoration:none;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;display:inline-block">Open the board</a></p>` : ''}
     </div>`;
 
@@ -165,7 +176,9 @@ export function buildDayBrief({ user, overdue = [], today = [], waiting = [], st
                ? `${waiting[0].name} has been waiting ${waitedFor(waiting[0].since, now)}`
                : stuck.length
                   ? `Oldest across the team: ${stuck[0].title} — ${lateness(stuck[0].dueDate, now)}`
-                  : 'Your day, at a glance.',
+                  : agentItems
+                     ? `${agents.pending} agent item${agents.pending === 1 ? '' : 's'} waiting for your review`
+                     : 'Your day, at a glance.',
          url: '/tasks',
          tag: 'day-brief',
       },
@@ -248,6 +261,12 @@ export async function collectDayBriefs({ now = new Date() } = {}) {
 
    const todayEnds = endOfToday(now);
    const waiting = await waitingByOwner({ now });
+   // A dynamic import: this module is a general CRM service and the agents
+   // feature is optional/newer, so a failure to load it (or a query error)
+   // must not take the whole morning brief down with it.
+   const agentsSummary = await import('../agents/digest.js')
+      .then((m) => m.agentsBriefSection({ now }))
+      .catch((e) => { console.error('[DayBrief] agents section:', e.message); return null; });
 
    const overdueBy = new Map();
    const todayBy = new Map();
@@ -274,9 +293,10 @@ export async function collectDayBriefs({ now = new Date() } = {}) {
 
    return users.map((user) => {
       const key = String(user._id);
-      // Only a manager gets the team's stuck work; for everybody else it is
-      // noise about tasks they cannot do anything about.
+      // Only a manager gets the team's stuck work, and the agents' numbers —
+      // for everybody else it is noise about work they cannot act on.
       const theirStuck = user.role === 'admin' ? stuck : [];
+      const theirAgents = user.role === 'admin' ? agentsSummary : null;
       return {
          user,
          brief: buildDayBrief({
@@ -285,6 +305,7 @@ export async function collectDayBriefs({ now = new Date() } = {}) {
             today: todayBy.get(key) || [],
             waiting: waiting.get(key) || [],
             stuck: theirStuck,
+            agents: theirAgents,
             appUrl: process.env.APP_URL || '',
             now,
          }),

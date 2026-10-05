@@ -76,6 +76,35 @@ router.post('/quick-reply-video', handleVideoUpload, async (req, res) => {
 });
 
 
+/**
+ * An image dropped into an email template's plain-text body — the QR-code
+ * style "here's a picture" case, not a video. Local disk storage, same as
+ * the quick-reply video above, rather than requiring Google Drive to be
+ * configured: this only needs to be served at a stable public URL, which
+ * /uploads already does for every other locally-stored asset in this app.
+ */
+const EMAIL_IMAGE_DIR = path.join(UPLOADS_DIR, 'email-images');
+fs.mkdirSync(EMAIL_IMAGE_DIR, { recursive: true });
+
+const imageStorage = multer.diskStorage({
+  destination: EMAIL_IMAGE_DIR,
+  filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}${path.extname(file.originalname).toLowerCase() || '.jpg'}`),
+});
+const uploadImage = multer({
+  storage: imageStorage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, /^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)),
+}).single('image');
+
+router.post('/email-image', (req, res, next) => {
+  uploadImage(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'That image is over 8 MB.' : (err.message || 'That file could not be read') });
+    if (!req.file) return res.status(400).json({ error: 'No image received, or the file was not a JPEG/PNG/WebP/GIF' });
+    const apiBase = (process.env.API_PUBLIC_URL || process.env.APP_URL || req.headers.origin || 'https://api.purplebox.ae').replace(/\/+$/, '');
+    res.json({ url: `${apiBase}/uploads/email-images/${req.file.filename}` });
+  });
+});
+
 const DEFAULT_TEMPLATES = [
   { key: 'welcome', label: 'Welcome Email', subject: 'Welcome to PurpleBox Storage, @name!', emailBody: 'Dear @name,\n\nWelcome to PurpleBox Storage! Your contract @contractNo has been created.\n\nUnit: @unit\nStart Date: @startDate\n\nThank you for choosing us.\n\nBest regards,\nPurpleBox Team', whatsappBody: 'Hello @name 👋\n\nWelcome to PurpleBox Storage!\nYour contract *@contractNo* is ready.\nUnit: @unit\n\nThank you – PurpleBox', variables: ['@name', '@contractNo', '@unit', '@startDate', '@endDate', '@phone', '@email'] },
   { key: 'contract_signed', label: 'Contract Signed', subject: 'Contract @contractNo Signed Successfully', emailBody: 'Dear @name,\n\nYour contract @contractNo has been signed successfully.\n\nUnit: @unit\nTerm: @startDate – @endDate\nMonthly Rate: AED @rate\n\nYou can view your signed contract here: @signedDocUrl\n\nThank you,\nPurpleBox Team', whatsappBody: 'Hi @name ✅\n\nYour contract *@contractNo* is now signed and active.\nUnit: @unit\nTerm: @startDate → @endDate\n\nThank you – PurpleBox', variables: ['@name', '@contractNo', '@unit', '@startDate', '@endDate', '@rate', '@signedDocUrl'] },
@@ -90,6 +119,13 @@ const DEFAULT_TEMPLATES = [
    * data, so they are written in rather than templated. */
   { key: 'contract_expiring', label: 'Contract Expiring Reminder', subject: 'Your contract @contractNo has renewed automatically', emailBody: 'Dear @name,\n\nYour storage contract with PurpleBox Storage for unit @unit reached its renewal date today, @endDate.\n\nAs we did not receive a vacate notice, your contract has renewed automatically for a further 4 weeks at your current monthly rate of AED @rate, running until @newEndDate.\n\nPayment due\nPlease make your payment of AED @rate today, @endDate, if you have not already done so.\n\nChanged your mind?\nIf you intended to vacate, please contact us immediately so we can arrange your move-out and return of the key/access device.\n\nLate payment and default fees\nIf the renewal payment is not received by @endDate, a late fee of @lateFee will apply from that date until the outstanding balance is settled.\n\nIf payment remains unpaid for seven (7) calendar days after the due date, PurpleBox may charge a further late/default administrative fee of AED 250. Where the default requires enhanced collection, inventory, access-control, account administration or enforcement work, PurpleBox may charge an additional default administration fee of up to AED 500, reflecting reasonable administrative costs actually associated with the default. Any agreed compensation remains subject to adjustment by a competent court where required by mandatory UAE law.\n\nThank you for storing with PurpleBox.', whatsappBody: 'Dear @name,\n\nYour contract *@contractNo* (Unit @unit) reached its renewal date today, @endDate, and has renewed automatically for 4 more weeks at AED @rate, running until @newEndDate.\n\nPlease pay AED @rate today if you have not already. A late fee of @lateFee applies from @endDate if unpaid.\n\nIntended to vacate instead? Contact us immediately.\n\nThank you – PurpleBox', variables: ['@name', '@contractNo', '@unit', '@endDate', '@newEndDate', '@rate', '@lateFee'] },
   { key: 'contract_ended', label: 'Contract Ended', subject: 'Contract @contractNo Has Ended', emailBody: 'Dear @name,\n\nYour contract @contractNo for Unit @unit has ended as of @endDate.\n\nPlease ensure all belongings have been removed. Your deposit will be processed as per terms.\n\nThank you for storing with us.\n\nBest regards,\nPurpleBox Team', whatsappBody: 'Hello @name,\n\nYour contract *@contractNo* has ended.\nUnit @unit is now released.\n\nThank you for choosing PurpleBox!', variables: ['@name', '@contractNo', '@unit', '@endDate'] },
+  /* Internal, not tenant-facing: sent to accounts only, once a day, listing
+   * every tenant whose payment is due in @days days. Only the intro is
+   * editable here — the list of who is due is generated fresh every send,
+   * since hand-editing a list of tenants makes no sense. See
+   * services/paymentDueDigest.js for how @count/@days/@date are filled in
+   * and where the list comes from. */
+  { key: 'accounts_payment_due_digest', label: 'Accounts: Payment Due Soon (internal)', category: 'Internal', subject: 'Payments due in @days days — @count tenant(s)', emailBody: 'Hi team,\n\nThe following @count payment(s) are due in @days days, on @date.\n\nPlease raise invoices / follow up as needed.', whatsappBody: '', variables: ['@count', '@days', '@date'] },
 ];
 
 // Starter quick replies for the WhatsApp console. Deliberately generic —
@@ -278,9 +314,12 @@ router.get('/', async (req, res) => {
 // Update a template
 router.put('/:id', async (req, res) => {
   const { subject, emailBody, emailHtml, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename, mediaThumbnailUrl, mediaSizeBytes,
-    whatsappTemplate, whatsappTemplateLang, whatsappTemplateVars,
+    whatsappTemplate, whatsappTemplateLang, whatsappTemplateVars, cc,
     locationLat, locationLng, locationName, locationAddress } = req.body;
   const update = { subject, emailBody, whatsappBody };
+  // Comma-separated extra recipients for this one automated email — see the
+  // field's own comment on the model for why this exists.
+  if (cc !== undefined) update.cc = String(cc || '').trim();
 
   /* The Meta-approved name, if this template has one.
    *

@@ -3,7 +3,7 @@ import LeadStageDialog, { LeadStageFields } from '../components/LeadStageDialog'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
+import { ArrowRightLeft, CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { fromDubaiDatetimeLocal, toDubaiDatetimeLocal } from '../lib/timezone'
@@ -87,7 +87,7 @@ const LEADS_CSS = `
 `
 
 const LEAD_STATUSES: LeadStatus[] = ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost', 'already_customer']
-const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
+const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']
 
 type WorkloadRow = { _id: string; name: string; count: number }
 type LeadStats = {
@@ -260,6 +260,74 @@ function LeadForm({
             {error && <p className="text-xs text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={busy}>
                 {busy ? 'Saving…' : 'Save lead'}
+            </Button>
+        </form>
+    )
+}
+
+/** Move one rep's whole book to another — a terminated/removed rep, or just
+ *  a rebalance. `fromOptions` is every user (active or not: a terminated rep
+ *  still needs to show up here so their leads can be found), `toOptions` is
+ *  only who a lead can actually be handed to (active, assignable). */
+function ReassignLeadsForm({
+    fromOptions,
+    toOptions,
+    busy,
+    error,
+    onSubmit,
+}: {
+    fromOptions: { _id: string; name: string; email: string; isActive?: boolean }[]
+    toOptions: { _id: string; name: string; email: string }[]
+    busy: boolean
+    error: string
+    onSubmit: (body: { fromOwner: string; toOwner?: string; status?: string }) => void
+}) {
+    const [fromOwner, setFromOwner] = useState('')
+    const [toOwner, setToOwner] = useState('')
+    const [status, setStatus] = useState('')
+
+    function submit(e: FormEvent<HTMLFormElement>) {
+        e.preventDefault()
+        if (!fromOwner) return
+        onSubmit({ fromOwner, toOwner: toOwner || undefined, status: status || undefined })
+    }
+
+    return (
+        <form onSubmit={submit} className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+                Moves every lead currently owned by the first rep to the second — in one action, whatever the reason (terminated, removed, or just rebalancing).
+            </p>
+            <Field label="Move leads away from">
+                <Select value={fromOwner} onChange={(e) => setFromOwner(e.target.value)} required>
+                    <option value="">Select rep</option>
+                    {fromOptions.map((u) => (
+                        <option key={u._id} value={u._id}>
+                            {u.name} ({u.email}){u.isActive === false ? ' — inactive' : ''}
+                        </option>
+                    ))}
+                </Select>
+            </Field>
+            <Field label="Give them to (leave blank to unassign instead)">
+                <Select value={toOwner} onChange={(e) => setToOwner(e.target.value)}>
+                    <option value="">Leave unassigned</option>
+                    {toOptions.filter((u) => u._id !== fromOwner).map((u) => (
+                        <option key={u._id} value={u._id}>
+                            {u.name} ({u.email})
+                        </option>
+                    ))}
+                </Select>
+            </Field>
+            <Field label="Only this status (optional)">
+                <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                    <option value="">Every status — their whole book</option>
+                    {LEAD_STATUSES.map((s) => (
+                        <option key={s} value={s}>{statusLabel(s)}</option>
+                    ))}
+                </Select>
+            </Field>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <Button type="submit" className="w-full" disabled={busy || !fromOwner}>
+                {busy ? 'Reassigning…' : 'Reassign leads'}
             </Button>
         </form>
     )
@@ -622,6 +690,9 @@ export default function Leads() {
     const [drawerId, setDrawerId] = useState<string | null>(null)
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<Lead | null>(null)
+    const [reassigning, setReassigning] = useState(false)
+    const [reassignError, setReassignError] = useState('')
+    const [reassignResult, setReassignResult] = useState('')
     const [error, setError] = useState('')
     const [importResult, setImportResult] = useState<ImportResult | null>(null)
     const [pendingChange, setPendingChange] = useState<{ lead: Lead; newStatus: LeadStatus } | null>(null)
@@ -717,6 +788,29 @@ export default function Leads() {
         }),
     })
     const users = isAdmin ? assignableUsers : me_
+
+    /* Every user, active or not — for the "move leads away from" side of
+     * bulk reassignment. A terminated/removed rep is exactly who this tool
+     * exists for, so it can't reuse assignableUsers above, which is built to
+     * exclude someone a lead should never be newly handed to. Only fetched
+     * for an admin, and only once the tool is actually open. */
+    const { data: allUsers } = useQuery<{ _id: string; name: string; email: string; isActive?: boolean }[]>({
+        queryKey: ['all-users-for-reassign'],
+        queryFn: () => api.get('/users').then((r) => r.data ?? []),
+        enabled: isAdmin && reassigning,
+        staleTime: 5 * 60_000,
+    })
+
+    const reassignLeads = useMutation({
+        mutationFn: (body: { fromOwner: string; toOwner?: string; status?: string }) => leadApi.reassign(body),
+        onSuccess: (data) => {
+            qc.invalidateQueries({ queryKey: ['leads'] })
+            qc.invalidateQueries({ queryKey: ['lead-stats'] })
+            setReassignError('')
+            setReassignResult(data.reassigned === 0 ? 'That rep has no matching leads.' : `${data.reassigned} lead${data.reassigned === 1 ? '' : 's'} reassigned.`)
+        },
+        onError: (e) => { setReassignError(apiError(e)); setReassignResult('') },
+    })
 
     const [page, setPage] = useState(1)
     const [limit, setLimit] = useState(25)
@@ -1044,6 +1138,7 @@ export default function Leads() {
         whatsapp: { bg: '#DCF3E3', fg: '#1F7A4C' },
         referral: { bg: '#EDE3CF', fg: '#4A4357' },
         walk_in: { bg: '#F6F0E4', fg: '#4A4357' },
+        website: { bg: '#DCEBF7', fg: '#1B5C8A' },
         manual: { bg: '#F7F3FF', fg: '#5B2BC9' },
         other: { bg: '#F6F0E4', fg: '#4A4357' },
     }
@@ -1089,6 +1184,18 @@ export default function Leads() {
                             <Upload size={17} />
                             {importContacts.isPending ? 'Importing…' : 'Import CSV'}
                         </button>
+                        {isAdmin && (
+                            <button
+                                onClick={() => { setReassignError(''); setReassignResult(''); setReassigning(true) }}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 9, height: 46, padding: '0 20px',
+                                    borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', background: 'transparent',
+                                    color: INK, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                                }}
+                            >
+                                <ArrowRightLeft size={17} /> Reassign leads
+                            </button>
+                        )}
                         <button
                             onClick={() => setAdding(true)}
                             style={{
@@ -1174,8 +1281,26 @@ export default function Leads() {
                         <option value="exhausted">Needs a decision{stats?.chase ? ` (${stats.chase.exhausted})` : ''}</option>
                     </select>
 
+                    {/* Who currently owns the lead — separate from who has
+                        chased it below. Reassigning a lead moves this
+                        instantly; it only catches up in "Contacted by" once
+                        the new owner logs an attempt on it. */}
+                    {(stats?.byOwner?.length ?? 0) > 0 && (
+                        <select
+                            value={owner && owner !== 'unassigned' ? owner : ''}
+                            onChange={(e) => setOwner(e.target.value)}
+                            style={{ height: 44, minWidth: 160, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                        >
+                            <option value="">Assigned to anyone</option>
+                            {(stats?.byOwner ?? []).map((o) => (
+                                <option key={o._id} value={o._id}>{o.name} ({o.count})</option>
+                            ))}
+                        </select>
+                    )}
+
                     {/* Who did the chasing, which is not who owns it: leads get
-                        reassigned, and the record of the work stays put. */}
+                        reassigned, and the record of the work — who actually
+                        logged an attempt — stays with the person who did it. */}
                     {(stats?.byChaser?.length ?? 0) > 0 && (
                         <select
                             value={attemptBy}
@@ -1609,6 +1734,23 @@ export default function Leads() {
             </Modal>
 
             {pendingChange && <LeadStageDialog leadId={pendingChange.lead._id} expectedStatus={pendingChange.lead.status} nextStatus={pendingChange.newStatus} onClose={() => setPendingChange(null)} />}
+
+            <Modal open={reassigning} onClose={() => setReassigning(false)} title="Reassign leads">
+                {reassignResult ? (
+                    <div className="space-y-4">
+                        <p className="text-sm text-foreground">{reassignResult}</p>
+                        <Button className="w-full" onClick={() => setReassigning(false)}>Done</Button>
+                    </div>
+                ) : (
+                    <ReassignLeadsForm
+                        fromOptions={allUsers || []}
+                        toOptions={assignableUsers || []}
+                        busy={reassignLeads.isPending}
+                        error={reassignError}
+                        onSubmit={(body) => reassignLeads.mutate(body)}
+                    />
+                )}
+            </Modal>
 
             <Modal open={!!importResult} onClose={() => setImportResult(null)} title="Import complete">
                 {importResult && (

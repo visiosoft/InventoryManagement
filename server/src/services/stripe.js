@@ -75,7 +75,7 @@ export function computeFeeFils(amountFils, feePct) {
  * caller gets back a clientSecret rather than a url, since there is nowhere to
  * send them.
  */
-export async function createCheckoutSession({ amountAed, description, productName, metadata = {}, customerEmail, successUrl, cancelUrl, feePct = 0, embedded = false, returnUrl }) {
+export async function createCheckoutSession({ amountAed, description, productName, metadata = {}, customerEmail, successUrl, cancelUrl, feePct = 0, embedded = false, returnUrl, expiresInMinutes }) {
   const client = getClient();
   const amountFils = Math.round(Number(amountAed) * 100);
   if (!Number.isFinite(amountFils) || amountFils <= 0) {
@@ -119,6 +119,8 @@ export async function createCheckoutSession({ amountAed, description, productNam
       feeFils: String(feeFils),
       feePct: String(pct),
     },
+    // Stripe's floor is 30 minutes; a booking hold must outlive the session.
+    ...(expiresInMinutes ? { expires_at: Math.floor(Date.now() / 1000) + Math.max(30, expiresInMinutes) * 60 } : {}),
     ...(embedded
       ? { ui_mode: 'embedded', return_url: returnUrl }
       : { success_url: successUrl, cancel_url: cancelUrl }),
@@ -142,6 +144,11 @@ export async function createInvoiceCheckoutSession({ invoice, customerEmail, suc
     customerEmail, successUrl, cancelUrl, feePct,
   });
   return session;
+}
+
+/** Read a Checkout Session back from Stripe — the authoritative answer to "was it paid?". */
+export async function retrieveCheckoutSession(id) {
+  return getClient().checkout.sessions.retrieve(id);
 }
 
 export function constructWebhookEvent(rawBody, signature) {

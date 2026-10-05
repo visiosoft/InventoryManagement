@@ -7,7 +7,7 @@ import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, ContractRenewal, Invoice, Payment, Unit, UnitLine } from '../lib/types'
 import {
   Badge, Button, Card, CardBody, CardHeader, EmptyState,
-  Field, Input, Modal, Select, Spinner,
+  Field, Input, Modal, Select, SlideOver, Spinner,
   Textarea,
   contractStatusTone, statusLabel,
 } from '../components/ui'
@@ -3082,27 +3082,22 @@ export default function ContractDetail() {
 
 
       {/* Record payment — right panel */}
-      {recordingPayment && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setRecordingPayment(null)} />
-          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-card shadow-xl overflow-y-auto animate-in slide-in-from-right border-l">
-            <div className="sticky top-0 bg-card border-b px-5 py-4 flex items-center justify-between z-10">
-              <h2 className="text-base font-bold">Record payment — {(recordingPayment.invoice as any)?.invoiceNo || ''}</h2>
-              <button onClick={() => setRecordingPayment(null)} className="text-muted-foreground hover:text-foreground cursor-pointer"><X size={18} /></button>
-            </div>
-            <div className="p-5">
-              <RecordPaymentForm
-                payment={recordingPayment}
-                busy={recordPayment.isPending}
-                onSubmit={(body) => {
-                  if (!body.paidDate) { setRecordingPayment(null); return }
-                  recordPayment.mutate({ paymentId: recordingPayment._id, body })
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <SlideOver
+        open={!!recordingPayment}
+        onClose={() => setRecordingPayment(null)}
+        title={`Record payment — ${(recordingPayment?.invoice as any)?.invoiceNo || ''}`}
+      >
+        {recordingPayment && (
+          <RecordPaymentForm
+            payment={recordingPayment}
+            busy={recordPayment.isPending}
+            onSubmit={(body) => {
+              if (!body.paidDate) { setRecordingPayment(null); return }
+              recordPayment.mutate({ paymentId: recordingPayment._id, body })
+            }}
+          />
+        )}
+      </SlideOver>
 
       <Modal open={!!editingPayment} onClose={() => setEditingPayment(null)} title="Edit payment">
         {editingPayment && (
@@ -3140,24 +3135,13 @@ export default function ContractDetail() {
       </Modal>
 
       {/* Upload document — right panel */}
-      {uploading && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setUploading(false)} />
-          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-card shadow-xl overflow-y-auto animate-in slide-in-from-right border-l">
-            <div className="sticky top-0 bg-card border-b px-5 py-4 flex items-center justify-between z-10">
-              <h2 className="text-base font-bold">Upload document</h2>
-              <button onClick={() => setUploading(false)} className="text-muted-foreground hover:text-foreground cursor-pointer"><X size={18} /></button>
-            </div>
-            <div className="p-5">
-              <UploadDocumentForm
-                contractId={c._id}
-                customerId={c.customer?._id}
-                onDone={() => { invalidate(); setUploading(false) }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <SlideOver open={uploading} onClose={() => setUploading(false)} title="Upload document">
+        <UploadDocumentForm
+          contractId={c._id}
+          customerId={c.customer?._id}
+          onDone={() => { invalidate(); setUploading(false) }}
+        />
+      </SlideOver>
 
       <Modal open={signingInPerson} onClose={() => setSigningInPerson(false)} title="Sign contract in person" wide>
         <SignInPersonModal
@@ -3218,143 +3202,115 @@ export default function ContractDetail() {
       </Modal>
 
       {/* ── Edit Tenant slide-over panel ── */}
-      {editCustomerModal && c.customer && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setEditCustomerModal(false)} />
-          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right">
-            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
-              <h2 className="text-lg font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em', color: '#14081F' }}>
-                Edit {c.customer.fullName}
-              </h2>
-              <button onClick={() => setEditCustomerModal(false)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
-            </div>
-            <div className="p-5">
-              <CustomerForm
-                initial={c.customer}
-                busy={updateCustomer.isPending}
-                error={customerError}
-                submitLabel="Save changes"
-                onSubmit={(b) => updateCustomer.mutate(b)}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <SlideOver
+        open={!!(editCustomerModal && c.customer)}
+        onClose={() => setEditCustomerModal(false)}
+        title={c.customer ? `Edit ${c.customer.fullName}` : ''}
+      >
+        {c.customer && (
+          <CustomerForm
+            initial={c.customer}
+            busy={updateCustomer.isPending}
+            error={customerError}
+            submitLabel="Save changes"
+            onSubmit={(b) => updateCustomer.mutate(b)}
+          />
+        )}
+      </SlideOver>
 
       {/* ── Edit Contract slide-over panel ── */}
-      {editModal && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setEditModal(false)} />
-          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right">
-            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
-              <h2 className="text-lg font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em', color: '#14081F' }}>
-                Edit Contract
-              </h2>
-              <button onClick={() => setEditModal(false)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
-            </div>
-            <div className="p-5">
-              <EditContractForm
-                contract={c}
-                unitOptions={unitOptions}
-                busy={updateContract.isPending}
-                error={error}
-                onSubmit={(body) => updateContract.mutate(body)}
-                onCancel={() => setEditModal(false)}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <SlideOver open={editModal} onClose={() => setEditModal(false)} title="Edit Contract">
+        <EditContractForm
+          contract={c}
+          unitOptions={unitOptions}
+          busy={updateContract.isPending}
+          error={error}
+          onSubmit={(body) => updateContract.mutate(body)}
+          onCancel={() => setEditModal(false)}
+        />
+      </SlideOver>
 
       {/* ── Notice slide-over: edit, then send ── */}
-      {noticeOpen && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setNoticeOpen(null)} />
-          <div className="absolute right-0 top-0 h-full w-full max-w-2xl bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right flex flex-col">
-            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
-              <div>
-                <h2 className="text-lg font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em', color: '#14081F' }}>
-                  {noticeOpen.name} — {c.contractNo}
-                </h2>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Prefilled for {c.customer?.fullName || 'the tenant'} — edit freely, then send.
-                </p>
-              </div>
-              <button onClick={() => setNoticeOpen(null)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
-            </div>
-            <div className="p-5 flex-1 flex flex-col gap-3">
-              <div
-                ref={(el) => {
-                  noticeRef.current = el
-                  if (el && noticeInitial.current) { el.innerHTML = noticeInitial.current; noticeInitial.current = '' }
-                }}
-                contentEditable
-                suppressContentEditableWarning
-                spellCheck={false}
-                className="agreement-editor w-full flex-1 rounded-lg border bg-white p-6 text-[13px] leading-relaxed outline-none focus:border-primary"
-                style={{ minHeight: 440, overflowY: 'auto' }}
-              />
-              {noticeSent && <p className="text-xs text-emerald-600 font-medium">{noticeSent}</p>}
-              {noticeSignUrl && <p className="text-[11px] break-all text-muted-foreground">Signing link: {noticeSignUrl}</p>}
-              {error && <p className="text-xs text-destructive">{error}</p>}
-              <div className="flex justify-end gap-2 pt-2 border-t flex-wrap">
-                <Button type="button" variant="outline" onClick={async () => {
-                  setNoticeBusy('pdf'); setError('')
+      <SlideOver
+        open={!!noticeOpen}
+        onClose={() => setNoticeOpen(null)}
+        title={`${noticeOpen?.name} — ${c.contractNo}`}
+        subtitle={`Prefilled for ${c.customer?.fullName || 'the tenant'} — edit freely, then send.`}
+        width="max-w-2xl"
+      >
+        {noticeOpen && (
+          <div className="flex flex-col gap-3 h-full">
+            <div
+              ref={(el) => {
+                noticeRef.current = el
+                if (el && noticeInitial.current) { el.innerHTML = noticeInitial.current; noticeInitial.current = '' }
+              }}
+              contentEditable
+              suppressContentEditableWarning
+              spellCheck={false}
+              className="agreement-editor w-full flex-1 rounded-lg border bg-white p-6 text-[13px] leading-relaxed outline-none focus:border-primary"
+              style={{ minHeight: 440, overflowY: 'auto' }}
+            />
+            {noticeSent && <p className="text-xs text-emerald-600 font-medium">{noticeSent}</p>}
+            {noticeSignUrl && <p className="text-[11px] break-all text-muted-foreground">Signing link: {noticeSignUrl}</p>}
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <div className="flex justify-end gap-2 pt-2 border-t flex-wrap">
+              <Button type="button" variant="outline" onClick={async () => {
+                setNoticeBusy('pdf'); setError('')
+                try {
+                  const r = await api.post(`/contracts/${id}/notice-pdf`,
+                    { html: noticeRef.current?.innerHTML ?? '', title: noticeOpen.name }, { responseType: 'blob' })
+                  const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+                  window.open(url, '_blank')
+                  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+                } catch (e) { setError(apiError(e)) } finally { setNoticeBusy('') }
+              }} disabled={noticeBusy === 'pdf'}>
+                <Download size={14} /> {noticeBusy === 'pdf' ? 'Preparing…' : 'PDF'}
+              </Button>
+              <Button type="button" variant="outline" className="text-emerald-700 border-emerald-300" onClick={() => {
+                const plain = (noticeRef.current?.innerText || '').trim()
+                const phone = (c.customer?.phones?.[0] || c.customer?.phone || '').replace(/\D/g, '')
+                const text = encodeURIComponent(`*${noticeOpen.name} — ${c.contractNo}*\n\n${plain}\n\nPurpleBox Storage`)
+                window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+              }}>
+                <MessageSquare size={14} /> WhatsApp
+              </Button>
+              {noticeTemplates.find((t) => t._id === noticeOpen.id)?.isDefault && (
+                <Button type="button" disabled={noticeBusy === 'sign'} className="bg-emerald-600 hover:bg-emerald-700" onClick={async () => {
+                  setNoticeBusy('sign'); setError(''); setNoticeSent('')
                   try {
-                    const r = await api.post(`/contracts/${id}/notice-pdf`,
-                      { html: noticeRef.current?.innerHTML ?? '', title: noticeOpen.name }, { responseType: 'blob' })
-                    const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
-                    window.open(url, '_blank')
-                    setTimeout(() => URL.revokeObjectURL(url), 60_000)
-                  } catch (e) { setError(apiError(e)) } finally { setNoticeBusy('') }
-                }} disabled={noticeBusy === 'pdf'}>
-                  <Download size={14} /> {noticeBusy === 'pdf' ? 'Preparing…' : 'PDF'}
-                </Button>
-                <Button type="button" variant="outline" className="text-emerald-700 border-emerald-300" onClick={() => {
-                  const plain = (noticeRef.current?.innerText || '').trim()
-                  const phone = (c.customer?.phones?.[0] || c.customer?.phone || '').replace(/\D/g, '')
-                  const text = encodeURIComponent(`*${noticeOpen.name} — ${c.contractNo}*\n\n${plain}\n\nPurpleBox Storage`)
-                  window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
-                }}>
-                  <MessageSquare size={14} /> WhatsApp
-                </Button>
-                {noticeTemplates.find((t) => t._id === noticeOpen.id)?.isDefault && (
-                  <Button type="button" disabled={noticeBusy === 'sign'} className="bg-emerald-600 hover:bg-emerald-700" onClick={async () => {
-                    setNoticeBusy('sign'); setError(''); setNoticeSent('')
-                    try {
-                      // The tenant signs exactly what's on screen — keep this
-                      // wording on the contract, then mint the signing link
-                      await api.put(`/contracts/${id}`, { agreementText: noticeRef.current?.innerHTML ?? '' })
-                      const r = await api.post(`/contracts/${id}/create-signing-link`)
-                      const url = r.data?.signingUrl || ''
-                      setNoticeSignUrl(url)
-                      try { await navigator.clipboard.writeText(url) } catch { /* clipboard blocked */ }
-                      const phone = (c.customer?.phones?.[0] || c.customer?.phone || '').replace(/\D/g, '')
-                      const text = encodeURIComponent(`Hello ${c.customer?.fullName || ''},\n\nPlease review and sign your storage agreement ${c.contractNo}:\n${url}\n\nThe link is valid for 7 days.\n\nThank you,\nPurpleBox Storage`)
-                      window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
-                      setNoticeSent('Signing link created (copied to clipboard). Once signed, the copy files under Documents automatically.')
-                      invalidate()
-                    } catch (e) { setError(apiError(e)) } finally { setNoticeBusy('') }
-                  }}>
-                    {noticeBusy === 'sign' ? 'Preparing…' : 'Send for signing'}
-                  </Button>
-                )}
-                <Button type="button" disabled={noticeBusy === 'email'} onClick={async () => {
-                  setNoticeBusy('email'); setError(''); setNoticeSent('')
-                  try {
-                    const r = await api.post(`/contracts/${id}/notice-email`,
-                      { html: noticeRef.current?.innerHTML ?? '', title: noticeOpen.name })
-                    setNoticeSent(`Emailed to ${r.data?.to} with the PDF attached.`)
+                    // The tenant signs exactly what's on screen — keep this
+                    // wording on the contract, then mint the signing link
+                    await api.put(`/contracts/${id}`, { agreementText: noticeRef.current?.innerHTML ?? '' })
+                    const r = await api.post(`/contracts/${id}/create-signing-link`)
+                    const url = r.data?.signingUrl || ''
+                    setNoticeSignUrl(url)
+                    try { await navigator.clipboard.writeText(url) } catch { /* clipboard blocked */ }
+                    const phone = (c.customer?.phones?.[0] || c.customer?.phone || '').replace(/\D/g, '')
+                    const text = encodeURIComponent(`Hello ${c.customer?.fullName || ''},\n\nPlease review and sign your storage agreement ${c.contractNo}:\n${url}\n\nThe link is valid for 7 days.\n\nThank you,\nPurpleBox Storage`)
+                    window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+                    setNoticeSent('Signing link created (copied to clipboard). Once signed, the copy files under Documents automatically.')
                     invalidate()
                   } catch (e) { setError(apiError(e)) } finally { setNoticeBusy('') }
                 }}>
-                  {noticeBusy === 'email' ? 'Sending…' : 'Send via Email'}
+                  {noticeBusy === 'sign' ? 'Preparing…' : 'Send for signing'}
                 </Button>
-              </div>
+              )}
+              <Button type="button" disabled={noticeBusy === 'email'} onClick={async () => {
+                setNoticeBusy('email'); setError(''); setNoticeSent('')
+                try {
+                  const r = await api.post(`/contracts/${id}/notice-email`,
+                    { html: noticeRef.current?.innerHTML ?? '', title: noticeOpen.name })
+                  setNoticeSent(`Emailed to ${r.data?.to} with the PDF attached.`)
+                  invalidate()
+                } catch (e) { setError(apiError(e)) } finally { setNoticeBusy('') }
+              }}>
+                {noticeBusy === 'email' ? 'Sending…' : 'Send via Email'}
+              </Button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </SlideOver>
 
     </div>
   )

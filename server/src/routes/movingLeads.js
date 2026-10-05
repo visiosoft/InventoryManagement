@@ -1,6 +1,8 @@
 import { Router } from 'express';
-import { MovingLead, MovingJob, Customer, nextMovingJobNo } from '../models/index.js';
+import rateLimit from 'express-rate-limit';
+import { MovingLead, MovingJob, Customer, Lead, nextMovingJobNo } from '../models/index.js';
 import { softDelete } from '../utils/softDelete.js';
+import { normalizeLeadPhone } from './leads.js';
 
 const router = Router();
 
@@ -13,39 +15,82 @@ function ownsLead(req, lead) {
 }
 
 // ── Public endpoint for WordPress landing pages (no auth) ────────────────────
+//
+// Every landing page on purpleboxstorage's marketing site posts here
+// (mounted publicly at /api/moving-leads/public in index.js, ahead of the
+// urlencoded body parser WordPress's admin-ajax.php needs) and the result
+// always lands on the main CRM Leads page (the `Lead` model, not
+// `MovingLead` — that model backs the separate moving-jobs pipeline and a
+// landing-page inquiry, storage or moving, belongs with every other lead a
+// rep works from).
 export const publicLeadRouter = Router();
 
-publicLeadRouter.post('/', async (req, res) => {
-  try {
-    const b = req.body;
-    const isMoving = /moving/i.test(b.storing_for || '') || /moving/i.test(b.unit_label || '');
-    const serviceType = isMoving ? 'moving' : 'storage';
+// A real visitor submits this once; a script retrying it wouldn't get a
+// different lead (see the find-by-phone reuse below) but could still hammer
+// the server, so it's capped per IP like every other public write endpoint.
+const landingLeadLimiter = rateLimit({
+  windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many requests — please wait a minute and try again.' },
+  skip: () => process.env.NODE_ENV === 'test',
+});
 
+/** "Zulfiqar Ali" -> { firstName: 'Zulfiqar', lastName: 'Ali' }; a single
+ *  word (very common on a quick mobile form) leaves lastName blank rather
+ *  than guessing. */
+function splitName(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  return { firstName: parts[0] || '', lastName: parts.slice(1).join(' ') };
+}
+
+publicLeadRouter.post('/', landingLeadLimiter, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const fullName = String(b.full_name || '').trim();
+    const phoneNormalized = normalizeLeadPhone(b.mobile);
+    if (!fullName) return res.status(400).json({ error: 'full_name is required' });
+    if (!phoneNormalized) return res.status(400).json({ error: 'mobile must contain a phone number' });
+
+    // Everything the form captures that doesn't have a structured home on
+    // Lead (a size *category* like "locker" isn't a sqft number, and
+    // "this-week" isn't a parseable date) — kept as text so a rep sees it
+    // rather than it being silently dropped or forced into the wrong field.
     const notes = [
       b.summary_text,
-      b.unit_size ? `Unit size: ${b.unit_size}` : '',
+      b.storing_for ? `Enquiry: ${b.storing_for}` : '',
+      b.unit_size ? `Requested size: ${b.unit_size}` : '',
       b.unit_label ? `Label: ${b.unit_label}` : '',
       b.emirate ? `Emirate: ${b.emirate}` : '',
-      b.promo_code ? `Promo: ${b.promo_code}` : '',
+      b.move_in_date ? `Timing: ${b.move_in_date}` : '',
+      b.promo_code ? `Promo code: ${b.promo_code}` : '',
       b.monthly_rent && Number(b.monthly_rent) ? `Monthly rent: AED ${b.monthly_rent}` : '',
       b.supplies_text && b.supplies_text !== 'No supplies selected' ? `Supplies: ${b.supplies_text}` : '',
       b.due_today && Number(b.due_today) ? `Due today: AED ${b.due_today}` : '',
     ].filter(Boolean).join('\n');
+    const pageNote = `Landing page: ${b.source_page_name || 'Website'}${b.source_page ? ` (${b.source_page})` : ''}`;
 
-    const lead = await MovingLead.create({
-      prospectName: b.full_name || '',
-      prospectPhone: b.mobile || '',
-      prospectEmail: b.email || '',
-      source: 'web_form',
+    // Same person filling the form twice (or the page firing the request
+    // twice) must never create a second Lead against the unique
+    // phoneNormalized index — reuse the existing one and just note the
+    // repeat visit, matching the find-or-reuse pattern the public booking
+    // API already uses.
+    const existing = await Lead.findOne({ phoneNormalized });
+    if (existing) {
+      existing.timeline.push({ type: 'note', text: `${pageNote}\n${notes}`.trim() });
+      await existing.save();
+      return res.json({ ok: true, id: existing._id, merged: true });
+    }
+
+    const { firstName, lastName } = splitName(fullName);
+    const lead = await Lead.create({
+      firstName, lastName, fullName,
+      phone: String(b.mobile || '').trim(), phoneNormalized,
+      email: String(b.email || '').trim(),
+      source: 'website',
       status: 'new',
-      serviceType: b.storing_for || serviceType,
-      moveDate: b.move_in_date ? new Date(b.move_in_date) : undefined,
+      unitsNeeded: 1,
+      tags: ['website'],
       notes,
-      timeline: [{
-        text: `Lead from ${b.source_page_name || 'Landing page'}`,
-        author: 'Website',
-        at: new Date(),
-      }],
+      timeline: [{ type: 'created', text: pageNote }],
     });
 
     res.status(201).json({ ok: true, id: lead._id });

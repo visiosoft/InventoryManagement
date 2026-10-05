@@ -4,6 +4,14 @@ import { Customer, Contract, Document, Payment, Invoice, Unit, Quote } from '../
 import { stageCounts, stageFilter } from '../services/customerStage.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { requireAdmin } from '../middleware/auth.js';
+
+// Bulk-emailing tenants doesn't touch anyone's data the way delete/bulk-delete
+// does, so it's open to reps too — accountsReadOnly (mounted on this whole
+// router in index.js) already keeps accounts out of it.
+const requireEmailSender = (req, res, next) => {
+  if (req.user?.role === 'admin' || req.user?.role === 'sales_rep') return next();
+  return res.status(403).json({ error: 'You do not have permission to email tenants' });
+};
 import { phoneClauses } from '../utils/phoneSearch.js';
 import { mailConfigured, mailFromAddress, sendMail } from '../services/mail.js';
 import { fillPlaceholders, leftoverPlaceholders } from '../services/emailPlaceholders.js';
@@ -305,7 +313,7 @@ const chunk = (arr, size) => {
 // One email to many customers, everyone in BCC so recipients can't see each
 // other. Batched, and honest about partial failure — a later batch can fail
 // after earlier ones already went out.
-router.post('/send-email', requireAdmin, async (req, res) => {
+router.post('/send-email', requireEmailSender, async (req, res) => {
   if (!mailConfigured()) return res.status(501).json({ error: 'Email is not configured — connect Gmail in Settings' });
 
   const ids = Array.isArray(req.body?.customerIds) ? req.body.customerIds.filter((id) => isValidObjectId(id)) : [];

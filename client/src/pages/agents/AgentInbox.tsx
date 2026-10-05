@@ -1,0 +1,291 @@
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { Send, Pencil, X, UserCheck, Undo2 } from 'lucide-react'
+import { apiError } from '../../lib/api'
+import { agentsApi, agoText, needText, agentColor, type InboxDraft, type InboxEmail, type InboxReport, type InboxTouch, type Resolution } from '../../lib/agentsApi'
+import { Button, PageHeader, Spinner, Textarea } from '../../components/ui'
+import { AgentNav, Avatar, AgentChip, C, Draft, Note, Panel, Pill, Quote, SectionHead, Stat, Tag, Trace } from './ui'
+
+const CATEGORY_LABEL: Record<string, string> = { lead: 'leads', tenant: 'tenants', supplier: 'suppliers', newsletter: 'newsletters', spam: 'spam', other: 'other', needs_person: 'for a person' }
+
+function ReportCard({ r }: { r: InboxReport }) {
+  const counts = r.items.reduce<Record<string, number>>((m, it) => { m[it.category] = (m[it.category] || 0) + 1; return m }, {})
+  const flagged = r.items.filter((it) => it.category === 'needs_person')
+  return (
+    <Panel style={{ display: 'grid', gap: 8, borderLeft: `4px solid ${agentColor(r.agent)}` }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Avatar name={r.agent?.name} color={agentColor(r.agent)} size={28} /><b>{r.agent?.name}</b>
+        <span style={{ fontSize: 12, color: C.muted }}>{agoText(r.at)} · {r.summary}</span>
+      </div>
+      <div style={{ fontSize: 13, color: C.ink, whiteSpace: 'pre-line' }}>{r.text}</div>
+      {Object.keys(counts).length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{Object.entries(counts).map(([k, n]) => <Tag key={k} tone={k === 'needs_person' ? 'danger' : k === 'lead' ? 'purple' : k === 'tenant' ? 'blue' : 'grey'}>{n} {CATEGORY_LABEL[k] || k}</Tag>)}</div>}
+      {flagged.length > 0 && <div style={{ fontSize: 12.5, color: C.second }}><b style={{ color: C.danger }}>For a person:</b> {flagged.map((f) => f.note).join(' · ')}</div>}
+      {r.needsHuman && r.reason && <div style={{ fontSize: 12.5, color: C.danger }}>{r.reason}</div>}
+    </Panel>
+  )
+}
+
+function EmailCard({ e, onResolve, busy }: { e: InboxEmail; onResolve: (r: Resolution, text?: string) => void; busy: boolean }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(e.body)
+  return (
+    <Panel style={{ display: 'grid', gap: 10, borderColor: e.needsHuman ? C.amber : C.line }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <b>{e.from || e.to}</b> <span style={{ fontSize: 12, color: C.muted }}>· {e.originalSubject || e.subject}</span>
+          <div style={{ fontSize: 12, color: C.muted }}>{agoText(e.at)} · <AgentChip agent={e.agent} /> drafted · {e.why}</div>
+        </div>
+        <Tag tone={e.needsHuman ? 'amber' : 'ok'}>{e.needsHuman ? 'check a figure' : 'confident'}</Tag>
+      </div>
+      {e.customerText && <Quote>{e.customerText.slice(0, 600)}{e.customerText.length > 600 ? '…' : ''}</Quote>}
+      <div style={{ fontSize: 12, color: C.muted }}>To {e.to} · Subject: {e.subject}</div>
+      {editing ? <Textarea rows={6} value={text} onChange={(x) => setText(x.target.value)} /> : <Draft>{e.body}</Draft>}
+      {e.grounded && !e.grounded.ok && <div style={{ fontSize: 12.5, color: C.danger }}>Figures not backed by a tool result: {e.grounded.loose.join(', ')}</div>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {editing ? (
+          <><Button size="sm" disabled={busy || !text.trim()} onClick={() => onResolve('edited', text)}><Send size={13} /> Send edited</Button><Button size="sm" variant="outline" onClick={() => { setEditing(false); setText(e.body) }}>Cancel</Button></>
+        ) : (
+          <><Button size="sm" disabled={busy} onClick={() => onResolve('approved')}><Send size={13} /> Send as {e.agent?.name}</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing(true)}><Pencil size={13} /> Edit</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => onResolve('dismissed')}><X size={13} /> Dismiss</Button></>
+        )}
+      </div>
+    </Panel>
+  )
+}
+
+function DraftCard({ d, onResolve, busy }: { d: InboxDraft; onResolve: (r: Resolution, text?: string) => void; busy: boolean }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(d.reply)
+  const flag = d.needsHuman || (d.grounded && !d.grounded.ok)
+  return (
+    <Panel style={{ display: 'grid', gap: 10, borderColor: flag ? C.amber : C.line }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <Avatar name={d.lead.fullName} size={30} color={C.grey} />
+          <div>
+            <b>{d.lead.fullName}</b> <Pill bucket={d.bucket} label={d.bucketLabel} />
+            <div style={{ fontSize: 12, color: C.muted }}>{d.lead.phone} · wrote {agoText(d.at)} · <AgentChip agent={d.agent} /> drafted</div>
+          </div>
+        </div>
+        <Tag tone={flag ? 'amber' : 'ok'}>{flag ? 'check before sending' : 'confident'}</Tag>
+      </div>
+      {d.customerText && <Quote>"{d.customerText}"</Quote>}
+      {editing ? <Textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} /> : <Draft>{d.reply || <i style={{ color: C.muted }}>No reply drafted — {d.summary}</i>}</Draft>}
+      <Trace items={[...d.trace.map((t) => t.replace(/_/g, ' ')), ...(d.grounded && !d.grounded.ok ? [`figures not backed by a tool: ${d.grounded.loose.join(', ')}`] : []), ...(needText(d.need) ? [`lead file: ${needText(d.need)}`] : [])]} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {editing ? (
+            <>
+              <Button size="sm" disabled={busy || !text.trim()} onClick={() => onResolve('edited', text)}><Send size={13} /> Send edited as {d.agent?.name}</Button>
+              <Button size="sm" variant="outline" onClick={() => { setEditing(false); setText(d.reply) }}>Cancel</Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" disabled={busy || !d.reply} onClick={() => onResolve('approved')}><Send size={13} /> Send as {d.agent?.name}</Button>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing(true)}><Pencil size={13} /> Edit</Button>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => onResolve('dismissed')}><X size={13} /> Dismiss</Button>
+            </>
+          )}
+        </div>
+        <Link to={`/agents/leads/${d.lead._id}`} style={{ fontSize: 12.5, color: C.purple, fontWeight: 700, textDecoration: 'none', alignSelf: 'center' }}>Open conversation →</Link>
+      </div>
+    </Panel>
+  )
+}
+
+function TouchRow({ t, onResolve, busy }: { t: InboxTouch; onResolve: (r: Resolution) => void; busy: boolean }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 2fr auto', gap: 14, alignItems: 'center', padding: '12px 16px', border: `1px solid ${C.line}`, borderLeft: `4px solid ${agentColor(t.agent)}`, borderRadius: 12, background: C.card }}>
+      <div><div style={{ fontWeight: 700 }}>{t.lead.fullName}</div><div style={{ fontSize: 12, color: C.muted }}>{t.bucketLabel} · {t.stage} · <AgentChip agent={t.agent} /></div></div>
+      <div>{t.template ? <Tag tone="amber">{t.template.intent}</Tag> : <Tag tone="danger">no template</Tag>}</div>
+      <div style={{ fontSize: 12.5, color: C.ink }}>{t.template ? <>Template <b style={{ fontFamily: 'ui-monospace, monospace' }}>{t.template.name}</b>{t.template.bodyText ? <span style={{ color: C.muted }}> — "{t.template.bodyText.slice(0, 90)}…"</span> : null}</> : <span style={{ color: C.muted }}>{t.summary}</span>}</div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <Button size="sm" disabled={busy || !t.template} onClick={() => onResolve('approved')}>Send</Button>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => onResolve('skipped')}>Skip</Button>
+      </div>
+    </div>
+  )
+}
+
+/** One list, one button: everyone a touch-only agent is about to message
+ * today, across every stage/template group, reviewed and sent in a single
+ * click instead of opening each group. The daily send cap still applies
+ * underneath — resolveBulk tolerates a per-item failure once it's hit, so
+ * this never sends more than the cap allows even if you click once. */
+function TouchesOverview({ touches, onApproveAll, busy }: { touches: InboxTouch[]; onApproveAll: (ids: string[]) => void; busy: boolean }) {
+  const sendable = touches.filter((t) => t.template)
+  const blocked = touches.length - sendable.length
+  if (!touches.length) return null
+  return (
+    <Panel style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap', marginBottom: 10 }}>
+      <div style={{ minWidth: 220 }}>
+        <b style={{ fontSize: 13.5 }}>{sendable.length} follow-up{sendable.length === 1 ? '' : 's'} ready to send</b>
+        <div style={{ fontSize: 12.5, color: C.second, marginTop: 4, lineHeight: 1.6 }}>
+          {sendable.slice(0, 12).map((t) => <span key={t.actionId} style={{ display: 'inline-block', background: C.greySoft, borderRadius: 999, padding: '2px 9px', marginRight: 5, marginBottom: 5 }}>{t.lead.fullName} <span style={{ color: C.muted }}>· {t.agent?.name || 'unassigned'} · {t.stage}</span></span>)}
+          {sendable.length > 12 && <span style={{ color: C.muted }}>+{sendable.length - 12} more</span>}
+        </div>
+        {blocked > 0 && <div style={{ fontSize: 12, color: C.danger, marginTop: 4 }}>{blocked} more waiting on a template — review those below</div>}
+      </div>
+      <Button disabled={busy || !sendable.length} onClick={() => onApproveAll(sendable.map((t) => t.actionId))}><Send size={13} /> Send all {sendable.length}</Button>
+    </Panel>
+  )
+}
+
+/** Touches with the same agent, template and stage are the same
+ * pre-approved wording going to different people — safe to review as one
+ * group instead of one at a time, which is what makes a large backlog
+ * reviewable. Grouping must include the agent: two different agents (e.g.
+ * Omar on Quiet, Layla on Quoted) can independently pick a template that
+ * happens to share a name and land on the same stage label ("touch 2 of
+ * 3") — without the agent in the key, their leads would silently merge
+ * into one "Send all" card with no visible sign they belong to different
+ * people's pipelines. */
+function TouchGroups({ touches, onResolveOne, onResolveGroup, busy }: { touches: InboxTouch[]; onResolveOne: (id: string, r: Resolution) => void; onResolveGroup: (ids: string[], r: Resolution) => void; busy: boolean }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const groups = new Map<string, InboxTouch[]>()
+  for (const t of touches) {
+    const key = `${t.agent?._id || 'unassigned'} · ${t.template ? t.template.name : 'no template'} · ${t.stage}`
+    groups.set(key, [...(groups.get(key) || []), t])
+  }
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      {[...groups.entries()].map(([key, group]) => {
+        const ids = group.filter((t) => t.template).map((t) => t.actionId)
+        const isOpen = open[key]
+        const label = `${group[0].agent?.name || 'Unassigned'}: ${group[0].template ? group[0].template.name : 'no template'} · ${group[0].stage}`
+        return (
+          <div key={key} style={{ border: `1px solid ${C.line}`, borderRadius: 12, background: C.card, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', flexWrap: 'wrap' }}>
+              <div>
+                <b style={{ fontSize: 13 }}>{label}</b>
+                <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>{group.length} lead{group.length === 1 ? '' : 's'} · same pre-approved wording</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Button size="sm" disabled={busy || !ids.length} onClick={() => onResolveGroup(ids, 'approved')}>Send all {ids.length}</Button>
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => onResolveGroup(group.map((t) => t.actionId), 'skipped')}>Skip all</Button>
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => setOpen({ ...open, [key]: !isOpen })}>{isOpen ? 'Hide' : 'Review one by one'}</Button>
+              </div>
+            </div>
+            {isOpen && <div style={{ display: 'grid', gap: 8, padding: '0 12px 12px' }}>{group.map((t) => <TouchRow key={t.actionId} t={t} busy={busy} onResolve={(r) => onResolveOne(t.actionId, r)} />)}</div>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export default function AgentInbox() {
+  const qc = useQueryClient()
+  const [agent, setAgent] = useState('')
+  const [err, setErr] = useState('')
+  const [ok, setOk] = useState('')
+  const team = useQuery({ queryKey: ['agents', 'team'], queryFn: agentsApi.team })
+  const inbox = useQuery({ queryKey: ['agents', 'inbox', agent], queryFn: () => agentsApi.inbox(agent || undefined), refetchInterval: 20_000 })
+  const all = useQuery({ queryKey: ['agents', 'inbox', ''], queryFn: () => agentsApi.inbox(), enabled: Boolean(agent) })
+  const refresh = () => qc.invalidateQueries({ queryKey: ['agents'] })
+
+  const resolve = useMutation({
+    mutationFn: ({ id, r, text }: { id: string; r: Resolution; text?: string }) => agentsApi.resolve(id, r, text),
+    onSuccess: (res, v) => { setErr(''); setOk(v.r === 'approved' || v.r === 'edited' ? (res.sent ? 'Sent.' : 'Done.') : 'Dismissed.'); setTimeout(() => setOk(''), 1500); refresh() },
+    onError: (e) => setErr(apiError(e)),
+  })
+  const resolveBulk = useMutation({
+    mutationFn: ({ ids, r }: { ids: string[]; r: Resolution }) => agentsApi.resolveBulk(ids, r),
+    onSuccess: (res) => {
+      setErr('')
+      const reason = res.failed[0]?.error || ''
+      setOk(`${res.ok} sent${res.failed.length ? ` · ${res.failed.length} held back${reason ? ` — ${reason}` : ''}` : '.'}`)
+      setTimeout(() => setOk(''), 4000)
+      refresh()
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+  const handBack = useMutation({ mutationFn: (leadId: string) => agentsApi.handBack(leadId), onSuccess: refresh, onError: (e) => setErr(apiError(e)) })
+
+  const agents = team.data?.agents.filter((a) => a.isActive) || []
+  const onDuty = agents.filter((a) => a.mode !== 'off')
+  const totals = (all.data && agent ? all.data : inbox.data)
+  const countFor = (id: string) => totals ? [...totals.drafts, ...totals.touches, ...totals.emails].filter((x) => String(x.agent?._id) === id).length + totals.handed.filter((h) => String(h.agent?._id) === id).length : 0
+  const total = totals ? totals.drafts.length + totals.touches.length + totals.handed.length + totals.emails.length : 0
+  const data = inbox.data
+
+  return (
+    <div>
+      <AgentNav counts={{ inbox: total }} />
+      <PageHeader
+        title="Needs you"
+        subtitle={onDuty.length ? <span>{onDuty.length} agent{onDuty.length === 1 ? '' : 's'} on duty — they draft and propose, nothing goes out until you approve it here.</span> : <span>No agent on duty. <Link to="/agents/profiles/new" style={{ color: C.purple, fontWeight: 700 }}>Onboard one</Link> to start.</span>}
+        action={<div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}><Stat value={data?.drafts.length ?? '—'} label="drafts to review" /><Stat value={data?.emails.length ?? '—'} label="emails to review" /><Stat value={data?.handed.length ?? '—'} label="handed to you" tone={C.danger} /><Stat value={data?.touches.length ?? '—'} label="follow-ups proposed" tone={C.amber} /></div>}
+      />
+      {agents.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+          <button onClick={() => setAgent('')} style={{ border: 'none', cursor: 'pointer', borderRadius: 999, padding: '4px 11px', fontSize: 12, fontWeight: 700, background: agent ? C.greySoft : C.ink, color: agent ? C.second : '#fff' }}>All agents · {total}</button>
+          {agents.map((a) => (
+            <button key={a._id} onClick={() => setAgent(a._id)} style={{ border: 'none', cursor: 'pointer', borderRadius: 999, padding: '4px 11px', fontSize: 12, fontWeight: 700, background: agent === a._id ? agentColor(a) : C.greySoft, color: agent === a._id ? '#fff' : agentColor(a) }}>{a.name} · {countFor(a._id)}</button>
+          ))}
+        </div>
+      )}
+      {(err || ok) && <p style={{ fontSize: 12.5, color: err ? C.danger : C.ok, margin: '6px 0' }}>{err || ok}</p>}
+      {inbox.isLoading ? <Spinner /> : !data ? null : (
+        <>
+          {data.reports.length > 0 && (
+            <>
+              <SectionHead title="This morning's desk" hint="what the scheduled agents did on their last run" />
+              <div style={{ display: 'grid', gap: 10 }}>{data.reports.map((r) => <ReportCard key={r.actionId} r={r} />)}</div>
+            </>
+          )}
+
+          {data.emails.length > 0 && (
+            <>
+              <SectionHead title={`Email replies to review · ${data.emails.length}`} hint="approve sends it from the shared mailbox, signed off as the company" />
+              <div style={{ display: 'grid', gap: 10 }}>{data.emails.map((e) => <EmailCard key={e.actionId} e={e} busy={resolve.isPending} onResolve={(r, text) => resolve.mutate({ id: e.actionId, r, text })} />)}</div>
+            </>
+          )}
+
+          <SectionHead title={`Drafts to review · ${data.drafts.length}`} hint="newest first · approve sends it as that agent, edit lets you change it first" />
+          <div style={{ display: 'grid', gap: 10 }}>
+            {data.drafts.length === 0 && <Panel><Note>Nothing waiting. When a customer writes in, the draft appears here.</Note></Panel>}
+            {data.drafts.map((d) => <DraftCard key={d.actionId} d={d} busy={resolve.isPending} onResolve={(r, text) => resolve.mutate({ id: d.actionId, r, text })} />)}
+          </div>
+
+          <SectionHead title={`Handed to you · ${data.handed.length}`} hint="the agent stopped and wrote down why — you take it from here" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 10 }}>
+            {data.handed.length === 0 && <Panel style={{ gridColumn: '1 / -1' }}><Note>Nobody is waiting on a person.</Note></Panel>}
+            {data.handed.map((h) => (
+              <Panel key={h.leadFileId} style={{ display: 'grid', gap: 8, borderLeft: `4px solid ${C.danger}` }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><Avatar name={h.lead.fullName} size={28} color={C.grey} /><b>{h.lead.fullName}</b><Tag tone="danger">{h.why.slice(0, 40) || 'needs a person'}</Tag><AgentChip agent={h.agent} prefix="from " /></div>
+                <div style={{ fontSize: 13, color: C.second }}>
+                  {needText(h.need) && <div><b style={{ color: C.ink }}>Needs:</b> {needText(h.need)}</div>}
+                  {h.offers.length > 0 && <div><b style={{ color: C.ink }}>Offered:</b> {h.offers.map((o) => `${o.unitNumber} at AED ${o.monthlyPrice}/4 wk`).join('; ')}</div>}
+                  {h.why && <div><b style={{ color: C.ink }}>Why:</b> {h.why}</div>}
+                  {h.lastSummary && <div><b style={{ color: C.ink }}>Where it stands:</b> {h.lastSummary}</div>}
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Link to={`/whatsapp?phone=${h.phoneNormalized}`}><Button size="sm"><UserCheck size={13} /> Take over — open chat</Button></Link>
+                  <Button size="sm" variant="outline" disabled={handBack.isPending} onClick={() => handBack.mutate(h.lead._id)}><Undo2 size={13} /> Hand back to {h.agent?.name || 'the agent'}</Button>
+                  <Link to={`/agents/leads/${h.lead._id}`} style={{ fontSize: 12, color: C.muted, textDecoration: 'none' }}>lead file →</Link>
+                </div>
+              </Panel>
+            ))}
+          </div>
+
+          <SectionHead title={`Follow-ups proposed · ${data.touches.length}`} hint="review the list, then one click sends every one of them" />
+          {data.touches.length === 0 ? <Panel><Note>No follow-ups are due right now.</Note></Panel> : (
+            <>
+              <TouchesOverview touches={data.touches} busy={resolve.isPending || resolveBulk.isPending} onApproveAll={(ids) => resolveBulk.mutate({ ids, r: 'approved' })} />
+              <TouchGroups
+                touches={data.touches}
+                busy={resolve.isPending || resolveBulk.isPending}
+                onResolveOne={(id, r) => resolve.mutate({ id, r })}
+                onResolveGroup={(ids, r) => resolveBulk.mutate({ ids, r })}
+              />
+            </>
+          )}
+          {data.reports.length === 0 && data.emails.length === 0 && (
+            <Panel style={{ marginTop: 12 }}><Note>Scheduled agents (like Nadia) report here after their first run.</Note></Panel>
+          )}
+        </>
+      )}
+    </div>
+  )
+}

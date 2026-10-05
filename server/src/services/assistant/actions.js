@@ -24,7 +24,15 @@ import { registerTool } from './tools.js';
 export const PROPOSE_TOOL = 'propose_quotation';
 export const PROPOSE_CONTRACT_TOOL = 'propose_contract';
 export const PROPOSE_EMAIL_TOOL = 'propose_email';
+// Tools that hold a proposal for a separate Confirm step — index.js watches
+// for these by name to know when to surface `pending`.
 export const PROPOSAL_TOOLS = [PROPOSE_TOOL, PROPOSE_CONTRACT_TOOL, PROPOSE_EMAIL_TOOL];
+// Every write-capable tool, proposal or immediate — what index.js hides from
+// someone actionsEnabled/actionRoles says may not act at all. An immediate
+// tool is still a write; "no card in between" is about friction, not about
+// who may use it.
+export const IMMEDIATE_WRITE_TOOLS = ['create_lead', 'schedule_follow_up'];
+export const ACTION_TOOLS = [...PROPOSAL_TOOLS, ...IMMEDIATE_WRITE_TOOLS];
 const TTL_MS = 15 * 60_000;
 const EXPIRY_DAYS = 30;
 
@@ -32,6 +40,24 @@ const proposals = new Map();
 const suffix = (p) => String(p || '').replace(/\D/g, '').slice(-9);
 const money = (n) => Number(Number(n || 0).toFixed(2));
 const fmt = (n) => `AED ${money(n).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`;
+const link = (label, path) => ({ label, path });
+
+/** For the two low-risk write tools below, which run immediately rather than
+ *  through the propose/confirm pair — same self-call-through-the-app's-own-
+ *  API idea as runAction(), just with nothing held server-side in between. */
+async function selfCall(method, path, body, authHeader) {
+   const base = `http://127.0.0.1:${process.env.PORT || 5010}/api`;
+   const r = await fetch(`${base}${path}`, {
+      method,
+      headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+   });
+   const text = await r.text();
+   let json = {};
+   try { json = JSON.parse(text); } catch { json = { raw: text }; }
+   if (!r.ok) throw new Error(json.error || `${method} ${path} failed (${r.status})`);
+   return json;
+}
 
 function sweep() {
    const now = Date.now();
@@ -89,6 +115,90 @@ async function replyWindowOpen(phone) {
       .sort({ occurredAt: -1 }).select('occurredAt').lean();
    return Boolean(last && Date.now() - new Date(last.occurredAt).getTime() < 24 * 3600_000);
 }
+
+/* ── low-risk writes, which run immediately ───────────────────────────────
+ *
+ * Not everything the model can do needs a card in between. Creating a lead
+ * or moving a follow-up date is exactly the kind of thing a rep already does
+ * a dozen times a day with no second thought — gating it behind a Confirm
+ * would just be friction, not safety. Both still go through the app's own
+ * route (POST /leads, PUT /leads/:id) with the asking user's own token, so
+ * validation, ownership rules and the timeline entry are exactly what a
+ * person doing it by hand would get — there is no separate, looser path. */
+
+registerTool({
+   name: 'create_lead',
+   description: 'Create a new lead, owned by the person asking. Use when told to add someone as a new lead, or that somebody called/messaged wanting storage. Executes immediately — no confirmation needed. Anything that does not fit a field (preferred location or facility, moving needs, exact timing) goes in notes.',
+   parameters: {
+      type: 'object',
+      properties: {
+         fullName: { type: 'string' },
+         phone: { type: 'string' },
+         email: { type: 'string' },
+         storageSizeValue: { type: 'number', description: 'Size in sq ft they asked about, if said' },
+         durationValue: { type: 'number', description: 'How many weeks/months, if said' },
+         durationUnit: { type: 'string', enum: ['week', 'month'] },
+         notes: { type: 'string', description: 'Anything else said: preferred location/facility, moving needs, timing' },
+      },
+      required: ['fullName', 'phone'],
+   },
+   async run(args, { user, authHeader }) {
+      if (!authHeader) return { error: 'Not signed in' };
+      const fullName = String(args.fullName || '').trim();
+      const phone = String(args.phone || '').trim();
+      if (!fullName || !phone) return { error: 'Need a name and a phone number' };
+      let created;
+      try {
+         created = await selfCall('POST', '/leads', {
+            fullName, phone, email: String(args.email || ''),
+            storageSizeValue: args.storageSizeValue ?? 0,
+            durationValue: args.durationValue || 1,
+            durationUnit: args.durationUnit || 'month',
+            unitsNeeded: 1,
+            notes: String(args.notes || ''),
+            source: 'manual',
+         }, authHeader);
+      } catch (e) { return { error: e.message }; }
+      return {
+         ok: true, leadId: created._id, name: created.fullName,
+         message: `Created lead ${created.fullName}, assigned to ${user?.name || 'you'}.`,
+         links: [link(created.fullName, `/leads/${created._id}`)],
+      };
+   },
+});
+
+registerTool({
+   name: 'schedule_follow_up',
+   description: 'Set or move the follow-up date on an existing lead, found by name or phone. Executes immediately — no confirmation needed. Use for "follow up with X in N days", "remind me about X next Monday".',
+   parameters: {
+      type: 'object',
+      properties: {
+         query: { type: 'string', description: "The lead's name or phone number" },
+         followUpAt: { type: 'string', description: 'YYYY-MM-DD to follow up' },
+         note: { type: 'string', description: 'What the follow-up is for, if said' },
+      },
+      required: ['query', 'followUpAt'],
+   },
+   async run({ query, followUpAt, note = '' }, { authHeader }) {
+      if (!authHeader) return { error: 'Not signed in' };
+      const q = String(query || '').trim();
+      if (!q) return { error: 'Who is this for?' };
+      const digits = q.replace(/\D/g, '');
+      const filter = digits.length >= 7
+         ? { phoneNormalized: new RegExp(`${suffix(digits)}$`) }
+         : { fullName: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') };
+      const lead = await Lead.findOne(filter).lean();
+      if (!lead) return { error: `No lead found for "${query}"` };
+      try {
+         await selfCall('PUT', `/leads/${lead._id}`, { followUpAt, followUpNote: String(note || '') }, authHeader);
+      } catch (e) { return { error: e.message }; }
+      return {
+         ok: true, leadId: String(lead._id), name: lead.fullName,
+         message: `Follow-up with ${lead.fullName} set for ${new Date(followUpAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.`,
+         links: [link(lead.fullName, `/leads/${lead._id}`)],
+      };
+   },
+});
 
 /* ── the proposal, which the model may make ───────────────────────────────── */
 

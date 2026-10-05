@@ -69,6 +69,18 @@ test('the team section only appears when there is one', () => {
    assert.equal(forManager.subject, 'Your morning: 1 stuck 3+ days across the team');
 });
 
+test('the agents section only shows when there is something waiting or escalated', () => {
+   const nothing = buildDayBrief({ user, agents: { pending: 0, escalatedNow: 0, sentLast24h: 5 }, now: NOW });
+   assert.equal(nothing.empty, true, 'sends already gone out do not need a person, so they do not count');
+   assert.ok(!nothing.text.includes('AI agents'));
+
+   const something = buildDayBrief({ user, agents: { pending: 3, escalatedNow: 1, sentLast24h: 5 }, now: NOW });
+   assert.equal(something.empty, false);
+   assert.equal(something.subject, 'Your morning: 4 agent items');
+   assert.match(something.text, /AI agents: 3 waiting for your review, 1 escalated to you, 5 sent in the last 24h\./);
+   assert.match(something.html, /AI agents/);
+});
+
 test('the push line leads with the worst thing, not a summary', () => {
    const withOverdue = buildDayBrief({ user, overdue: [task('Call back Ahmed', daysAgo(4))], now: NOW });
    assert.match(withOverdue.push.body, /Call back Ahmed — 4 days late/);

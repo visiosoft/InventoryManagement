@@ -92,6 +92,8 @@ import automationRuleRoutes from './routes/automationRules.js';
 import taskRoutes from './routes/tasks.js';
 import salesGoalRoutes from './routes/salesGoals.js';
 import salesTeamRoutes from './routes/salesTeam.js';
+import agentRoutes from './agents/routes.js';
+import { runAgentTick } from './agents/service.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import platformRoutes from './routes/platform.js';
 import myDayRoutes from './routes/myDay.js';
@@ -104,6 +106,8 @@ import activityRoutes from './routes/activity.js';
 import auditLogRoutes from './routes/auditLog.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
+import customerStorageRoutes from './routes/customerStorage.js';
+import customerBookingRoutes from './routes/customerBooking.js';
 import customerPortalRoutes from './routes/customerPortal.js';
 import crewAuthRoutes from './routes/crewAuth.js';
 import crewPortalRoutes from './routes/crewPortal.js';
@@ -112,14 +116,16 @@ import { startBackupScheduler } from './services/backup.js';
 import { runFollowUps, pushDueFollowUps } from './services/followUps.js';
 import { sweepUnassignedLeads } from './services/leadRouting.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
-import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
+import { getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
 import { runDayBriefs } from './services/dayBrief.js';
+import { runPaymentDueDigest } from './services/paymentDueDigest.js';
 import { runLeadSla } from './services/leadSla.js';
 import { runQuietNudge } from './services/quietNudge.js';
 import { runLeadAssignReminder } from './services/leadAssignReminder.js';
 import { releaseLapsedHolds } from './utils/unitStatus.js';
+import publicBookingRoutes from './routes/publicBooking.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
@@ -254,12 +260,20 @@ app.use('/api/auth', authRoutes);
 // Self-service trial signup — no JWT yet, this is how one gets issued.
 app.use('/api/signup', signupRoutes);
 app.use('/api/customer-auth', customerAuthRoutes);
+app.use('/api/customer-portal/storage', customerStorageRoutes);
+app.use('/api/customer-portal/booking', customerBookingRoutes);
 app.use('/api/customer-portal', customerPortalRoutes);
 app.use('/api/crew-auth', crewAuthRoutes);
 app.use('/api/crew-portal', crewPortalRoutes);
 app.use('/api/moving-jobs/public-upload', movingJobPublicUpload);
 app.use('/api/moving-jobs/share', movingJobPublicShare);
-app.use('/api/moving-leads/public', movingLeadPublic);
+// WordPress's admin-ajax.php posts application/x-www-form-urlencoded, which
+// nothing else in this app sends — scoped here rather than added globally.
+app.use('/api/moving-leads/public', express.urlencoded({ extended: true }), movingLeadPublic);
+// The marketing website's booking API — no login, no auth token, by design.
+// See server/src/routes/publicBooking.js for what keeps it from being abused
+// (a per-IP rate limit and an atomic per-unit claim) despite that.
+app.use('/api/public/bookings', publicBookingRoutes);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.
@@ -331,7 +345,7 @@ app.use('/api/sites', requireAuth, siteRoutes);
 app.use(
   '/api/integrations',
   (req, res, next) =>
-    req.path.startsWith('/whatsapp/webhook') || req.path.startsWith('/drive/callback') || req.path.startsWith('/drive/connect') || req.path.startsWith('/gmail/callback')
+    req.path.startsWith('/whatsapp/webhook') || req.path.startsWith('/drive/callback') || req.path.startsWith('/drive/connect') || req.path.startsWith('/gmail/callback') || req.path.startsWith('/analytics/callback')
       ? next()
       : requireAuth(req, res, next),
   integrationRoutes
@@ -360,6 +374,9 @@ app.use('/api/automation-rules', requireAuth, automationRuleRoutes);
 app.use('/api/tasks', requireAuth, taskRoutes);
 app.use('/api/sales-goals', requireAuth, salesGoalRoutes);
 app.use('/api/sales-team', requireAuth, salesTeamRoutes);
+// The AI sales agents: profiles, lead files, buckets, the action log. A
+// separate module; shadow mode only in this prototype, nothing sends.
+app.use('/api/agents', requireAuth, agentRoutes);
 // Signed in is enough: a board only the manager can see recognises nobody.
 app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
 /* The customers themselves, not one customer's data. Guarded inside on an
@@ -486,8 +503,21 @@ async function start() {
   // allowance at once.
   everyOrg('Campaign', runCampaignTick, { every: 15 * 1000, delay: 25_000 });
 
-  const AI_BOT_INTERVAL = 10 * 1000;
-  everyOrg('AIBot', runAiBotTick, { every: AI_BOT_INTERVAL, delay: 20_000 });
+  // The original assistant's own drafting is retired: the Agents system
+  // (below) now drafts and escalates for every inbound message, and its
+  // per-lead status/draft is what the WhatsApp inbox reads (routes/whatsapp.js's
+  // agentStatusForLeads). runAiBotTick is no longer scheduled, but stays
+  // importable — routes/aiBot.js's manual "run a tick now" endpoint and its
+  // settings/preview endpoints are unaffected, and getAiBotConfig still
+  // gates the unrelated auto-summarise and first-contact-video features.
+
+  // The sales agents' clock: due follow-up touches, silence into Quiet,
+  // exhausted cadences falling through. A minute is plenty — the shortest
+  // cadence is a day. Does nothing until an agent exists in shadow mode.
+  everyOrg('Agents', async () => {
+    const out = await runAgentTick();
+    if (out.proposed || out.silenced || out.exhausted) console.log(`[Agents] ${out.proposed} touch(es) proposed, ${out.silenced} went quiet, ${out.exhausted} exhausted`);
+  }, { every: 60_000, delay: 30_000 });
 
   // Keep the inbox summaries current, so "hot leads" answers about today
   // rather than about whichever chats somebody happened to open. Only
@@ -543,6 +573,17 @@ async function start() {
     if (out.sent) console.log(`[DayBrief] sent ${out.sent} brief(s)`);
   }, { every: 60_000 });
 
+  /* Accounts' payment-due-soon digest: one email a day listing every tenant
+     whose payment is due in 7 days. Same minute tick and fixed local hour as
+     the digest/day-brief jobs; idempotent through each Payment's
+     accountsDueSoonNotifiedAt rather than a stored row. */
+  const PAYMENT_DUE_DIGEST_HOUR = Number(process.env.PAYMENT_DUE_DIGEST_HOUR ?? 8);
+  everyOrg('PaymentDueDigest', async () => {
+    if (localHour() !== PAYMENT_DUE_DIGEST_HOUR) return;
+    const out = await runPaymentDueDigest();
+    if (out.sent) console.log(`[PaymentDueDigest] sent, ${out.count} payment(s)`);
+  }, { every: 60_000 });
+
   const FOLLOW_UP_HOUR = Number(process.env.FOLLOW_UP_HOUR ?? 7);
   everyOrg('FollowUps', async () => {
     if (localHour() !== FOLLOW_UP_HOUR) return;
@@ -577,14 +618,10 @@ async function start() {
      for as little as a few hours — the moment before it becomes next week's
      quiet-lead backlog (services/leadFollowUp.js). Off until admin turns it
      on; every 15 minutes is plenty for an hours-scale threshold. */
-  setTimeout(() => setInterval(async () => {
-    try {
-      const out = await runQuietNudge({ appUrl: process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae' });
-      if (out.nudged) console.log(`[QuietNudge] reminded ${out.nudged}`);
-    } catch (e) {
-      console.error('[QuietNudge]', e.message);
-    }
-  }, 15 * 60_000), 90_000);
+  everyOrg('QuietNudge', async () => {
+    const out = await runQuietNudge({ appUrl: process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae' });
+    if (out.nudged) console.log(`[QuietNudge] reminded ${out.nudged}`);
+  }, { every: 15 * 60_000, delay: 90_000 });
 
   /* A lead handed to somebody who never actually did anything about it —
      no attempt logged, no stage moved, no WhatsApp reply sent — gets one
@@ -593,14 +630,10 @@ async function start() {
      hour; this one leaves it exactly where it is and just says it again,
      for the much slower case of a rep who meant to get to it and did not.
      Every 20 minutes is plenty against a reminder measured in hours. */
-  setTimeout(() => setInterval(async () => {
-    try {
-      const out = await runLeadAssignReminder();
-      if (out.reminded) console.log(`[LeadAssignReminder] reminded on ${out.reminded} lead(s)`);
-    } catch (e) {
-      console.error('[LeadAssignReminder]', e.message);
-    }
-  }, 20 * 60_000), 100_000);
+  everyOrg('LeadAssignReminder', async () => {
+    const out = await runLeadAssignReminder();
+    if (out.reminded) console.log(`[LeadAssignReminder] reminded on ${out.reminded} lead(s)`);
+  }, { every: 20 * 60_000, delay: 100_000 });
 
   /* Units held by a quotation that has since expired.
      A quote holds its unit until its expiry date, and nothing else sweeps
@@ -610,6 +643,15 @@ async function start() {
     const freed = await releaseLapsedHolds();
     if (freed.length) console.log(`[Units] released ${freed.length} unit(s): ${freed.join(', ')}`);
   }, { every: 60 * 60 * 1000, delay: 90_000 });
+
+  /* The same release, every 5 minutes rather than hourly.
+     The public booking API's hold is only 15 minutes — the website should
+     not still be showing a unit as taken 45 minutes after a visitor
+     abandoned the booking because the hourly sweep above hadn't run yet. */
+  everyOrg('UnitsFast', async () => {
+    const freed = await releaseLapsedHolds();
+    if (freed.length) console.log(`[Units] released ${freed.length} unit(s): ${freed.join(', ')}`);
+  }, { every: 5 * 60 * 1000, delay: 45_000 });
 
   const SWEEP_INTERVAL = 2 * 60 * 1000;
   everyOrg('LeadRouting', async () => {

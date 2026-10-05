@@ -10,3 +10,4 @@ backups/
 
 # The scratch files a probe or a migration leaves behind.
 tmp-*.mjs
+.demo-db/
