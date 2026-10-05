@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
+import { openWhatsApp } from '../lib/whatsappLink'
 import WhatsAppConsole from './WhatsApp'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES } from '../components/ui'
@@ -412,9 +413,8 @@ export default function PersonProfile() {
   const email = customer?.email || lead?.email || ''
   const waNumber = (lead?.phoneNormalized || phone).replace(/\D/g, '')
   // The number for the real WhatsApp app: the lead's own WhatsApp number when
-  // it has one, in the international form wa.me needs (no +, no 00, and a
-  // local UAE 05… number becomes 9715…). wa.me hands the chat to the desktop
-  // app when it is installed, and to WhatsApp Web otherwise.
+  // it has one, in the international form WhatsApp's links need (no +, no 00,
+  // and a local UAE 05… number becomes 9715…).
   const waExternal = (() => {
     const d = (lead?.whatsappNo || '').replace(/\D/g, '').replace(/^00/, '')
     if (!d) return waNumber
@@ -669,7 +669,16 @@ export default function PersonProfile() {
                 href={`https://wa.me/${waExternal}`}
                 target="_blank"
                 rel="noreferrer"
-                title="Open this number in WhatsApp (desktop app, or WhatsApp Web if it is not installed)"
+                // Tries the installed WhatsApp app first and falls back to
+                // wa.me (WhatsApp Web) if nothing opens — see lib/whatsappLink.
+                // The href stays as the real address, so open-in-new-tab,
+                // copy-link and middle-click all still work.
+                onClick={(e) => {
+                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+                  e.preventDefault()
+                  openWhatsApp(waExternal)
+                }}
+                title="Open this number in the WhatsApp app (or WhatsApp Web if it is not installed)"
                 className="inline-flex items-center"
                 style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(22,163,74,.28)', background: 'rgba(22,163,74,.09)', color: '#047857', fontWeight: 600, fontSize: 13 }}
               >
