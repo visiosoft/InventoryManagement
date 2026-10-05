@@ -806,6 +806,21 @@ const quoteSchema = new Schema(
       confirmedAt: { type: Date, default: null },
       externalReference: { type: String, default: '' },
     },
+    /* A booking made by a signed-in customer in the mobile app. Unlike a staff
+     * quote, paying it converts it to a contract with no one in between (see
+     * services/quoteConversion.js). `needsReview` is set instead when payment
+     * arrives but the contract cannot be made, so staff are told rather than the
+     * customer being left with a payment and nothing. */
+    appBooking: {
+      active: { type: Boolean, default: false },
+      checkoutStartedAt: { type: Date, default: null },
+      // Set atomically by whichever of the webhook or the app's status check
+      // gets to a paid booking first, so only one of them makes the contract.
+      convertingAt: { type: Date, default: null },
+      convertedAt: { type: Date, default: null },
+      needsReview: { type: Boolean, default: false },
+      reviewReason: { type: String, default: '' },
+    },
     // A Stripe Checkout session for paying this quote online, and when it
     // actually cleared — the webhook sets stripePaidAt, nothing else does.
     stripeCheckoutSessionId: { type: String, default: null },
@@ -2414,6 +2429,30 @@ const contractRenewalSchema = new Schema({
 contractRenewalSchema.index({ contract: 1, createdAt: -1 });
 contractRenewalSchema.index({ stripeCheckoutSessionId: 1 });
 export const ContractRenewal = model('ContractRenewal', contractRenewalSchema);
+
+// One live login code per phone. The code is stored hashed, and Mongo's TTL
+// index removes the row, so a restart or a second server instance can't lose or
+// split a code the way an in-memory Map did.
+const customerOtpSchema = new mongoose.Schema({
+  phone: { type: String, required: true, unique: true },
+  codeHash: { type: String, required: true },
+  attempts: { type: Number, default: 0 },
+  expiresAt: { type: Date, required: true, index: { expireAfterSeconds: 0 } },
+}, { timestamps: true });
+export const CustomerOtp = model('CustomerOtp', customerOtpSchema);
+
+// Something a tenant asks for from the app that staff must action — a check-out
+// change today. Kept as its own record so it can be listed and answered, and
+// mirrored onto the contract timeline so it is seen where staff already look.
+const customerRequestSchema = new mongoose.Schema({
+  customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
+  contract: { type: mongoose.Schema.Types.ObjectId, ref: 'Contract', required: true },
+  type: { type: String, enum: ['checkout_change'], required: true },
+  payload: { type: mongoose.Schema.Types.Mixed, default: {} },
+  status: { type: String, enum: ['pending', 'approved', 'declined'], default: 'pending' },
+  staffNote: { type: String, default: '' },
+}, { timestamps: true });
+export const CustomerRequest = model('CustomerRequest', customerRequestSchema);
 
 export const LeadRoutingRule = model('LeadRoutingRule', leadRoutingRuleSchema);
 export const LeadRoutingConfig = model('LeadRoutingConfig', leadRoutingConfigSchema);

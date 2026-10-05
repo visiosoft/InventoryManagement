@@ -1,0 +1,82 @@
+import crypto from 'node:crypto';
+import { CustomerOtp } from '../models/index.js';
+import { sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
+
+const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_RESEND_MS = 30 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+
+const fail = (status, message) => Object.assign(new Error(message), { status });
+
+const generateOtp = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+
+const hashOtp = (key, code) =>
+  crypto.createHmac('sha256', process.env.JWT_SECRET).update(`${key}:${code}`).digest('hex');
+
+// "+971 50 123 4567", "0501234567" and "971501234567" are one person. Stored
+// customers have whatever was typed at the time, so lookups try each spelling.
+export function normalizePhone(input) {
+  let d = String(input || '').replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.startsWith('0') && d.length === 10) d = `971${d.slice(1)}`;
+  return d;
+}
+
+export function phoneVariants(input) {
+  const d = normalizePhone(input);
+  const variants = new Set([String(input || '').trim(), d, `+${d}`]);
+  if (d.startsWith('971')) variants.add(`0${d.slice(3)}`);
+  return [...variants].filter(Boolean);
+}
+
+async function deliver(phone, code) {
+  const template = process.env.WHATSAPP_OTP_TEMPLATE;
+  if (template && whatsappSendConfigured()) {
+    await sendWhatsAppTemplate({
+      to: phone, name: template, language: process.env.WHATSAPP_OTP_TEMPLATE_LANG || 'en',
+      variables: [code], urlButtonText: code,
+    });
+    return {};
+  }
+  // No delivery channel. Handing the code back is only acceptable off
+  // production; on production it would let anyone log in as any phone number.
+  if (process.env.NODE_ENV === 'production') throw fail(503, 'Login codes are not available right now. Please contact support.');
+  return { devCode: code };
+}
+
+/**
+ * Create a code under `key` and send it to `phone`. `key` is what the code is
+ * checked against later: the phone itself for login, or a scoped string for
+ * other flows so two flows can't answer each other's codes.
+ */
+export async function issueOtp({ key, phone }) {
+  const existing = await CustomerOtp.findOne({ phone: key }).lean();
+  if (existing && Date.now() - new Date(existing.updatedAt).getTime() < OTP_RESEND_MS) {
+    throw fail(429, 'A code was just sent. Please wait a few seconds before requesting another.');
+  }
+  const code = generateOtp();
+  await CustomerOtp.findOneAndUpdate(
+    { phone: key },
+    { codeHash: hashOtp(key, code), attempts: 0, expiresAt: new Date(Date.now() + OTP_TTL_MS) },
+    { upsert: true },
+  );
+  return deliver(phone, code);
+}
+
+/** Throws unless `code` is the live code for `key`; a correct code is spent. */
+export async function checkOtp({ key, code }) {
+  const stored = await CustomerOtp.findOne({ phone: key });
+  if (!stored || stored.expiresAt.getTime() < Date.now()) throw fail(401, 'Code expired — request a new one');
+  if (stored.attempts >= OTP_MAX_ATTEMPTS) {
+    await stored.deleteOne();
+    throw fail(429, 'Too many wrong attempts — request a new code');
+  }
+  const expected = Buffer.from(stored.codeHash);
+  const given = Buffer.from(hashOtp(key, String(code || '').trim()));
+  if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
+    stored.attempts += 1;
+    await stored.save();
+    throw fail(401, 'Invalid code');
+  }
+  await stored.deleteOne();
+}

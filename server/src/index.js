@@ -89,6 +89,8 @@ import leadRoutingRoutes from './routes/leadRouting.js';
 import auditLogRoutes from './routes/auditLog.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
+import customerStorageRoutes from './routes/customerStorage.js';
+import customerBookingRoutes from './routes/customerBooking.js';
 import customerPortalRoutes from './routes/customerPortal.js';
 import crewAuthRoutes from './routes/crewAuth.js';
 import crewPortalRoutes from './routes/crewPortal.js';
@@ -228,6 +230,8 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/customer-auth', customerAuthRoutes);
+app.use('/api/customer-portal/storage', customerStorageRoutes);
+app.use('/api/customer-portal/booking', customerBookingRoutes);
 app.use('/api/customer-portal', customerPortalRoutes);
 app.use('/api/crew-auth', crewAuthRoutes);
 app.use('/api/crew-portal', crewPortalRoutes);

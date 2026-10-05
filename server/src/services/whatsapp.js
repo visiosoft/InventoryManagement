@@ -352,7 +352,7 @@ export function windowOpenFor({ lastInboundAt = null, now = new Date() } = {}) {
  * `variables` fill {{1}}, {{2}} … in order. Passing the wrong number of them is
  * rejected by Meta rather than silently truncated, so the caller checks first.
  */
-export async function sendWhatsAppTemplate({ to, name, language = 'en', variables = [] }) {
+export async function sendWhatsAppTemplate({ to, name, language = 'en', variables = [], urlButtonText }) {
     if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured');
     const normalizedTo = normalizeRecipientPhone(to);
     if (!normalizedTo) throw new Error('Recipient phone number is required');
@@ -361,6 +361,11 @@ export async function sendWhatsAppTemplate({ to, name, language = 'en', variable
     const components = variables.length
         ? [{ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: String(v ?? '') })) }]
         : [];
+    // Meta's authentication templates carry a copy-code button that must be
+    // filled with the same code as the body.
+    if (urlButtonText !== undefined) {
+        components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(urlButtonText) }] });
+    }
 
     const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
     const response = await fetch(endpoint, {

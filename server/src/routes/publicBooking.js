@@ -43,7 +43,7 @@ const HOLD_MINUTES = 15;
 const DEFAULT_DURATION_WEEKS = 4; // one billing cycle — see billing-28day-logic
 
 /** Whichever units of this size are free, cheapest/lowest number first. */
-function candidatesFor(available, sizeSqf) {
+export function candidatesFor(available, sizeSqf) {
     return available.allUnits
         .filter((u) => Number(u.sizeSqf) === Number(sizeSqf) && !available.bookedUnitIds.has(String(u._id)) && u.status !== 'maintenance')
         .sort((a, b) => (a.unitNumber || '').localeCompare(b.unitNumber || '', undefined, { numeric: true }));
@@ -54,7 +54,7 @@ function candidatesFor(available, sizeSqf) {
  * available to reserved. Returns the claimed unit, or null if every
  * candidate was taken by someone else between the read above and here.
  */
-async function claimFirstAvailable(candidates) {
+export async function claimFirstAvailable(candidates) {
     for (const c of candidates) {
         const claimed = await Unit.findOneAndUpdate({ _id: c._id, status: 'available' }, { $set: { status: 'reserved' } }, { new: true });
         if (claimed) return claimed;

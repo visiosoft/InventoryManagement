@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { google } from 'googleapis';
@@ -111,6 +112,14 @@ export async function uploadPublicImage({ buffer, stream, filename, mimeType, cu
 }
 
 export async function uploadFile({ buffer, filename, mimeType, customerName }) {
+  // Tests and the local demo server (scripts/demo-server.mjs) have no Drive
+  // account; production sets neither flag and never takes this branch.
+  if ((process.env.NODE_ENV === 'test' || process.env.LOCAL_UPLOADS_ONLY === '1') && !driveConfigured()) {
+    const dir = path.join(os.tmpdir(), 'purplebox-test-uploads');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, filename), buffer);
+    return { storage: 'local', url: `/uploads/test/${filename}` };
+  }
   requireDrive();
   const drive = driveClient();
   const parentId = customerName
