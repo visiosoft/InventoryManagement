@@ -669,7 +669,15 @@ export default function PersonProfile() {
                 href={`https://wa.me/${waExternal}`}
                 target="_blank"
                 rel="noreferrer"
-                title="Open this number in WhatsApp (desktop app or WhatsApp Web)"
+                // A window of its own, beside this page, rather than another
+                // tab to hunt for — and the same named window is reused for
+                // the next lead, so working down a list does not pile them up.
+                // If the browser blocks the popup, the plain link still works.
+                onClick={(e) => {
+                  const w = window.open(`https://wa.me/${waExternal}`, 'pb_whatsapp', 'popup=yes,width=1100,height=800,noopener=no')
+                  if (w) { e.preventDefault(); w.focus() }
+                }}
+                title="Open this number in WhatsApp in a separate window (desktop app or WhatsApp Web)"
                 className="inline-flex items-center"
                 style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(22,163,74,.28)', background: 'rgba(22,163,74,.09)', color: '#047857', fontWeight: 600, fontSize: 13 }}
               >
