@@ -363,7 +363,7 @@ export async function agentStatusForLeads(leadIds = []) {
     const fileIds = files.map((f) => f._id);
 
     const [drafts, escalations] = await Promise.all([
-        AgentAction.find({ leadFile: { $in: fileIds }, kind: 'reply_drafted', resolution: null }).sort({ at: -1 }).select('leadFile detail').lean(),
+        AgentAction.find({ leadFile: { $in: fileIds }, kind: 'reply_drafted', resolution: null }).sort({ at: -1 }).select('leadFile detail at').lean(),
         AgentAction.find({ leadFile: { $in: fileIds }, kind: 'escalated' }).sort({ at: -1 }).select('leadFile summary').lean(),
     ]);
     const draftByFile = new Map();
@@ -379,6 +379,7 @@ export async function agentStatusForLeads(leadIds = []) {
             status: file.frozenAt ? 'paused' : escalated ? 'escalated' : draft ? 'bot' : '',
             draft: draft?.detail?.reply || '',
             draftActionId: draft ? String(draft._id) : '',
+            draftAt: draft?.at || null,
             escalationReason: escalated ? (escByFile.get(String(file._id))?.summary || '').replace(/^Handed to a person:\s*/i, '') : '',
             agentName: file.agent?.name || '',
             agentColor: file.agent?.avatarColor || '',

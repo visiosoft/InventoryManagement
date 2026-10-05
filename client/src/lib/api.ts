@@ -583,6 +583,9 @@ export type WhatsAppConversation = {
   botStatus?: '' | 'bot' | 'escalated' | 'paused'
   botDraft?: string
   botActionId?: string
+  // When the pending suggestion was written, so the inbox can tell it is out of
+  // date once newer messages exist.
+  botDraftAt?: string | null
   botEscalationReason?: string
   botAgentName?: string
   botAgentColor?: string

@@ -19,7 +19,37 @@ import { transition, describeStage, DEFAULT_CADENCE, BUCKETS } from './buckets.j
 import { record, snapshotOf } from './log.js';
 
 const HISTORY_DAYS = 90;
-const HISTORY_TURNS = 60;
+const HISTORY_TURNS = 100;
+
+const MEDIA_WORD = {
+    image: 'a photo', video: 'a video', audio: 'a voice note', voice: 'a voice note', document: 'a document',
+    sticker: 'a sticker', location: 'a location', contacts: 'a contact card', template: 'a template message',
+    interactive: 'a message with buttons',
+};
+
+/**
+ * The conversation as the agent reads it: everything either side sent, in
+ * order, not only what happens to be plain text.
+ *
+ * It used to read text and transcripts alone, so a video, a photo or a
+ * document our own team had sent simply did not exist for it — and neither
+ * did the fact that a colleague had already greeted the customer, described
+ * the sizes and asked what they were storing. It then asked those questions
+ * again. Media with no words becomes a one-line note saying who sent what, so
+ * the agent knows the customer has already received it.
+ */
+export function agentHistoryMessages(docs, inboundText) {
+    const rows = docs.map((m) => {
+        const words = String(m.text || m.transcript || '').trim();
+        const label = m.type && m.type !== 'text' ? MEDIA_WORD[m.type] : '';
+        const who = m.direction === 'inbound' ? 'the customer' : 'our team';
+        const text = label
+            ? `[${who} sent ${label}]${words ? ` ${words}` : ''}`
+            : words;
+        return { direction: m.direction, text };
+    });
+    return historyToMessages(rows, inboundText);
+}
 
 export function cadenceFor(agent) {
     const out = { ...DEFAULT_CADENCE };
@@ -37,6 +67,7 @@ const RULES = [
     '- Read THE LEAD FILE first. Never ask for something already in it. Never re-introduce yourself in a conversation that has started.',
     '- The moment you learn what they need, call update_lead_file. The moment you offer a unit and price, call note_offer.',
     '- Contracts, invoices, payments, complaints, discounts, or a request for a person: call escalate.',
+    '- Read the WHOLE conversation above before replying. Lines from "assistant" are what our team already told the customer, and notes like [our team sent a video] are things they have already received. Never repeat them, never ask what has already been answered, and never re-send information already given.',
     '- Keep a reply under 600 characters, written as a WhatsApp message.',
 ].join('\n');
 
@@ -77,7 +108,7 @@ function parseDecision(content) {
 }
 
 /**
- * @param trigger  { kind: 'inbound' | 'touch' | 'simulate', text }
+ * @param trigger  { kind: 'inbound' | 'touch' | 'refresh' | 'simulate', text }
  * @returns the decision, already persisted and logged unless persist=false
  */
 export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(), persist = true }) {
@@ -85,6 +116,7 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
     const cadence = cadenceFor(agent);
     const before = snapshotOf(leadFile);
     const isTouch = trigger.kind === 'touch';
+    const isRefresh = trigger.kind === 'refresh';
 
     // Working copy: tools mutate this, nothing is saved until the end.
     const work = leadFile.toObject ? leadFile.toObject() : { ...leadFile };
@@ -105,9 +137,13 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
     const history = await WhatsAppMessage.find({
         phoneNormalized: leadFile.phoneNormalized,
         occurredAt: { $gte: new Date(now.getTime() - HISTORY_DAYS * 86_400_000), ...(trigger.until ? { $lte: new Date(trigger.until) } : {}) },
-        $or: [{ type: 'text', text: { $ne: '' } }, { transcript: { $ne: '' } }],
-    }).sort({ occurredAt: -1 }).limit(HISTORY_TURNS).select('direction text transcript').lean();
-    const messages = historyToMessages(history.reverse(), isTouch ? '' : trigger.text);
+        deletedAt: null,
+        type: { $ne: 'reaction' },
+    }).sort({ occurredAt: -1 }).limit(HISTORY_TURNS).select('direction type text transcript').lean();
+    // A refresh is asked while the conversation may already have moved on, so
+    // the customer's last message is not repeated at the end as if new: the
+    // history already ends wherever the conversation really ends.
+    const messages = agentHistoryMessages(history.reverse(), isTouch || isRefresh ? '' : trigger.text);
 
     const facts = await buildFacts(trigger.text || '', { useAvailability: true });
 
@@ -116,7 +152,9 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
             `TASK: it is time for the ${describeStage(work, cadence) || 'next'} follow-up touch to this lead, who has not replied. Choose the approved template that fits this stage's intent (early: a friendly check-in; middle: offer what is available; last: ask if they still need storage) by calling propose_follow_up_template. Then answer with JSON: {"summary": one line on where this lead stands, "needsHuman": boolean, "reason": string}.`,
             `APPROVED TEMPLATES: ${ctx.templates.length ? ctx.templates.map((t) => `${t.name} — "${(t.bodyText || '').slice(0, 90)}"`).join(' | ') : 'none are configured; call escalate and explain that a template is needed'}`,
         ].join('\n')
-        : 'TASK: answer the customer\'s latest message. Use tools for anything factual. Then answer with JSON only: {"reply": string, "needsHuman": boolean, "reason": string, "summary": one line on where this lead stands}.';
+        : isRefresh
+            ? 'TASK: a colleague asked for a fresh suggestion because the conversation may have moved on. Read the WHOLE conversation above, including what our team has already sent since the customer last wrote (messages, videos, photos). Write the best next message from where the conversation stands NOW, without repeating anything already said or sent. If our team has already fully answered and nothing is waiting on us, set reply to an empty string and needsHuman false. Use tools for anything factual. Answer with JSON only: {"reply": string, "needsHuman": boolean, "reason": string, "summary": one line on where this lead stands}.'
+            : 'TASK: answer the customer\'s latest message. Use tools for anything factual. Then answer with JSON only: {"reply": string, "needsHuman": boolean, "reason": string, "summary": one line on where this lead stands}.';
 
     const system = [
         String(agent.systemPrompt || '').trim() || 'You are the sales assistant for PurpleBox Storage in Dubai, replying to customers on WhatsApp. Be brief and warm.',
