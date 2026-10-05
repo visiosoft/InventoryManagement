@@ -536,7 +536,7 @@ export default function Dashboard() {
           </WidgetShell>
         ),
         'website-analytics': (
-          <WidgetShell id="website-analytics" title="Website analytics" subtitle="From Google Analytics" {...dragHandlers}>
+          <WidgetShell id="website-analytics" title="Website analytics" subtitle="purplebox.ae · From Google Analytics" {...dragHandlers}>
             {websiteAnalyticsLoading ? <Skeleton className="h-[220px]" /> : websiteAnalyticsError ? (
               <p style={{ fontSize: 12.5, color: '#B91C1C', padding: '8px 0' }}>
                 Couldn't load Google Analytics: {apiError(websiteAnalyticsError)}
