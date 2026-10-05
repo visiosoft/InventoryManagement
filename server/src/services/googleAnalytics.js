@@ -77,7 +77,7 @@ export async function websiteAnalytics({ days = 30 } = {}) {
     const c = client();
     const run = (requestBody) => c.properties.runReport({ property: propertyPath(), requestBody }).then((r) => r.data);
 
-    const [todayReport, yesterdayReport, countryReport, trendReport] = await Promise.all([
+    const [todayReport, yesterdayReport, countryReport, trendReport, pagesReport] = await Promise.all([
         run({ dateRanges: [{ startDate: 'today', endDate: 'today' }], metrics: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'newUsers' }] }),
         run({ dateRanges: [{ startDate: 'yesterday', endDate: 'yesterday' }], metrics: [{ name: 'sessions' }] }),
         run({
@@ -92,6 +92,13 @@ export async function websiteAnalytics({ days = 30 } = {}) {
             dimensions: [{ name: 'date' }],
             metrics: [{ name: 'sessions' }],
             orderBys: [{ dimension: { dimensionName: 'date' } }],
+        }),
+        run({
+            dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+            dimensions: [{ name: 'pagePath' }],
+            metrics: [{ name: 'screenPageViews' }, { name: 'activeUsers' }],
+            orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+            limit: 10,
         }),
     ]);
 
@@ -114,6 +121,12 @@ export async function websiteAnalytics({ days = 30 } = {}) {
         return { date, sessions: num(r.metricValues?.[0]?.value) };
     });
 
+    const topPages = (pagesReport.rows || []).map((r) => ({
+        path: r.dimensionValues?.[0]?.value || '/',
+        views: num(r.metricValues?.[0]?.value),
+        users: num(r.metricValues?.[1]?.value),
+    }));
+
     return {
         configured: true,
         today: {
@@ -121,6 +134,6 @@ export async function websiteAnalytics({ days = 30 } = {}) {
             newVisitorPct: sessionsToday ? Math.round((newUsersToday / sessionsToday) * 100) : 0,
             vsYesterdayPct: sessionsYesterday ? Math.round(((sessionsToday - sessionsYesterday) / sessionsYesterday) * 100) : null,
         },
-        byCountry, totalSessionsInRange, trend, days,
+        byCountry, totalSessionsInRange, topPages, trend, days,
     };
 }

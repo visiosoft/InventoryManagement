@@ -549,6 +549,8 @@ export default function Dashboard() {
               const today = websiteAnalytics.today!
               const byCountry = websiteAnalytics.byCountry || []
               const trend = websiteAnalytics.trend || []
+              const topPages = websiteAnalytics.topPages || []
+              const maxPage = Math.max(1, ...topPages.map((p) => p.views))
               const maxCountry = Math.max(1, ...byCountry.map((c) => c.sessions))
               const maxTrend = Math.max(1, ...trend.map((t) => t.sessions))
               const points = trend.map((t, i) => {
@@ -587,6 +589,20 @@ export default function Dashboard() {
                       )}
                     </div>
                   </div>
+                  {topPages.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11.5, color: MUTED_CLR, marginBottom: 10 }}>Top pages &middot; last {websiteAnalytics.days} days &middot; page views</div>
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        {topPages.slice(0, 8).map((p) => (
+                          <div key={p.path} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 220px) 1fr 44px', alignItems: 'center', gap: 10 }}>
+                            <span className="truncate" title={p.path} style={{ fontSize: 12.5, fontWeight: 700, color: INK }}>{p.path}</span>
+                            <div style={{ height: 8, borderRadius: 999, background: '#F1EFE8' }}><div style={{ width: `${Math.max(4, (p.views / maxPage) * 100)}%`, height: '100%', borderRadius: 999, background: '#5B2BC9' }} /></div>
+                            <span style={{ fontSize: 11.5, color: MUTED_CLR, textAlign: 'right' }}>{p.views}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {trend.length > 1 && (
                     <div>
                       <div style={{ fontSize: 11.5, color: MUTED_CLR, marginBottom: 6 }}>Sessions per day</div>

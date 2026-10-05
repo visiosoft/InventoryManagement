@@ -206,6 +206,7 @@ export interface WebsiteAnalytics {
   today?: { sessions: number; users: number; newUsers: number; newVisitorPct: number; vsYesterdayPct: number | null }
   byCountry?: { country: string; sessions: number }[]
   totalSessionsInRange?: number
+  topPages?: { path: string; views: number; users: number }[]
   trend?: { date: string; sessions: number }[]
   days?: number
 }
