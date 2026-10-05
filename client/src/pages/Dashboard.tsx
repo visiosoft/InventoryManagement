@@ -548,16 +548,9 @@ export default function Dashboard() {
             ) : (() => {
               const today = websiteAnalytics.today!
               const byCountry = websiteAnalytics.byCountry || []
-              const trend = websiteAnalytics.trend || []
               const topPages = websiteAnalytics.topPages || []
               const maxPage = Math.max(1, ...topPages.map((p) => p.views))
               const maxCountry = Math.max(1, ...byCountry.map((c) => c.sessions))
-              const maxTrend = Math.max(1, ...trend.map((t) => t.sessions))
-              const points = trend.map((t, i) => {
-                const x = trend.length > 1 ? (i / (trend.length - 1)) * 640 : 0
-                const y = 130 - (t.sessions / maxTrend) * 120
-                return `${x.toFixed(1)},${y.toFixed(1)}`
-              }).join(' ')
               return (
                 <div style={{ display: 'grid', gap: 16 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 16 }} className="max-[900px]:grid-cols-1">
@@ -600,18 +593,6 @@ export default function Dashboard() {
                             <span style={{ fontSize: 11.5, color: MUTED_CLR, textAlign: 'right' }}>{p.views}</span>
                           </div>
                         ))}
-                      </div>
-                    </div>
-                  )}
-                  {trend.length > 1 && (
-                    <div>
-                      <div style={{ fontSize: 11.5, color: MUTED_CLR, marginBottom: 6 }}>Sessions per day</div>
-                      <svg viewBox="0 0 640 140" style={{ width: '100%', height: 120, display: 'block' }}>
-                        <polyline points={points} fill="none" stroke="#5B2BC9" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-                        <line x1={0} y1={130} x2={640} y2={130} stroke="#F1EFE8" strokeWidth={1} />
-                      </svg>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: MUTED_CLR, marginTop: 2 }}>
-                        <span>{trend[0].date}</span><span>{trend[trend.length - 1].date}</span>
                       </div>
                     </div>
                   )}
