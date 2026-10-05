@@ -69,7 +69,13 @@ export function temperatureParam(model, temperature) {
  * rehearsal failed on all 24 turns identically.
  */
 export function reasoningEffortParam(model, hasTools) {
-    return hasTools && !LEGACY_MODELS.test(model || '') ? { reasoning_effort: 'none' } : {};
+    if (!hasTools || LEGACY_MODELS.test(model || '')) return {};
+    // gpt-6-astra is the exception: it has no 'none' — "Unsupported value:
+    // 'reasoning_effort' does not support 'none' with this model. Supported
+    // values are: 'low', 'medium', 'high', and 'xhigh'." — so the lowest it
+    // accepts is the closest to what a quick WhatsApp reply wants.
+    if (/^gpt-6-astra/.test(model || '')) return { reasoning_effort: 'low' };
+    return { reasoning_effort: 'none' };
 }
 
 /** Cheap credential check — lists models, which costs nothing. */
