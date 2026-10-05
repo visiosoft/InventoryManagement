@@ -19,12 +19,22 @@ import { transition, describeStage, DEFAULT_CADENCE, BUCKETS } from './buckets.j
 import { record, snapshotOf } from './log.js';
 
 const HISTORY_DAYS = 90;
-const HISTORY_TURNS = 100;
+const HISTORY_TURNS = 60;
+// A very long message is one person's essay, not context worth paying for twice.
+const MAX_LINE_CHARS = 500;
 
-const MEDIA_WORD = {
-    image: 'a photo', video: 'a video', audio: 'a voice note', voice: 'a voice note', document: 'a document',
-    sticker: 'a sticker', location: 'a location', contacts: 'a contact card', template: 'a template message',
-    interactive: 'a message with buttons',
+const MEDIA_NAME = {
+    image: 'photo', video: 'video', audio: 'voice note', voice: 'voice note', document: 'document',
+    sticker: 'sticker', location: 'location', contacts: 'contact card', template: 'template message',
+    interactive: 'message with buttons',
+};
+
+const mediaNote = (who, kinds) => {
+    const counts = new Map();
+    for (const k of kinds) counts.set(k, (counts.get(k) || 0) + 1);
+    const parts = [...counts].map(([name, n]) => (n > 1 ? `${n} ${name}s` : `a ${name}`));
+    const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+    return `[${who} sent ${list}]`;
 };
 
 /**
@@ -35,20 +45,30 @@ const MEDIA_WORD = {
  * document our own team had sent simply did not exist for it — and neither
  * did the fact that a colleague had already greeted the customer, described
  * the sizes and asked what they were storing. It then asked those questions
- * again. Media with no words becomes a one-line note saying who sent what, so
- * the agent knows the customer has already received it.
+ * again.
+ *
+ * Kept cheap on purpose: nothing is opened or described by a model. A file is
+ * a few words saying who sent what, a run of files from one side collapses to
+ * a single note ("[our team sent a video and 2 photos]"), and a voice note
+ * only counts for its words if it was already transcribed.
  */
 export function agentHistoryMessages(docs, inboundText) {
-    const rows = docs.map((m) => {
-        const words = String(m.text || m.transcript || '').trim();
-        const label = m.type && m.type !== 'text' ? MEDIA_WORD[m.type] : '';
-        const who = m.direction === 'inbound' ? 'the customer' : 'our team';
-        const text = label
-            ? `[${who} sent ${label}]${words ? ` ${words}` : ''}`
-            : words;
-        return { direction: m.direction, text };
-    });
-    return historyToMessages(rows, inboundText);
+    const rows = [];
+    for (const m of docs) {
+        const words = String(m.text || m.transcript || '').trim().slice(0, MAX_LINE_CHARS);
+        const name = m.type && m.type !== 'text' ? MEDIA_NAME[m.type] : '';
+        const last = rows[rows.length - 1];
+        if (name && !words) {
+            if (last && last.media && last.direction === m.direction) last.media.push(name);
+            else rows.push({ direction: m.direction, media: [name] });
+        } else {
+            rows.push({ direction: m.direction, text: name ? `[${m.direction === 'inbound' ? 'the customer' : 'our team'} sent a ${name}] ${words}` : words });
+        }
+    }
+    return historyToMessages(rows.map((r) => ({
+        direction: r.direction,
+        text: r.media ? mediaNote(r.direction === 'inbound' ? 'the customer' : 'our team', r.media) : r.text,
+    })), inboundText);
 }
 
 export function cadenceFor(agent) {

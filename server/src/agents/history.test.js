@@ -14,10 +14,10 @@ const chat = [
 
 test('media our team sent is in the history instead of vanishing', () => {
   const m = agentHistoryMessages(chat, '');
-  assert.deepEqual(m.map((x) => x.role), ['user', 'assistant', 'assistant', 'assistant', 'assistant']);
-  assert.equal(m[2].content, '[our team sent a video]');
-  assert.equal(m[3].content, '[our team sent a photo]');
-  assert.match(m[4].content, /10 to 200 sq ft/);
+  // The video and the photo from the same side collapse into one cheap line.
+  assert.deepEqual(m.map((x) => x.role), ['user', 'assistant', 'assistant', 'assistant']);
+  assert.equal(m[2].content, '[our team sent a video and a photo]');
+  assert.match(m[3].content, /10 to 200 sq ft/);
 });
 
 test('a refresh does not repeat the last customer message after our replies', () => {
@@ -41,4 +41,17 @@ test('customer media and captions are labelled, and a captioned file keeps its w
   assert.equal(m[0].content, '[the customer sent a photo]');
   assert.equal(m[1].content, '[the customer sent a document] my EID');
   assert.equal(m[2].content, '[the customer sent a voice note] I need a small unit');
+});
+
+test('a run of files collapses to one counted line, and long messages are trimmed', () => {
+  const m = agentHistoryMessages([
+    { direction: 'inbound', type: 'image', text: '' },
+    { direction: 'inbound', type: 'image', text: '' },
+    { direction: 'inbound', type: 'image', text: '' },
+    { direction: 'inbound', type: 'document', text: '' },
+    { direction: 'outbound', type: 'text', text: 'x'.repeat(2000) },
+  ], '');
+  assert.equal(m.length, 2);
+  assert.equal(m[0].content, '[the customer sent 3 photos and a document]');
+  assert.equal(m[1].content.length, 500);
 });

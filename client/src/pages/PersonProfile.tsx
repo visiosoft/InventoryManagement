@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Calendar, Clock, FileText, MessageCircle, MessageSquare,
-  ClipboardList, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
+  ClipboardList, ExternalLink, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
@@ -411,6 +411,15 @@ export default function PersonProfile() {
   const phone = customer?.phone || lead?.phone || ''
   const email = customer?.email || lead?.email || ''
   const waNumber = (lead?.phoneNormalized || phone).replace(/\D/g, '')
+  // The number for the real WhatsApp app: the lead's own WhatsApp number when
+  // it has one, in the international form wa.me needs (no +, no 00, and a
+  // local UAE 05… number becomes 9715…). wa.me hands the chat to the desktop
+  // app when it is installed, and to WhatsApp Web otherwise.
+  const waExternal = (() => {
+    const d = (lead?.whatsappNo || '').replace(/\D/g, '').replace(/^00/, '')
+    if (!d) return waNumber
+    return d.startsWith('0') ? `971${d.slice(1)}` : d
+  })()
   // Which half of the right-hand column is showing. The chat is a tab rather
   // than another card because it needs the height.
   const isCustomer = stage === 'customer'
@@ -644,12 +653,28 @@ export default function PersonProfile() {
             {waNumber && (
               <Link
                 to={`/whatsapp?phone=${waNumber}`}
-                title="Open the WhatsApp conversation in PurpleBox"
+                title="Open the conversation inside PurpleBox"
                 className="inline-flex items-center cursor-pointer"
                 style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13 }}
               >
-                <MessageCircle size={13} /> WhatsApp
+                <MessageCircle size={13} /> Chat
               </Link>
+            )}
+            {/* The real WhatsApp, not our inbox: opens this number in the
+                desktop app if there is one, else WhatsApp Web — what you want
+                for a voice note, an attachment, or just your own phone's
+                history with them. */}
+            {waExternal && (
+              <a
+                href={`https://wa.me/${waExternal}`}
+                target="_blank"
+                rel="noreferrer"
+                title="Open this number in WhatsApp (desktop app or WhatsApp Web)"
+                className="inline-flex items-center"
+                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(22,163,74,.28)', background: 'rgba(22,163,74,.09)', color: '#047857', fontWeight: 600, fontSize: 13 }}
+              >
+                <MessageCircle size={13} /> WhatsApp <ExternalLink size={11} style={{ opacity: 0.7 }} />
+              </a>
             )}
             {/* Raising a task about somebody was only possible from their chat,
                 which is the wrong place to be when you are reading their
