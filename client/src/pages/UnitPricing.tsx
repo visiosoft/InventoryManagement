@@ -470,9 +470,9 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
                 return (
                   <div key={u._id} className={`cot-row ${editingId === u._id ? 'cot-row--hot' : ''}`}>
                     <div className="cot-avatar" title={u.sizeSqf != null ? `${u.sizeSqf} sq ft` : ''}>{u.sizeSqf ?? '–'}</div>
-                    <div>
+                    <div className="cot-id">
                       <div className="cot-name">{u.unitNumber}</div>
-                      <div className="cot-sub">{u.sizeSqf != null ? `${u.sizeSqf} sq ft` : 'No size'}{u.floor ? ` · ${u.floor}` : ''}</div>
+                      <div className="cot-sub"><span className="cot-size">{u.sizeSqf != null ? `${u.sizeSqf} sq ft` : 'No size'}{u.floor ? ' · ' : ''}</span>{u.floor}</div>
                     </div>
 
                     <div className="cot-cell">
