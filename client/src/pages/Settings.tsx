@@ -228,41 +228,54 @@ export default function Settings() {
   })
 
 
+  // The pricing tabs share one look (see `.cot` in index.css); General keeps
+  // the app's own. The tab bar changes style with it so switching feels like
+  // moving between two rooms, not one page with two designs.
+  const cot = activeTab !== 'general'
+  const tabs: { key: string; label: string }[] = [
+    { key: 'general', label: 'General' },
+    { key: 'pricing', label: 'Unit Pricing' },
+    { key: 'bulk-pricing', label: 'Bulk Pricing' },
+    { key: 'website-pricing', label: 'Website Prices' },
+  ]
+  const goTab = (key: string) => setSearchParams((p) => { if (key === 'general') p.delete('tab'); else p.set('tab', key); return p })
+  const cotTitle: Record<string, { title: string; lede: string }> = {
+    pricing: { title: 'Unit pricing', lede: 'The actual price of every unit — set once, locked after. Leased shows what each tenant actually pays.' },
+    'bulk-pricing': { title: 'Bulk pricing', lede: 'Set one price for every unit of a given floor and size at once, instead of editing units one by one.' },
+    'website-pricing': { title: 'Website prices', lede: 'The price and discount shown for each size on the website. The old price is struck through beside the discounted one.' },
+  }
+
   return (
-    <div className={activeTab !== 'general' ? 'max-w-6xl space-y-4' : 'max-w-3xl space-y-4'}>
-      <PageHeader title="Settings" subtitle="Products, pricing and integrations" />
+    <div className={cot ? 'cot max-w-6xl' : 'max-w-3xl space-y-4'}>
+      {!cot && <PageHeader title="Settings" subtitle="Products, pricing and integrations" />}
 
       {isAdmin && (
-        <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
-          <button
-            type="button"
-            onClick={() => setSearchParams((p) => { p.delete('tab'); return p })}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === 'general' ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            General
-          </button>
-          <button
-            type="button"
-            onClick={() => setSearchParams((p) => { p.set('tab', 'pricing'); return p })}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === 'pricing' ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            Unit Pricing
-          </button>
-          <button
-            type="button"
-            onClick={() => setSearchParams((p) => { p.set('tab', 'bulk-pricing'); return p })}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === 'bulk-pricing' ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            Bulk Pricing
-          </button>
-          <button
-            type="button"
-            onClick={() => setSearchParams((p) => { p.set('tab', 'website-pricing'); return p })}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === 'website-pricing' ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            Website Prices
-          </button>
-        </div>
+        cot ? (
+          <div className="cot-tabs" role="tablist">
+            {tabs.map((t) => (
+              <button key={t.key} type="button" role="tab" aria-selected={activeTab === t.key}
+                onClick={() => goTab(t.key)} className={`cot-tab ${activeTab === t.key ? 'cot-tab--on' : ''}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
+            {tabs.map((t) => (
+              <button key={t.key} type="button" onClick={() => goTab(t.key)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === t.key ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )
+      )}
+
+      {cot && (
+        <>
+          <h1 className="cot-h1">{cotTitle[activeTab].title}</h1>
+          <p className="cot-lede" style={{ marginBottom: 26 }}>{cotTitle[activeTab].lede}</p>
+        </>
       )}
 
       {activeTab === 'pricing' ? (

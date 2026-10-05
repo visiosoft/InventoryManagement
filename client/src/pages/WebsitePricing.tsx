@@ -77,7 +77,7 @@ function SizeControl({ row, onSaved }: { row: SizeRow; onSaved: () => void }) {
           type="number" min="0" max="100" value={discount}
           onChange={(e) => { setDiscount(e.target.value); setMsg(null) }}
           placeholder={row.discount == null ? 'Mixed' : '0'}
-          className="w-16 min-w-0 rounded border px-2 py-1 text-sm bg-white text-foreground"
+          className="w-24 min-w-0 rounded border px-2 py-1 text-sm bg-white text-foreground"
         />
         %
       </label>
@@ -87,7 +87,7 @@ function SizeControl({ row, onSaved }: { row: SizeRow; onSaved: () => void }) {
         {showPreview ? (
           <span>
             <s className="text-muted-foreground">{aed(p)}</s>{' '}
-            <strong>{aed(offer!)}</strong>
+            <strong className="cot-offer">{aed(offer!)}</strong>
             <span className="ml-1 text-xs font-semibold" style={{ color: '#16A34A' }}>−{d}%</span>
           </span>
         ) : p > 0 ? (
@@ -194,10 +194,6 @@ export default function WebsitePricing({ embedded = false }: { embedded?: boolea
   return (
     <div className="space-y-4">
       {!embedded && <PageHeader title="Website Prices" subtitle="The prices and discounts shown on the website" />}
-      <p className="text-sm text-muted-foreground">
-        Set the price and discount for each size. The website shows the old price struck through beside the discounted one.
-        Changes apply to every unit of that size, and the website picks them up within a minute.
-      </p>
       <ApiPanel />
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
