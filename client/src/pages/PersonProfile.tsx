@@ -87,6 +87,7 @@ type Lead = {
   followUpNotifiedAt?: string | null
   followUpNote?: string
   siteVisitAt?: string | null
+  storageStartAt?: string | null
   attempts?: Attempt[]
   sequenceExhaustedAt?: string | null
   storageSizeValue?: number
@@ -1261,6 +1262,53 @@ export default function PersonProfile() {
                   {(lead.unitsNeeded ?? 1) > 1 && (
                     <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>{lead.unitsNeeded} units</p>
                   )}
+                </div>
+
+                {/* When they want the storage to start — "next month", "after
+                    Eid". Its own date: the follow-up is when we chase them and
+                    the site visit is when they come to look; this is when they
+                    are ready to take a unit. Presets for the gaps people
+                    actually say; the date box is there for the rest. */}
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Needs storage from</span>
+                  <div className="flex flex-wrap items-center" style={{ gap: 8 }}>
+                    <input
+                      type="date"
+                      value={lead.storageStartAt ? String(lead.storageStartAt).slice(0, 10) : ''}
+                      onChange={(e) => patchLead.mutate({ storageStartAt: e.target.value ? `${e.target.value}T00:00:00.000Z` : null })}
+                      style={{ height: 40, padding: '0 10px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                    />
+                    {([['1 week', 7], ['2 weeks', 14], ['1 month', 30], ['2 months', 60], ['3 months', 90]] as const).map(([label, days]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => patchLead.mutate({ storageStartAt: inDays(days, '00:00') })}
+                        className="cursor-pointer"
+                        style={{ height: 32, padding: '0 12px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK_2, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    {lead.storageStartAt && (
+                      <button
+                        type="button"
+                        onClick={() => patchLead.mutate({ storageStartAt: null })}
+                        className="cursor-pointer"
+                        style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {lead.storageStartAt && (() => {
+                    const day = String(lead.storageStartAt).slice(0, 10)
+                    const { days } = followUpState(day)
+                    return (
+                      <p style={{ fontSize: 12.5, color: days < 0 ? '#DC2626' : FAINT, marginTop: 6 }}>
+                        {formatDate(day)} · {days < 0 ? `${-days} day${days === -1 ? '' : 's'} ago` : days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}
+                      </p>
+                    )
+                  })()}
                 </div>
 
                 {/* Moving a stage is the moment somebody knows why. Asking

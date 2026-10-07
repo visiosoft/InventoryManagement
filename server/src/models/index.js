@@ -292,6 +292,14 @@ const leadSchema = new Schema(
        would lose whichever was set second. Always an exact day — nobody
        arranges a viewing for "some time in March". */
     siteVisitAt: { type: Date, default: null },
+    /* When they want the storage to start.
+
+       "Next month", "after Eid", "on the 15th": a customer often enquires well
+       before they need the unit. Its own date, because it answers a different
+       question from the other two — followUpAt is when we next chase them,
+       siteVisitAt is when they come to look, and this is when they are ready
+       to take the unit. A day, not an instant: nobody needs storage "at 4pm". */
+    storageStartAt: { type: Date, default: null },
     siteVisitTaskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
 
     /* Every attempt made to reach them, oldest first. "Attempt 2 of 3" is this

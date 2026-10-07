@@ -43,12 +43,12 @@ function fakeLead(docs) {
 }
 
 const d = (day) => new Date(`2026-10-${day}T09:00:00Z`);
-const leads = [
-  { _id: 'new-nodate', status: 'new', followUpAt: null, leadDateTime: d('06') },
-  { _id: 'later', status: 'follow_up_scheduled', followUpAt: d('28'), leadDateTime: d('01') },
+const leads = [   // storageStartAt is set on a different set of leads than followUpAt
+  { _id: 'new-nodate', status: 'new', followUpAt: null, storageStartAt: d('20'), leadDateTime: d('06') },
+  { _id: 'later', status: 'follow_up_scheduled', followUpAt: d('28'), storageStartAt: d('12'), leadDateTime: d('01') },
   { _id: 'overdue', status: 'follow_up_scheduled', followUpAt: d('02'), leadDateTime: d('01') },
   { _id: 'soon', status: 'contacted', followUpAt: d('09'), leadDateTime: d('03') },
-  { _id: 'won-old-date', status: 'won', followUpAt: d('01'), leadDateTime: d('02') },
+  { _id: 'won-old-date', status: 'won', followUpAt: d('01'), storageStartAt: d('01'), leadDateTime: d('02') },
   { _id: 'old-nodate', status: 'contacted', followUpAt: null, leadDateTime: d('04') },
 ];
 const ids = (rows) => rows.map((r) => r._id);
@@ -75,4 +75,22 @@ test('paging crosses from dated to undated leads without repeating or dropping a
 test('the default sort is unchanged: newest first', async () => {
   fakeLead(leads);
   assert.deepEqual(ids(await run(0, 50, 'newest')), ['new-nodate', 'old-nodate', 'soon', 'won-old-date', 'later', 'overdue']);
+});
+
+test('needFrom sorts by when they want the storage, soonest first, closed and undated after', async () => {
+  fakeLead(leads);
+  // later (12 Oct) and new-nodate (20 Oct) have a start date; the rest have none,
+  // and the won lead's old date does not count.
+  assert.deepEqual(ids(await run(0, 50, 'needFrom')), ['later', 'new-nodate', 'old-nodate', 'soon', 'won-old-date', 'overdue']);
+});
+
+test('needFrom pages the same way across the dated/undated boundary', async () => {
+  fakeLead(leads);
+  const pages = [...(await run(0, 1, 'needFrom')), ...(await run(1, 3, 'needFrom')), ...(await run(4, 5, 'needFrom'))];
+  assert.deepEqual(ids(pages), ['later', 'new-nodate', 'old-nodate', 'soon', 'won-old-date', 'overdue']);
+});
+
+test('an unknown sort falls back to newest first', async () => {
+  fakeLead(leads);
+  assert.deepEqual(ids(await run(0, 50, 'nonsense')), ids(await run(0, 50, 'newest')));
 });
