@@ -73,6 +73,8 @@ export type LeadQuery = {
   owner?: string
   from?: string
   to?: string
+  // 'followUp' = whoever needs a unit soonest first; omitted = newest first.
+  sort?: string
   page?: number
   limit?: number
 }
