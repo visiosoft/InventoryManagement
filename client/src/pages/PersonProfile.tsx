@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
+import { openWhatsApp } from '../lib/whatsappLink'
 import WhatsAppConsole from './WhatsApp'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES } from '../components/ui'
@@ -86,6 +87,7 @@ type Lead = {
   followUpNotifiedAt?: string | null
   followUpNote?: string
   siteVisitAt?: string | null
+  storageStartAt?: string | null
   attempts?: Attempt[]
   sequenceExhaustedAt?: string | null
   storageSizeValue?: number
@@ -135,15 +137,6 @@ function Card({ title, action, children }: { title: string; action?: React.React
         {action}
       </div>
       {children}
-    </div>
-  )
-}
-
-function Detail({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div className="flex justify-between items-center gap-3">
-      <span style={{ fontSize: 13, color: FAINT }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: 600, color: value ? INK : FAINT, textAlign: 'right' }}>{value || '—'}</span>
     </div>
   )
 }
@@ -420,6 +413,14 @@ export default function PersonProfile() {
   const phone = customer?.phone || lead?.phone || ''
   const email = customer?.email || lead?.email || ''
   const waNumber = (lead?.phoneNormalized || phone).replace(/\D/g, '')
+  // The number for the real WhatsApp app: the lead's own WhatsApp number when
+  // it has one, in the international form WhatsApp's links need (no +, no 00,
+  // and a local UAE 05… number becomes 9715…).
+  const waExternal = (() => {
+    const d = (lead?.whatsappNo || '').replace(/\D/g, '').replace(/^00/, '')
+    if (!d) return waNumber
+    return d.startsWith('0') ? `971${d.slice(1)}` : d
+  })()
   // Which half of the right-hand column is showing. The chat is a tab rather
   // than another card because it needs the height.
   const isCustomer = stage === 'customer'
@@ -493,10 +494,10 @@ export default function PersonProfile() {
       </div>
 
       {/* ── Header card ───────────────────────────────────────────────────── */}
-      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '26px 28px', marginBottom: 20 }}>
+      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '22px 26px', marginBottom: 20 }}>
         <div className="flex items-start justify-between flex-wrap" style={{ gap: 20 }}>
           <div className="flex items-start" style={{ gap: 16, flex: '1 1 420px', minWidth: 0 }}>
-            <div style={{ width: 56, height: 56, borderRadius: 999, background: PURPLE_100, color: DEEP, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 18, flex: '0 0 auto' }}>
+            <div style={{ width: 48, height: 48, borderRadius: 999, background: PURPLE_100, color: DEEP, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 16, flex: '0 0 auto' }}>
               {initials}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -525,23 +526,35 @@ export default function PersonProfile() {
                   live on the customer record, and editing the lead behind
                   them would change nothing anybody can see. */}
               {!editing ? (
-                <div style={{ marginTop: 10 }}>
-                  {/* A single narrow column left a header card mostly empty
-                      on anything wider than a phone — this fills the row
-                      the name already claims, wrapping to more columns as
-                      the window grows rather than fixed at one width. */}
-                  <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', columnGap: 28, rowGap: 6, maxWidth: 760 }}>
-                    <Detail label="Phone" value={phone} />
-                    <Detail label="WhatsApp" value={lead?.whatsappNo || phone} />
-                    {customer && <>
-                      <Detail label="Company" value={customer.company} />
-                      <Detail label="Nationality" value={customer.nationality} />
-                      <Detail label="Emergency contact" value={customer.emergencyNumber} />
-                      <Detail label="Emirates ID" value={customer.emiratesId} />
-                      <Detail label="ID expiry" value={customer.eidExpiry ? formatDate(customer.eidExpiry) : ''} />
-                      <Detail label="Address" value={customer.address} />
-                    </>}
+                <div style={{ marginTop: 12 }}>
+                  {/* Less is more: two numbers are a line, not a table. The
+                      fuller grid is for customers, who actually have more. */}
+                  <div className="flex items-center flex-wrap" style={{ gap: '4px 18px', fontSize: 14, color: INK_2 }}>
+                    <span className="inline-flex items-center" style={{ gap: 6 }}><Phone size={13} style={{ color: FAINT }} /> {phone || '—'}</span>
+                    {waNumber && waNumber !== (phone || '').replace(/\D/g, '') && (
+                      <span className="inline-flex items-center" style={{ gap: 6 }}><MessageCircle size={13} style={{ color: FAINT }} /> {lead?.whatsappNo}</span>
+                    )}
+                    {email && <span>{email}</span>}
                   </div>
+                  {/* Only what is actually on file: a row of dashes says
+                      nothing. Small label over value, wrapping as needed. */}
+                  {customer && (
+                    <div className="flex flex-wrap" style={{ gap: '12px 32px', marginTop: 14 }}>
+                      {([
+                        ['Company', customer.company],
+                        ['Nationality', customer.nationality],
+                        ['Emergency contact', customer.emergencyNumber],
+                        ['Emirates ID', customer.emiratesId],
+                        ['ID expiry', customer.eidExpiry ? formatDate(customer.eidExpiry) : ''],
+                        ['Address', customer.address],
+                      ] as const).filter(([, v]) => v).map(([label, v]) => (
+                        <div key={label} style={{ maxWidth: 280 }}>
+                          <div style={{ fontSize: 11.5, color: FAINT, marginBottom: 2 }}>{label}</div>
+                          <div style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {(lead || customer) && (
                     <button
                       type="button"
@@ -641,19 +654,32 @@ export default function PersonProfile() {
             {waNumber && (
               <Link
                 to={`/whatsapp?phone=${waNumber}`}
-                title="Open the conversation in PurpleBox"
+                title="Open the conversation inside PurpleBox"
                 className="inline-flex items-center cursor-pointer"
-                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, color: DEEP, fontWeight: 600, fontSize: 13 }}
+                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13 }}
               >
                 <MessageCircle size={13} /> Chat
               </Link>
             )}
-            {waNumber && (
+            {/* The real WhatsApp, not our inbox: opens this number in the
+                desktop app if there is one, else WhatsApp Web — what you want
+                for a voice note, an attachment, or just your own phone's
+                history with them. */}
+            {waExternal && (
               <a
-                href={`https://wa.me/${waNumber}`}
+                href={`https://wa.me/${waExternal}`}
                 target="_blank"
                 rel="noreferrer"
-                title="Open WhatsApp in a new tab"
+                // Tries the installed WhatsApp app first and falls back to
+                // wa.me (WhatsApp Web) if nothing opens — see lib/whatsappLink.
+                // The href stays as the real address, so open-in-new-tab,
+                // copy-link and middle-click all still work.
+                onClick={(e) => {
+                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+                  e.preventDefault()
+                  openWhatsApp(waExternal)
+                }}
+                title="Open this number in the WhatsApp app (or WhatsApp Web if it is not installed)"
                 className="inline-flex items-center"
                 style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(22,163,74,.28)', background: 'rgba(22,163,74,.09)', color: '#047857', fontWeight: 600, fontSize: 13 }}
               >
@@ -667,10 +693,10 @@ export default function PersonProfile() {
               type="button"
               onClick={() => setTaskOpen(true)}
               className="inline-flex items-center cursor-pointer"
-              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid #F5DFB8', background: '#FFF7E6', color: '#B45309', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
+              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
               title="Create a task about this lead"
             >
-              <ClipboardList size={13} /> Create a task
+              <ClipboardList size={13} /> Task
             </button>
             {/* Available at both stages: the wizard creates the customer when a
                 lead is booked, which is the point at which they become one. */}
@@ -695,7 +721,7 @@ export default function PersonProfile() {
       {/* ── Body: details and ownership beside the running account ────────── */}
       <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
 
-        <div className="flex flex-col" style={{ flex: '1 1 340px', maxWidth: 380, gap: 20 }}>
+        <div className="flex flex-col" style={{ flex: '1 1 300px', maxWidth: 360, gap: 20, order: 2 }}>
           {/* When we next deal with this person, kept beside who they are
               rather than buried among the pipeline controls. Only ever shows
               the date the stage in play is actually about. */}
@@ -1093,16 +1119,16 @@ export default function PersonProfile() {
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     onBlur={() => { if (notes !== (lead.notes || '')) patchLead.mutate({ notes }) }}
-                    rows={4}
-                    placeholder="Anything worth knowing about this person — what they are storing, what was agreed, who referred them."
+                    rows={12}
+                    placeholder="What they are storing, what was agreed, who referred them."
                     style={{
                       width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff',
                       padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', color: INK,
-                      resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5,
+                      resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5, minHeight: 240,
                     }}
                   />
                   <p style={{ fontSize: 12, color: FAINT, marginTop: 6 }}>
-                    Saved when you click away. Clearing the box removes the note.
+                    Saves when you click away.
                   </p>
                 </>
               ) : (
@@ -1113,7 +1139,7 @@ export default function PersonProfile() {
         </div>
 
         {/* ── The running account ─────────────────────────────────────────── */}
-        <div className="flex flex-col" style={{ flex: '2 1 480px', gap: 20 }}>
+        <div className="flex flex-col" style={{ flex: '3 1 480px', gap: 20, order: 1, minWidth: 0 }}>
           {/* The conversation, on the page about the person.
               Rendered by the console itself rather than a copy of it, so the
               history, the live updates, quick replies, voice notes,
@@ -1151,16 +1177,16 @@ export default function PersonProfile() {
 
           {pane === 'details' && (<>
           {lead && (
-            <Card title="Ownership & status">
-              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16, alignItems: 'start' }}>
+            <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: 22 }}>
+              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, alignItems: 'start' }}>
                 <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Assigned to</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: FAINT, display: 'block', marginBottom: 6 }}>Assigned to</span>
                   {isAdmin ? (
                     <select
                       value={lead.owner?._id ?? ''}
                       onChange={(e) => assign.mutate(e.target.value)}
                       className="cursor-pointer"
-                      style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+                      style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
                     >
                       <option value="">Nobody</option>
                       {assignable.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
@@ -1171,13 +1197,13 @@ export default function PersonProfile() {
                       {/* Reps work their own leads and do not hand them on, so
                           say who can rather than leaving a name that looks
                           editable and is not. */}
-                      <p style={{ fontSize: 12.5, color: FAINT, marginTop: 4 }}>An admin can move this to somebody else.</p>
+                      
                     </>
                   )}
                 </div>
 
                 <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Stage</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: FAINT, display: 'block', marginBottom: 6 }}>Stage</span>
                   <select
                     value={pendingStage || lead.status}
                     onChange={(e) => {
@@ -1187,7 +1213,7 @@ export default function PersonProfile() {
                       setPendingStage(next)
                     }}
                     className="cursor-pointer"
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+                    style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
                   >
                     {LEAD_STATUS_FLOW.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
@@ -1206,7 +1232,7 @@ export default function PersonProfile() {
                     themselves, so every size that exists can be picked and
                     each says how many are free. */}
                 <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Size they need</span>
+                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Size needed</span>
                   <select
                     value={lead.storageSizeValue ? String(lead.storageSizeValue) : ''}
                     onChange={(e) => patchLead.mutate({
@@ -1214,7 +1240,7 @@ export default function PersonProfile() {
                       storageSizeUnit: 'sqft',
                     })}
                     className="cursor-pointer"
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
+                    style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
                   >
                     <option value="">Not asked yet</option>
                     {/* Asked, and they genuinely do not know — which is a
@@ -1236,6 +1262,53 @@ export default function PersonProfile() {
                   {(lead.unitsNeeded ?? 1) > 1 && (
                     <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>{lead.unitsNeeded} units</p>
                   )}
+                </div>
+
+                {/* When they want the storage to start — "next month", "after
+                    Eid". Its own date: the follow-up is when we chase them and
+                    the site visit is when they come to look; this is when they
+                    are ready to take a unit. Presets for the gaps people
+                    actually say; the date box is there for the rest. */}
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Needs storage from</span>
+                  <div className="flex flex-wrap items-center" style={{ gap: 8 }}>
+                    <input
+                      type="date"
+                      value={lead.storageStartAt ? String(lead.storageStartAt).slice(0, 10) : ''}
+                      onChange={(e) => patchLead.mutate({ storageStartAt: e.target.value ? `${e.target.value}T00:00:00.000Z` : null })}
+                      style={{ height: 40, padding: '0 10px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                    />
+                    {([['1 week', 7], ['2 weeks', 14], ['1 month', 30], ['2 months', 60], ['3 months', 90]] as const).map(([label, days]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => patchLead.mutate({ storageStartAt: inDays(days, '00:00') })}
+                        className="cursor-pointer"
+                        style={{ height: 32, padding: '0 12px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK_2, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    {lead.storageStartAt && (
+                      <button
+                        type="button"
+                        onClick={() => patchLead.mutate({ storageStartAt: null })}
+                        className="cursor-pointer"
+                        style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {lead.storageStartAt && (() => {
+                    const day = String(lead.storageStartAt).slice(0, 10)
+                    const { days } = followUpState(day)
+                    return (
+                      <p style={{ fontSize: 12.5, color: days < 0 ? '#DC2626' : FAINT, marginTop: 6 }}>
+                        {formatDate(day)} · {days < 0 ? `${-days} day${days === -1 ? '' : 's'} ago` : days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}
+                      </p>
+                    )
+                  })()}
                 </div>
 
                 {/* Moving a stage is the moment somebody knows why. Asking
@@ -1284,7 +1357,7 @@ export default function PersonProfile() {
                 )}
 
               </div>
-            </Card>
+            </div>
           )}
 
           {lead && (
@@ -1295,7 +1368,7 @@ export default function PersonProfile() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="What was said, what was promised, why they have gone quiet"
-                style={{ width: '100%', minHeight: 76, padding: '12px 14px', borderRadius: 16, border: `1px solid ${LINE_STRONG}`, fontFamily: 'inherit', fontSize: 14, color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                style={{ width: '100%', minHeight: 60, padding: '10px 14px', borderRadius: 14, border: `1px solid ${LINE_STRONG}`, fontFamily: 'inherit', fontSize: 14, color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
               />
               <div className="flex justify-end" style={{ marginTop: 10 }}>
                 <button
@@ -1304,7 +1377,7 @@ export default function PersonProfile() {
                   disabled={!note.trim() || addNote.isPending}
                   className="cursor-pointer disabled:cursor-default"
                   style={{
-                    height: 40, padding: '0 20px', borderRadius: 999, border: 'none', fontWeight: 700, fontSize: 14,
+                    height: 36, padding: '0 18px', borderRadius: 999, border: 'none', fontWeight: 700, fontSize: 13,
                     fontFamily: 'inherit', color: '#fff',
                     background: !note.trim() || addNote.isPending ? PURPLE_200 : PURPLE,
                   }}
@@ -1313,7 +1386,7 @@ export default function PersonProfile() {
                 </button>
               </div>
 
-              <div style={{ height: 1, background: LINE, margin: '22px 0' }} />
+              <div style={{ height: 1, background: LINE, margin: '18px 0 6px' }} />
 
               {timeline.length === 0 ? (
                 <p style={{ fontSize: 14, color: FAINT }}>Nothing recorded yet.</p>

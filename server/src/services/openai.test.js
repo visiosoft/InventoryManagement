@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenLimitParam, temperatureParam } from './openai.js';
+import { tokenLimitParam, temperatureParam, reasoningEffortParam, usesResponsesApi, toResponsesInput } from './openai.js';
 
 // The exact failure this fixes: "Unsupported parameter: 'max_tokens' is not
 // supported with this model. Use 'max_completion_tokens' instead" — hit when
@@ -47,4 +47,31 @@ test('an unrecognised or missing model also omits temperature, matching the safe
   assert.deepEqual(temperatureParam('', 0.3), {});
   assert.deepEqual(temperatureParam(undefined, 0.3), {});
   assert.deepEqual(temperatureParam('some-future-model', 0.3), {});
+});
+
+test('gpt-6-astra tool turns go to the Responses API, and send no reasoning_effort on chat completions', () => {
+  assert.equal(usesResponsesApi('gpt-6-astra', true), true);
+  assert.equal(usesResponsesApi('gpt-6-astra', false), false);
+  assert.equal(usesResponsesApi('gpt-6-luna', true), false);
+  assert.deepEqual(reasoningEffortParam('gpt-6-astra', true), {});
+});
+
+test('other gpt-6 models still need none with tools, and legacy or tool-less calls send nothing', () => {
+  assert.deepEqual(reasoningEffortParam('gpt-6-luna', true), { reasoning_effort: 'none' });
+  assert.deepEqual(reasoningEffortParam('gpt-6-sol', true), { reasoning_effort: 'none' });
+  assert.deepEqual(reasoningEffortParam('gpt-6-astra', false), {});
+  assert.deepEqual(reasoningEffortParam('gpt-4.1', true), {});
+});
+
+test('a chat-style tool conversation becomes Responses input items', () => {
+  const input = toResponsesInput([
+    { role: 'user', content: 'price for 35?' },
+    { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'check_availability', arguments: '{"sizeSqf":35}' } }] },
+    { role: 'tool', tool_call_id: 'c1', content: '{"free":2}' },
+  ]);
+  assert.deepEqual(input, [
+    { role: 'user', content: 'price for 35?' },
+    { type: 'function_call', call_id: 'c1', name: 'check_availability', arguments: '{"sizeSqf":35}' },
+    { type: 'function_call_output', call_id: 'c1', output: '{"free":2}' },
+  ]);
 });

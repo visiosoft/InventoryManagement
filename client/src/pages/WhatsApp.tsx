@@ -3374,7 +3374,12 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
      or a wording worth a second try. */
   const suggestAgain = useMutation({
     mutationFn: (leadId: string) => agentsApi.suggestAgain(leadId),
-    onSuccess: () => { setSendErr(''); refetchConvos() },
+    onSuccess: (r) => {
+      // Our team may already have answered everything: then there is nothing
+      // to suggest, and saying so beats a card that silently never appears.
+      setSendErr(r.empty ? 'Nothing new to reply to — the conversation is up to date.' : '')
+      refetchConvos()
+    },
     onError: (e) => setSendErr(apiError(e)),
   })
 
@@ -4424,6 +4429,29 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               style={{ background: '#F3EEFF', border: '1px solid #D9CBFA' }}>
               <div className="flex items-center gap-1.5 mb-1.5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: selectedConvo.botAgentColor || '#4A1FA0' }}>
                 <Bot size={13} /> {selectedConvo.botAgentName ? `${selectedConvo.botAgentName} suggests` : 'Suggested reply'}
+                {/* The conversation can move on after a suggestion is written —
+                    a colleague answers from another device, or the customer
+                    writes again. Refresh re-reads the whole chat, ours
+                    included, and says so when the suggestion is out of date. */}
+                {(() => {
+                  const stale = Boolean(selectedConvo.botDraftAt) && new Date(selectedConvo.lastAt).getTime() > new Date(selectedConvo.botDraftAt!).getTime() + 5000
+                  return (
+                    <span className="ml-auto inline-flex items-center gap-2" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                      {stale && <span style={{ fontSize: 11, fontWeight: 600, color: '#B45309' }}>New messages since this</span>}
+                      {selectedConvo.lead && (
+                        <button type="button"
+                          onClick={() => suggestAgain.mutate(selectedConvo.lead!._id)}
+                          disabled={suggestAgain.isPending}
+                          className="h-6 px-2.5 rounded-full cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                          style={{ border: `1px solid ${stale ? '#F5DFB8' : '#D9CBFA'}`, background: stale ? '#FFF7E6' : '#fff', fontSize: 11.5, fontWeight: 700, color: stale ? '#B45309' : '#4A1FA0' }}
+                          title="Read the whole conversation again and write a new suggestion">
+                          {suggestAgain.isPending ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                          {suggestAgain.isPending ? 'Reading…' : 'Refresh'}
+                        </button>
+                      )}
+                    </span>
+                  )
+                })()}
               </div>
               {editingDraft ? (
                 <Textarea rows={3} value={draftEditText} onChange={(e) => setDraftEditText(e.target.value)} />

@@ -728,6 +728,7 @@ router.get('/conversations', async (req, res) => {
             botStatus: bot?.status || '',
             botDraft: bot?.draft || '',
             botActionId: bot?.draftActionId || '',
+            botDraftAt: bot?.draftAt || null,
             botEscalationReason: bot?.escalationReason || '',
             botAgentName: bot?.agentName || '',
             botAgentColor: bot?.agentColor || '',

@@ -87,6 +87,8 @@ export interface Lead {
   followUpAt?: string | null
   followUpKind?: 'date' | 'week' | 'month'
   siteVisitAt?: string | null
+  /** When they want the storage to start — a day, 'YYYY-MM-DDT00:00:00.000Z'. */
+  storageStartAt?: string | null
   attempts?: { no: number; at: string; channel: string; outcome: string; note?: string; user?: { name: string } | null }[]
   sequenceExhaustedAt?: string | null
   _id: string

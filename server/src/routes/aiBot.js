@@ -97,6 +97,14 @@ const MODELS = [
         // OpenAI's price list, unlike Sol.
         note: 'Not yet evaluated. Cheaper than gpt-4o-mini on list price — try it and see.',
     },
+    {
+        id: 'gpt-6-astra',
+        label: 'GPT-6 Astra',
+        cost: 'n/a',
+        // Added on request. No list-price multiple here: not measured against
+        // this prompt, and not yet run through the eval questions above.
+        note: 'Not yet evaluated against the real instructions and price list — try it and see.',
+    },
 ];
 const MODEL_IDS = MODELS.map((m) => m.id);
 

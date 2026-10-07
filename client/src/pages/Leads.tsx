@@ -9,6 +9,7 @@ import WaitingStrip from '../components/WaitingStrip'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
+import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -29,6 +30,7 @@ const PURPLE = '#5B2BC9'
  * a lone number has nothing to say what it is.
  */
 const LEADS_CSS = `
+.lead-sort-mobile { display: none; }
 @media (max-width: 1024px) {
   .lead-shell { flex-direction: column !important; }
   .lead-rail {
@@ -40,6 +42,12 @@ const LEADS_CSS = `
 }
 
 @media (max-width: 760px) {
+  .lead-sort-mobile {
+    display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; margin-bottom: 10px; max-width: 100%;
+    border-radius: 999px; border: 1px solid rgba(20,8,31,.12); background: #fff; color: #4A4357;
+    font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+  }
+  .lead-sort-mobile[data-on="true"] { border-color: #5B2BC9; color: #5B2BC9; background: #F7F3FF; }
   /* The horizontal scroll and the width floor under it both go, or the card
      layout would still be sitting on a 980px canvas. */
   .lead-table { overflow: visible !important; }
@@ -57,24 +65,30 @@ const LEADS_CSS = `
      a card the name and its actions belong together at the top. */
   .lead-row > *:nth-child(1) { order: 1; flex: 0 0 auto; }   /* select      */
   .lead-row > *:nth-child(2) { order: 2; flex: 1 1 auto; min-width: 0; }  /* name */
-  .lead-row > *:nth-child(9) { order: 3; flex: 0 0 auto; }   /* view/book/delete */
+  .lead-row > *:nth-child(11) { order: 3; flex: 0 0 auto; }  /* view/book/delete */
   .lead-row > *:nth-child(3) { order: 4; flex: 1 0 100%; }   /* phone       */
   .lead-row > *:nth-child(4) { order: 5; flex: 0 0 auto; }   /* source      */
   .lead-row > *:nth-child(6) { order: 6; flex: 0 0 auto; }   /* status      */
-  .lead-row > *:nth-child(5) { order: 7; flex: 0 0 auto; }   /* assigned to */
-  .lead-row > *:nth-child(7) { order: 8; flex: 1 1 44%; }    /* chase       */
-  .lead-row > *:nth-child(8) { order: 9; flex: 1 1 44%; }    /* added       */
+  .lead-row > *:nth-child(7) { order: 7; flex: 1 1 44%; }    /* needs from  */
+  .lead-row > *:nth-child(8) { order: 8; flex: 1 1 44%; }    /* follow-up   */
+  .lead-row > *:nth-child(5) { order: 9; flex: 0 0 auto; }   /* assigned to */
+  .lead-row > *:nth-child(9) { order: 10; flex: 1 1 44%; }   /* chase       */
+  .lead-row > *:nth-child(10) { order: 11; flex: 1 1 44%; }  /* added       */
 
-  /* Without the header row these two are just numbers on a card. The select
-     and the pills say what they are already, so only these need telling. */
+  /* Without the header row these are just values on a card. The select and the
+     pills say what they are already, so only these need telling. */
   .lead-row > *:nth-child(7)::before,
-  .lead-row > *:nth-child(8)::before {
+  .lead-row > *:nth-child(8)::before,
+  .lead-row > *:nth-child(9)::before,
+  .lead-row > *:nth-child(10)::before {
     display: block;
     font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
     text-transform: uppercase; color: #756E80; margin-bottom: 2px;
   }
-  .lead-row > *:nth-child(7)::before { content: 'Chase'; }
-  .lead-row > *:nth-child(8)::before { content: 'Added'; }
+  .lead-row > *:nth-child(7)::before { content: 'Needs from'; }
+  .lead-row > *:nth-child(8)::before { content: 'Follow-up'; }
+  .lead-row > *:nth-child(9)::before { content: 'Chase'; }
+  .lead-row > *:nth-child(10)::before { content: 'Added'; }
 
   .lead-row > *:nth-child(3) { font-size: 14px !important; }
   /* A full-width select is easier to hit than one sized to a table column. */
@@ -141,6 +155,8 @@ function LeadForm({
             storageSizeUnit: 'sqft',
             durationValue: Number(f.get('durationValue') || 1),
             durationUnit: String(f.get('durationUnit') || 'month'),
+            // A day. Empty clears it, which is what emptying the box means.
+            storageStartAt: f.get('storageStartAt') ? `${String(f.get('storageStartAt'))}T00:00:00.000Z` : null,
             owner: String(f.get('owner') || ''),
             unitsNeeded: Number(f.get('unitsNeeded') || 1),
             notes: String(f.get('notes') || ''),
@@ -241,6 +257,10 @@ function LeadForm({
                     <Input name="unitsNeeded" type="number" min={1} step="1" defaultValue={initial?.unitsNeeded ?? 1} required />
                 </Field>
             </div>
+
+            <Field label="Needs storage from">
+                <Input name="storageStartAt" type="date" defaultValue={initial?.storageStartAt ? String(initial.storageStartAt).slice(0, 10) : ''} />
+            </Field>
 
             <Field label="Notes">
                 <Textarea name="notes" defaultValue={initial?.notes} />
@@ -801,6 +821,10 @@ export default function Leads() {
 
     const [page, setPage] = useState(1)
     const [limit, setLimit] = useState(25)
+    // 'newest' is the long-standing order. 'needFrom' puts whoever wants storage
+    // soonest at the top, 'followUp' whoever is to be chased soonest. Set from the
+    // column headers.
+    const [sort, setSort] = useState<'newest' | 'followUp' | 'needFrom'>('newest')
 
     const queryParams = useMemo(
         () => ({
@@ -812,14 +836,15 @@ export default function Leads() {
             attemptBy: attemptBy || undefined,
             from: from || undefined,
             to: to || undefined,
+            sort: sort === 'newest' ? undefined : sort,
             page,
             limit,
         }),
-        [search, status, source, owner, chase, attemptBy, from, to, page, limit]
+        [search, status, source, owner, chase, attemptBy, from, to, sort, page, limit]
     )
 
     // Back to page 1 whenever a filter changes
-    useEffect(() => { setPage(1) }, [search, status, source, owner, chase, attemptBy, from, to, limit])
+    useEffect(() => { setPage(1) }, [search, status, source, owner, chase, attemptBy, from, to, sort, limit])
 
     const { data: leadsPage, isLoading } = useQuery<LeadPage>({
         queryKey: ['leads', queryParams],
@@ -840,8 +865,9 @@ export default function Leads() {
             attemptBy: attemptBy || undefined,
             from: from || undefined,
             to: to || undefined,
+            sort: sort === 'newest' ? undefined : sort,
         }),
-        [search, status, source, owner, chase, attemptBy, from, to]
+        [search, status, source, owner, chase, attemptBy, from, to, sort]
     )
     const { data: navOrderIds } = useQuery({
         queryKey: ['leads-nav-order', navFilterParams],
@@ -1142,7 +1168,7 @@ export default function Leads() {
         other: { bg: '#F6F0E4', fg: '#4A4357' },
     }
 
-    const GRID = '36px minmax(190px,1.3fr) 145px 112px 164px 172px 128px 104px 168px'
+    const GRID = '36px minmax(190px,1.3fr) 145px 112px 164px 150px 150px 150px 128px 104px 168px'
 
     // No outer padding or width cap here: the app layout already gutters every
     // page with p-3 sm:p-4, and 32px on top of a 1240px cap left most of a wide
@@ -1372,11 +1398,19 @@ export default function Leads() {
                 )}
 
                 {/* ── Table ── */}
+                {/* The column headers are hidden on a phone, and the sort lives in
+                    one of them — so a phone gets the same switch here. */}
+                <select className="lead-sort-mobile" data-on={sort !== 'newest'} value={sort}
+                    onChange={(e) => setSort(e.target.value as 'newest' | 'followUp' | 'needFrom')} aria-label="Sort leads">
+                    <option value="newest">Sort: newest first</option>
+                    <option value="needFrom">Sort: needs storage soonest</option>
+                    <option value="followUp">Sort: follow-up soonest</option>
+                </select>
                 {isLoading ? (
                     <Spinner />
                 ) : (
                     <div className="lead-table" style={{ background: '#fff', border: '1px solid rgba(20,8,31,.10)', borderRadius: 18, overflow: 'auto' }}>
-                        <div className="lead-table-inner" style={{ minWidth: 980 }}>
+                        <div className="lead-table-inner" style={{ minWidth: 1290 }}>
 
                             {/* Header row */}
                             <div className="lead-head" style={{ display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', gap: 10, padding: '14px 18px', background: '#FBF8F2', borderBottom: '1px solid rgba(20,8,31,.10)' }}>
@@ -1387,9 +1421,27 @@ export default function Leads() {
                                     style={{ width: 16, height: 16, cursor: 'pointer' }}
                                     aria-label="Select every lead on this page"
                                 />
-                                {['Name', 'Phone', 'Source', 'Assigned to', 'Status', 'Chase', 'Added'].map((h) => (
-                                    <span key={h} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: MUTED_COLOR, whiteSpace: 'nowrap' }}>{h}</span>
-                                ))}
+                                {['Name', 'Phone', 'Source', 'Assigned to', 'Status', 'Needs from', 'Follow-up', 'Chase', 'Added'].map((h) => {
+                                    /* Two headers sort. Clicking one orders the list by that
+                                       date, soonest first; clicking it again goes back to
+                                       newest first. */
+                                    const key = h === 'Needs from' ? 'needFrom' : h === 'Follow-up' ? 'followUp' : null
+                                    if (!key) {
+                                        return <span key={h} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: MUTED_COLOR, whiteSpace: 'nowrap' }}>{h}</span>
+                                    }
+                                    const on = sort === key
+                                    return (
+                                        <button
+                                            key={h}
+                                            type="button"
+                                            onClick={() => setSort(on ? 'newest' : key)}
+                                            title={on ? 'Sorted soonest first — click to go back to newest first' : `Sort by ${h.toLowerCase()}, soonest first`}
+                                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, background: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: on ? PURPLE : MUTED_COLOR, whiteSpace: 'nowrap' }}
+                                        >
+                                            {h} <span aria-hidden style={{ fontSize: 12 }}>{on ? '↑' : '↕'}</span>
+                                        </button>
+                                    )
+                                })}
                                 <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: MUTED_COLOR, textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</span>
                             </div>
 
@@ -1458,6 +1510,52 @@ export default function Leads() {
                                         <span style={{ display: 'inline-flex', alignItems: 'center', background: sc.bg, color: sc.fg, borderRadius: 999, padding: '6px 12px', fontSize: 12, fontWeight: 600, width: 'fit-content' }}>
                                             {statusLabel(lead.status)}
                                         </span>
+
+                                        {/* When they want the storage to start. The tone says how
+                                            close it is: a date that has passed on a lead still
+                                            open is somebody ready and waiting. Closed leads show
+                                            nothing. */}
+                                        <div style={{ minWidth: 0 }}>{(() => {
+                                            const closed = ['won', 'lost', 'already_customer'].includes(lead.status)
+                                            if (closed || !lead.storageStartAt) return <span style={{ fontSize: 13, color: '#B7B1C0' }}>—</span>
+                                            const day = String(lead.storageStartAt).slice(0, 10)
+                                            const { days } = followUpState(day)
+                                            const tone = days < 0 ? FOLLOW_UP_TONE.overdue : days === 0 ? FOLLOW_UP_TONE.today : days <= 7 ? FOLLOW_UP_TONE.soon : FOLLOW_UP_TONE.later
+                                            const when = days < 0 ? `Ready · ${-days}d ago` : days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : days <= 45 ? `In ${days} days` : `In ${Math.round(days / 30)} months`
+                                            const short = new Date(`${day}T00:00:00.000Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' })
+                                            return (
+                                                <>
+                                                    <span style={{ display: 'inline-flex', background: tone.bg, color: tone.color, borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>{when}</span>
+                                                    <div style={{ fontSize: 12, color: MUTED_COLOR, whiteSpace: 'nowrap', marginTop: 2 }}>{short}</div>
+                                                </>
+                                            )
+                                        })()}</div>
+
+                                        {/* When they need the unit — the follow-up date from
+                                            the lead page, with the site visit under it. Colour
+                                            and wording come from the same helper the lead page
+                                            uses, so the two never disagree. A closed lead shows
+                                            nothing: an old date on it is not somebody waiting. */}
+                                        <div style={{ minWidth: 0 }}>{(() => {
+                                            const closed = ['won', 'lost', 'already_customer'].includes(lead.status)
+                                            const day = !closed && lead.followUpAt ? reminderDay(lead.followUpAt, lead.followUpKind) : ''
+                                            const visit = !closed && lead.siteVisitAt ? String(lead.siteVisitAt).slice(0, 10) : ''
+                                            if (!day && !visit) return <span style={{ fontSize: 13, color: '#B7B1C0' }}>—</span>
+                                            const short = (d: string) => new Date(`${d}T00:00:00.000Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' })
+                                            const st = day ? followUpState(day) : null
+                                            const tint = st ? FOLLOW_UP_TONE[st.tone] : null
+                                            const when = !st ? '' : st.tone === 'overdue' ? `${-st.days}d overdue` : st.days === 0 ? 'Today' : st.days === 1 ? 'Tomorrow' : `In ${st.days} days`
+                                            const time = day && lead.followUpAt ? String(lead.followUpAt).slice(11, 16) : ''
+                                            return (
+                                                <>
+                                                    {st && tint && (
+                                                        <span style={{ display: 'inline-flex', background: tint.bg, color: tint.color, borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>{when}</span>
+                                                    )}
+                                                    {day && <div style={{ fontSize: 12, color: MUTED_COLOR, whiteSpace: 'nowrap', marginTop: 2 }}>{short(day)}{time && time !== '00:00' ? ` · ${time}` : ''}</div>}
+                                                    {visit && <div style={{ fontSize: 12, color: '#2563EB', whiteSpace: 'nowrap', marginTop: day ? 1 : 0 }}>Visit · {short(visit)}</div>}
+                                                </>
+                                            )
+                                        })()}</div>
 
                                         {/* How far the chase has got, without opening the
                                             lead. "Not tried" is the state worth spotting from

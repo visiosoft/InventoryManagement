@@ -1,0 +1,36 @@
+name: Sync demo with main
+
+# The demo branch tracks main: every push to main is merged into it, so the
+# demo never falls behind. Anything committed only on demo is kept; if a main
+# change conflicts with it, this job fails (visible in the Actions tab) rather
+# than guessing — resolve it by merging main into demo by hand.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: sync-demo
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge main into demo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin demo >/dev/null; then
+            git checkout demo
+            git merge --no-edit origin/main
+          else
+            git checkout -b demo origin/main
+          fi
+          git push origin demo

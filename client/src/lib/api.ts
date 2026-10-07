@@ -73,6 +73,9 @@ export type LeadQuery = {
   owner?: string
   from?: string
   to?: string
+  // 'needFrom' = whoever wants storage soonest; 'followUp' = whoever is to be
+  // chased soonest; omitted = newest first.
+  sort?: string
   page?: number
   limit?: number
 }
@@ -206,6 +209,7 @@ export interface WebsiteAnalytics {
   today?: { sessions: number; users: number; newUsers: number; newVisitorPct: number; vsYesterdayPct: number | null }
   byCountry?: { country: string; sessions: number }[]
   totalSessionsInRange?: number
+  topPages?: { path: string; views: number; users: number }[]
   trend?: { date: string; sessions: number }[]
   days?: number
 }
@@ -582,6 +586,9 @@ export type WhatsAppConversation = {
   botStatus?: '' | 'bot' | 'escalated' | 'paused'
   botDraft?: string
   botActionId?: string
+  // When the pending suggestion was written, so the inbox can tell it is out of
+  // date once newer messages exist.
+  botDraftAt?: string | null
   botEscalationReason?: string
   botAgentName?: string
   botAgentColor?: string

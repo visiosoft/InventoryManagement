@@ -81,6 +81,7 @@ function cleanBody(body) {
         followUpKind: FOLLOW_UP_KINDS.includes(body.followUpKind) ? body.followUpKind : 'date',
         followUpNote: String(body.followUpNote || '').slice(0, 500),
         siteVisitAt: body.siteVisitAt ? parseDate(body.siteVisitAt) : null,
+        storageStartAt: body.storageStartAt ? parseDate(body.storageStartAt) : null,
     };
 }
 
@@ -225,6 +226,51 @@ function buildLeadListFilter(req) {
     return filter;
 }
 
+/**
+ * The list in the order somebody asked for.
+ *
+ * Two sorts order by a date, and both work the same way:
+ *
+ *   followUp   when we next chase them (followUpAt)
+ *   needFrom   when they want the storage to start (storageStartAt) — "who is
+ *              ready soonest"
+ *
+ * Leads with that date come first, nearest (and overdue) at the top, and
+ * everything without one after them, newest first. A won, lost or
+ * already-a-customer lead counts as having no date, however long ago one was
+ * set — an old date on a closed lead is not somebody waiting.
+ *
+ * Mongo sorts a missing date first when ascending, so this is done as two
+ * ranges read one after the other rather than one sort. The list and
+ * GET /nav-order both go through here, so Previous/Next on a lead always
+ * follows what the grid shows.
+ */
+const CLOSED_STAGES = ['won', 'lost', 'already_customer'];
+const NEWEST_FIRST = { leadDateTime: -1, createdAt: -1 };
+
+/** The sorts that order by a date, and the field each one reads. */
+const DATE_SORTS = { followUp: 'followUpAt', needFrom: 'storageStartAt' };
+const sortKeyOf = (req) => (Object.hasOwn(DATE_SORTS, req.query.sort) ? req.query.sort : 'newest');
+
+export async function findLeadsOrdered(filter, sortKey, { skip = 0, limit, decorate = (q) => q }) {
+    const field = DATE_SORTS[sortKey];
+    if (!field) {
+        return decorate(Lead.find(filter)).sort(NEWEST_FIRST).skip(skip).limit(limit);
+    }
+    const dated = { $and: [filter, { [field]: { $ne: null }, status: { $nin: CLOSED_STAGES } }] };
+    const undated = { $and: [filter, { $or: [{ [field]: null }, { status: { $in: CLOSED_STAGES } }] }] };
+    const datedCount = await Lead.countDocuments(dated);
+    const out = [];
+    if (skip < datedCount) {
+        out.push(...await decorate(Lead.find(dated)).sort({ [field]: 1, ...NEWEST_FIRST }).skip(skip).limit(limit));
+    }
+    const left = limit - out.length;
+    if (left > 0) {
+        out.push(...await decorate(Lead.find(undated)).sort(NEWEST_FIRST).skip(Math.max(0, skip - datedCount)).limit(left));
+    }
+    return out;
+}
+
 router.get('/', async (req, res) => {
     const filter = buildLeadListFilter(req);
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -239,18 +285,21 @@ router.get('/', async (req, res) => {
     const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 30_000);
     const skip = (page - 1) * limit;
 
+    const sortKey = sortKeyOf(req);
+
     // Exclude heavy subdocuments (timeline, comments) — the detail endpoint loads them.
     const [leads, total] = await Promise.all([
-        Lead.find(filter)
-            .select('-timeline -comments')
-            .populate('owner', 'name email')
-            // Who did the chasing, not just who it belongs to.
-            .populate('attempts.user', 'name')
-            .sort({ leadDateTime: -1, createdAt: -1 })
-            .skip(skip)
-            .limit(limit)
-            .lean()
-            .allowDiskUse(true),
+        findLeadsOrdered(filter, sortKey, {
+            skip,
+            limit,
+            decorate: (q) => q
+                .select('-timeline -comments')
+                .populate('owner', 'name email')
+                // Who did the chasing, not just who it belongs to.
+                .populate('attempts.user', 'name')
+                .lean()
+                .allowDiskUse(true),
+        }),
         Lead.countDocuments(filter),
     ]);
 
@@ -279,10 +328,11 @@ router.get('/', async (req, res) => {
 router.get('/nav-order', async (req, res) => {
     const filter = buildLeadListFilter(req);
 
-    const leads = await Lead.find(filter)
-        .select('_id')
-        .sort({ leadDateTime: -1, createdAt: -1 })
-        .lean();
+    const sortKey = sortKeyOf(req);
+    const leads = await findLeadsOrdered(filter, sortKey, {
+        limit: 1_000_000,
+        decorate: (q) => q.select('_id').lean(),
+    });
 
     res.json({ ids: leads.map((l) => String(l._id)) });
 });
@@ -1261,6 +1311,20 @@ router.put('/:id', async (req, res) => {
         });
     }
     lead.siteVisitAt = body.siteVisitAt;
+
+    /* When they need the storage from. Kept on the timeline as well as the
+       field, so "what did they tell us, and when" survives the date being
+       changed later. */
+    if (!sameDay(before.storageStartAt, body.storageStartAt)) {
+        lead.timeline.push({
+            type: 'note',
+            text: body.storageStartAt
+                ? `Needs storage from ${new Date(body.storageStartAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`
+                : 'Storage start date cleared',
+            user: req.user.id,
+        });
+    }
+    lead.storageStartAt = body.storageStartAt;
     const userName = req.user.name || req.user.email || 'user';
     lead.timeline.push({ type: 'updated', text: `Lead updated by ${userName}`, user: req.user.id });
 

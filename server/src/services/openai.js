@@ -69,7 +69,88 @@ export function temperatureParam(model, temperature) {
  * rehearsal failed on all 24 turns identically.
  */
 export function reasoningEffortParam(model, hasTools) {
+    // gpt-6-astra is the exception, and has no setting that works here: it
+    // rejects 'none' ("does not support 'none' with this model. Supported
+    // values are: 'low', 'medium', 'high', and 'xhigh'") and rejects tools
+    // alongside any other value ("Function tools with reasoning_effort are
+    // not supported for gpt-6-astra in /v1/chat/completions"). Its tool turns
+    // go to /v1/responses instead — see usesResponsesApi.
+    if (usesResponsesApi(model, hasTools)) return {};
     return hasTools && !LEGACY_MODELS.test(model || '') ? { reasoning_effort: 'none' } : {};
+}
+
+/** Models whose function-tool turns only work on /v1/responses. */
+export function usesResponsesApi(model, hasTools) {
+    return Boolean(hasTools) && /^gpt-6-astra/.test(model || '');
+}
+
+/**
+ * Chat Completions messages -> Responses API input items. Callers keep one
+ * conversation format (an assistant message carrying `tool_calls`, then
+ * `role: 'tool'` results); this is the only place that knows the Responses
+ * API spells the same thing as function_call / function_call_output items.
+ */
+export function toResponsesInput(messages) {
+    const input = [];
+    for (const m of messages) {
+        if (m.role === 'tool') {
+            input.push({ type: 'function_call_output', call_id: m.tool_call_id, output: String(m.content ?? '') });
+        } else if (m.role === 'assistant') {
+            if (m.content) input.push({ role: 'assistant', content: String(m.content) });
+            for (const c of m.tool_calls || []) {
+                input.push({ type: 'function_call', call_id: c.id, name: c.function?.name || '', arguments: c.function?.arguments || '{}' });
+            }
+        } else {
+            input.push({ role: m.role === 'system' ? 'developer' : 'user', content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '') });
+        }
+    }
+    return input;
+}
+
+async function chatWithToolsResponses({ system, messages, tools, model, maxTokens, timeout, toolChoice }) {
+    let data;
+    try {
+        ({ data } = await axios.post(
+            `${API_BASE}/responses`,
+            {
+                model,
+                instructions: system,
+                input: toResponsesInput(messages),
+                tools: tools.map((t) => ({ type: 'function', name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
+                tool_choice: toolChoice,
+                max_output_tokens: maxTokens,
+                reasoning: { effort: 'low' },
+                store: false,
+            },
+            { headers: headers(), timeout },
+        ));
+    } catch (e) {
+        const msg = e.response?.data?.error?.message;
+        throw msg ? new Error(`${model}: ${msg}`) : e;
+    }
+    const output = data?.output || [];
+    const content = output
+        .filter((o) => o.type === 'message')
+        .flatMap((o) => o.content || [])
+        .filter((c) => c.type === 'output_text')
+        .map((c) => c.text)
+        .join('');
+    const calls = output.filter((o) => o.type === 'function_call');
+    const toolCalls = calls.map((c) => {
+        let args = {};
+        try { args = JSON.parse(c.arguments || '{}'); } catch { args = {}; }
+        return { id: c.call_id, name: c.name || '', args };
+    });
+    // Handed back in Chat Completions shape so the caller can push it onto
+    // its conversation unchanged.
+    const message = {
+        role: 'assistant',
+        content: content || null,
+        ...(calls.length ? { tool_calls: calls.map((c) => ({ id: c.call_id, type: 'function', function: { name: c.name, arguments: c.arguments || '{}' } })) } : {}),
+    };
+    const u = data?.usage;
+    const usage = u ? { prompt_tokens: u.input_tokens, completion_tokens: u.output_tokens, total_tokens: u.total_tokens } : null;
+    return { content, toolCalls, message, usage };
 }
 
 /** Cheap credential check — lists models, which costs nothing. */
@@ -153,6 +234,9 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
 export async function chatWithTools({ system, messages = [], tools = [], model, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
     if (!openaiConfigured()) throw new Error('OpenAI is not configured');
     const chosenModel = model || openaiModel();
+    if (usesResponsesApi(chosenModel, tools.length > 0)) {
+        return chatWithToolsResponses({ system, messages, tools, model: chosenModel, maxTokens, timeout, toolChoice });
+    }
     let data;
     try {
         ({ data } = await axios.post(

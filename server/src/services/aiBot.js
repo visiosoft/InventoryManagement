@@ -248,7 +248,7 @@ export async function generateReply({ phoneNormalized, inboundText, config }) {
         reason: typeof parsed.reason === 'string' && parsed.reason.trim()
             ? parsed.reason.trim()
             : (needsHuman ? 'The assistant did not produce an answer' : ''),
-        model: openaiModel(),
+        model: config.model || openaiModel(),
         facts: facts.text,
     };
 }

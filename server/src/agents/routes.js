@@ -295,28 +295,39 @@ router.post('/leads/:leadId/adopt', admin, wrap(async (req, res) => {
     res.status(created ? 201 : 200).json({ file, created });
 }));
 
-// A fresh draft against the same last inbound message — for the WhatsApp
-// inbox's "Suggest a reply" button, where a dismissed or stale draft
-// leaves nothing to ask the agent to try again with. Any draft still
-// waiting on this lead is dismissed first, so there is only ever one.
-router.post('/leads/:leadId/suggest-again', admin, wrap(async (req, res) => {
+// A fresh draft read against the whole conversation as it stands now — for the
+// inbox's Refresh / "Suggest a reply" buttons. A suggestion goes stale the
+// moment a colleague replies from somewhere else or the customer writes again,
+// so this re-reads everything, ours included, rather than answering the last
+// inbound message in isolation. The old suggestion is only withdrawn once the
+// new one exists, so a failed attempt never leaves the chat with nothing; and
+// when our team has already answered and nothing is waiting, the stale
+// suggestion goes without being replaced.
+const staff = (req, res, next) => (['admin', 'sales_rep'].includes(req.user?.role) ? next() : res.status(403).json({ error: 'Not allowed' }));
+router.post('/leads/:leadId/suggest-again', staff, wrap(async (req, res) => {
     const lead = await Lead.findById(req.params.leadId).lean();
     if (!lead) return res.status(404).json({ error: 'No such lead' });
     const lastInbound = await WhatsAppMessage.findOne({ phoneNormalized: lead.phoneNormalized, direction: 'inbound' }).sort({ occurredAt: -1 }).lean();
     if (!lastInbound) throw new Error('There is no message yet to reply to');
     const { file } = await adoptLead(lead, { user: req.user });
-    await AgentAction.updateMany({ leadFile: file._id, kind: 'reply_drafted', resolution: null }, { $set: { resolution: 'dismissed', resolvedAt: new Date(), resolvedBy: req.user?.id || null } });
     const profiles = await team();
     const agent = profiles.find((p) => String(p._id) === String(file.agent));
     if (!agent || agent.mode === 'off') throw new Error('No agent is on duty for this lead');
+    const pendingFilter = { leadFile: file._id, kind: 'reply_drafted', resolution: null };
+    const stale = (await AgentAction.find(pendingFilter).select('_id').lean()).map((a) => a._id);
+    const startedAt = new Date();
     let decision;
     try {
-        decision = await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'inbound', text: String(lastInbound.text || '') }, now: new Date(), persist: true });
+        decision = await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'refresh', text: String(lastInbound.text || '') }, now: new Date(), persist: true });
     } catch (e) {
         console.error(`[Agents] suggest-again failed for lead ${lead._id} (${agent.name}):`, e.stack || e.message);
         throw new Error(`Could not draft a reply: ${e.message}`);
     }
-    res.json({ decision });
+    const dismissal = { $set: { resolution: 'dismissed', resolvedAt: new Date(), resolvedBy: req.user?.id || null } };
+    await AgentAction.updateMany({ ...pendingFilter, _id: { $in: stale } }, dismissal);
+    // Nothing to add: don't leave an empty draft sitting in the queue either.
+    if (!decision.reply) await AgentAction.updateMany({ ...pendingFilter, at: { $gte: startedAt } }, dismissal);
+    res.json({ decision, empty: !decision.reply });
 }));
 
 router.post('/adopt-open', admin, wrap(async (req, res) => {
