@@ -6,6 +6,7 @@ import { buildContractPdf } from '../services/contractDocument.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
 import { renderReceiptPdf } from '../services/receiptPdf.js';
 import { checkOtp, issueOtp, normalizePhone } from '../services/customerOtp.js';
+import { findCustomersByContact, maskEmail, maskPhone, parseContact } from '../services/customerLookup.js';
 import { createCheckoutSession, stripeConfigured } from '../services/stripe.js';
 
 /**
@@ -171,37 +172,59 @@ router.post('/contracts/:id/checkout-change', wrap(async (req, res) => {
 }));
 
 // ── Link a unit ─────────────────────────────────────────────────────────────
-// The signed-in phone is already proven by OTP, but an agreement may be filed
-// under a different number. The code goes to the number *on the agreement*, so
-// only someone holding that phone can attach it to this login.
-router.post('/link-unit/request', otpLimiter, wrap(async (req, res) => {
-  const contractNo = String(req.body?.contractNo || '').trim();
-  if (!contractNo) throw badRequest('Enter your agreement number');
-  const contract = await Contract.findOne({ contractNo, status: { $in: VISIBLE_CONTRACT_STATUSES } }).populate('customer', 'phone');
-  const phone = contract?.customer?.phone;
-  if (!contract || !phone) throw notFound('Agreement');
-  if (String(contract.customer._id) === String(req.customer.customerId)) {
-    throw Object.assign(new Error('That agreement is already on your account'), { status: 409 });
+// The signed-in phone is already proven by OTP, but the tenant record may be
+// filed under a different number or only an email. The tenant types the phone
+// or email we hold for them; the code goes to *that* phone or email, so only
+// someone who controls it can attach the record to this login. A contract
+// number still works, for app builds that ask for one.
+async function findTenantToLink(body) {
+  const contractNo = String(body?.contractNo || '').trim();
+  if (contractNo) {
+    const contract = await Contract.findOne({ contractNo, status: { $in: VISIBLE_CONTRACT_STATUSES } }).populate('customer', 'phone');
+    if (!contract?.customer?.phone) return null;
+    return { tenant: contract.customer, phone: contract.customer.phone, key: contractNo };
   }
-  const sent = await issueOtp({ key: `link:${req.customer.customerId}:${contractNo}`, phone });
-  const digits = normalizePhone(phone);
-  res.json({ maskedPhone: `••• ${digits.slice(-3)}`, ...(sent.devCode ? { code: sent.devCode } : {}) });
+
+  if (!String(body?.identifier || '').trim()) throw badRequest('Enter the mobile number or email on your account');
+  const contact = parseContact(body.identifier);
+  // A phone or email can sit on several records (old duplicates, prospects);
+  // the one to link is the one renting something.
+  const { customers, renting } = await findCustomersByContact(contact);
+  const tenant = customers.find((c) => renting.has(String(c._id)));
+  if (!tenant) return null;
+  return contact.kind === 'email'
+    ? { tenant, email: tenant.email, key: `email:${tenant.email.toLowerCase()}` }
+    : { tenant, phone: contact.value, key: contact.key };
+}
+
+router.post('/link-unit/request', otpLimiter, wrap(async (req, res) => {
+  const found = await findTenantToLink(req.body);
+  if (!found) throw Object.assign(new Error("We couldn't find a storage account with those details. Use the mobile or email you gave us when you signed up."), { status: 404 });
+  if (String(found.tenant._id) === String(req.customer.customerId)) {
+    throw Object.assign(new Error('That storage account is already yours'), { status: 409 });
+  }
+  const sent = await issueOtp({ key: `link:${req.customer.customerId}:${found.key}`, phone: found.phone, email: found.email });
+  res.json({
+    channel: found.email ? 'email' : 'phone',
+    sentTo: found.email ? maskEmail(found.email) : maskPhone(found.phone),
+    maskedPhone: found.email ? maskEmail(found.email) : maskPhone(found.phone), // older app builds read this
+    ...(sent.devCode ? { code: sent.devCode } : {}),
+  });
 }));
 
 router.post('/link-unit/confirm', otpLimiter, wrap(async (req, res) => {
-  const contractNo = String(req.body?.contractNo || '').trim();
-  await checkOtp({ key: `link:${req.customer.customerId}:${contractNo}`, code: req.body?.code });
+  const found = await findTenantToLink(req.body);
+  if (!found) throw notFound('Storage account');
+  await checkOtp({ key: `link:${req.customer.customerId}:${found.key}`, code: req.body?.code });
 
-  const contract = await Contract.findOne({ contractNo, status: { $in: VISIBLE_CONTRACT_STATUSES } });
-  if (!contract) throw notFound('Agreement');
-  const tenantId = contract.customer;
+  const tenantId = found.tenant._id;
   const visitor = await Customer.findById(req.customer.customerId);
   const e164 = visitor?.phone ? `+${normalizePhone(visitor.phone)}` : '';
 
   // One phone must resolve to one customer, or the next login picks at random.
   // The tenant record takes the number; the throwaway prospect gives it up
   // (its data stays, only the login handle moves).
-  if (e164) {
+  if (e164 && String(visitor._id) !== String(tenantId)) {
     await Customer.updateOne({ _id: tenantId }, { $addToSet: { phones: e164 } });
     await Customer.updateOne({ _id: visitor._id }, { $set: { phone: '', phones: [] } });
   }

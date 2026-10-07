@@ -48,7 +48,7 @@ async function view(quote) {
 }
 
 router.get('/sizes', wrap(async (req, res) => {
-  res.json(await listSizes({ startDate: req.query.startDate, months: req.query.months }));
+  res.json(await listSizes({ startDate: req.query.startDate, weeks: req.query.weeks, months: req.query.months }));
 }));
 
 router.post('/reserve', otpLimiter, wrap(async (req, res) => {
