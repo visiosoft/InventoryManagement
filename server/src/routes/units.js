@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
-import { contractLeased } from '../services/rateRealisation.js';
+import { contractLeased, unitRow } from '../services/rateRealisation.js';
 import { Unit, Contract, Site } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
 import { syncAllUnitStatuses, statusForUnit } from '../utils/unitStatus.js';
@@ -118,20 +118,30 @@ router.get('/sizes', async (req, res) => {
 
 router.get('/active-contracts', async (_req, res) => {
   const contracts = await Contract.find({ status: 'active', archived: { $ne: true } })
-    .select('contractNo customer unit units endDate')
+    // The money fields and each unit's asking price, so the leased amount can
+    // be worked out the way the pricing screen and the rates report do it —
+    // one contract over several units is shared out in proportion to what
+    // each unit asks, not repeated in full on every one.
+    .select('contractNo customer unit units endDate rate leasedPrice firstMonthDiscountPct billingPeriod')
     .populate('customer', 'fullName')
+    .populate('unit', 'price')
+    .populate('units', 'price')
     .sort({ endDate: 1 })
     .lean();
 
   const byUnit = {};
   for (const c of contracts) {
-    const unitIds = [c.unit, ...(c.units || [])].filter(Boolean).map(String);
-    for (const uid of new Set(unitIds)) {
+    const docs = new Map();
+    for (const u of [c.unit, ...(c.units || [])].filter(Boolean)) docs.set(String(u._id ?? u), u);
+    for (const [uid, doc] of docs) {
+      const row = unitRow(typeof doc === 'object' ? doc : { _id: uid }, c);
       (byUnit[uid] ||= []).push({
         contractId: String(c._id),
         contractNo: c.contractNo || '',
         customerName: c.customer?.fullName || '',
         endDate: c.endDate || null,
+        // What this tenant actually pays for this unit, per 4 weeks.
+        leased: row.leased > 0 ? row.leased : null,
       });
     }
   }

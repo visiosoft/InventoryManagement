@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   ArrowDown, ArrowRight, ArrowUp, CalendarRange, ChevronsUpDown, Database,
@@ -12,6 +12,7 @@ import type { Unit, Contract } from '../lib/types'
 import { Badge, Card, EmptyState, Spinner, Table, Td, Th, statusLabel, unitStatusTone } from '../components/ui'
 import { ExportButtons } from '../components/ExportButtons'
 import { compareUnitNumbers, formatDate, formatMoney } from '../lib/utils'
+import { dubaiToday } from '../lib/timezone'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', serif", letterSpacing: '-0.02em' } as const
 const FONT = "'Manrope', system-ui, sans-serif"
@@ -115,6 +116,31 @@ type Parsed = {
   floor: string | null
   problems: string[]
 }
+
+/**
+ * How many days past its check-out date a contract is, counted in Dubai days.
+ *
+ * Nothing ends a contract by itself when its date passes — a person ends it
+ * (they left) or extends Check Out (they stayed) — so a unit can sit Occupied
+ * behind a date that has gone. This is what lets the page say so. 0 means not
+ * overdue, including the day it is due.
+ */
+function daysPastCheckout(endDate?: string | null): number {
+  return Math.max(0, -daysUntilCheckout(endDate))
+}
+
+/** Signed days from today (Dubai) to the check-out day: negative once it has passed. */
+function daysUntilCheckout(endDate?: string | null): number {
+  if (!endDate) return 0
+  const today = new Date(`${dubaiToday()}T00:00:00.000Z`).getTime()
+  const end = new Date(`${String(endDate).slice(0, 10)}T00:00:00.000Z`).getTime()
+  if (Number.isNaN(end)) return 0
+  // Whole calendar days, Dubai to Dubai — not "hours until midnight UTC,
+  // rounded up", which made tomorrow read as two days away.
+  return Math.round((end - today) / 86_400_000)
+}
+
+const OVERDUE = { color: '#92400E', bg: '#FEF3C7', border: '#F5DFB8' }
 
 function parsePhrase(input: string, sizes: number[], floors: string[]): Parsed {
   const out: Parsed = { from: null, to: null, size: null, floor: null, problems: [] }
@@ -277,6 +303,7 @@ export default function Units() {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Unit | null>(null)
   const [onlyFree, setOnlyFree] = useState(false)
+  const [onlyOverdue, setOnlyOverdue] = useState(false)
 
   // "Free between these dates" — a unit occupied today may be free later if
   // its contract ends in the window, and vice versa, so this cannot be derived
@@ -319,7 +346,7 @@ export default function Units() {
 
   // Table sorting. Default is the natural unit order; clicking a header sorts
   // by that column, clicking again reverses it.
-  type SortKey = 'unit' | 'floor' | 'size' | 'price' | 'tenant' | 'checkout' | 'status' | 'shared'
+  type SortKey = 'unit' | 'floor' | 'size' | 'price' | 'leased' | 'tenant' | 'checkout' | 'status' | 'shared'
   const [sortKey, setSortKey] = useState<SortKey>('unit')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   function toggleSort(k: SortKey) {
@@ -334,7 +361,7 @@ export default function Units() {
 
   // Who holds each unit right now. A shared unit can carry several active
   // contracts, so this is a list per unit, not a single tenant.
-  type UnitActiveContract = { contractId: string; contractNo: string; customerName: string; endDate: string | null }
+  type UnitActiveContract = { contractId: string; contractNo: string; customerName: string; endDate: string | null; leased: number | null }
   const { data: activeByUnit = {} } = useQuery<Record<string, UnitActiveContract[]>>({
     queryKey: ['unit-active-contracts'],
     queryFn: () => api.get('/units/active-contracts').then((r) => r.data?.byUnit ?? {}),
@@ -468,18 +495,27 @@ export default function Units() {
     }
   }, [bookedInWindow, winFrom, winTo, activeByUnit])
 
+  // Active contracts on this unit whose check-out has passed, and the worst of them.
+  const overdueOf = (u: Unit) => {
+    const late = (activeByUnit[u._id] ?? []).filter((c) => daysPastCheckout(c.endDate) > 0)
+    return { count: late.length, days: late.reduce((m, c) => Math.max(m, daysPastCheckout(c.endDate)), 0) }
+  }
+  const overdueUnitCount = (units || []).filter((u) => overdueOf(u).count > 0).length
+
   const filtered = useMemo(
     () =>
       (units || [])
         .filter(
           (u) =>
+            (!onlyOverdue || overdueOf(u).count > 0) &&
             (!statusFilter || u.status === statusFilter) &&
             (!floorFilter || u.floor === floorFilter) &&
             (!sizeFilter || u.sizeSqf === Number(sizeFilter)) &&
             (!search || u.unitNumber.toLowerCase().includes(search.toLowerCase()) || String(u.sizeSqf ?? '') === search)
         )
         .sort(compareUnitNumbers),
-    [units, statusFilter, floorFilter, sizeFilter, search]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [units, statusFilter, floorFilter, sizeFilter, search, onlyOverdue, activeByUnit]
   )
 
   // Units genuinely free for the whole window. Maintenance units are never
@@ -534,6 +570,14 @@ export default function Units() {
           if (!ta) return 1 * dir   // cancels the dir applied below: always last
           if (!tb) return -1 * dir
           return ta.localeCompare(tb)
+        }
+        case 'leased': {
+          const la = firstContract(a)?.leased
+          const lb = firstContract(b)?.leased
+          if (la == null && lb == null) return 0
+          if (la == null) return 1 * dir
+          if (lb == null) return -1 * dir
+          return la - lb
         }
         case 'checkout': {
           const da = firstContract(a)?.endDate
@@ -776,10 +820,10 @@ export default function Units() {
           </label>
         </div>
 
-        {(availFrom || availTo || floorFilter || sizeFilter || statusFilter || search || onlyFree) && (
+        {(availFrom || availTo || floorFilter || sizeFilter || statusFilter || search || onlyFree || onlyOverdue) && (
           <button
             type="button"
-            onClick={() => { setAvailFrom(''); setAvailTo(''); setFloorFilter(''); setSizeFilter(''); setStatusFilter(''); setSearch(''); setOnlyFree(false) }}
+            onClick={() => { setAvailFrom(''); setAvailTo(''); setFloorFilter(''); setSizeFilter(''); setStatusFilter(''); setSearch(''); setOnlyFree(false); setOnlyOverdue(false) }}
             style={{ marginTop: 12, fontSize: 12, color: MUTED, textDecoration: 'underline' }}
           >
             Clear all filters
@@ -845,6 +889,26 @@ export default function Units() {
         }
       `}</style>
 
+      {/* Occupied past the check-out date. Nothing ends a contract by itself,
+          so these are either tenants who have left (end the contract to free the
+          unit) or tenants who stayed (extend Check Out). A person decides which —
+          this only points at them. */}
+      {overdueUnitCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3" style={{ background: OVERDUE.bg, border: `1px solid ${OVERDUE.border}`, borderRadius: 14, padding: '12px 16px' }}>
+          <div style={{ fontSize: 13, color: OVERDUE.color }}>
+            <strong>{overdueUnitCount} unit{overdueUnitCount === 1 ? ' is' : 's are'} past the tenant's check-out date.</strong>{' '}
+            If they have left, end the contract to free the unit; if they are staying, extend Check Out.
+          </div>
+          <button
+            type="button"
+            onClick={() => setOnlyOverdue((v) => !v)}
+            style={{ height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${OVERDUE.border}`, background: onlyOverdue ? OVERDUE.color : '#fff', color: onlyOverdue ? '#fff' : OVERDUE.color, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+          >
+            {onlyOverdue ? 'Show all units' : 'Show only these'}
+          </button>
+        </div>
+      )}
+
       {/* ── List view ──────────────────────────────────────────────── */}
       {view === 'list' && (
         <div>
@@ -899,8 +963,9 @@ export default function Units() {
                   >
                     {u.price != null ? `AED ${wholeAed(u.price)}` : 'no price'}
                   </span>
-                  {(u.discountPct || u.shared) && (
+                  {(u.discountPct || u.shared || overdueOf(u).count > 0) && (
                     <div className="flex flex-wrap gap-1.5" style={{ marginTop: 8 }}>
+                      {overdueOf(u).count > 0 ? <span title="Check-out date has passed; the contract is still active" style={{ fontSize: 10, fontWeight: 700, color: OVERDUE.color, background: OVERDUE.bg, border: `1px solid ${OVERDUE.border}`, borderRadius: 999, padding: '2px 8px' }}>Overdue · {overdueOf(u).days}d</span> : null}
                       {u.discountPct ? <span style={{ fontSize: 10, fontWeight: 600, color: '#92400E', background: '#FEF3C7', borderRadius: 999, padding: '2px 8px' }}>{u.discountPct}% 1st 4wk</span> : null}
                       {u.shared ? <span style={{ fontSize: 10, fontWeight: 600, color: '#075985', background: '#E0F2FE', borderRadius: 999, padding: '2px 8px' }}>Shared</span> : null}
                     </div>
@@ -986,7 +1051,7 @@ export default function Units() {
               title={`Units${siteName ? ` — ${siteName}` : ''}`}
               subtitle={`${freeUnits.length} of ${filtered.length} units free for the whole window · ${windowLabel}`}
               columns={[
-                { label: 'Unit' }, { label: 'Floor' }, { label: 'Size' }, { label: '4wk (AED)', numeric: true },
+                { label: 'Unit' }, { label: 'Floor' }, { label: 'Size' }, { label: 'Actual 4wk (AED)', numeric: true }, { label: 'Leased 4wk (AED)' },
                 { label: 'Tenant' }, { label: 'Check out' }, { label: 'Status' }, { label: 'Shared' }, { label: 'Notes' },
               ]}
               rows={sortedRows.map((u) => {
@@ -996,6 +1061,7 @@ export default function Units() {
                   u.floor ?? '',
                   u.sizeSqf != null ? `${u.sizeSqf} sq ft` : '—',
                   u.price ?? null,
+                  held.map((c) => (c.leased != null ? String(c.leased) : '—')).join('; ') || '—',
                   held.map((c) => c.customerName || '(no name)').join('; ') || '—',
                   held.map((c) => (c.endDate ? formatDate(c.endDate) : '—')).join('; ') || '—',
                   statusLabel(u.status),
@@ -1009,8 +1075,8 @@ export default function Units() {
             <thead>
               <tr>
                 {([
-                  ['unit', 'Unit'], ['floor', 'Floor'], ['size', 'Size'], ['price', '4wk (AED)'],
-                  ['tenant', 'Tenant'], ['checkout', 'Check out'], ['status', 'Status'], ['shared', 'Shared'],
+                  ['unit', 'Unit'], ['floor', 'Floor'], ['size', 'Size'], ['price', 'Actual 4wk (AED)'],
+                  ['leased', 'Leased 4wk (AED)'], ['tenant', 'Tenant'], ['checkout', 'Check out'], ['status', 'Status'], ['shared', 'Shared'],
                 ] as [SortKey, string][]).map(([k, label]) => (
                   <Th key={k}>
                     <button type="button" onClick={() => toggleSort(k)}
@@ -1033,6 +1099,32 @@ export default function Units() {
                   <Td>{u.floor}</Td>
                   <Td>{u.sizeSqf != null ? `${u.sizeSqf} sq ft` : '—'}</Td>
                   <Td>{u.price != null ? formatMoney(u.price) : '—'}</Td>
+                  {/* What each tenant actually pays, one line per tenant to line
+                      up with the names beside it, and how far that is from the
+                      asking price. A shared unit has several tenants each paying
+                      their own part, so the gap is only worked out where one
+                      contract holds the unit. */}
+                  <Td>
+                    {(activeByUnit[u._id] ?? []).length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="space-y-0.5">
+                        {activeByUnit[u._id].map((c) => {
+                          const gap = !u.shared && c.leased != null && u.price != null ? c.leased - u.price : null
+                          return (
+                            <div key={c.contractId} className="whitespace-nowrap">
+                              {c.leased != null ? formatMoney(c.leased) : <span className="text-muted-foreground">—</span>}
+                              {gap != null && gap !== 0 && (
+                                <span className={`ml-1.5 text-xs font-semibold ${gap < 0 ? 'text-destructive' : 'text-emerald-600'}`}>
+                                  {gap > 0 ? '+' : '−'}{Math.abs(gap).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </Td>
                   <Td>
                     {(activeByUnit[u._id] ?? []).length === 0 ? (
                       <span className="text-muted-foreground">—</span>
@@ -1052,14 +1144,30 @@ export default function Units() {
                     ) : (
                       <div className="space-y-0.5">
                         {activeByUnit[u._id].map((c) => (
-                          <div key={c.contractId} className="whitespace-nowrap">
+                          <div key={c.contractId} className="whitespace-nowrap" style={daysPastCheckout(c.endDate) > 0 ? { color: '#B91C1C', fontWeight: 600 } : undefined}>
                             {c.endDate ? formatDate(c.endDate) : '—'}
                           </div>
                         ))}
                       </div>
                     )}
                   </Td>
-                  <Td><Badge tone={unitStatusTone[u.status]}>{statusLabel(u.status)}</Badge></Td>
+                  <Td>
+                    <div className="flex flex-col items-start gap-1">
+                      <Badge tone={unitStatusTone[u.status]}>{statusLabel(u.status)}</Badge>
+                      {(() => {
+                        const od = overdueOf(u)
+                        if (!od.count) return null
+                        return (
+                          <span
+                            title="The check-out date has passed but the contract is still active. If the tenant has left, end the contract to free the unit; if they are staying, extend Check Out."
+                            style={{ fontSize: 11, fontWeight: 700, color: OVERDUE.color, background: OVERDUE.bg, border: `1px solid ${OVERDUE.border}`, borderRadius: 999, padding: '1px 8px', whiteSpace: 'nowrap' }}
+                          >
+                            Overdue · {od.days}d
+                          </span>
+                        )
+                      })()}
+                    </div>
+                  </Td>
                   <Td>{u.shared ? <Badge tone="blue">Shared</Badge> : <span className="text-muted-foreground">—</span>}</Td>
                   <Td className="text-muted-foreground max-w-60 truncate">{u.notes}</Td>
                 </tr>
@@ -1143,6 +1251,23 @@ function UnitDetail({ unit, siteName, canEdit, bookFrom, bookTo, availability }:
   })
 
   const allContracts = (data?.contracts ?? []).filter(c => !['expired', 'terminated', 'cancelled'].includes(c.status))
+
+  // An active contract whose check-out has passed. The unit stays Occupied
+  // until a person ends the contract or extends Check Out, so say so here and
+  // put both next steps to hand — but ending is never done on its own.
+  const qc = useQueryClient()
+  const [endError, setEndError] = useState('')
+  const overdueContracts = allContracts.filter((c) => c.status === 'active' && daysPastCheckout(c.endDate) > 0)
+  const endContract = useMutation({
+    mutationFn: (id: string) => api.post(`/contracts/${id}/end`, { reason: 'Check-out date had passed; ended from the Units page' }),
+    onSuccess: () => {
+      setEndError('')
+      for (const key of [['unit', unit._id], ['units'], ['unit-active-contracts'], ['unit-availability'], ['unit-pricing-matrix']]) {
+        qc.invalidateQueries({ queryKey: key })
+      }
+    },
+    onError: (e) => setEndError(apiError(e)),
+  })
   const contractStatusTone: Record<string, string> = {
     active: 'green', draft: 'blue', pending_signature: 'amber',
     expired: 'default', terminated: 'red', cancelled: 'red',
@@ -1150,6 +1275,45 @@ function UnitDetail({ unit, siteName, canEdit, bookFrom, bookTo, availability }:
 
   return (
     <div className="space-y-4">
+      {overdueContracts.length > 0 && (
+        <div style={{ background: OVERDUE.bg, border: `1px solid ${OVERDUE.border}`, borderRadius: 12, padding: '12px 14px', color: OVERDUE.color }}>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>Check-out has passed — this unit still shows as occupied</div>
+          <p style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}>
+            Nothing ends a contract by itself. If the tenant has left, end the contract to free the unit.
+            If they are staying, open the contract and extend Check Out instead.
+          </p>
+          <ul style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+            {overdueContracts.map((c) => (
+              <li key={c._id} className="flex flex-wrap items-center justify-between gap-2" style={{ background: '#fff', borderRadius: 10, padding: '8px 10px' }}>
+                <span style={{ fontSize: 12.5, color: INK }}>
+                  <strong>{c.customer?.fullName || c.contractNo}</strong>
+                  <span style={{ color: MUTED }}> · {c.contractNo} · was due {c.endDate ? formatDate(c.endDate) : '—'} ({daysPastCheckout(c.endDate)}d ago)</span>
+                </span>
+                <span className="flex items-center gap-2">
+                  <Link to={`/contracts/${c._id}`} style={{ fontSize: 12, fontWeight: 700, color: PURPLE }}>Open contract</Link>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      disabled={endContract.isPending}
+                      onClick={() => {
+                        if (confirm(`End contract ${c.contractNo} for ${c.customer?.fullName || 'this tenant'}? This frees the unit and archives the contract. Unpaid invoices are left as they are.`)) {
+                          endContract.mutate(c._id)
+                        }
+                      }}
+                      className="disabled:opacity-50"
+                      style={{ height: 30, padding: '0 12px', borderRadius: 999, border: '1px solid #FCA5A5', background: '#fff', color: '#B91C1C', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      {endContract.isPending ? 'Ending…' : 'End contract & free unit'}
+                    </button>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {endError && <p style={{ fontSize: 12, color: '#B91C1C', marginTop: 8 }}>{endError}</p>}
+        </div>
+      )}
+
       {/* Contracts section — all contracts for this unit */}
       <div className="rounded-lg border">
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
@@ -1207,14 +1371,14 @@ function UnitDetail({ unit, siteName, canEdit, bookFrom, bookTo, availability }:
                         if (!c.endDate) return 'Term'
                         if (c.status === 'cancelled') return 'Cancelled'
                         if (c.status !== 'active') return 'Ran for'
-                        const days = Math.round((new Date(c.endDate).getTime() - Date.now()) / 86400000)
+                        const days = daysUntilCheckout(c.endDate)
                         return days < 0 ? 'Overdue' : 'Remaining'
                       })()}
                     </div>
                     <div className="font-medium">
                       {(() => {
                         if (!c.startDate || !c.endDate) return '—'
-                        const days = Math.round((new Date(c.endDate).getTime() - Date.now()) / 86400000)
+                        const days = daysUntilCheckout(c.endDate)
                         const weeks = Math.ceil(
                           Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7
                         )
