@@ -9,11 +9,14 @@ import whatsappRouter from '../src/routes/whatsapp.js';
 
 let mongod, app, realFetch;
 const sentToMeta = [];
+// What Meta's template list says right now; a test deletes from it.
+let metaTemplates = [];
 
 before(async () => {
   process.env.NODE_ENV = 'test';
   process.env.WHATSAPP_PHONE_NUMBER_ID = 'test-number';
   process.env.WHATSAPP_ACCESS_TOKEN = 'test-token';
+  process.env.WHATSAPP_WABA_ID = 'test-waba';
   mongod = await MongoMemoryServer.create({ binary: { version: '7.0.14' } });
   await mongoose.connect(mongod.getUri(), { dbName: 'whatsapp_window_test' });
   await WhatsAppMessage.init();
@@ -24,6 +27,9 @@ before(async () => {
   // Meta itself is never reached; what matters is whether we tried.
   realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
+    if (String(url).includes('/message_templates')) {
+      return new Response(JSON.stringify({ data: metaTemplates }), { status: 200 });
+    }
     if (String(url).startsWith('https://graph.facebook.com/')) {
       sentToMeta.push(JSON.parse(init?.body || '{}'));
       return new Response(JSON.stringify({ messages: [{ id: `wamid.${sentToMeta.length}` }] }), { status: 200 });
@@ -40,6 +46,10 @@ after(async () => {
 
 beforeEach(async () => {
   sentToMeta.length = 0;
+  metaTemplates = [
+    { name: 'storage_promo_check_in', language: 'en', status: 'APPROVED', category: 'MARKETING', components: [{ type: 'BODY', text: 'Hi! Are you still looking?' }] },
+    { name: 'old_promo', language: 'en', status: 'PAUSED', category: 'MARKETING', components: [{ type: 'BODY', text: 'Old' }] },
+  ];
   await WhatsAppMessage.deleteMany({});
 });
 
@@ -86,4 +96,29 @@ test('an approved template still goes out after 24 hours', async () => {
   const r = await request(app).post('/api/whatsapp/send-template').send({ to: PHONE, name: 'storage_promo_check_in', language: 'en', variables: [] });
   assert.equal(r.status, 200);
   assert.equal(sentToMeta.at(-1).type, 'template');
+});
+
+test('the console lists only approved templates, and a deleted one drops out', async () => {
+  let r = await request(app).get('/api/whatsapp/templates?refresh=1');
+  assert.deepEqual(r.body.templates.map((t) => t.name), ['storage_promo_check_in'], 'paused one is not listed');
+
+  metaTemplates = metaTemplates.filter((t) => t.name !== 'storage_promo_check_in');
+  r = await request(app).get('/api/whatsapp/templates?refresh=1');
+  assert.deepEqual(r.body.templates, []);
+});
+
+test('sending a template deleted in Meta is refused before it is sent', async () => {
+  metaTemplates = metaTemplates.filter((t) => t.name !== 'storage_promo_check_in');
+  await request(app).get('/api/whatsapp/templates?refresh=1');
+  const before = sentToMeta.length;
+  const r = await request(app).post('/api/whatsapp/send-template').send({ to: PHONE, name: 'storage_promo_check_in', language: 'en', variables: [] });
+  assert.equal(r.status, 410);
+  assert.equal(r.body.templateGone, true);
+  assert.equal(sentToMeta.length, before);
+});
+
+test('sending a template that is no longer approved is refused', async () => {
+  const r = await request(app).post('/api/whatsapp/send-template').send({ to: PHONE, name: 'old_promo', language: 'en', variables: [] });
+  assert.equal(r.status, 400);
+  assert.equal(r.body.templateGone, true);
 });

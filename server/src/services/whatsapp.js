@@ -273,7 +273,10 @@ export function forgetWabaId() {
     derivedWabaId = '';
 }
 
-// Approved templates change rarely and the composer asks on every render.
+// Approved templates change rarely and the composer asks on every render. Kept
+// short so a template deleted or paused in Meta drops out of every list within
+// a minute rather than lingering to fail on send.
+const TEMPLATE_CACHE_MS = 60 * 1000;
 let templateCache = { at: 0, data: null };
 
 /**
@@ -295,7 +298,7 @@ export async function listWhatsAppTemplates({ force = false } = {}) {
             error: 'The WhatsApp Business Account ID is not set, and Meta would not say which account this number belongs to. Add it under Settings → Integrations → WhatsApp; it is the "WhatsApp Business Account ID" in Meta → WhatsApp → API Setup.',
         };
     }
-    if (!force && templateCache.data && Date.now() - templateCache.at < 10 * 60 * 1000) return templateCache.data;
+    if (!force && templateCache.data && Date.now() - templateCache.at < TEMPLATE_CACHE_MS) return templateCache.data;
 
     const url = `https://graph.facebook.com/v20.0/${waba}/message_templates?limit=200`;
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });

@@ -1170,11 +1170,21 @@ router.post('/send-template', async (req, res) => {
         // Checked here rather than left to Meta: "(#132000) number of
         // parameters does not match" tells a rep nothing about which box they
         // left empty.
+        // Asked fresh when the cached list does not have it approved: it may have
+        // been approved a moment ago, or deleted, and the cache cannot tell which.
+        const findIn = (list) => (list.templates || []).find((t) => t.name === name);
         const known = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
-        const meta = (known.templates || []).find((t) => t.name === name);
+        let meta = findIn(known);
+        if (!meta || String(meta.status).toUpperCase() !== 'APPROVED') {
+            const fresh = await listWhatsAppTemplates({ force: true }).catch(() => null);
+            if (fresh?.configured && !fresh.error) {
+                meta = findIn(fresh);
+                if (!meta) return res.status(410).json({ error: `"${name}" no longer exists in Meta — it may have been deleted. Pick another template.`, templateGone: true });
+            }
+        }
         if (meta) {
             if (String(meta.status).toUpperCase() !== 'APPROVED') {
-                return res.status(400).json({ error: `"${name}" is ${String(meta.status).toLowerCase()}, not approved — Meta will not deliver it yet.` });
+                return res.status(400).json({ error: `"${name}" is ${String(meta.status).toLowerCase()}, not approved — Meta will not deliver it.`, templateGone: true });
             }
             if (variables.length !== meta.variableCount) {
                 return res.status(400).json({ error: `"${name}" needs ${meta.variableCount} value(s); ${variables.length} given.` });

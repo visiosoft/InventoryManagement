@@ -2767,7 +2767,10 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     queryKey: ['whatsapp-templates'],
     queryFn: () => api.get('/whatsapp/templates').then((r) => r.data),
     enabled: qrOpen && panelTab === 'templates',
-    staleTime: 10 * 60_000,
+    // Read again each time the tab is opened, so a template deleted in Meta
+    // drops out here instead of staying until someone presses Refresh.
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
   // Bypasses the server's own 10-minute cache — a template just approved
   // in Meta Business Manager would otherwise sit invisible here for up to
@@ -3450,7 +3453,14 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
       stickToBottom.current = true
       onSent()
     },
-    onError: (e) => setSendErr(apiError(e)),
+    onError: (e) => {
+      setSendErr(apiError(e))
+      // Deleted or no longer approved in Meta: take it off the list now.
+      if ((e as { response?: { data?: { templateGone?: boolean } } })?.response?.data?.templateGone) {
+        setOpenTemplate('')
+        qc.invalidateQueries({ queryKey: ['whatsapp-templates'] })
+      }
+    },
   })
 
   /* What to put in {{1}} before anybody types.
