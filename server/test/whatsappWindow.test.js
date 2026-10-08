@@ -107,9 +107,9 @@ test('the console lists only approved templates, and a deleted one drops out', a
   assert.deepEqual(r.body.templates, []);
 });
 
-test('sending a template deleted in Meta is refused before it is sent', async () => {
+test('a template deleted in Meta is refused on send, though the cached list still has it', async () => {
+  await request(app).get('/api/whatsapp/templates?refresh=1'); // cached while it still exists
   metaTemplates = metaTemplates.filter((t) => t.name !== 'storage_promo_check_in');
-  await request(app).get('/api/whatsapp/templates?refresh=1');
   const before = sentToMeta.length;
   const r = await request(app).post('/api/whatsapp/send-template').send({ to: PHONE, name: 'storage_promo_check_in', language: 'en', variables: [] });
   assert.equal(r.status, 410);

@@ -1170,17 +1170,18 @@ router.post('/send-template', async (req, res) => {
         // Checked here rather than left to Meta: "(#132000) number of
         // parameters does not match" tells a rep nothing about which box they
         // left empty.
-        // Asked fresh when the cached list does not have it approved: it may have
-        // been approved a moment ago, or deleted, and the cache cannot tell which.
-        const findIn = (list) => (list.templates || []).find((t) => t.name === name);
-        const known = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
-        let meta = findIn(known);
-        if (!meta || String(meta.status).toUpperCase() !== 'APPROVED') {
-            const fresh = await listWhatsAppTemplates({ force: true }).catch(() => null);
-            if (fresh?.configured && !fresh.error) {
-                meta = findIn(fresh);
-                if (!meta) return res.status(410).json({ error: `"${name}" no longer exists in Meta — it may have been deleted. Pick another template.`, templateGone: true });
-            }
+        // Asked fresh on every send, not read from the ten-minute cache: a
+        // template deleted or paused in Meta since then must not go out. A rep
+        // sends one at a time, so this is one extra call per send. If Meta
+        // cannot be reached, the cached list is the best answer there is.
+        const findIn = (list) => (list?.templates || []).find((t) => t.name === name);
+        const fresh = await listWhatsAppTemplates({ force: true }).catch(() => null);
+        let meta;
+        if (fresh?.configured && !fresh.error) {
+            meta = findIn(fresh);
+            if (!meta) return res.status(410).json({ error: `"${name}" no longer exists in Meta — it may have been deleted. Pick another template.`, templateGone: true });
+        } else {
+            meta = findIn(await listWhatsAppTemplates().catch(() => null));
         }
         if (meta) {
             if (String(meta.status).toUpperCase() !== 'APPROVED') {

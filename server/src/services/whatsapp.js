@@ -274,9 +274,9 @@ export function forgetWabaId() {
 }
 
 // Approved templates change rarely and the composer asks on every render. Kept
-// short so a template deleted or paused in Meta drops out of every list within
-// a minute rather than lingering to fail on send.
-const TEMPLATE_CACHE_MS = 60 * 1000;
+// to ten minutes; a template deleted or paused in Meta inside that time is
+// still caught on send, which asks Meta again before sending.
+const TEMPLATE_CACHE_MS = 10 * 60 * 1000;
 let templateCache = { at: 0, data: null };
 
 /**
