@@ -73,7 +73,8 @@ export function computeFeeFils(amountFils, feePct) {
  * Stripe rejects success_url/cancel_url in this mode and takes a single
  * return_url instead, so the two shapes cannot simply be merged — and the
  * caller gets back a clientSecret rather than a url, since there is nowhere to
- * send them.
+ * send them. Without a returnUrl the form never redirects; the page hosting it
+ * hears of completion from Stripe.js instead (the customer app does this).
  */
 export async function createCheckoutSession({ amountAed, description, productName, metadata = {}, customerEmail, successUrl, cancelUrl, feePct = 0, embedded = false, returnUrl, expiresInMinutes }) {
   const client = getClient();
@@ -106,8 +107,6 @@ export async function createCheckoutSession({ amountAed, description, productNam
     });
   }
 
-  if (embedded && !returnUrl) throw new Error('An embedded checkout needs a returnUrl');
-
   const session = await client.checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
@@ -122,7 +121,7 @@ export async function createCheckoutSession({ amountAed, description, productNam
     // Stripe's floor is 30 minutes; a booking hold must outlive the session.
     ...(expiresInMinutes ? { expires_at: Math.floor(Date.now() / 1000) + Math.max(30, expiresInMinutes) * 60 } : {}),
     ...(embedded
-      ? { ui_mode: 'embedded', return_url: returnUrl }
+      ? { ui_mode: 'embedded', ...(returnUrl ? { return_url: returnUrl } : { redirect_on_completion: 'never' }) }
       : { success_url: successUrl, cancel_url: cancelUrl }),
   });
   return {
@@ -144,6 +143,24 @@ export async function createInvoiceCheckoutSession({ invoice, customerEmail, suc
     customerEmail, successUrl, cancelUrl, feePct,
   });
   return session;
+}
+
+/**
+ * Closes a session nobody should pay any more, so starting a new one can't
+ * leave two payable at once. Returns the session's status afterwards
+ * ('expired', or 'complete' if it was paid first); null if it can't be read.
+ */
+export async function expireCheckoutSession(id) {
+  const client = getClient();
+  try {
+    const session = await client.checkout.sessions.retrieve(id);
+    if (session.status !== 'open') return session.status;
+    await client.checkout.sessions.expire(id);
+    return 'expired';
+  } catch (err) {
+    console.error('[stripe] could not expire session', id, err.message);
+    return null;
+  }
 }
 
 /** Read a Checkout Session back from Stripe — the authoritative answer to "was it paid?". */

@@ -233,6 +233,40 @@ test('a customer cannot read another customer’s contract, invoice, receipt or 
   assert.equal(docs.body.receipts.length, 1);
 });
 
+test('document link: opens your own PDF without a header, and only that PDF', async () => {
+  const mine = await seedTenant('+971503331111', 'C-L1');
+  const theirs = await seedTenant('+971504441111', 'C-L2');
+  const { token } = await login('+971503331111');
+  const auth = { Authorization: `Bearer ${token}` };
+  const href = `/customer-portal/storage/invoices/${mine.invoice._id}/pdf`;
+
+  const bad = await request(app).post('/api/customer-auth/document-link').set(auth).send({ href: '/customer-portal/storage/home' });
+  assert.equal(bad.status, 400, 'only document paths get a link');
+  const noLogin = await request(app).post('/api/customer-auth/document-link').send({ href });
+  assert.equal(noLogin.status, 401);
+
+  const { body } = await request(app).post('/api/customer-auth/document-link').set(auth).send({ href });
+  const open = await request(app).get(`/api${href}?dt=${body.token}`);
+  assert.equal(open.status, 200);
+  assert.equal(open.headers['content-type'], 'application/pdf');
+  assert.match(open.headers['content-disposition'], /^inline/);
+
+  // The link is for that one path: not another of my documents, not a JSON route.
+  const other = await request(app).get(`/api/customer-portal/storage/contracts/${mine.contract._id}/pdf?dt=${body.token}`);
+  assert.equal(other.status, 401);
+  const json = await request(app).get(`/api/customer-portal/storage/invoices?dt=${body.token}`);
+  assert.equal(json.status, 401);
+  // The login token is not a document link.
+  const asLink = await request(app).get(`/api${href}?dt=${token}`);
+  assert.equal(asLink.status, 401);
+
+  // A link for someone else's document still meets the ownership check.
+  const theirHref = `/customer-portal/storage/invoices/${theirs.invoice._id}/pdf`;
+  const theirLink = await request(app).post('/api/customer-auth/document-link').set(auth).send({ href: theirHref });
+  const theirOpen = await request(app).get(`/api${theirHref}?dt=${theirLink.body.token}`);
+  assert.equal(theirOpen.status, 404);
+});
+
 test('check-out change: validates, records a pending request and blocks duplicates', async () => {
   const t = await seedTenant('+971505550000', 'C-3');
   const { token } = await login('+971505550000');
@@ -253,6 +287,33 @@ test('check-out change: validates, records a pending request and blocks duplicat
 
   const dup = await request(app).post(url).set(auth).send({ action: 'extend', months: 12 });
   assert.equal(dup.status, 409);
+});
+
+test('billing: says so when Zoho Books is not set up, instead of showing empty accounts', async () => {
+  const saved = process.env.ZOHO_BOOKS_ORG_ID;
+  delete process.env.ZOHO_BOOKS_ORG_ID;
+  try {
+    const { token } = await login('+971501119999', 'Bill Payer');
+    const r = await request(app).get('/api/customer-portal/storage/billing').set({ Authorization: `Bearer ${token}` });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.configured, false);
+    assert.deepEqual(r.body.totals, { invoiced: 0, paid: 0, outstanding: 0 });
+  } finally {
+    if (saved !== undefined) process.env.ZOHO_BOOKS_ORG_ID = saved;
+  }
+});
+
+test('profile: an email typed in the app is marked unproven; re-saving the same one is not', async () => {
+  const t = await seedTenant('+971501118888', 'C-14');
+  await Customer.updateOne({ _id: t.customer._id }, { email: 'staff@example.com' });
+  const { token } = await login('+971501118888');
+  const auth = { Authorization: `Bearer ${token}` };
+
+  await request(app).patch('/api/customer-auth/profile').set(auth).send({ fullName: 'Tenant C-14', email: 'STAFF@example.com' });
+  assert.equal((await Customer.findById(t.customer._id)).emailFromApp, false);
+
+  await request(app).patch('/api/customer-auth/profile').set(auth).send({ email: 'someone.else@example.com' });
+  assert.equal((await Customer.findById(t.customer._id)).emailFromApp, true);
 });
 
 test('link-unit: code goes to the agreement’s phone and moves the login to the tenant', async () => {

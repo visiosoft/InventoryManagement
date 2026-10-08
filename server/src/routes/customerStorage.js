@@ -7,7 +7,10 @@ import { renderInvoicePdf } from '../services/invoicePdf.js';
 import { renderReceiptPdf } from '../services/receiptPdf.js';
 import { checkOtp, issueOtp, normalizePhone } from '../services/customerOtp.js';
 import { findCustomersByContact, maskEmail, maskPhone, parseContact } from '../services/customerLookup.js';
-import { createCheckoutSession, stripeConfigured } from '../services/stripe.js';
+import { createCheckoutSession, stripeConfigured, stripeEmbeddedConfigured, stripePublishableKey } from '../services/stripe.js';
+import {
+  fetchZohoInvoicePdf, fetchZohoInvoicesForContacts, fetchZohoPaymentsForContacts, findZohoContactsFor, zohoBooksConfigured,
+} from '../services/zohoBooks.js';
 
 /**
  * What a storage tenant can see of their own account.
@@ -264,6 +267,8 @@ router.post('/invoices/:id/pay', wrap(async (req, res) => {
 
   const customer = await Customer.findById(req.customer.customerId).select('email').lean();
   const clientOrigin = process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae';
+  // `embedded: true`: Stripe's card form inside the app's own checkout page.
+  const embedded = req.body?.embedded === true && stripeEmbeddedConfigured();
   const session = await createCheckoutSession({
     amountAed: balanceDue,
     productName: `Invoice ${invoice.invoiceNo}`,
@@ -273,8 +278,65 @@ router.post('/invoices/:id/pay', wrap(async (req, res) => {
     successUrl: `${clientOrigin}/pay/success?invoice=${invoice.invoiceNo}`,
     cancelUrl: `${clientOrigin}/pay/success?invoice=${invoice.invoiceNo}&cancelled=1`,
     feePct: invoice.cardFeeEnabled ? invoice.cardFeePct : 0,
+    embedded,
   });
-  res.json({ url: session.url, sessionId: session.id, balanceDue: money(balanceDue) });
+  res.json({
+    ...(embedded ? { clientSecret: session.clientSecret, publishableKey: stripePublishableKey() } : { url: session.url }),
+    sessionId: session.id, balanceDue: money(balanceDue), cardFee: session.feeAmount,
+    totalCharged: Math.round((balanceDue + session.feeAmount) * 100) / 100,
+  });
+}));
+
+// ── Billing from Zoho Books ─────────────────────────────────────────────────
+// The accounts live in Zoho Books, matched to this customer on details they
+// can't simply type in: phone numbers (proven by a login code, or entered by
+// staff) and the email only if staff entered it. Otherwise someone could put a
+// stranger's email on their profile and read that person's invoices.
+async function zohoBillingFor(customerId) {
+  if (!zohoBooksConfigured()) return { configured: false, invoices: [], payments: [] };
+  const c = await Customer.findById(customerId).select('email emailFromApp phone phones googleId').lean();
+  if (!c) return { configured: true, invoices: [], payments: [] };
+  // A Google account's phone is typed in (set-phone), not proven — trust it
+  // only once staff have put a contract on the record.
+  const rents = await Contract.exists({ customer: customerId, status: { $in: VISIBLE_CONTRACT_STATUSES } });
+  const phones = c.googleId && !rents ? [] : [...(c.phones || []), c.phone].filter(Boolean);
+  const emails = c.email && !c.emailFromApp ? [c.email] : [];
+  const { contacts } = await findZohoContactsFor({ emails, phones });
+  const ids = contacts.map((x) => x.id);
+  const [{ invoices }, { payments }] = await Promise.all([fetchZohoInvoicesForContacts(ids), fetchZohoPaymentsForContacts(ids)]);
+  return { configured: true, invoices: invoices.filter((i) => i.status !== 'draft' && i.status !== 'void'), payments };
+}
+
+const round2 = (n) => Math.round(n * 100) / 100;
+
+router.get('/billing', wrap(async (req, res) => {
+  const { configured, invoices, payments } = await zohoBillingFor(req.customer.customerId);
+  res.json({
+    configured,
+    invoices: invoices.map((i) => ({
+      id: i.id, number: i.number, date: i.date, dueDate: i.dueDate, total: i.total, balance: i.balance, status: i.status, url: i.url,
+    })),
+    payments: payments.map((p) => ({
+      id: p.id, number: p.number, date: p.date, amount: p.amount, mode: p.mode, reference: p.reference, invoiceNumbers: p.invoiceNumbers,
+    })),
+    totals: {
+      invoiced: round2(invoices.reduce((s, i) => s + i.total, 0)),
+      paid: round2(payments.reduce((s, p) => s + p.amount, 0)),
+      outstanding: round2(invoices.reduce((s, i) => s + i.balance, 0)),
+    },
+  });
+}));
+
+// Only an invoice from this customer's own Zoho contacts, never one by guessed id.
+router.get('/billing/invoices/:invoiceId/pdf', wrap(async (req, res) => {
+  const { invoices } = await zohoBillingFor(req.customer.customerId);
+  const invoice = invoices.find((i) => String(i.id) === String(req.params.invoiceId));
+  if (!invoice) throw notFound('Invoice');
+  const { pdf } = await fetchZohoInvoicePdf(invoice.id);
+  if (!pdf) throw Object.assign(new Error('Zoho Books returned no PDF'), { status: 502 });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${String(invoice.number || 'invoice').replace(/[^\w.-]/g, '_')}.pdf"`);
+  res.send(pdf);
 }));
 
 async function paidPayments(customerId) {

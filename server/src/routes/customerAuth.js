@@ -28,10 +28,30 @@ export function customerPayload(customer) {
   return { id: customer._id, fullName: customer.fullName, phone: customer.phone, email: customer.email };
 }
 
+// A browser tab or the in-app browser can't send our Bearer header, so to open
+// a PDF the app swaps its login for a document link: good for one path, for a
+// few minutes, and for nothing else. The login token itself never goes in a URL.
+const DOCUMENT_PATH = /^\/customer-portal\/(storage\/(contracts|invoices)\/[a-f\d]{24}\/pdf|storage\/payments\/[a-f\d]{24}\/receipt|booking\/[a-f\d]{24}\/contract\.pdf)$/;
+
+function documentLinkCustomer(req) {
+  if (req.method !== 'GET' || typeof req.query.dt !== 'string') return null;
+  try {
+    const d = jwt.verify(req.query.dt, process.env.JWT_SECRET);
+    if (d.type !== 'customer_doc' || d.path !== req.originalUrl.split('?')[0]) return null;
+    return { customerId: d.customerId, type: 'customer' };
+  } catch {
+    return null;
+  }
+}
+
 export function requireCustomer(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'Authentication required' });
+  if (!token) {
+    const viaLink = documentLinkCustomer(req);
+    if (viaLink) { req.customer = viaLink; return next(); }
+    return res.status(401).json({ error: 'Authentication required' });
+  }
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     if (decoded.type !== 'customer') return res.status(401).json({ error: 'Invalid token type' });
@@ -48,6 +68,15 @@ export function requireCustomer(req, res, next) {
 // `phone` is what older app builds send; `identifier` takes either.
 const contactOf = (body) => parseContact(body?.identifier ?? body?.phone);
 const otpKey = (contact) => (contact.kind === 'phone' ? contact.digits : `login:${contact.key}`);
+
+// `href` is the document's API path as the app lists it; the route serving it
+// still checks the document belongs to this customer.
+router.post('/document-link', requireCustomer, (req, res) => {
+  const href = String(req.body?.href || '');
+  if (!DOCUMENT_PATH.test(href)) return res.status(400).json({ error: 'Not a document' });
+  const token = jwt.sign({ type: 'customer_doc', customerId: req.customer.customerId, path: `/api${href}` }, process.env.JWT_SECRET, { expiresIn: '5m' });
+  res.json({ token, expiresIn: 300 });
+});
 
 router.post('/request-otp', otpLimiter, async (req, res) => {
   try {
@@ -190,6 +219,10 @@ router.patch('/profile', requireCustomer, async (req, res) => {
     if (email !== undefined) update.email = email;
     if (nationality !== undefined) update.nationality = nationality;
     if (address !== undefined) update.address = address;
+    if (email !== undefined) {
+      const before = await Customer.findById(req.customer.customerId).select('email').lean();
+      if (String(before?.email || '').trim().toLowerCase() !== String(email || '').trim().toLowerCase()) update.emailFromApp = true;
+    }
     const customer = await Customer.findByIdAndUpdate(req.customer.customerId, update, { new: true }).lean();
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
     res.json({ customer: { ...customerPayload(customer), nationality: customer.nationality, address: customer.address } });

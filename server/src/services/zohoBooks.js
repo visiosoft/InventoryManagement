@@ -527,6 +527,7 @@ export async function fetchZohoInvoicesForContacts(contactIds) {
                     status: inv.status,
                     currency: inv.currency_code,
                     customerName: inv.customer_name,
+                    url: inv.invoice_url || '',
                 });
             }
             if (!data.page_context?.has_more_page) break;
@@ -539,6 +540,49 @@ export async function fetchZohoInvoicesForContacts(contactIds) {
         (a, b) => String(b.date || '').localeCompare(String(a.date || ''))
     );
     return { configured: true, invoices };
+}
+
+// Payments received from the given Zoho contact ids, newest first.
+export async function fetchZohoPaymentsForContacts(contactIds) {
+    if (!zohoBooksConfigured()) return { configured: false, payments: [] };
+
+    const ids = [...new Set((contactIds || []).filter(Boolean).map(String))];
+    if (!ids.length) return { configured: true, payments: [] };
+
+    const token = await getAccessToken();
+    const headers = { Authorization: `Zoho-oauthtoken ${token}` };
+
+    const byId = new Map();
+    for (const customerId of ids) {
+        let page = 1;
+        for (;;) {
+            const { data } = await axios.get(`${API_BASE}/customerpayments`, {
+                headers,
+                params: { ...orgParam(), customer_id: customerId, per_page: 200, page },
+            });
+            for (const p of data.customerpayments || []) {
+                if (byId.has(p.payment_id)) continue;
+                byId.set(p.payment_id, {
+                    id: p.payment_id,
+                    number: p.payment_number,
+                    date: p.date,
+                    amount: Number(p.amount || 0),
+                    mode: p.payment_mode || '',
+                    reference: p.reference_number || '',
+                    invoiceNumbers: p.invoice_numbers || '',
+                    currency: p.currency_code,
+                });
+            }
+            if (!data.page_context?.has_more_page) break;
+            page += 1;
+            if (page > 50) break; // safety valve
+        }
+    }
+
+    const payments = [...byId.values()].sort(
+        (a, b) => String(b.date || '').localeCompare(String(a.date || ''))
+    );
+    return { configured: true, payments };
 }
 
 // The rendered PDF for one Zoho invoice, so staff can read it without holding
