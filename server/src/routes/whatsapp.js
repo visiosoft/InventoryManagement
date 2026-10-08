@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
 import { WhatsAppMessage, Lead, Customer, User, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate } from '../models/index.js';
-import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate } from '../services/whatsapp.js';
+import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate, windowOpenFor } from '../services/whatsapp.js';
 import { pauseBotForHuman, markFirstResponse } from '../services/aiBot.js';
 import { agentStatusForLeads } from '../agents/service.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
@@ -1016,12 +1016,33 @@ router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
     }
 });
 
+/**
+ * Refuse a free-form send Meta is certain to bounce.
+ *
+ * Meta accepts the request, returns a message id, and only later reports the
+ * message as failed (error 131047), so the rep sees it go out and then turn red.
+ * Answering here instead keeps the rep from waiting on a send that cannot
+ * arrive, and tells them what will. A chat with no inbound message on record
+ * is left to Meta: the history may simply not have been synced.
+ */
+export const WINDOW_CLOSED_ERROR = 'They last wrote over 24 hours ago, so WhatsApp will not deliver a typed message, quick reply or file. Send an approved template from the Templates tab instead.';
+
+export async function freeTextWindowClosed(to) {
+    const phoneNormalized = String(to || '').replace(/\D/g, '');
+    if (!phoneNormalized) return false;
+    const last = await WhatsAppMessage.findOne({ phoneNormalized, direction: 'inbound' })
+        .sort({ occurredAt: -1 }).select('occurredAt').lean();
+    if (!last?.occurredAt) return false;
+    return !windowOpenFor({ lastInboundAt: last.occurredAt });
+}
+
 router.post('/send', async (req, res) => {
     if (!whatsappSendConfigured()) {
         return res.status(400).json({ error: `WhatsApp not configured. Missing: ${whatsappSendMissing().join(', ')}` });
     }
     const { to, body } = req.body || {};
     if (!to || !body) return res.status(400).json({ error: 'to and body are required' });
+    if (await freeTextWindowClosed(to)) return res.status(409).json({ error: WINDOW_CLOSED_ERROR, windowClosed: true });
 
     const result = await sendWhatsAppText({ to, body });
 
@@ -1246,6 +1267,7 @@ router.post('/send-hosted-video', async (req, res) => {
         const thumbnailUrl = String(req.body?.thumbnailUrl || '').trim();
         if (!to) return res.status(400).json({ error: 'to is required' });
         if (!videoUrl || !thumbnailUrl) return res.status(400).json({ error: 'The video has not finished uploading yet' });
+        if (await freeTextWindowClosed(to)) return res.status(409).json({ error: WINDOW_CLOSED_ERROR, windowClosed: true });
 
         const phoneNormalized = String(to).replace(/\D/g, '');
         const caption = String(req.body?.caption || '').trim();
@@ -1266,6 +1288,8 @@ router.post('/send-quick-reply', async (req, res) => {
         }
         const to = String(req.body?.to || '').trim();
         if (!to) return res.status(400).json({ error: 'to is required' });
+
+        if (await freeTextWindowClosed(to)) return res.status(409).json({ error: WINDOW_CLOSED_ERROR, windowClosed: true });
 
         const template = await MessageTemplate.findById(req.body?.templateId).lean();
         if (!template) return res.status(404).json({ error: 'Quick reply not found' });
@@ -1428,6 +1452,7 @@ router.post('/send-media', uploadOne, async (req, res) => {
         const to = String(req.body?.to || '').trim();
         if (!to) return res.status(400).json({ error: 'to is required' });
         if (!req.file) return res.status(400).json({ error: 'A file is required' });
+        if (await freeTextWindowClosed(to)) return res.status(409).json({ error: WINDOW_CLOSED_ERROR, windowClosed: true });
 
         const caption = String(req.body?.caption || '').trim();
         const kind = whatsappMediaKind(req.file.mimetype);

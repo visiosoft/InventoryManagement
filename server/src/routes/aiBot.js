@@ -6,6 +6,7 @@ import { openaiConfigured, openaiModel, synthesizeSpeech } from '../services/ope
 import { sendWhatsAppMedia, uploadWhatsAppMedia, whatsappSendConfigured } from '../services/whatsapp.js';
 import { understandMedia } from '../services/mediaUnderstanding.js';
 import { mediaFromRaw } from './whatsappMedia.js';
+import { freeTextWindowClosed, WINDOW_CLOSED_ERROR } from './whatsapp.js';
 
 const router = Router();
 
@@ -430,6 +431,7 @@ router.post('/speak-and-send', async (req, res) => {
         if (!phoneNormalized) return res.status(400).json({ error: 'Which conversation?' });
         if (!text) return res.status(400).json({ error: 'Nothing to say' });
         if (!whatsappSendConfigured()) return res.status(400).json({ error: 'WhatsApp is not configured' });
+        if (await freeTextWindowClosed(phoneNormalized)) return res.status(409).json({ error: WINDOW_CLOSED_ERROR, windowClosed: true });
 
         const config = await getAiBotConfig();
         const audio = await speakAsConfigured(text, config);
