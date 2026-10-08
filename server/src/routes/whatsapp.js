@@ -8,6 +8,7 @@ import { agentStatusForLeads } from '../agents/service.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
+import { promotePlaceholderName } from '../services/leadNames.js';
 import { quickReplyWatchLink } from '../services/renewalLink.js';
 import { videoNeedsHosting } from '../services/videoThumbnail.js';
 import { summariseConversation, summariseRecent } from '../services/conversationSummary.js';
@@ -957,6 +958,8 @@ router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
                     });
                 }
             }
+            // Assigning a chat with no typed name: use the WhatsApp profile name.
+            if (generated && (ownerId || existing.owner)) promotePlaceholderName(existing);
             if (email) existing.email = email;
             // Saving a chat onto a rep makes it new to them, and starts their
             // clock — this is somebody choosing an owner, which is exactly what

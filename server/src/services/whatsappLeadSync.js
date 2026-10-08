@@ -1,5 +1,6 @@
 import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage, WhatsAppBlockedNumber } from '../models/index.js';
 import { routeInboundLead } from './leadRouting.js';
+import { PLACEHOLDER_NAME } from './leadNames.js';
 import { notifyLeadAssigned, notifyInboundWhatsAppMessage } from './leadNotify.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
 import { getAiBotConfig, noteInboundForBot, pauseBotForHuman } from './aiBot.js';
@@ -325,7 +326,12 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
     if (!ownerId && !routingNote) return null;
 
     const lead = await Lead.create({
-        fullName: String(fullName || '').trim() || `WhatsApp Contact ${phoneNormalized.slice(-4)}`,
+        // Routed to somebody at creation = a real lead, so it gets the
+        // WhatsApp profile name; unassigned bookkeeping contacts keep the
+        // placeholder (the Leads list hides those).
+        fullName: String(fullName || '').trim()
+            || (routingNote && ownerId && String(profileName || '').trim())
+            || `WhatsApp Contact ${phoneNormalized.slice(-4)}`,
         whatsappProfileName: String(profileName || '').trim(),
         email: '',
         phone: phone || phoneNormalized,
@@ -438,7 +444,12 @@ async function persistMessages(messages) {
         } else if (lead && msg.profileName && lead.whatsappProfileName !== msg.profileName) {
             // People rename themselves. Kept current, and never allowed to
             // overwrite a name somebody here typed.
-            await Lead.updateOne({ _id: lead._id }, { $set: { whatsappProfileName: msg.profileName } });
+            const set = { whatsappProfileName: msg.profileName };
+            // Already assigned but still carrying the placeholder: heal it now.
+            if (lead.assignedAt && !PLACEHOLDER_NAME.test(msg.profileName) && PLACEHOLDER_NAME.test(String(lead.fullName || ''))) {
+                set.fullName = msg.profileName;
+            }
+            await Lead.updateOne({ _id: lead._id }, { $set: set });
         }
 
         await WhatsAppMessage.create({

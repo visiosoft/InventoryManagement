@@ -127,9 +127,13 @@ router.put('/rules/:userId', async (req, res) => {
          return res.status(400).json({ error: 'Somebody cannot be their own stand-in' });
       }
 
+      // A rep removed earlier keeps a soft-deleted row. The default query
+      // hides it, so a plain upsert inserted a second row and collided with
+      // the unique index on `user` (E11000). includeDeleted finds that row and
+      // the deletedAt reset brings it back instead.
       const rule = await LeadRoutingRule.findOneAndUpdate(
-         { user: user._id }, { $set: update, $setOnInsert: { user: user._id } },
-         { new: true, upsert: true, runValidators: true },
+         { user: user._id }, { $set: { ...update, deletedAt: null, deletedBy: null }, $setOnInsert: { user: user._id } },
+         { new: true, upsert: true, runValidators: true, includeDeleted: true },
       ).populate('user', 'name email role').populate('fallbackUser', 'name');
       res.json(rule);
    } catch (e) {

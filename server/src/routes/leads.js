@@ -2,7 +2,7 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
 import { notifyLeadAssigned, notifyBulkReassignment, pendingAssignmentBadge } from '../services/leadNotify.js';
-import { resolvePlaceholderNames } from '../services/leadNames.js';
+import { promotePlaceholderName, resolvePlaceholderNames } from '../services/leadNames.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask } from '../services/followUps.js';
 import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
 import { summarise } from '../services/speedToLead.js';
@@ -1260,6 +1260,9 @@ router.put('/:id', async (req, res) => {
     lead.firstName = body.firstName;
     lead.lastName = body.lastName;
     lead.fullName = body.fullName;
+    // Assigned to somebody and still "WhatsApp Contact 1234": use the name the
+    // sender set on WhatsApp. A name a rep typed is left alone.
+    if (lead.owner || ownerId) promotePlaceholderName(lead);
     lead.email = body.email;
     lead.phone = body.phone;
     lead.whatsappNo = body.whatsappNo;

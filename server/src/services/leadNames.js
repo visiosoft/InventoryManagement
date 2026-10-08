@@ -43,6 +43,20 @@ export function displayNameFor(lead = {}, customerName = '') {
     return real || String(lead.fullName || '').trim() || 'Unknown';
 }
 
+/**
+ * When a lead stops being bookkeeping and becomes somebody's lead (assigned),
+ * give it the name the sender set on WhatsApp instead of "WhatsApp Contact
+ * 5892". Mutates and returns true only if it changed the name; a name a rep
+ * typed in is never touched.
+ */
+export function promotePlaceholderName(lead) {
+    if (!lead || !PLACEHOLDER_NAME.test(String(lead.fullName || '').trim())) return false;
+    const profile = String(lead.whatsappProfileName || '').trim();
+    if (!profile || PLACEHOLDER_NAME.test(profile)) return false;
+    lead.fullName = profile;
+    return true;
+}
+
 export async function resolvePlaceholderNames(items, nameKey = 'fullName') {
     const placeholders = items.filter((l) => PLACEHOLDER_NAME.test(l[nameKey] || ''));
     if (!placeholders.length) return items;
