@@ -7,7 +7,7 @@ import { fail } from '../services/warehouseRules.js';
 import {
   syncMerchantCatalog, createManualFulfillmentJob, assignWorker,
   pickFulfillmentLine, markPacked, markShipped, resolveBackorder,
-  adjustStock, pushFulfillment, pushInventory, pullRecentOrders,
+  adjustStock, pushFulfillment, pushInventory, pullRecentOrders, importStockFromShopify,
 } from '../services/shopifyFulfillment.js';
 import {
   verifyShopifyCredentials, encryptMerchantSecret, forgetMerchantClient, safeMerchant,
@@ -157,6 +157,11 @@ router.post('/merchants/:id/webhooks', requireAdminHere, asyncRoute(async (req, 
 // just connected, or when webhooks haven't been arriving.
 router.post('/merchants/:id/pull-orders', requireAdminHere, asyncRoute(async (req, res) => {
   try { res.json(await pullRecentOrders(req.params.id, { days: 30 })); }
+  catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+}));
+
+router.post('/merchants/:id/import-stock', requireAdminHere, asyncRoute(async (req, res) => {
+  try { res.json(await importStockFromShopify(req.params.id)); }
   catch (e) { res.status(e.status || 502).json({ error: e.message }); }
 }));
 

@@ -195,7 +195,25 @@ function MerchantSetup({ merchant, onClose, onChanged }: { merchant: Merchant; o
         </section>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold">3. Stock sync to Shopify</h3>
+          <h3 className="text-sm font-semibold">3. Starting stock</h3>
+          <p className="text-xs text-muted-foreground">
+            Copies the on-hand count at the location above in Shopify into PurpleBox, so you don't count every product by hand.
+            Products already received or counted here are left as they are. Orders waiting on stock are re-checked afterwards.
+          </p>
+          <Button variant="outline" disabled={!!busy || !merchant.shopifyLocationId}
+            onClick={() => act('import', async () => {
+              const { data } = await api.post(`/shopify/merchants/${merchant._id}/import-stock`)
+              return `Imported ${data.imported} product(s), ${data.units} units.`
+                + (data.alreadyCounted ? ` ${data.alreadyCounted} already counted here, left alone.` : '')
+                + (data.notAtLocation ? ` ${data.notAtLocation} not stocked at that location.` : '')
+                + (data.backordersCleared ? ` ${data.backordersCleared} backordered order(s) now ready to pick.` : '')
+            })}>
+            {busy === 'import' ? 'Importing…' : 'Import stock from Shopify'}
+          </Button>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold">4. Stock sync to Shopify</h3>
           <p className="text-xs text-muted-foreground">
             When on, free stock here (on hand minus reserved) becomes the "available" quantity at that location in Shopify,
             overwriting what's there. Only SKUs this warehouse has recorded stock for are touched.

@@ -429,3 +429,29 @@ export async function fetchOrdersUpdatedSince(merchantId, since) {
   } while (after);
   return orders;
 }
+
+/** On-hand and available per inventory item at one location, keyed by
+ *  inventory item GID. Items not stocked at that location are absent. */
+export async function fetchLocationStock(merchantOrId, locationId) {
+  const stock = new Map();
+  let after = null;
+  do {
+    const data = await shopifyGraphql(merchantOrId, `
+      query Stock($id: ID!, $after: String) {
+        location(id: $id) {
+          inventoryLevels(first: 250, after: $after) {
+            pageInfo { hasNextPage endCursor }
+            nodes { item { id } quantities(names: ["on_hand", "available"]) { name quantity } }
+          }
+        }
+      }`, { id: locationId, after });
+    if (!data.location) throw new Error('That Shopify location no longer exists.');
+    const page = data.location.inventoryLevels;
+    for (const level of page.nodes) {
+      const q = Object.fromEntries(level.quantities.map(x => [x.name, x.quantity]));
+      stock.set(level.item.id, { onHand: q.on_hand ?? 0, available: q.available ?? 0 });
+    }
+    after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+  } while (after);
+  return stock;
+}

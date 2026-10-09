@@ -192,6 +192,10 @@ const fulfillmentJobSchema = new Schema({
   shopifyPushAttempts: { type: Number, default: 0 },
   backorderFlaggedAt: { type: Date, default: null },
   backorderNote: { type: String, default: '' },
+  // Order items we couldn't match to a synced SKU, so they have no line on
+  // this job. While any are listed the job stays a backorder, even once every
+  // matched line has stock — otherwise it would quietly ship without them.
+  unmatchedItems: { type: [String], default: [] },
 }, { timestamps: true });
 fulfillmentJobSchema.index({ merchant: 1, status: 1, createdAt: -1 });
 // One fulfillment job per order in this first pass — no split-shipment yet.

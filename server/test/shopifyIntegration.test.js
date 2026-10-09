@@ -285,3 +285,47 @@ test('an order for stock nobody has counted does not push a 0 to Shopify', async
   assert.equal(out.pushed, 0);
   assert.equal(calls.length, 0);
 });
+
+function fakeLocationStock(levels) {
+  return fakeShopify(() => ({ location: { inventoryLevels: {
+    pageInfo: { hasNextPage: false, endCursor: null },
+    nodes: levels.map(([item, onHand, available]) => ({
+      item: { id: item }, quantities: [{ name: 'on_hand', quantity: onHand }, { name: 'available', quantity: available }],
+    })),
+  } } }));
+}
+
+test('importing Shopify stock fills uncounted SKUs from on-hand and clears backorders it can cover', async () => {
+  // An order arrives before any stock is entered: backordered.
+  const res = await deliver('orders/create', orderPayload(7001, [[222, 2, 'ABC-2']]));
+  assert.equal((await FulfillmentJob.findById(res.body.job).lean()).status, 'PARTIAL_BACKORDER');
+  await setStock(skuA, 4); // counted here already — must not be overwritten
+
+  fakeLocationStock([
+    ['gid://shopify/InventoryItem/501', 99, 99],
+    ['gid://shopify/InventoryItem/502', 10, 8], // 2 committed to the order above
+  ]);
+  const out = await svc.importStockFromShopify(merchant._id);
+  assert.equal(out.imported, 1);
+  assert.equal(out.alreadyCounted, 1);
+  assert.equal(out.backordersCleared, 1);
+
+  assert.equal((await level(skuA)).onHand, 4);
+  const b = await level(skuB);
+  assert.equal(b.onHand, 10);
+  assert.equal(b.reserved, 2);
+  assert.ok(b.stockRecordedAt);
+  const job = await FulfillmentJob.findById(res.body.job).lean();
+  assert.equal(job.status, 'READY_TO_PICK');
+  assert.equal(job.backorderNote, '');
+});
+
+test('a job with an item missing from the catalog stays a backorder even once stock is in', async () => {
+  const res = await deliver('orders/create', orderPayload(7002, [[222, 1, 'ABC-2'], [999, 1, 'GHOST']]));
+  fakeLocationStock([['gid://shopify/InventoryItem/502', 5, 5]]);
+  await svc.importStockFromShopify(merchant._id);
+  const job = await FulfillmentJob.findById(res.body.job).lean();
+  assert.equal(job.status, 'PARTIAL_BACKORDER');
+  assert.match(job.backorderNote, /GHOST ×1 is not in the synced catalog/);
+  assert.equal(job.lines[0].reserved, 1);
+});

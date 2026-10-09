@@ -3,7 +3,9 @@ import { command } from './warehouse.js';
 import { fail } from './warehouseRules.js';
 import { ScanEvent } from '../models/warehouse.js';
 import { Merchant, Sku, InventoryLevel, ShopifyOrder, FulfillmentJob } from '../models/shopify.js';
-import { fetchProductsAndVariants, createFulfillment, setAvailableQuantities, fetchOrdersUpdatedSince } from './shopify.js';
+import {
+  fetchProductsAndVariants, createFulfillment, setAvailableQuantities, fetchOrdersUpdatedSince, fetchLocationStock,
+} from './shopify.js';
 
 export { command };
 
@@ -176,15 +178,19 @@ async function releaseStock(merchantId, skuId, warehouse, { reserved = 0, onHand
  *  FulfillmentJob in the status that reservation earned it. Insufficient
  *  stock on ANY line (or a line we can't match to a SKU) flags the whole job
  *  for admin review rather than silently shipping the rest short. */
-async function reserveAndCreateJob(merchant, order, resolvedLines, extraNotes = []) {
-  let short = extraNotes.length > 0;
-  const notes = [...extraNotes];
+const skuLabel = sku => (sku.sku && !sku.sku.startsWith(NO_SKU_PREFIX)
+  ? sku.sku
+  : [sku.productTitle, sku.variantTitle !== 'Default Title' && sku.variantTitle].filter(Boolean).join(' — ') || 'Unnamed item');
+
+async function reserveAndCreateJob(merchant, order, resolvedLines, unmatchedItems = []) {
+  let short = unmatchedItems.length > 0;
+  const notes = [...unmatchedItems];
   const jobLines = [];
   for (const { sku, ordered } of resolvedLines) {
     const toReserve = await reserveUpTo(merchant, sku._id, ordered);
     if (toReserve < ordered) {
       short = true;
-      notes.push(`${sku.sku}: needed ${ordered}, only ${toReserve} available`);
+      notes.push(`${skuLabel(sku)}: needed ${ordered}, only ${toReserve} available`);
     }
     jobLines.push({ sku: sku._id, ordered, picked: 0, reserved: toReserve, pickLocationHint: sku.defaultLocation || null });
   }
@@ -198,6 +204,7 @@ async function reserveAndCreateJob(merchant, order, resolvedLines, extraNotes = 
     lines: jobLines,
     backorderFlaggedAt: short ? new Date() : null,
     backorderNote: short ? notes.join('; ') : '',
+    unmatchedItems,
   }]);
   return job;
 }
@@ -297,24 +304,7 @@ export async function resolveBackorder(ctx, jobId, { action, note }) {
     for (const line of job.lines) line.ordered = line.reserved;
     job.status = 'READY_TO_PICK';
   } else if (action === 'retry') {
-    // Stock has arrived since: try to top up each short line.
-    const merchant = await Merchant.findById(job.merchant);
-    const notes = [];
-    for (const line of job.lines) {
-      const missing = line.ordered - line.reserved;
-      if (missing > 0) line.reserved += await reserveUpTo(merchant, line.sku, missing);
-      if (line.reserved < line.ordered) {
-        const sku = await Sku.findById(line.sku).lean();
-        notes.push(`${sku?.sku || line.sku}: needed ${line.ordered}, only ${line.reserved} reserved`);
-      }
-    }
-    if (job.lines.length && !notes.length) {
-      job.status = 'READY_TO_PICK';
-      job.backorderFlaggedAt = null;
-      job.backorderNote = '';
-    } else if (notes.length) {
-      job.backorderNote = notes.join('; ');
-    }
+    await topUpReservations(job, await Merchant.findById(job.merchant));
   } else {
     fail('action must be "cancel", "ship_partial" or "retry".');
   }
@@ -625,4 +615,76 @@ export async function runOrderPull() {
     catch (e) { results.push({ merchant: m.name, error: e.message }); }
   }
   return results;
+}
+
+/**
+ * Stock has arrived since this backorder was flagged: reserve what's now
+ * free for each short line. Moves the job to READY_TO_PICK once every line
+ * is covered and nothing on the order is unmatched; otherwise refreshes the
+ * note. Mutates `job` — the caller saves it.
+ */
+async function topUpReservations(job, merchant) {
+  const notes = [...(job.unmatchedItems || [])];
+  for (const line of job.lines) {
+    const missing = line.ordered - line.reserved;
+    if (missing > 0) line.reserved += await reserveUpTo(merchant, line.sku, missing);
+    if (line.reserved < line.ordered) {
+      const sku = await Sku.findById(line.sku).lean();
+      notes.push(`${sku ? skuLabel(sku) : line.sku}: needed ${line.ordered}, only ${line.reserved} reserved`);
+    }
+  }
+  if (job.lines.length && !notes.length) {
+    job.status = 'READY_TO_PICK';
+    job.backorderFlaggedAt = null;
+    job.backorderNote = '';
+    return true;
+  }
+  job.backorderNote = notes.join('; ');
+  return false;
+}
+
+/**
+ * One-off starting point for a newly connected store: copies Shopify's
+ * on-hand count at this warehouse's location into PurpleBox, for every SKU
+ * nobody has received or counted here yet (those are never overwritten).
+ * On-hand, not available — Shopify's "available" already has its open orders
+ * taken off, and those orders reserve against this stock here. Then
+ * re-checks every backordered job, since most were short only because the
+ * stock hadn't been entered.
+ */
+export async function importStockFromShopify(merchantId) {
+  const merchant = await Merchant.findById(merchantId);
+  if (!merchant) fail('Merchant not found.', 404);
+  if (!merchant.isActive) fail('Merchant is not active.', 409);
+  if (!merchant.shopifyLocationId) fail("Choose this warehouse's Shopify location first.", 409);
+  const skus = await Sku.find({ merchant: merchant._id, shopifyInventoryItemId: { $ne: '' } }).lean();
+  if (!skus.length) fail("Sync this store's catalog first.", 409);
+
+  const shopifyStock = await fetchLocationStock(merchant, merchant.shopifyLocationId);
+  const counted = new Set((await InventoryLevel.find({
+    merchant: merchant._id, warehouse: merchant.warehouse, stockRecordedAt: { $ne: null },
+  }).select('sku').lean()).map(l => l.sku));
+
+  const now = new Date();
+  const result = { imported: 0, units: 0, alreadyCounted: 0, notAtLocation: 0, backordersCleared: 0 };
+  for (const sku of skus) {
+    if (counted.has(sku._id)) { result.alreadyCounted += 1; continue; }
+    const stock = shopifyStock.get(sku.shopifyInventoryItemId);
+    if (!stock) { result.notAtLocation += 1; continue; }
+    const onHand = Math.max(0, stock.onHand);
+    await ensureLevel(merchant, sku._id);
+    // $max against reserved: never below what open jobs already hold.
+    await InventoryLevel.updateOne(levelKey(merchant._id, sku._id, merchant.warehouse), [{
+      $set: { onHand: { $max: [onHand, '$reserved'] }, stockRecordedAt: now, updatedAt: '$$NOW' },
+    }]);
+    result.imported += 1;
+    result.units += onHand;
+  }
+
+  const backorders = await FulfillmentJob.find({ merchant: merchant._id, status: 'PARTIAL_BACKORDER' });
+  for (const job of backorders) {
+    if (await topUpReservations(job, merchant)) result.backordersCleared += 1;
+    await job.save();
+  }
+  return result;
 }
