@@ -13,7 +13,8 @@
     "import:inventory": "node src/importInventory.js",
     "import:vendors": "node src/importVendors.js",
     "import:expenses": "node src/importExpenses.js",
-    "import:contracts": "node src/importContractsFromBackup.js"
+    "import:contracts": "node src/importContractsFromBackup.js",
+    "test:shopify": "node --test test/shopifyFulfillment.test.js test/shopifyIntegration.test.js"
   },
   "dependencies": {
     "axios": "^1.7.9",

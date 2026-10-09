@@ -2,7 +2,9 @@ import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 
 const { Schema, model } = mongoose;
-const uuid = () => ({ type: String, default: randomUUID });
+// Wrapped, not passed bare: Mongoose calls a default with an argument when
+// upserting, and randomUUID() throws on any argument that isn't an options object.
+const uuid = () => ({ type: String, default: () => randomUUID() });
 const ref = (name, required = false) => ({ type: Schema.Types.ObjectId, ref: name, required });
 // Merchant/Sku/ShopifyOrder/FulfillmentJob below all use a UUID string _id
 // (matching models/warehouse.js's StoredContainer/WarehouseLocation/
@@ -25,13 +27,38 @@ const merchantSchema = new Schema({
   _id: uuid(),
   name: { type: String, required: true, maxlength: 200 },
   shopDomain: { type: String, required: true, unique: true, lowercase: true, trim: true },
-  adminApiAccessTokenEnc: { type: String, required: true, select: false },
-  adminApiAccessTokenIv: { type: String, required: true, select: false },
-  adminApiAccessTokenTag: { type: String, required: true, select: false },
+  // How we get an Admin API token for this store. 'static_token' is a legacy
+  // custom app made in the Shopify admin (a shpat_ token that never expires);
+  // Shopify stopped allowing new ones on 2026-01-01, so stores connected since
+  // then are 'client_credentials' — a Dev Dashboard app whose client ID and
+  // secret are exchanged for a token that lasts 24 hours (services/shopify.js
+  // refreshes it).
+  authMode: { type: String, enum: ['static_token', 'client_credentials'], default: 'static_token' },
+  adminApiAccessTokenEnc: { type: String, default: '', select: false },
+  adminApiAccessTokenIv: { type: String, default: '', select: false },
+  adminApiAccessTokenTag: { type: String, default: '', select: false },
+  clientId: { type: String, default: '' },
+  clientSecretEnc: { type: String, default: '', select: false },
+  clientSecretIv: { type: String, default: '', select: false },
+  clientSecretTag: { type: String, default: '', select: false },
+  // Signs incoming webhooks. Optional for client-credentials stores — their
+  // webhooks are signed with the client secret, which is used when this is blank.
   webhookSecretEnc: { type: String, default: '', select: false },
   webhookSecretIv: { type: String, default: '', select: false },
   webhookSecretTag: { type: String, default: '', select: false },
-  apiVersion: { type: String, default: '2025-01' },
+  apiVersion: { type: String, default: '2026-07' },
+  // gid://shopify/Location/... — the location in the merchant's Shopify that
+  // represents this warehouse. Fulfillments are pushed from it and stock
+  // levels are written to it; both stay off until it is chosen.
+  shopifyLocationId: { type: String, default: '' },
+  shopifyLocationName: { type: String, default: '' },
+  // Phase C: push PurpleBox stock to Shopify. Off by default — turning it on
+  // makes this warehouse the source of truth for that location's stock, and
+  // overwrites whatever the merchant had there.
+  inventorySyncEnabled: { type: Boolean, default: false },
+  lastInventoryPushAt: { type: Date, default: null },
+  lastInventoryPushError: { type: String, default: '' },
+  webhooksRegisteredAt: { type: Date, default: null },
   // Which PurpleBox facility/warehouse code fulfills this merchant's orders.
   site: ref('Site', true),
   warehouse: { type: String, required: true },
@@ -54,6 +81,8 @@ const skuSchema = new Schema({
   productTitle: { type: String, default: '' },
   variantTitle: { type: String, default: '' },
   barcode: { type: String, default: '' },
+  // gid://shopify/InventoryItem/... — what Shopify tracks stock against.
+  shopifyInventoryItemId: { type: String, default: '' },
   // Advisory only — where a picker should look first. Not capacity-enforced
   // the way a StoredContainer's currentLocation is; SKU stock is fungible
   // quantity, not individually-scanned items, so it isn't tied into
@@ -106,6 +135,12 @@ const shopifyOrderSchema = new Schema({
   },
   financialStatus: { type: String, default: '' },
   fulfillmentStatus: { type: String, default: '' },
+  cancelledAt: { type: Date, default: null },
+  // Atomically claimed by whichever webhook delivery creates the job, so an
+  // orders/create and orders/updated arriving together can't both reserve
+  // stock for the same order (the job's unique index alone would only stop
+  // the second job, after its reservation had already been taken).
+  jobClaimedAt: { type: Date, default: null },
   rawWebhookPayload: { type: Schema.Types.Mixed, default: null },
   receivedAt: { type: Date, default: Date.now },
 }, { timestamps: true });
@@ -146,15 +181,31 @@ const fulfillmentJobSchema = new Schema({
   // to Shopify failed — the physical shipment already happened, so this
   // never blocks the worker; a retry loop clears it once the push succeeds.
   shopifyPushFailedAt: { type: Date, default: null },
+  shopifyPushError: { type: String, default: '' },
+  shopifyPushAttempts: { type: Number, default: 0 },
   backorderFlaggedAt: { type: Date, default: null },
   backorderNote: { type: String, default: '' },
 }, { timestamps: true });
 fulfillmentJobSchema.index({ merchant: 1, status: 1, createdAt: -1 });
 // One fulfillment job per order in this first pass — no split-shipment yet.
 fulfillmentJobSchema.index({ shopifyOrder: 1 }, { unique: true });
+fulfillmentJobSchema.index({ shopifyPushFailedAt: 1 });
+
+// Every webhook delivery we have finished processing, keyed by Shopify's
+// X-Shopify-Webhook-Id. Shopify delivers at-least-once and retries anything
+// that didn't get a 2xx in time, so the same event can arrive twice.
+const shopifyWebhookEventSchema = new Schema({
+  _id: { type: String },
+  merchant: uref('Merchant', true),
+  topic: { type: String, required: true },
+  processedAt: { type: Date, default: Date.now },
+});
+// Shopify stops retrying after 48 hours; a week is comfortably past that.
+shopifyWebhookEventSchema.index({ processedAt: 1 }, { expireAfterSeconds: 7 * 24 * 3600 });
 
 export const Merchant = model('Merchant', merchantSchema);
 export const Sku = model('Sku', skuSchema);
 export const InventoryLevel = model('InventoryLevel', inventoryLevelSchema);
 export const ShopifyOrder = model('ShopifyOrder', shopifyOrderSchema);
 export const FulfillmentJob = model('FulfillmentJob', fulfillmentJobSchema);
+export const ShopifyWebhookEvent = model('ShopifyWebhookEvent', shopifyWebhookEventSchema);

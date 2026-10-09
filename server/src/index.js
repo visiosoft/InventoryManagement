@@ -30,6 +30,8 @@ import authRoutes from './routes/auth.js';
 import unitRoutes from './routes/units.js';
 import warehouseRoutes from './routes/warehouse.js';
 import shopifyMerchantRoutes from './routes/shopifyMerchants.js';
+import shopifyWebhookRoutes from './routes/shopifyWebhook.js';
+import { retryFailedFulfillmentPushes, runInventorySync } from './services/shopifyFulfillment.js';
 import warehouseJobPublicRoutes from './routes/warehouseJobPublic.js';
 import floorPlanRoutes from './routes/floorPlans.js';
 import siteRoutes from './routes/sites.js';
@@ -138,6 +140,10 @@ if (process.env.CORS_HANDLED_BY_PROXY === 'true') {
 // limit of its own — Meta calls it directly, so there is no JWT, and the
 // encrypted payload can exceed the 2mb the rest of the app allows.
 app.use('/api/whatsapp/flow', express.json({ limit: '20mb' }), whatsappFlowRoutes);
+// Shopify order webhooks: no JWT, verified by HMAC over the exact bytes
+// Shopify sent — so the body must reach the route unparsed, ahead of the
+// global JSON parser.
+app.use('/api/shopify/webhooks', express.raw({ type: '*/*', limit: '5mb' }), shopifyWebhookRoutes);
 
 app.use(
   express.json({
@@ -243,9 +249,8 @@ app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 app.use('/api/integrations/whatsapp/webhook', (req, _res, next) => next());
 app.use('/api/units', requireAuth, unitRoutes);
 app.use('/api/warehouse', requireAuth, warehouseRoutes);
-// Phase A only — manual merchant/SKU/fulfillment-job management. The inbound
-// Shopify order webhook (Phase B) mounts unauthenticated, near the other
-// webhook routes above, once it exists.
+// Merchants, SKUs, stock and fulfillment jobs. The order webhook is mounted
+// separately above, before the JSON parser.
 app.use('/api/shopify', requireAuth, shopifyMerchantRoutes);
 /* Accounts read tenants and contracts to invoice against them; they do not
    agree terms or correct somebody's details. See readOnlyFor. */
@@ -611,6 +616,22 @@ async function start() {
       console.error('[Units]', e.message);
     }
   }, 60 * 60 * 1000), 90_000);
+
+  /* Shopify: retry fulfillments that didn't reach Shopify when they shipped,
+     and push stock for merchants with sync on. Stock changes already push
+     about 30 seconds after they happen; this catches anything a restart or a
+     Shopify outage dropped. */
+  setTimeout(() => setInterval(async () => {
+    try {
+      const out = await retryFailedFulfillmentPushes();
+      if (out.tried) console.log(`[Shopify] fulfillment retries: ${out.fixed}/${out.tried} sent`);
+      for (const r of await runInventorySync()) {
+        if (r.error) console.error(`[Shopify] stock sync for ${r.merchant}:`, r.error);
+      }
+    } catch (e) {
+      console.error('[Shopify]', e.message);
+    }
+  }, 10 * 60 * 1000), 120_000);
 
   const SWEEP_INTERVAL = 2 * 60 * 1000;
   setTimeout(() => setInterval(async () => {

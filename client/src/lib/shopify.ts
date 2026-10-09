@@ -3,13 +3,36 @@ export type Merchant = {
   name: string
   shopDomain: string
   apiVersion: string
+  authMode: 'static_token' | 'client_credentials'
+  clientId: string
   site: string
   warehouse: string
   isActive: boolean
+  shopifyLocationId: string
+  shopifyLocationName: string
+  inventorySyncEnabled: boolean
+  lastInventoryPushAt: string | null
+  lastInventoryPushError: string
+  webhooksRegisteredAt: string | null
   lastInventorySyncAt: string | null
   lastOrderWebhookAt: string | null
   createdAt: string
 }
+
+export type ShopifyLocation = { id: string; name: string; fulfillsOnlineOrders: boolean; place: string }
+export type ConnectInfo = { scopes: string[]; webhookUrl: string; apiVersion: string }
+
+export type OrderSummary = {
+  _id: string
+  shopifyOrderId: string
+  shopifyOrderName: string
+  financialStatus: string
+  shippingAddress?: { name?: string; city?: string; country?: string; phone?: string }
+}
+
+/** Shopify order IDs made by the test-order tool start with this. */
+export const isTestOrder = (order: OrderSummary | string | null | undefined) =>
+  typeof order === 'object' && !!order && order.shopifyOrderId.startsWith('MANUAL-')
 
 export type Sku = {
   _id: string
@@ -43,8 +66,8 @@ export type FulfillmentLine = {
 
 export type FulfillmentJob = {
   _id: string
-  merchant: string
-  shopifyOrder: string
+  merchant: { _id: string; name: string; shopDomain: string } | string
+  shopifyOrder: OrderSummary | string
   site: string
   warehouse: string
   status: FulfillmentStatus
@@ -53,6 +76,9 @@ export type FulfillmentJob = {
   carrier: string
   trackingNumber: string
   shippedAt: string | null
+  shopifyFulfillmentId: string
+  shopifyPushFailedAt: string | null
+  shopifyPushError: string
   backorderNote: string
   createdAt: string
 }

@@ -4,8 +4,28 @@ import { Plus } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { Badge, Button, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner } from '../../components/ui'
-import { FULFILLMENT_STATES, statusLabel, statusTone } from '../../lib/shopify'
+import { FULFILLMENT_STATES, isTestOrder, statusLabel, statusTone } from '../../lib/shopify'
 import type { FulfillmentJob, Merchant, Sku } from '../../lib/shopify'
+
+const orderOf = (job: FulfillmentJob) => (typeof job.shopifyOrder === 'object' ? job.shopifyOrder : null)
+const merchantName = (job: FulfillmentJob) => (typeof job.merchant === 'object' ? job.merchant.name : '')
+const orderTitle = (job: FulfillmentJob) => {
+  const order = orderOf(job)
+  if (!order) return `Job ${job._id.slice(0, 8)}`
+  return isTestOrder(order) ? `Test order · ${order.shopifyOrderName}` : order.shopifyOrderName
+}
+
+/** Whether Shopify knows this job shipped. Test orders never go there. */
+function ShopifySyncNote({ job, busy, onRetry }: { job: FulfillmentJob; busy: boolean; onRetry: () => void }) {
+  if (job.status !== 'SHIPPED' || isTestOrder(orderOf(job))) return null
+  if (job.shopifyFulfillmentId) return <p className="text-xs text-emerald-700">Marked fulfilled in Shopify — the customer has their tracking.</p>
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-2">
+      <p>Not in Shopify yet{job.shopifyPushError ? `: ${job.shopifyPushError}` : '.'} It retries every 10 minutes.</p>
+      <Button size="sm" variant="outline" disabled={busy} onClick={onRetry}>Send to Shopify now</Button>
+    </div>
+  )
+}
 
 // command()'s idempotency check requires a client-generated UUID requestId
 // on every mutating call — see server/src/services/warehouse.js.
@@ -41,7 +61,7 @@ function NewTestOrderModal({ onClose, onDone }: { onClose: () => void; onDone: (
     <Modal open title="Create a test fulfillment job" onClose={onClose}>
       <div className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          Phase A tool: stands in for a real Shopify order, so the pick/pack/ship flow can be tested before a live order webhook exists.
+          For testing pick/pack/ship without a real order. Nothing is sent to Shopify for test orders.
         </p>
         <Field label="Merchant">
           <Select value={merchant} onChange={e => { setMerchant(e.target.value); setLines([{ sku: '', quantity: '1' }]) }}>
@@ -83,7 +103,9 @@ function JobDetail({ job, onClose, onChanged }: { job: FulfillmentJob; onClose: 
   const [carrier, setCarrier] = useState('')
   const [tracking, setTracking] = useState('')
   const [err, setErr] = useState('')
+  const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const order = orderOf(job)
 
   async function pick(sku: string, remaining: number) {
     setBusy(true); setErr('')
@@ -99,18 +121,35 @@ function JobDetail({ job, onClose, onChanged }: { job: FulfillmentJob; onClose: 
   }
   async function ship() {
     setBusy(true); setErr('')
-    try { await api.post(`/shopify/jobs/${job._id}/ship`, { requestId: uuid(), carrier, trackingNumber: tracking }); onChanged() }
+    try {
+      const { data } = await api.post(`/shopify/jobs/${job._id}/ship`, { requestId: uuid(), carrier, trackingNumber: tracking })
+      if (data.shopify?.error) setNotice(`Shipped. Shopify didn't take it yet: ${data.shopify.error}`)
+      onChanged()
+    }
     catch (e) { setErr(apiError(e)) } finally { setBusy(false) }
   }
-  async function resolve(action: 'cancel' | 'ship_partial') {
+  async function pushToShopify() {
+    setBusy(true); setErr(''); setNotice('')
+    try { await api.post(`/shopify/jobs/${job._id}/push-fulfillment`); onChanged() }
+    catch (e) { setErr(apiError(e)) } finally { setBusy(false) }
+  }
+  async function resolve(action: 'cancel' | 'ship_partial' | 'retry') {
     setBusy(true); setErr('')
     try { await api.post(`/shopify/jobs/${job._id}/resolve-backorder`, { requestId: uuid(), action }); onChanged() }
     catch (e) { setErr(apiError(e)) } finally { setBusy(false) }
   }
 
   return (
-    <Modal open title={`Job ${job._id.slice(0, 8)}`} onClose={onClose} wide>
+    <Modal open title={orderTitle(job)} onClose={onClose} wide>
       <div className="space-y-4">
+        {order && !isTestOrder(order) && (
+          <p className="text-sm text-muted-foreground">
+            {merchantName(job)}
+            {order.shippingAddress?.name ? ` · ${order.shippingAddress.name}` : ''}
+            {order.shippingAddress?.city ? `, ${order.shippingAddress.city}` : ''}
+            {order.financialStatus === 'pending' ? ' · payment pending (COD?)' : ''}
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <Badge tone={statusTone[job.status].includes('destructive') ? 'red' : undefined} className={statusTone[job.status]}>{statusLabel(job.status)}</Badge>
           {job.backorderNote && <span className="text-xs text-amber-800">{job.backorderNote}</span>}
@@ -140,6 +179,7 @@ function JobDetail({ job, onClose, onChanged }: { job: FulfillmentJob; onClose: 
 
         {job.status === 'PARTIAL_BACKORDER' && (
           <div className="flex gap-2">
+            <Button variant="outline" disabled={busy} onClick={() => resolve('retry')}>Check stock again</Button>
             <Button disabled={busy} onClick={() => resolve('ship_partial')}>Ship what's reserved</Button>
             <Button variant="outline" disabled={busy} onClick={() => resolve('cancel')}>Cancel job</Button>
           </div>
@@ -160,6 +200,8 @@ function JobDetail({ job, onClose, onChanged }: { job: FulfillmentJob; onClose: 
         {job.status === 'SHIPPED' && (
           <p className="text-sm text-muted-foreground">Shipped via {job.carrier} — tracking {job.trackingNumber}.</p>
         )}
+        <ShopifySyncNote job={job} busy={busy} onRetry={pushToShopify} />
+        {notice && <p className="text-xs text-amber-800">{notice}</p>}
 
         {err && <p className="text-xs text-destructive">{err}</p>}
       </div>
@@ -187,7 +229,7 @@ export default function FulfillmentQueue() {
     <div className="p-4 sm:p-6 space-y-4">
       <PageHeader
         title="Fulfillment queue"
-        subtitle="Pick, pack, and ship Shopify orders."
+        subtitle="Pick, pack, and ship Shopify orders. New orders arrive automatically from connected stores."
         action={user?.role === 'admin' ? <Button onClick={() => setCreating(true)}><Plus size={14} /> New test order</Button> : undefined}
       />
       <Select value={status} onChange={e => setStatus(e.target.value)} className="max-w-xs">
@@ -206,12 +248,18 @@ export default function FulfillmentQueue() {
               className="text-left rounded-lg border p-3 hover:bg-muted/40 transition-colors"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="font-mono text-xs text-muted-foreground">{job._id.slice(0, 8)}</span>
+                <span className="text-sm font-medium truncate">{orderTitle(job)}</span>
                 <Badge tone={job.status === 'PARTIAL_BACKORDER' ? 'amber' : job.status === 'SHIPPED' ? 'green' : job.status === 'CANCELLED' ? 'gray' : 'blue'}>
                   {statusLabel(job.status)}
                 </Badge>
               </div>
-              <p className="mt-2 text-sm">{job.lines.length} line{job.lines.length === 1 ? '' : 's'}</p>
+              <p className="mt-2 text-sm">
+                {merchantName(job) && <span className="text-muted-foreground">{merchantName(job)} · </span>}
+                {job.lines.length} line{job.lines.length === 1 ? '' : 's'}
+              </p>
+              {job.status === 'SHIPPED' && job.shopifyPushFailedAt && !job.shopifyFulfillmentId && (
+                <p className="text-xs text-amber-800">Not yet in Shopify</p>
+              )}
               <p className="text-xs text-muted-foreground">{new Date(job.createdAt).toLocaleString()}</p>
             </button>
           ))}
