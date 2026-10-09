@@ -124,6 +124,27 @@ export default function LeadDistribution() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  /* Leads the rules gave somebody that they never touched, handed back to
+     unassigned. Counts first; nothing changes until it is confirmed. */
+  const [takeFrom, setTakeFrom] = useState('')
+  const [takeInfo, setTakeInfo] = useState<{ owner: string; autoAssigned: number; wouldTakeBack: number; keptBecauseWorked: number } | null>(null)
+  const [takeDone, setTakeDone] = useState('')
+  const takeBack = useMutation({
+    mutationFn: (v: { userId: string; confirm: boolean }) => api.post('/lead-routing/take-back', v).then((r) => r.data),
+    onSuccess: (d, v) => {
+      setErr('')
+      if (v.confirm) {
+        setTakeInfo(null)
+        setTakeDone(`${d.takenBack} lead${d.takenBack === 1 ? '' : 's'} taken back from ${d.owner}. ${d.keptBecauseWorked} the ones already worked stayed with them.`)
+        qc.invalidateQueries({ queryKey: ['leads'] })
+      } else {
+        setTakeDone('')
+        setTakeInfo(d)
+      }
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   const { data: preview } = useQuery<{ order: { name: string | null; reason: string }[]; tallyAfter: { name: string; count: number }[] }>({
     queryKey: ['lead-routing-preview'],
     queryFn: () => api.get('/lead-routing/preview?n=20').then((r) => r.data),
@@ -362,6 +383,43 @@ export default function LeadDistribution() {
               </CardBody>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader
+              title="Take back leads the system assigned"
+              subtitle="Only leads the rules gave somebody that are still new, unopened and never replied to. Anything they have worked stays theirs."
+            />
+            <CardBody className="space-y-3">
+              <div className="flex flex-wrap items-end gap-2">
+                <Select value={takeFrom} onChange={(e) => { setTakeFrom(e.target.value); setTakeInfo(null); setTakeDone('') }} style={{ minWidth: 220 }}>
+                  <option value="">Take back from…</option>
+                  {data.people.map((p) => <option key={p._id} value={p._id}>{p.name} ({p.role})</option>)}
+                </Select>
+                <Button disabled={!takeFrom || takeBack.isPending} onClick={() => takeBack.mutate({ userId: takeFrom, confirm: false })}>
+                  Check
+                </Button>
+              </div>
+              {takeInfo && (
+                <div className="rounded-lg p-3 space-y-2" style={{ background: '#FBF8F3', border: `1px solid ${LINE}`, fontSize: 13 }}>
+                  <div>
+                    {takeInfo.owner} has <strong>{takeInfo.autoAssigned}</strong> system-assigned leads;{' '}
+                    <strong>{takeInfo.wouldTakeBack}</strong> are untouched and would go back to unassigned.
+                  </div>
+                  <Button
+                    disabled={!takeInfo.wouldTakeBack || takeBack.isPending}
+                    onClick={() => {
+                      if (confirm(`Take ${takeInfo.wouldTakeBack} untouched leads back from ${takeInfo.owner}? They become unassigned.`)) {
+                        takeBack.mutate({ userId: takeFrom, confirm: true })
+                      }
+                    }}
+                  >
+                    {takeBack.isPending ? 'Working…' : `Take back ${takeInfo.wouldTakeBack}`}
+                  </Button>
+                </div>
+              )}
+              {takeDone && <div style={{ fontSize: 12.5, color: '#047857', fontWeight: 600 }}>{takeDone}</div>}
+            </CardBody>
+          </Card>
 
           {/* Proof */}
           {preview && (

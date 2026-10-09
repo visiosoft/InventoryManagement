@@ -264,4 +264,39 @@ router.post('/customer-chats/assign', async (req, res) => {
    }
 });
 
+/**
+ * Take back what the rules gave somebody and they never touched.
+ *
+ * Only leads the system assigned (not a person), still at "new", with no
+ * reply, no attempt logged and not opened by the owner. Anything the rep has
+ * worked stays hers. `confirm: true` does it; without it this only counts.
+ */
+router.post('/take-back', async (req, res) => {
+   try {
+      const user = await User.findById(req.body?.userId).select('_id name');
+      if (!user) return res.status(400).json({ error: 'Choose a person' });
+
+      const auto = { owner: user._id, autoAssigned: true, assignedBy: null };
+      const untouched = {
+         ...auto,
+         status: 'new',
+         firstResponseAt: null,
+         ownerSeenAt: null,
+         'attempts.0': { $exists: false },
+      };
+      const [autoTotal, takeable] = await Promise.all([Lead.countDocuments(auto), Lead.countDocuments(untouched)]);
+      if (req.body?.confirm !== true) {
+         return res.json({ owner: user.name, autoAssigned: autoTotal, wouldTakeBack: takeable, keptBecauseWorked: autoTotal - takeable });
+      }
+
+      const r = await Lead.updateMany(untouched, {
+         $set: { owner: null, assignedAt: null, autoAssigned: false, ownerSeenAt: null, followUpAt: null },
+         $push: { timeline: { type: 'note', text: `Taken back from ${user.name} — assigned by the distribution rules and never worked`, user: req.user?.id } },
+      });
+      res.json({ owner: user.name, takenBack: r.modifiedCount ?? takeable, keptBecauseWorked: autoTotal - takeable });
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
 export default router;

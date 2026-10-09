@@ -342,7 +342,9 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
    const config = await LeadRoutingConfig.findOne().lean();
    if (!config?.enabled) return { assigned: 0, reason: 'distribution is off' };
 
-   const since = new Date(at.getTime() - 3 * 86400000);
+   // A day, not three: after distribution had been off or broken, three days
+   // of old chats (including bookkeeping contacts) were all handed out at once.
+   const since = new Date(at.getTime() - 86400000);
    const waiting = await Lead.find({
       source: 'whatsapp',
       owner: null,
