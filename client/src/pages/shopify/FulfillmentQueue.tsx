@@ -4,7 +4,7 @@ import { Plus } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { Badge, Button, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner } from '../../components/ui'
-import { FULFILLMENT_STATES, isTestOrder, statusLabel, statusTone } from '../../lib/shopify'
+import { FULFILLMENT_STATES, isTestOrder, skuCode, skuName, statusLabel, statusTone } from '../../lib/shopify'
 import type { FulfillmentJob, Merchant, Sku } from '../../lib/shopify'
 
 const orderOf = (job: FulfillmentJob) => (typeof job.shopifyOrder === 'object' ? job.shopifyOrder : null)
@@ -74,7 +74,7 @@ function NewTestOrderModal({ onClose, onDone }: { onClose: () => void; onDone: (
             <Field label={`Line ${i + 1} — SKU`} className="flex-1">
               <Select value={line.sku} onChange={e => setLines(ls => ls.map((l, j) => j === i ? { ...l, sku: e.target.value } : l))}>
                 <option value="">Select a SKU…</option>
-                {(skus ?? []).map(s => <option key={s._id} value={s._id}>{s.sku} — {s.productTitle} (avail {s.available})</option>)}
+                {(skus ?? []).map(s => <option key={s._id} value={s._id}>{skuName(s)} · {skuCode(s)} (avail {s.available})</option>)}
               </Select>
             </Field>
             <Field label="Qty">
@@ -162,7 +162,7 @@ function JobDetail({ job, onClose, onChanged }: { job: FulfillmentJob; onClose: 
             return (
               <div key={i} className="p-3 flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-medium text-sm">{sku ? `${sku.sku} — ${sku.productTitle}` : String(line.sku)}</p>
+                  <p className="font-medium text-sm">{sku ? `${skuName(sku)} · ${skuCode(sku)}` : String(line.sku)}</p>
                   <p className="text-xs text-muted-foreground">
                     {line.picked}/{line.ordered} picked{location ? ` · look in ${location}` : ' · no location on file'}
                   </p>

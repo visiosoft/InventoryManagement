@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, apiError } from '../../lib/api'
 import { Button, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th } from '../../components/ui'
+import { skuCode, skuName } from '../../lib/shopify'
 import type { Merchant, Sku } from '../../lib/shopify'
 
 /** Receiving a delivery ('add', negative to write off) or recording a
@@ -23,7 +24,7 @@ function AdjustStockModal({ merchant, sku, mode, onClose, onDone }: {
   }
 
   return (
-    <Modal open title={mode === 'add' ? `Receive stock — ${sku.sku}` : `Stock count — ${sku.sku}`} onClose={onClose}>
+    <Modal open title={mode === 'add' ? `Receive stock — ${skuName(sku)}` : `Stock count — ${skuName(sku)}`} onClose={onClose}>
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
           On hand {sku.onHand}, reserved {sku.reserved} for open orders.
@@ -83,12 +84,12 @@ export default function SkuInventory() {
         <EmptyState message="No SKUs found — try syncing this merchant's catalog from the Merchants page." />
       ) : (
         <Table>
-          <thead><tr><Th>SKU</Th><Th>Product</Th><Th>On hand</Th><Th>Reserved</Th><Th>Available</Th><Th /></tr></thead>
+          <thead><tr><Th>Product</Th><Th>SKU</Th><Th>On hand</Th><Th>Reserved</Th><Th>Available</Th><Th /></tr></thead>
           <tbody>
             {skus.map(s => (
               <tr key={s._id}>
-                <Td className="font-mono text-sm">{s.sku}</Td>
-                <Td>{s.productTitle}{s.variantTitle && s.variantTitle !== 'Default Title' ? ` — ${s.variantTitle}` : ''}</Td>
+                <Td>{skuName(s)}</Td>
+                <Td className={s.sku.startsWith('NOSKU-') ? 'text-xs text-muted-foreground' : 'font-mono text-sm'}>{skuCode(s)}</Td>
                 <Td>{s.onHand}</Td>
                 <Td>{s.reserved}</Td>
                 <Td className={s.available <= 0 ? 'text-destructive font-medium' : ''}>{s.available}</Td>

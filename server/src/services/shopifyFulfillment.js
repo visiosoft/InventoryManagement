@@ -7,6 +7,9 @@ import { fetchProductsAndVariants, createFulfillment, setAvailableQuantities } f
 
 export { command };
 
+/** Stand-in SKU code for a Shopify variant that has none of its own. */
+export const NO_SKU_PREFIX = 'NOSKU-';
+
 const text = (value, max = 1000) => {
   if (value == null) return '';
   if (typeof value !== 'string' || value.length > max) fail(`Text must be at most ${max} characters.`);
@@ -57,14 +60,18 @@ export async function syncMerchantCatalog(merchantId) {
   if (!merchant.isActive) fail('Merchant is not active.', 409);
 
   const variants = await fetchProductsAndVariants(merchant._id);
-  let created = 0, updated = 0;
+  let created = 0, updated = 0, withoutSku = 0;
   for (const v of variants) {
-    if (!v.sku) continue; // a variant with no SKU code can't be inventoried against
+    // Stock and orders are matched on the variant ID, not the SKU code, so a
+    // variant with no SKU in Shopify (common in small stores) is still
+    // tracked. It gets a stand-in code until the merchant adds a real one,
+    // which the next sync picks up.
+    if (!v.sku) withoutSku += 1;
     const res = await Sku.updateOne(
       { merchant: merchant._id, shopifyVariantId: v.shopifyVariantId },
       {
         $set: {
-          shopifyProductId: v.shopifyProductId, sku: v.sku,
+          shopifyProductId: v.shopifyProductId, sku: v.sku || `${NO_SKU_PREFIX}${v.shopifyVariantId}`,
           productTitle: v.productTitle, variantTitle: v.variantTitle, barcode: v.barcode,
           shopifyInventoryItemId: v.shopifyInventoryItemId,
         },
@@ -76,7 +83,7 @@ export async function syncMerchantCatalog(merchantId) {
   }
   merchant.lastInventorySyncAt = new Date();
   await merchant.save();
-  return { total: variants.length, created, updated };
+  return { total: variants.length, created, updated, withoutSku };
 }
 
 /**

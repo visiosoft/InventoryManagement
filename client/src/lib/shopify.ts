@@ -83,6 +83,14 @@ export type FulfillmentJob = {
   createdAt: string
 }
 
+/** The variant's SKU code, or a note that Shopify has none (the server stores
+ *  a NOSKU-<variant id> stand-in for those). */
+export const skuCode = (sku: Pick<Sku, 'sku'>) => (sku.sku.startsWith('NOSKU-') ? 'No SKU code' : sku.sku)
+
+/** Product name plus variant, skipping Shopify's "Default Title" placeholder. */
+export const skuName = (sku: Pick<Sku, 'productTitle' | 'variantTitle'>) =>
+  sku.productTitle + (sku.variantTitle && sku.variantTitle !== 'Default Title' ? ` — ${sku.variantTitle}` : '')
+
 export const statusLabel = (value: string) => value.replaceAll('_', ' ').toLowerCase().replace(/^./, c => c.toUpperCase())
 
 export const statusTone: Record<FulfillmentStatus, string> = {

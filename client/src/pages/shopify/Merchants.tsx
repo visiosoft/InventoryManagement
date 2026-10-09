@@ -251,7 +251,8 @@ export default function Merchants() {
     setSyncingId(id); setSyncResult('')
     try {
       const { data } = await api.post(`/shopify/merchants/${id}/sync`)
-      setSyncResult(`Synced ${data.total} variants (${data.created} new, ${data.updated} updated).`)
+      setSyncResult(`Synced ${data.total} variants (${data.created} new, ${data.updated} updated)`
+        + (data.withoutSku ? `. ${data.withoutSku} have no SKU code in Shopify — they're tracked anyway, but adding SKUs there makes picking easier.` : '.'))
       invalidate()
     } catch (e) {
       setSyncResult(apiError(e))

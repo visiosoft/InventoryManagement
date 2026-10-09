@@ -238,3 +238,23 @@ test('stock push sends on-hand minus reserved, only for SKUs this warehouse hold
   }]);
   assert.match(calls[0].url, /\/admin\/api\/2026-07\/graphql\.json$/);
 });
+
+test('catalog sync keeps variants that have no SKU code in Shopify', async () => {
+  fakeShopify(() => ({ productVariants: {
+    pageInfo: { hasNextPage: false, endCursor: null },
+    nodes: [{
+      id: 'gid://shopify/ProductVariant/333', sku: '', title: 'fuchsia-pink / 56', barcode: '',
+      inventoryItem: { id: 'gid://shopify/InventoryItem/503' }, product: { id: 'gid://shopify/Product/3', title: 'Fuchsia Lace Abaya' },
+    }],
+  } }));
+  const out = await svc.syncMerchantCatalog(merchant._id);
+  assert.equal(out.withoutSku, 1);
+  const sku = await Sku.findOne({ merchant: merchant._id, shopifyVariantId: '333' }).lean();
+  assert.equal(sku.sku, 'NOSKU-333');
+  assert.equal(sku.shopifyInventoryItemId, 'gid://shopify/InventoryItem/503');
+
+  // An order for it still matches, by variant ID.
+  await setStock(sku, 2);
+  const res = await deliver('orders/create', orderPayload(4001, [[333, 1, '']]));
+  assert.equal((await FulfillmentJob.findById(res.body.job).lean()).status, 'READY_TO_PICK');
+});
