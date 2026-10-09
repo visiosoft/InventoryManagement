@@ -54,6 +54,9 @@ router.get('/connect-info', requireAdminHere, (_req, res) => {
  *  encrypted fields to save. Verifies against Shopify before anything is
  *  stored, so a typo is reported on the form instead of on the first order. */
 async function credentialFields(body, shopDomain, apiVersion) {
+  if (!process.env.CREDENTIALS_ENCRYPTION_KEY) {
+    fail('The server has no CREDENTIALS_ENCRYPTION_KEY set, so store credentials can\'t be saved. Add it to the server .env and restart.', 503);
+  }
   const authMode = body.authMode === 'client_credentials' ? 'client_credentials' : 'static_token';
   const out = { authMode };
   if (authMode === 'client_credentials') {
