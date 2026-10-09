@@ -2330,6 +2330,8 @@ leadRoutingRuleSchema.plugin(softDeletePlugin);
 /** The settings that are not about one person. A single document. */
 const leadRoutingConfigSchema = new Schema({
   enabled: { type: Boolean, default: false },
+  // Each new lead is a weighted random draw by share, not strict turn-taking.
+  randomize: { type: Boolean, default: true },
   timeZone: { type: String, default: 'Asia/Dubai' },
   /* Nobody on shift. 'ai' leaves the chat to the assistant and the lead
      unassigned, so it is picked up in the morning by whoever is due it rather

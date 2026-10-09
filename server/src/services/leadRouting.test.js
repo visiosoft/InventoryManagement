@@ -258,3 +258,16 @@ test('a number is matched however it was written down', async () => {
    assert.equal(digitTail(''), '');
    assert.equal(digitTail(null), '');
 });
+
+test('pickOwner with random draws by share and respects who is available', async () => {
+  const { pickOwner } = await import('./leadRouting.js');
+  const rules = [
+    { user: 'a', sharePct: 50, status: 'active' },
+    { user: 'b', sharePct: 50, status: 'active' },
+  ];
+  const first = pickOwner({ rules, counts: {}, random: () => 0.01 });
+  const last = pickOwner({ rules, counts: {}, random: () => 0.99 });
+  assert.ok(first.ownerId && last.ownerId);
+  assert.notEqual(first.ownerId, last.ownerId);
+  assert.match(first.reason, /random pick/);
+});

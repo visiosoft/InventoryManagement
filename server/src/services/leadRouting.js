@@ -168,7 +168,7 @@ export function targetShares({ rules = [], available = [] }) {
  * first lead of the day everyone is at zero, so the biggest share goes first —
  * which is what somebody expects from "Ahmed takes half of them".
  */
-export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone = 'Asia/Dubai', exclude = [] } = {}) {
+export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone = 'Asia/Dubai', exclude = [], random = null } = {}) {
    const { available, excluded } = availability({ rules, counts, at, timeZone, exclude });
    if (!available.length) {
       return { ownerId: null, reason: excluded.length ? 'nobody is available' : 'no distribution rules are set', excluded };
@@ -177,6 +177,24 @@ export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone =
    const shares = targetShares({ rules, available });
    const totalShare = [...shares.values()].reduce((s, v) => s + v, 0);
    const handedOutToday = available.reduce((s, a) => s + a.taken, 0);
+
+   /* Random: a weighted draw by share, so each lead is a fresh roll — 50/50
+      reps get about half each, but nobody can predict who is next. The
+      availability rules above (shifts, caps, absence) still decide who is in
+      the draw. */
+   if (typeof random === 'function') {
+      const weights = available.map((a) => (totalShare > 0 ? (shares.get(a.id) || 0) : 1));
+      const sum = weights.reduce((x, y) => x + y, 0) || available.length;
+      let roll = random() * sum;
+      let idx = 0;
+      for (; idx < available.length - 1; idx += 1) {
+         roll -= totalShare > 0 ? weights[idx] : 1;
+         if (roll < 0) break;
+      }
+      const a = available[idx];
+      const share = totalShare > 0 ? (shares.get(a.id) || 0) / totalShare : 1 / available.length;
+      return { ownerId: a.id, reason: `random pick, ${Math.round(share * 100)}% share`, share, excluded };
+   }
 
    let best = null;
    for (const a of available) {
@@ -305,7 +323,7 @@ export async function routeInboundLead({ phoneNormalized, at = new Date() } = {}
 
    const rules = await LeadRoutingRule.find({}).lean();
    const counts = await countsForToday({ at, timeZone });
-   const decision = pickOwner({ rules, counts, at, timeZone });
+   const decision = pickOwner({ rules, counts, at, timeZone, random: config.randomize === false ? null : Math.random });
    if (decision.ownerId) return decision;
 
    // Nobody on shift.

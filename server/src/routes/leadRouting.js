@@ -81,6 +81,7 @@ router.put('/config', async (req, res) => {
          if (req.body[key] !== undefined) config[key] = req.body[key] || (key === 'enabled' ? false : null);
       }
       if (req.body.enabled !== undefined) config.enabled = Boolean(req.body.enabled);
+      if (req.body.randomize !== undefined) config.randomize = Boolean(req.body.randomize);
       if (req.body.timeZone) config.timeZone = String(req.body.timeZone);
       /* The two marks on the unanswered-lead clock, in minutes. Clamped rather
          than rejected: a typo should not be able to set a reminder to fire in

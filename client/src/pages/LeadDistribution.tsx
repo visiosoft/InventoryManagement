@@ -47,6 +47,7 @@ type Data = {
     timeZone: string
     outOfHoursMode: 'ai' | 'unassigned' | 'user'
     outOfHoursUser?: string | null
+    randomize?: boolean
     existingCustomerUser?: string | null
     /* The clock on a lead nobody has answered, in minutes. 0 turns either
        half off. */
@@ -181,6 +182,15 @@ export default function LeadDistribution() {
                       : 'Off. Every new chat goes to the first user on the system, as it always has.'}
                   </div>
                 </div>
+                <label className="inline-flex items-center gap-2 cursor-pointer" style={{ fontSize: 12.5, color: MUTED }}>
+                  <input
+                    type="checkbox"
+                    checked={config.randomize !== false}
+                    onChange={(e) => saveConfig.mutate({ randomize: e.target.checked })}
+                    disabled={saveConfig.isPending}
+                  />
+                  Pick at random (weighted by share)
+                </label>
                 <Button
                   variant={config.enabled ? 'outline' : 'default'}
                   onClick={() => saveConfig.mutate({ enabled: !config.enabled })}

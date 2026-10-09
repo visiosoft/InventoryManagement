@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2, Ban,
+  Bot, Tag, Check, ClipboardList, Sparkles, Shuffle, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2, Ban,
   Video as VideoIcon, Play,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
@@ -3896,9 +3896,15 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                             {/* How it came to be theirs. The rota hands out
                                 most of these now, and "why is this mine?" is a
                                 fair question to answer from the row. */}
-                            {c.lead.autoAssigned && (
-                              <Sparkles size={9} style={{ display: 'inline', marginLeft: 3, verticalAlign: 'middle' }} />
-                            )}
+                          </span>
+                        )}
+                        {!c.customer && c.lead?.autoAssigned && c.lead.ownerName && (
+                          <span
+                            className="shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5"
+                            title={`Given to ${c.lead.ownerName} by the distribution rules`}
+                            style={{ fontSize: 9.5, fontWeight: 700, background: '#EEF2FF', color: '#3730A3' }}
+                          >
+                            <Shuffle size={9} /> Auto
                           </span>
                         )}
 
@@ -4126,6 +4132,15 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                         </span>
                       </span>
                     ) : null}
+                    {!selectedConvo.customer && selectedConvo.lead?.autoAssigned && selectedConvo.lead.ownerName && (
+                      <span
+                        className="shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5"
+                        title={`Given to ${selectedConvo.lead.ownerName} by the distribution rules`}
+                        style={{ fontSize: 10, fontWeight: 700, background: '#EEF2FF', color: '#3730A3' }}
+                      >
+                        <Shuffle size={10} /> Auto-assigned
+                      </span>
+                    )}
                   </div>
                   <div className="truncate" style={{ fontSize: 12, color: FAINT_INK }}>
                     +{selectedConvo.phoneNormalized}
