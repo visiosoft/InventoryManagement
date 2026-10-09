@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Calendar, Clock, FileText, MessageCircle, MessageSquare,
-  ClipboardList, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
+  ClipboardList, PackageCheck, Pencil, Phone, Trash2, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
@@ -340,6 +340,20 @@ export default function PersonProfile() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  // Removes the record this page is showing: the customer when it is one
+  // (the server refuses if it still has live contracts), otherwise the lead.
+  const deleteContact = useMutation({
+    mutationFn: () => {
+      const label = customer ? 'customer' : 'lead'
+      if (!window.confirm(`Delete this ${label}${name ? ` (${name})` : ''}? ${customer ? 'Customers with live contracts cannot be deleted.' : 'Its reminders go with it and the chat stays in the inbox.'}`)) {
+        return Promise.reject(new Error('cancelled'))
+      }
+      return customer ? api.delete(`/customers/${customer._id}`) : api.delete(`/leads/${lead!._id}`)
+    },
+    onSuccess: () => { setErr(''); navigate(isCustomer && !lead ? '/customers' : '/leads') },
+    onError: (e) => { if ((e as Error)?.message !== 'cancelled') setErr(apiError(e)) },
+  })
+
   const addNote = useMutation({
     mutationFn: () => api.post(`/leads/${data!.lead!._id}/notes`, { text: note.trim() }),
     onSuccess: () => { setNote(''); setErr(''); refresh() },
@@ -482,8 +496,12 @@ export default function PersonProfile() {
         )}
       </div>
 
+      {/* ── Body: details and ownership beside the running account ────────── */}
+      <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
+
+        <div className="flex flex-col" style={{ flex: '1 1 300px', maxWidth: 360, gap: 20, order: 2 }}>
       {/* ── Header card ───────────────────────────────────────────────────── */}
-      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '22px 26px', marginBottom: 20 }}>
+      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '18px 20px' }}>
         <div className="flex items-start justify-between flex-wrap" style={{ gap: 20 }}>
           <div className="flex items-start" style={{ gap: 16, flex: '1 1 420px', minWidth: 0 }}>
             <div style={{ width: 48, height: 48, borderRadius: 999, background: PURPLE_100, color: DEEP, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 16, flex: '0 0 auto' }}>
@@ -569,6 +587,17 @@ export default function PersonProfile() {
                       <Pencil size={12} /> Edit contact details
                     </button>
                   )}
+                  {isAdmin && (lead || customer) && (
+                    <button
+                      type="button"
+                      onClick={() => deleteContact.mutate()}
+                      disabled={deleteContact.isPending}
+                      className="inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      style={{ background: 'none', border: 'none', color: '#B91C1C', fontSize: 12.5, fontWeight: 700, marginTop: 8, padding: 0, display: 'flex' }}
+                    >
+                      <Trash2 size={12} /> {deleteContact.isPending ? 'Deleting…' : 'Delete contact'}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col" style={{ gap: 12, marginTop: 12, maxWidth: 320 }}>
@@ -644,10 +673,6 @@ export default function PersonProfile() {
         {err && <p style={{ fontSize: 12.5, color: '#C0392B', marginTop: 12 }}>{err}</p>}
       </div>
 
-      {/* ── Body: details and ownership beside the running account ────────── */}
-      <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
-
-        <div className="flex flex-col" style={{ flex: '1 1 300px', maxWidth: 360, gap: 20, order: 2 }}>
           <div className="flex flex-wrap" style={{ gap: 8 }}>
             <button
               type="button"
