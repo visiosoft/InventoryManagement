@@ -1471,8 +1471,13 @@ router.post('/:id/notes', async (req, res) => {
         if (!lead) return res.status(404).json({ error: 'Lead not found' });
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
-        lead.timeline.push({ type: 'note', text: text.slice(0, 2000), user: req.user.id });
-        await lead.save();
+        // A $push, not lead.save(): saving re-validates the whole lead, and a
+        // lead made from a WhatsApp message can fail some unrelated field —
+        // which made adding a note impossible on exactly those leads.
+        await Lead.updateOne(
+            { _id: lead._id },
+            { $push: { timeline: { type: 'note', text: text.slice(0, 2000), user: req.user.id, at: new Date() } } },
+        );
         res.status(201).json({ ok: true });
     } catch (e) {
         res.status(500).json({ error: e.message });

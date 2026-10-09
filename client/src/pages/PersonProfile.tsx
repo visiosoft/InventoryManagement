@@ -1297,6 +1297,7 @@ export default function PersonProfile() {
                   {addNote.isPending ? 'Saving…' : 'Add note'}
                 </button>
               </div>
+              {addNote.isError && <p style={{ fontSize: 12.5, color: '#C0392B', marginTop: 8, textAlign: 'right' }}>{apiError(addNote.error)}</p>}
 
               <div style={{ height: 1, background: LINE, margin: '18px 0 6px' }} />
 
