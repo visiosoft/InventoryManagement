@@ -295,6 +295,7 @@ router.get('/', async (req, res) => {
             decorate: (q) => q
                 .select('-timeline -comments')
                 .populate('owner', 'name email')
+                .populate('assignedBy', 'name')
                 // Who did the chasing, not just who it belongs to.
                 .populate('attempts.user', 'name')
                 .lean()
@@ -1078,6 +1079,7 @@ router.get('/:id/profile', async (req, res) => {
 
         let lead = await Lead.findById(id)
             .populate('owner', 'name email')
+            .populate('assignedBy', 'name')
             .populate('timeline.user', 'name')
             .lean();
         let customer = null;
@@ -1103,6 +1105,7 @@ router.get('/:id/profile', async (req, res) => {
             if (tail) {
                 lead = await Lead.findOne({ phoneNormalized: { $regex: tail + '$' } })
                     .populate('owner', 'name email')
+                    .populate('assignedBy', 'name')
                     .populate('timeline.user', 'name')
                     .lean();
             }

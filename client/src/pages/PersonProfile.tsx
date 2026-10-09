@@ -78,6 +78,7 @@ type Lead = {
   _id: string; fullName: string; email: string; phone: string; whatsappNo: string
   phoneNormalized: string; status: string; owner: Owner | null; notes: string
   leadDateTime: string; source: string
+  autoAssigned?: boolean; assignedAt?: string | null; assignedBy?: { _id: string; name: string } | null
   temperature?: '' | 'hot' | 'warm' | 'cold'
   tags?: string[]
   followUpAt?: string | null
@@ -205,6 +206,13 @@ export default function PersonProfile() {
   const isAdmin = user?.role === 'admin'
   const [err, setErr] = useState('')
   const [taskOpen, setTaskOpen] = useState(false)
+  // The reminders raised against this lead, with a live countdown, so the
+  // page says when the owner will next be nudged.
+  const [nowTick, setNowTick] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 60_000)
+    return () => clearInterval(t)
+  }, [])
   const [chatPanelOpen, setChatPanelOpen] = useState(false)
   const [note, setNote] = useState('')
   // A stage picked but not yet committed, and the note going with it.
@@ -268,6 +276,22 @@ export default function PersonProfile() {
     staleTime: 5 * 60_000,
   })
 
+  const { data: leadTasks } = useQuery<{ _id: string; title: string; dueDate?: string | null; status: string; assignedTo?: { name: string } | null }[]>({
+    queryKey: ['person-tasks', data?.lead?._id],
+    queryFn: () => api.get('/tasks', { params: { leadId: data!.lead!._id, status: 'todo,in_progress' } }).then((r) => r.data ?? []),
+    enabled: Boolean(data?.lead?._id),
+  })
+  const nextReminder = (leadTasks ?? [])
+    .filter((t) => t.dueDate)
+    .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime())[0]
+  const countdown = (iso: string) => {
+    const ms = new Date(iso).getTime() - nowTick
+    const over = ms < 0
+    const mins = Math.floor(Math.abs(ms) / 60000)
+    const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60
+    const txt = d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`
+    return over ? `${txt} overdue` : `in ${txt}`
+  }
   const refresh = () => qc.invalidateQueries({ queryKey: ['person', id] })
 
   /**
@@ -674,20 +698,6 @@ export default function PersonProfile() {
         {err && <p style={{ fontSize: 12.5, color: '#C0392B', marginTop: 12 }}>{err}</p>}
       </div>
 
-          <div className="flex flex-wrap" style={{ gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => setTaskOpen(true)}
-              className="inline-flex items-center cursor-pointer"
-              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
-              title="Create a task about this lead"
-            >
-              <ClipboardList size={13} /> Task
-            </button>
-            <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 6, height: 34, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 13, boxShadow: '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)', whiteSpace: 'nowrap' }}>
-              <PackageCheck size={13} /> Book unit
-            </Link>
-          </div>
           {/* When we next deal with this person, kept beside who they are
               rather than buried among the pipeline controls. Only ever shows
               the date the stage in play is actually about. */}
@@ -1117,6 +1127,27 @@ export default function PersonProfile() {
           {lead && (
             <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: 22 }}>
               <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, alignItems: 'start' }}>
+          <div className="flex flex-wrap" style={{ gap: 8, justifySelf: 'end', alignSelf: 'start' }}>
+            <button
+              type="button"
+              onClick={() => setTaskOpen(true)}
+              className="inline-flex items-center cursor-pointer"
+              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
+              title="Create a reminder task about this lead"
+            >
+              <ClipboardList size={13} /> Reminder task
+            </button>
+            <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 6, height: 34, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 13, boxShadow: '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)', whiteSpace: 'nowrap' }}>
+              <PackageCheck size={13} /> Book unit
+            </Link>
+            {nextReminder?.dueDate && (
+              <div style={{ flexBasis: '100%', textAlign: 'right', fontSize: 11.5, color: new Date(nextReminder.dueDate).getTime() < nowTick ? '#B91C1C' : FAINT }}>
+                Reminder {countdown(nextReminder.dueDate)}
+                {nextReminder.assignedTo?.name ? ` · ${nextReminder.assignedTo.name}` : ''}
+                <span style={{ display: 'block', color: FAINT }}>{nextReminder.title}</span>
+              </div>
+            )}
+          </div>
                 <div>
                   <span style={{ fontSize: 12, fontWeight: 600, color: FAINT, display: 'block', marginBottom: 6 }}>Assigned to</span>
                   {isAdmin ? (
@@ -1135,8 +1166,13 @@ export default function PersonProfile() {
                       {/* Reps work their own leads and do not hand them on, so
                           say who can rather than leaving a name that looks
                           editable and is not. */}
-                      
                     </>
+                  )}
+                  {lead.owner && (lead.autoAssigned || lead.assignedBy?.name) && (
+                    <span style={{ display: 'block', fontSize: 11, color: FAINT, marginTop: 5 }}>
+                      Assigned {lead.autoAssigned ? 'by the rota' : `by ${lead.assignedBy?.name}`}
+                      {lead.assignedAt ? ` · ${formatDateTime(lead.assignedAt)}` : ''}
+                    </span>
                   )}
                 </div>
 
@@ -1416,7 +1452,7 @@ export default function PersonProfile() {
           the chat are the same thing. */}
       <TaskComposer
         open={taskOpen}
-        onOpenChange={setTaskOpen}
+        onOpenChange={(v) => { setTaskOpen(v); if (!v) qc.invalidateQueries({ queryKey: ['person-tasks'] }) }}
         subjectName={name}
         leadId={lead?._id ?? null}
         subtitle={`About ${name}`}

@@ -108,6 +108,10 @@ export interface Lead {
   durationValue: number
   durationUnit: DurationUnit
   owner: { _id: string; name: string; email: string }
+  /** True when the distribution rules chose the owner, not a person. */
+  autoAssigned?: boolean
+  /** The person who assigned it, where one did. */
+  assignedBy?: { _id: string; name: string } | null
   unitsNeeded: number
   notes?: string
   labels?: string[]

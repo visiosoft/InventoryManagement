@@ -1279,6 +1279,14 @@ export default function Leads() {
                         />
                     </div>
                     <select
+                        value={status}
+                        onChange={(e) => setStatus(e.target.value)}
+                        style={{ height: 44, minWidth: 170, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                    >
+                        <option value="">All stages</option>
+                        {statusChips.map((c) => <option key={c.key} value={c.key}>{c.label} ({c.count})</option>)}
+                    </select>
+                    <select
                         value={source}
                         onChange={(e) => setSource(e.target.value)}
                         style={{ height: 44, minWidth: 150, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
@@ -1489,6 +1497,7 @@ export default function Leads() {
 
                                         {/* Unassigned reads amber, so a lead with nobody on it is
                                             visible without hunting down the column. */}
+                                        <div style={{ minWidth: 0 }}>
                                         {isAdmin ? (
                                             <select
                                                 value={lead.owner?._id || ''}
@@ -1503,6 +1512,12 @@ export default function Leads() {
                                                 {lead.owner?.name || 'Unassigned'}
                                             </span>
                                         )}
+                                            {lead.owner && (lead.autoAssigned || lead.assignedBy?.name) && (
+                                                <span style={{ display: 'block', fontSize: 10.5, color: '#8A8496', marginTop: 2, paddingLeft: 4 }}>
+                                                    {lead.autoAssigned ? 'by the rota' : `by ${lead.assignedBy?.name}`}
+                                                </span>
+                                            )}
+                                        </div>
 
                                         {/* Read-only here by request: assignment and stage are
                                             different decisions, and mixing both into one row made
