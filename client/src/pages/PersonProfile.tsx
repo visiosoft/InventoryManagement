@@ -741,10 +741,6 @@ export default function PersonProfile() {
                 </dd>
               </div>
               <div className="flex items-center" style={{ gap: 8, padding: '9px 0', borderTop: `1px solid ${LINE}` }}>
-                <dt style={{ color: FAINT, flexGrow: 1, fontSize: 13 }}>Source</dt>
-                <dd style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{statusLabel(lead.source || 'manual')}</dd>
-              </div>
-              <div className="flex items-center" style={{ gap: 8, padding: '9px 0', borderTop: `1px solid ${LINE}` }}>
                 <dt style={{ color: FAINT, flexGrow: 1, fontSize: 13 }}>Came in</dt>
                 <dd style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{lead.leadDateTime ? formatDateTime(lead.leadDateTime) : '—'}</dd>
               </div>
@@ -1276,58 +1272,33 @@ export default function PersonProfile() {
           )}
 
           {/* Size needed — a standing fact. Sizes come from the units, each
-              says how many are free; full ones cannot be picked. */}
+              says how many are free. */}
           {lead && (
             <Card title="Unit size">
-              <div className="flex flex-col" style={{ gap: 12 }}>
-                <span style={{ color: FAINT, fontSize: 12 }}>
-                  {lead.storageSizeValue && lead.storageSizeValue > 0 ? `${lead.storageSizeValue} sq ft` : lead.storageSizeValue === -1 ? 'Not decided yet' : 'Not asked yet'}
-                  {(lead.unitsNeeded ?? 1) > 1 ? ` · ${lead.unitsNeeded} units` : ''}
-                </span>
-                <div role="group" aria-label="Unit size" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
-                  {sizes.map((b) => {
-                    const on = lead.storageSizeValue === b.sizeSqf
-                    const full = b.available === 0
-                    return (
-                      <button
-                        key={b.sizeSqf}
-                        type="button"
-                        aria-pressed={on}
-                        disabled={full}
-                        onClick={() => patchLead.mutate({ storageSizeValue: on ? 0 : b.sizeSqf, storageSizeUnit: 'sqft' })}
-                        className="cursor-pointer disabled:cursor-not-allowed"
-                        style={{
-                          minHeight: 48, padding: '6px 10px', borderRadius: 12, textAlign: 'left', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, fontFamily: 'inherit',
-                          ...(full
-                            ? { border: `1px dashed ${LINE}`, background: PAGE, color: FAINT }
-                            : on
-                              ? { border: `1px solid ${PURPLE}`, background: PURPLE_50, color: DEEP, boxShadow: `0 0 0 1px ${PURPLE}` }
-                              : { border: `1px solid ${LINE}`, background: '#fff', color: INK }),
-                        }}
-                      >
-                        <span style={{ fontWeight: 700, fontSize: 13.5 }}>{b.sizeSqf} sq ft</span>
-                        <span style={{ fontSize: 12, color: full ? FAINT : b.available === 1 ? '#B45309' : INK_2, fontWeight: b.available === 1 ? 600 : 400 }}>
-                          {full ? `Full · 0 of ${b.total}` : `${b.available} free of ${b.total}`}
-                        </span>
-                      </button>
-                    )
-                  })}
-                  <button
-                    type="button"
-                    aria-pressed={lead.storageSizeValue === -1}
-                    onClick={() => patchLead.mutate({ storageSizeValue: lead.storageSizeValue === -1 ? 0 : -1, storageSizeUnit: 'sqft' })}
-                    className="cursor-pointer"
-                    style={{
-                      gridColumn: '1 / -1', minHeight: 44, padding: '6px 10px', borderRadius: 12, textAlign: 'left', fontFamily: 'inherit', fontWeight: 700, fontSize: 13.5,
-                      ...(lead.storageSizeValue === -1
-                        ? { border: `1px solid ${PURPLE}`, background: PURPLE_50, color: DEEP, boxShadow: `0 0 0 1px ${PURPLE}` }
-                        : { border: `1px solid ${LINE}`, background: '#fff', color: INK }),
-                    }}
-                  >
-                    Not decided yet <span style={{ fontWeight: 400, fontSize: 12, color: FAINT }}>· customer unsure</span>
-                  </button>
-                </div>
-              </div>
+              <select
+                aria-label="Size needed"
+                value={lead.storageSizeValue ? String(lead.storageSizeValue) : ''}
+                onChange={(e) => patchLead.mutate({
+                  storageSizeValue: e.target.value ? Number(e.target.value) : 0,
+                  storageSizeUnit: 'sqft',
+                })}
+                className="cursor-pointer"
+                style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
+              >
+                <option value="">Not asked yet</option>
+                <option value="-1">Not decided yet</option>
+                {sizes.map((b) => (
+                  <option key={b.sizeSqf} value={String(b.sizeSqf)} disabled={b.available === 0 && lead.storageSizeValue !== b.sizeSqf}>
+                    {b.sizeSqf} sqft — {b.available === 0 ? `full (0 of ${b.total})` : `${b.available} free of ${b.total}`}
+                  </option>
+                ))}
+                {(lead.storageSizeValue ?? 0) > 0 && !sizes.some((b) => b.sizeSqf === lead.storageSizeValue) && (
+                  <option value={String(lead.storageSizeValue)}>{lead.storageSizeValue} sqft</option>
+                )}
+              </select>
+              {(lead.unitsNeeded ?? 1) > 1 && (
+                <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>{lead.unitsNeeded} units</p>
+              )}
             </Card>
           )}
         </div>
