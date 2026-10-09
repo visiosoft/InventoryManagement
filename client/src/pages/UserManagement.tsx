@@ -78,6 +78,18 @@ const MODULE_GROUPS = [
       { key: 'reports_moving_jobs',     label: 'Jobs Report' },
       { key: 'reports_moving_crew',     label: 'Crew Report' },
       { key: 'reports_moving_fleet',    label: 'Fleet Report' },
+      { key: 'reports_moving_profitability', label: 'Profitability Report' },
+      { key: 'reports_moving_payroll',  label: 'Payroll Report' },
+      { key: 'reports_moving_ar',       label: 'Accounts Receivable Report' },
+      { key: 'reports_moving_costs',    label: 'Cost Breakdown Report' },
+      { key: 'reports_moving_pipeline', label: 'Sales Pipeline Report' },
+      { key: 'reports_moving_stripe',   label: 'Stripe Payments Report' },
+    ],
+  },
+  {
+    label: 'Sales Rep Tools',
+    modules: [
+      { key: 'sales_board', label: 'My Day, My Leads, Follow-Ups, Leaderboard, Estimator, My Reports' },
     ],
   },
   {
