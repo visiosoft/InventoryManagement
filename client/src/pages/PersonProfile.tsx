@@ -1160,36 +1160,6 @@ export default function PersonProfile() {
             </Card>
           )}
 
-          {/* Size needed — a standing fact. Sizes come from the units, each
-              says how many are free. */}
-          {lead && (
-            <Card title="Unit size">
-              <select
-                aria-label="Size needed"
-                value={lead.storageSizeValue ? String(lead.storageSizeValue) : ''}
-                onChange={(e) => patchLead.mutate({
-                  storageSizeValue: e.target.value ? Number(e.target.value) : 0,
-                  storageSizeUnit: 'sqft',
-                })}
-                className="cursor-pointer"
-                style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
-              >
-                <option value="">Not asked yet</option>
-                <option value="-1">Not decided yet</option>
-                {sizes.map((b) => (
-                  <option key={b.sizeSqf} value={String(b.sizeSqf)} disabled={b.available === 0 && lead.storageSizeValue !== b.sizeSqf}>
-                    {b.sizeSqf} sqft — {b.available === 0 ? `full (0 of ${b.total})` : `${b.available} free of ${b.total}`}
-                  </option>
-                ))}
-                {(lead.storageSizeValue ?? 0) > 0 && !sizes.some((b) => b.sizeSqf === lead.storageSizeValue) && (
-                  <option value={String(lead.storageSizeValue)}>{lead.storageSizeValue} sqft</option>
-                )}
-              </select>
-              {(lead.unitsNeeded ?? 1) > 1 && (
-                <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>{lead.unitsNeeded} units</p>
-              )}
-            </Card>
-          )}
         </div>
 
         {/* ── The running account ─────────────────────────────────────────── */}
@@ -1232,6 +1202,7 @@ export default function PersonProfile() {
           {pane === 'details' && (<>
           {lead && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
+              <div className="flex flex-col" style={{ gap: 16 }}>
               <Card title="Stage">
             {/* The stage as steps, so what comes next is visible. Choosing one
                 still asks what happened before it is saved. */}
@@ -1289,6 +1260,33 @@ export default function PersonProfile() {
               )}
             </div>
               </Card>
+              <Card title="Unit size">
+              <select
+                aria-label="Size needed"
+                value={lead.storageSizeValue ? String(lead.storageSizeValue) : ''}
+                onChange={(e) => patchLead.mutate({
+                  storageSizeValue: e.target.value ? Number(e.target.value) : 0,
+                  storageSizeUnit: 'sqft',
+                })}
+                className="cursor-pointer"
+                style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
+              >
+                <option value="">Not asked yet</option>
+                <option value="-1">Not decided yet</option>
+                {sizes.map((b) => (
+                  <option key={b.sizeSqf} value={String(b.sizeSqf)} disabled={b.available === 0 && lead.storageSizeValue !== b.sizeSqf}>
+                    {b.sizeSqf} sqft — {b.available === 0 ? `full (0 of ${b.total})` : `${b.available} free of ${b.total}`}
+                  </option>
+                ))}
+                {(lead.storageSizeValue ?? 0) > 0 && !sizes.some((b) => b.sizeSqf === lead.storageSizeValue) && (
+                  <option value={String(lead.storageSizeValue)}>{lead.storageSizeValue} sqft</option>
+                )}
+              </select>
+              {(lead.unitsNeeded ?? 1) > 1 && (
+                <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>{lead.unitsNeeded} units</p>
+              )}
+            </Card>
+              </div>
               <Card title="Needs storage from">
               <div className="flex flex-col" style={{ gap: 12 }}>
                 <span style={{ color: FAINT, fontSize: 13 }}>
