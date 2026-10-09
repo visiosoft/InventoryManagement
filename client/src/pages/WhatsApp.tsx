@@ -3419,6 +3419,8 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
   // "Send edited" resolves the same AgentAction instead of leaving it
   // pending while a different message went out through the composer.
   const [editingDraft, setEditingDraft] = useState(false)
+  const [draftMore, setDraftMore] = useState(false)
+  const [draftExpanded, setDraftExpanded] = useState(false)
   const [draftEditText, setDraftEditText] = useState('')
   useEffect(() => setEditingDraft(false), [selectedPhone])
   const [remindOpen, setRemindOpen] = useState(false)
@@ -4325,47 +4327,36 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
           {/* The assistant handed this thread over. Shown rather than silently
               going quiet, so nobody wonders why it stopped replying. */}
           {selectedConvo?.botStatus === 'escalated' && !escalationHidden.has(selectedConvo.phoneNormalized) && (
-            <div className="shrink-0 mx-6 mb-2 rounded-xl px-3.5 py-2.5"
+            <div className={cn('shrink-0 rounded-xl px-3 py-1.5 flex items-center gap-2', embedded ? 'mx-3 mb-1' : 'mx-6 mb-1.5')}
               style={{ background: '#FFF7E6', border: '1px solid #F5D9A0' }}>
-              {/* The message and the actions are two rows, not one — on a
-                  narrow screen "Hand back to AI" alongside the icon and the
-                  dismiss X left no room for the text at all: min-w-0/flex-1
-                  let it shrink, so it did, down to one word per line instead
-                  of overflowing. Its own row below never has to compete with
-                  the message's width for space. */}
-              <div className="flex items-start gap-2">
-                <UserCheck size={15} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 1 }} />
-                <div className="min-w-0 flex-1" style={{ fontSize: 12.5, color: '#6B4500' }}>
-                  <span style={{ fontWeight: 700 }}>Waiting for a person{selectedConvo.botAgentName ? ` — from ${selectedConvo.botAgentName}` : ''}.</span>{' '}
-                  {selectedConvo.botEscalationReason || 'The agent could not answer this one.'}
-                </div>
-                {/* Out of the way without handing the thread back: reading the
-                    reason is usually all somebody needs, and after that the
-                    notice is just taking up the composer's space. It returns
-                    if the assistant escalates again. */}
-                <button
-                  type="button"
-                  onClick={() => setEscalationHidden((h) => new Set(h).add(selectedConvo.phoneNormalized))}
-                  className="shrink-0 cursor-pointer"
-                  style={{ background: 'none', border: 'none', color: '#8A5A00', lineHeight: 1, padding: 2 }}
-                  title="Hide this notice"
-                  aria-label="Hide this notice"
-                >
-                  <X size={14} />
-                </button>
+              <UserCheck size={14} style={{ color: '#8A5A00', flex: '0 0 auto' }} />
+              {/* One line: the reason is in the tooltip. Reading it once is
+                  usually enough, so it should not take two rows of the chat. */}
+              <div className="min-w-0 flex-1 truncate" style={{ fontSize: 12.5, color: '#6B4500' }}
+                title={selectedConvo.botEscalationReason || 'The agent could not answer this one.'}>
+                <span style={{ fontWeight: 700 }}>Waiting for a person{selectedConvo.botAgentName ? ` — ${selectedConvo.botAgentName}` : ''}.</span>{' '}
+                {selectedConvo.botEscalationReason || 'The agent could not answer this one.'}
               </div>
-              <div className="flex justify-end mt-2">
-                <button
-                  type="button"
-                  onClick={() => selectedConvo.lead && resumeBot.mutate(selectedConvo.lead._id)}
-                  disabled={resumeBot.isPending || !selectedConvo.lead}
-                  className="shrink-0 rounded-full px-3 py-1 cursor-pointer disabled:opacity-50"
-                  style={{ background: '#8A5A00', color: '#fff', fontSize: 11.5, fontWeight: 700 }}
-                  title="The agent will answer this conversation again"
-                >
-                  {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => selectedConvo.lead && resumeBot.mutate(selectedConvo.lead._id)}
+                disabled={resumeBot.isPending || !selectedConvo.lead}
+                className="shrink-0 rounded-full px-2.5 py-0.5 cursor-pointer disabled:opacity-50"
+                style={{ background: '#8A5A00', color: '#fff', fontSize: 11, fontWeight: 700 }}
+                title="The agent will answer this conversation again"
+              >
+                {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEscalationHidden((h) => new Set(h).add(selectedConvo.phoneNormalized))}
+                className="shrink-0 cursor-pointer"
+                style={{ background: 'none', border: 'none', color: '#8A5A00', lineHeight: 1, padding: 2 }}
+                title="Hide this notice"
+                aria-label="Hide this notice"
+              >
+                <X size={14} />
+              </button>
             </div>
           )}
 
@@ -4374,7 +4365,7 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
               assistant has anything to say — a reminder is about the chat, not
               about the reply. */}
           {selectedConvo?.lead && (
-            <div className="shrink-0 mx-6 mb-2 flex flex-wrap items-center gap-2">
+            <div className={cn('shrink-0 flex flex-wrap items-center gap-2', embedded ? 'mx-3 mb-1' : 'mx-6 mb-1.5')}>
               {selectedConvo.lead.followUpAt && new Date(selectedConvo.lead.followUpAt) > new Date() ? (
                 <>
                   <span
@@ -4501,7 +4492,12 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
               {editingDraft ? (
                 <Textarea rows={3} value={draftEditText} onChange={(e) => setDraftEditText(e.target.value)} />
               ) : (
-                <div className="whitespace-pre-wrap overflow-y-auto" style={{ fontSize: 13, color: MUTED_INK, maxHeight: embedded ? '9vh' : '18vh' }}>
+                <div
+                  className={cn('whitespace-pre-wrap', draftExpanded ? 'overflow-y-auto' : 'line-clamp-2')}
+                  style={{ fontSize: 13, color: MUTED_INK, maxHeight: draftExpanded ? (embedded ? '16vh' : '28vh') : undefined, cursor: (selectedConvo.botDraft || '').length > 120 ? 'pointer' : undefined }}
+                  onClick={() => (selectedConvo.botDraft || '').length > 120 && setDraftExpanded((v) => !v)}
+                  title={(selectedConvo.botDraft || '').length > 120 ? (draftExpanded ? 'Show less' : 'Show the whole suggestion') : undefined}
+                >
                   {selectedConvo.botDraft}
                 </div>
               )}
@@ -4531,6 +4527,7 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                       style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
                       Send
                     </button>
+                    {draftMore && (<>
                     {/* Hear it, and send the voice — so what the customer gets is
                         what was approved, and a spoken reply can be judged before
                         anybody turns automatic replies on. */}
@@ -4552,6 +4549,7 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                       title="Send this as a voice note">
                       {sendVoiceDraft.isPending ? 'Sending…' : 'Send as voice'}
                     </button>
+                    </>)}
                     <button type="button"
                       onClick={() => { setDraftEditText(selectedConvo.botDraft!); setEditingDraft(true) }}
                       className="h-7 px-3 rounded-full cursor-pointer"
@@ -4564,6 +4562,13 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                       className="h-7 px-2.5 rounded-full cursor-pointer disabled:opacity-50"
                       style={{ fontSize: 12, fontWeight: 600, color: FAINT_INK }}>
                       {dismissDraft.isPending ? 'Dismissing…' : 'Dismiss'}
+                    </button>
+                    <button type="button"
+                      onClick={() => setDraftMore((v) => !v)}
+                      className="h-7 px-2 rounded-full cursor-pointer ml-auto"
+                      style={{ fontSize: 12, fontWeight: 600, color: FAINT_INK }}
+                      title="Hear it, or send it as a voice note">
+                      {draftMore ? 'Less' : '⋯ Voice'}
                     </button>
                   </>
                 )}
