@@ -3,7 +3,7 @@ import { routeInboundLead } from './leadRouting.js';
 import { PLACEHOLDER_NAME } from './leadNames.js';
 import { notifyLeadAssigned, notifyInboundWhatsAppMessage } from './leadNotify.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
-import { getAiBotConfig, noteInboundForBot, pauseBotForHuman } from './aiBot.js';
+import { getAiBotConfig, noteInboundForBot, pauseBotForHuman, markFirstResponse } from './aiBot.js';
 import { sendFirstContactVideo } from './firstContact.js';
 import { mediaFromRaw } from '../routes/whatsappMedia.js';
 import { cancelFollowUpOnReply } from './chatFollowUp.js';
@@ -587,6 +587,13 @@ async function persistMessages(messages) {
             try {
                 await pauseBotForHuman(msg.phoneNormalized);
             } catch { /* the assistant must never break message delivery */ }
+            // That reply is also the answer the response clock is waiting
+            // for. Without this, a rep who worked a lead from the WhatsApp
+            // app (or the wa.me button) never stopped the clock, and the lead
+            // was taken from them as "unanswered" after half an hour.
+            try {
+                await markFirstResponse(msg.phoneNormalized);
+            } catch { /* never break message delivery */ }
         }
     }
 
