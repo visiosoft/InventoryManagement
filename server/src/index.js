@@ -408,6 +408,12 @@ async function start() {
     .then((n) => console.log(`[Leads] gave ${n} assigned WhatsApp lead(s) their profile name`))
     .catch((e) => console.error('[Leads] name backfill failed:', e.message));
 
+  // Leads that are really signed customers leave the "New" stage. Idempotent.
+  import('./services/customerLeads.js')
+    .then((m) => m.markCustomerLeads())
+    .then((n) => console.log(`[Leads] moved ${n} existing-customer lead(s) out of New`))
+    .catch((e) => console.error('[Leads] customer-lead backfill failed:', e.message));
+
   // Reconcile WhatsApp label-driven lead state every 15 minutes.
   const WHATSAPP_RECONCILE_INTERVAL = 15 * 60 * 1000;
   if (process.env.WHATSAPP_LABEL_SYNC_ENABLED === 'true') {

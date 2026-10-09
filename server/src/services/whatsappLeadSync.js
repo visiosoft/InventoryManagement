@@ -1,6 +1,7 @@
 import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage, WhatsAppBlockedNumber } from '../models/index.js';
 import { routeInboundLead } from './leadRouting.js';
 import { PLACEHOLDER_NAME } from './leadNames.js';
+import { isExistingCustomerPhone } from './customerLeads.js';
 import { notifyLeadAssigned, notifyInboundWhatsAppMessage } from './leadNotify.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
 import { getAiBotConfig, noteInboundForBot, pauseBotForHuman, markFirstResponse } from './aiBot.js';
@@ -298,7 +299,7 @@ async function getDefaultOwnerId() {
     return admin?._id || null;
 }
 
-export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status = 'new', timelineText, fullName, ownerId: ownerOverride, profileName = '' }) {
+export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status: statusIn = 'new', timelineText, fullName, ownerId: ownerOverride, profileName = '' }) {
     /* Who this belongs to.
      *
      * An explicit owner wins — somebody saving a chat as a lead has already
@@ -308,6 +309,7 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
      * With distribution switched off this is exactly what it always was, the
      * first user on the system, so turning it on is a decision somebody makes
      * rather than something that happens to them. */
+    let status = statusIn;
     let ownerId = ownerOverride || null;
     let routingNote = '';
     if (!ownerId) {
@@ -324,6 +326,9 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
     // An unowned lead is a real outcome out of hours; only a lead with nobody
     // to give it to and no rules at all is a failure.
     if (!ownerId && !routingNote) return null;
+
+    // Somebody who already has a signed contract with us is not a new lead.
+    if (status === 'new' && await isExistingCustomerPhone(phoneNormalized).catch(() => false)) status = 'already_customer';
 
     const lead = await Lead.create({
         // Routed to somebody at creation = a real lead, so it gets the
