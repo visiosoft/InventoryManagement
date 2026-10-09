@@ -302,6 +302,20 @@ export default function Units() {
   const [sizeFilter, setSizeFilter] = useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Unit | null>(null)
+  // End an overdue contract straight from the table row — same call as the
+  // unit panel's button, one click closer.
+  const listQc = useQueryClient()
+  const [listEndError, setListEndError] = useState('')
+  const endFromList = useMutation({
+    mutationFn: (id: string) => api.post(`/contracts/${id}/end`, { reason: 'Check-out date had passed; ended from the Units page' }),
+    onSuccess: () => {
+      setListEndError('')
+      for (const key of [['units'], ['unit'], ['unit-active-contracts'], ['unit-availability'], ['unit-pricing-matrix']]) {
+        listQc.invalidateQueries({ queryKey: key })
+      }
+    },
+    onError: (e) => setListEndError(apiError(e)),
+  })
   const [onlyFree, setOnlyFree] = useState(false)
   const [onlyOverdue, setOnlyOverdue] = useState(false)
 
@@ -893,6 +907,7 @@ export default function Units() {
           so these are either tenants who have left (end the contract to free the
           unit) or tenants who stayed (extend Check Out). A person decides which —
           this only points at them. */}
+      {listEndError && <div style={{ fontSize: 12.5, color: '#B91C1C', marginBottom: 8 }}>{listEndError}</div>}
       {overdueUnitCount > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3" style={{ background: OVERDUE.bg, border: `1px solid ${OVERDUE.border}`, borderRadius: 14, padding: '12px 16px' }}>
           <div style={{ fontSize: 13, color: OVERDUE.color }}>
@@ -1166,6 +1181,22 @@ export default function Units() {
                           </span>
                         )
                       })()}
+                      {canEditUnits && (activeByUnit[u._id] ?? []).filter((c) => daysPastCheckout(c.endDate) > 0).map((c) => (
+                        <button
+                          key={c.contractId}
+                          type="button"
+                          disabled={endFromList.isPending}
+                          onClick={() => {
+                            if (confirm(`End contract ${c.contractNo} for ${c.customerName || 'this tenant'}? This frees the unit and archives the contract. Unpaid invoices are left as they are.`)) {
+                              endFromList.mutate(c.contractId)
+                            }
+                          }}
+                          className="disabled:opacity-50"
+                          style={{ height: 26, padding: '0 10px', borderRadius: 999, border: '1px solid #FCA5A5', background: '#fff', color: '#B91C1C', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          {endFromList.isPending ? 'Ending…' : 'End contract & free unit'}
+                        </button>
+                      ))}
                     </div>
                   </Td>
                   <Td>{u.shared ? <Badge tone="blue">Shared</Badge> : <span className="text-muted-foreground">—</span>}</Td>
