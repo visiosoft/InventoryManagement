@@ -269,7 +269,12 @@ const CSS = `
 
 /* ── formatting ───────────────────────────────────────────────────────── */
 function formatClock(iso: string) {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const d = new Date(iso)
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  // The date too, so a message read a week later still says when it was sent.
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  const day = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })
+  return `${day}, ${time}`
 }
 
 /* ── attachment blobs ─────────────────────────────────────────────────────
