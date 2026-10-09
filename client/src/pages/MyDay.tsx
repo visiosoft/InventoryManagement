@@ -83,6 +83,7 @@ type Booking = {
 type MyDayData = {
   reminders: Reminder[]
   tasks: Task[]
+  upcoming?: { _id: string; title: string; dueDate: string; priority: string; leadName: string; leadId: string | null }[]
   waiting: Waiting[]
   quiet: Quiet[]
   fresh: Fresh[]
@@ -608,6 +609,35 @@ export default function MyDay() {
           </div>
         </section>
       </div>
+
+      {/* ── Reminder tasks still to come, with a countdown ─────────────── */}
+      {(data?.upcoming?.length ?? 0) > 0 && (
+        <section style={{ ...CARD, padding: 22 }}>
+          <div className="flex items-center gap-3">
+            <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>Upcoming reminders</div>
+            <div style={{ fontSize: 12.5, color: INK3 }}>{data!.upcoming!.length} coming up</div>
+            <Link to="/tasks" style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, color: PURPLE }}>The board</Link>
+          </div>
+          <div className="flex flex-col" style={{ gap: 2, marginTop: 14 }}>
+            {data!.upcoming!.map((t) => {
+              const mins = Math.max(0, Math.floor((new Date(t.dueDate).getTime() - Date.now()) / 60000))
+              const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60)
+              return (
+                <Link key={t._id} to={t.leadId ? `/leads/${t.leadId}` : '/tasks'} className="pb-task flex items-start"
+                  style={{ gap: 12, padding: '11px 10px', borderRadius: 12, color: 'inherit', textDecoration: 'none' }}>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate" style={{ fontSize: 13.5, fontWeight: 600 }}>{t.title}</span>
+                    {t.leadName && <span className="block truncate" style={{ fontSize: 11.5, color: INK3, marginTop: 3 }}>{t.leadName}</span>}
+                  </span>
+                  <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap', color: INK2, background: 'rgba(20,8,31,.06)' }}>
+                    in {d > 0 ? `${d}d ${h}h` : `${h}h`}
+                  </span>
+                </Link>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {/* ── What you booked, and the target ──────────────────────────────── */}
       <section style={{ ...CARD, padding: 22 }}>

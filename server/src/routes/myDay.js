@@ -90,7 +90,7 @@ router.get('/', async (req, res) => {
       /* Four independent reads, issued together. Each is a round trip to Atlas
          whatever it asks for, and this route is opened every morning by
          everybody at once. */
-      const [reminders, tasks, myLeads] = await Promise.all([
+      const [reminders, tasks, myLeads, upcoming] = await Promise.all([
          // Reminders set from a chat, or from the lead itself.
          Lead.find({
             owner: me,
@@ -108,6 +108,14 @@ router.get('/', async (req, res) => {
          Lead.find({ owner: me, status: { $nin: ['won', 'lost', 'already_customer'] } })
             .select('fullName phone phoneNormalized whatsappProfileName status assignedAt ownerSeenAt followUpAt')
             .lean(),
+
+         // Reminder tasks still to come (needs-a-unit dates, site visits,
+         // follow-ups, ones raised by hand), nearest first, for the countdown.
+         Task.find({
+            assignedTo: me,
+            status: { $ne: 'done' },
+            dueDate: { $gt: endToday },
+         }).select('taskNo title dueDate priority leadName leadId leadType').sort({ dueDate: 1 }).limit(15).lean(),
       ]);
 
       const phones = [...new Set(myLeads.map((l) => l.phoneNormalized).filter(Boolean))];
@@ -306,6 +314,15 @@ router.get('/', async (req, res) => {
             leadId: t.leadId ? String(t.leadId) : null,
             leadType: t.leadType || null,
             overdue: overdue(t.dueDate),
+         })),
+         upcoming: upcoming.map((t) => ({
+            _id: String(t._id),
+            title: t.title,
+            dueDate: t.dueDate,
+            priority: t.priority,
+            leadName: t.leadName || '',
+            leadId: t.leadId ? String(t.leadId) : null,
+            leadType: t.leadType || null,
          })),
          waiting,
          quiet,
