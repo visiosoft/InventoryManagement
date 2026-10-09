@@ -149,7 +149,7 @@ export async function shopifyGraphql(merchantOrId, query, variables = {}) {
           forgetMerchantClient(merchant._id);
           continue;
         }
-        throw new Error(`Shopify: ${describeGraphqlErrors(errors)}. ${await missingScopesHint(merchant, token)}`);
+        throw new Error(`Shopify: ${describeGraphqlErrors(errors).replace(/\.$/, '')}. ${await missingScopesHint(merchant, token)}`);
       }
       throw new Error(`Shopify: ${describeGraphqlErrors(errors)}`);
     }
