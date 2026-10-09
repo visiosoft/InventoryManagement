@@ -492,6 +492,32 @@ export default function PersonProfile() {
           <ArrowLeft size={16} />
         </button>
 
+        {lead && (
+          <nav aria-label="Breadcrumb" className="flex items-center" style={{ gap: 8, color: FAINT, flexGrow: 1, marginLeft: 12, fontSize: 13.5, minWidth: 0 }}>
+            <Link to="/leads" style={{ color: FAINT }}>Leads</Link><span aria-hidden="true">/</span>
+            <span className="truncate" style={{ color: INK, fontWeight: 600 }}>{name}</span>
+          </nav>
+        )}
+        <div className="flex flex-wrap items-center" style={{ gap: 8, marginRight: 12 }}>
+          {phone && (
+            <a href={`tel:${phone}`} className="inline-flex items-center" style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13 }}>
+              <Phone size={13} /> Call
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={() => setTaskOpen(true)}
+            className="inline-flex items-center cursor-pointer"
+            style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
+            title="Create a reminder task about this lead"
+          >
+            <ClipboardList size={13} /> Reminder task
+          </button>
+          <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 6, height: 34, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap' }}>
+            <PackageCheck size={13} /> Book unit
+          </Link>
+        </div>
+
         {/* Working a filtered list one lead at a time used to mean a trip
             back to it for every single one. This follows the order Leads.tsx
             had on screen — see navOrder above — so Next/Previous move
@@ -524,7 +550,7 @@ export default function PersonProfile() {
       {/* ── Body: details and ownership beside the running account ────────── */}
       <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
 
-        <div className="flex flex-col" style={{ flex: '1 1 300px', maxWidth: 360, gap: 20, order: 2, display: pane === 'chat' && chatPanelOpen ? 'none' : undefined }}>
+        <div className="flex flex-col" style={{ flex: '1 1 320px', maxWidth: 380, gap: 16, order: 1, display: pane === 'chat' && chatPanelOpen ? 'none' : undefined }}>
       {/* ── Header card ───────────────────────────────────────────────────── */}
       <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '18px 20px' }}>
         <div className="flex items-start justify-between flex-wrap" style={{ gap: 20 }}>
@@ -686,6 +712,134 @@ export default function PersonProfile() {
 
         </div>
 
+        {lead && (
+          <div className="flex flex-col" style={{ gap: 14, marginTop: 16 }}>
+            <dl style={{ margin: 0 }}>
+              <div className="flex items-center" style={{ gap: 8, padding: '9px 0', borderTop: `1px solid ${LINE}` }}>
+                <dt style={{ color: FAINT, flexGrow: 1, fontSize: 13 }}>Owner</dt>
+                <dd style={{ margin: 0, textAlign: 'right' }}>
+                  {isAdmin ? (
+                    <select
+                      value={lead.owner?._id ?? ''}
+                      onChange={(e) => assign.mutate(e.target.value)}
+                      className="cursor-pointer"
+                      aria-label="Assigned to"
+                      style={{ height: 32, maxWidth: 180, padding: '0 8px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 13, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+                    >
+                      <option value="">Nobody</option>
+                      {assignable.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
+                    </select>
+                  ) : (
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{lead.owner?.name || 'Nobody'}</span>
+                  )}
+                  {lead.owner && (lead.autoAssigned || lead.assignedBy?.name) && (
+                    <span style={{ display: 'block', fontSize: 11, color: FAINT, marginTop: 3 }}>
+                      Assigned {lead.autoAssigned ? 'by the rota' : `by ${lead.assignedBy?.name}`}
+                      {lead.assignedAt ? ` · ${formatDateTime(lead.assignedAt)}` : ''}
+                    </span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex items-center" style={{ gap: 8, padding: '9px 0', borderTop: `1px solid ${LINE}` }}>
+                <dt style={{ color: FAINT, flexGrow: 1, fontSize: 13 }}>Source</dt>
+                <dd style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{statusLabel(lead.source || 'manual')}</dd>
+              </div>
+              <div className="flex items-center" style={{ gap: 8, padding: '9px 0', borderTop: `1px solid ${LINE}` }}>
+                <dt style={{ color: FAINT, flexGrow: 1, fontSize: 13 }}>Came in</dt>
+                <dd style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{lead.leadDateTime ? formatDateTime(lead.leadDateTime) : '—'}</dd>
+              </div>
+              {nextReminder?.dueDate && (
+                <div className="flex items-start" style={{ gap: 8, padding: '9px 0', borderTop: `1px solid ${LINE}` }}>
+                  <dt style={{ color: FAINT, flexGrow: 1, fontSize: 13 }}>Reminder</dt>
+                  <dd style={{ margin: 0, textAlign: 'right', fontSize: 13, fontWeight: 600, color: new Date(nextReminder.dueDate).getTime() < nowTick ? '#B91C1C' : INK }}>
+                    {countdown(nextReminder.dueDate)}
+                    <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: FAINT }}>
+                      {nextReminder.assignedTo?.name ? `${nextReminder.assignedTo.name} · ` : ''}{nextReminder.title}
+                    </span>
+                  </dd>
+                </div>
+              )}
+            </dl>
+
+            {/* The stage as steps, so what comes next is visible. Choosing one
+                still asks what happened before it is saved. */}
+            <div className="flex flex-col" style={{ gap: 6 }}>
+              <span style={{ color: FAINT, fontSize: 12, fontWeight: 600 }}>Stage</span>
+              <div role="group" aria-label="Pipeline stage" className="flex flex-col" style={{ gap: 2, background: PAGE, borderRadius: 14, padding: 4 }}>
+                {LEAD_STATUS_FLOW.map((st, i) => {
+                  const curIdx = LEAD_STATUS_FLOW.findIndex((x) => x.value === lead.status)
+                  const chosen = (pendingStage || lead.status) === st.value
+                  const done = i < curIdx && !pendingStage
+                  return (
+                    <button
+                      key={st.value}
+                      type="button"
+                      aria-pressed={chosen}
+                      onClick={() => {
+                        if (st.value === lead.status) { setPendingStage(''); setStageNote(''); return }
+                        setPendingStage(st.value)
+                      }}
+                      className="cursor-pointer"
+                      style={{
+                        height: 38, padding: '0 10px', borderRadius: 10, border: 'none', textAlign: 'left',
+                        display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', fontSize: 13.5,
+                        background: chosen ? '#fff' : 'transparent',
+                        boxShadow: chosen ? `0 0 0 1px ${LINE}` : 'none',
+                        fontWeight: chosen ? 700 : 500, color: chosen || done ? INK : FAINT,
+                      }}
+                    >
+                      <span style={{
+                        width: 22, height: 22, borderRadius: 999, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700,
+                        background: chosen || done ? PURPLE : '#fff', color: chosen || done ? '#fff' : FAINT,
+                        boxShadow: chosen || done ? 'none' : `inset 0 0 0 1px ${LINE}`,
+                      }}>{done ? '✓' : i + 1}</span>
+                      {st.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <p style={{ fontSize: 12.5, color: FAINT }}>
+                {pendingStage ? 'Unsaved — say what happened below.' : LEAD_STATUS_FLOW.find((x) => x.value === lead.status)?.next}
+              </p>
+              {pendingStage && (
+                <div style={{ borderRadius: 12, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, padding: 12 }}>
+                  <p style={{ fontSize: 13, color: INK_2, marginBottom: 8 }}>
+                    Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((x) => x.value === pendingStage)?.label}</b> — what happened?
+                  </p>
+                  <textarea
+                    value={stageNote}
+                    onChange={(e) => setStageNote(e.target.value)}
+                    rows={2}
+                    autoFocus
+                    placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
+                    style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                  />
+                  <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
+                    <button
+                      type="button"
+                      disabled={setStatus.isPending}
+                      onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
+                      className="cursor-pointer disabled:opacity-50"
+                      style={{ height: 36, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
+                    >
+                      {setStatus.isPending ? 'Saving…' : 'Save stage'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={setStatus.isPending}
+                      onClick={() => { setPendingStage(''); setStageNote('') }}
+                      className="cursor-pointer disabled:opacity-50"
+                      style={{ height: 36, padding: '0 16px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* The one time-critical fact, said in words rather than left as a date
             for the reader to work out. */}
         {urgency && (
@@ -697,6 +851,62 @@ export default function PersonProfile() {
 
         {err && <p style={{ fontSize: 12.5, color: '#C0392B', marginTop: 12 }}>{err}</p>}
       </div>
+
+          {/* Needs storage from — when they are ready to take a unit. Its own
+              date, apart from when we chase them or when they come to look. */}
+          {lead && (
+            <Card title="Needs storage from">
+              <div className="flex flex-col" style={{ gap: 12 }}>
+                <span style={{ color: FAINT, fontSize: 13 }}>
+                  {lead.storageStartAt ? `Move-in ${formatDate(String(lead.storageStartAt).slice(0, 10))}` : 'Not asked yet'}
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+                  {([['ASAP', 0], ['1 week', 7], ['2 weeks', 14], ['1 month', 30], ['2 months', 60], ['3 months', 90]] as const).map(([label, days]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => patchLead.mutate({ storageStartAt: inDays(days, '00:00') })}
+                      className="cursor-pointer"
+                      style={{ height: 36, padding: '0 6px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center" style={{ gap: 8 }}>
+                  <input
+                    type="date"
+                    aria-label="Or pick a date"
+                    value={lead.storageStartAt ? String(lead.storageStartAt).slice(0, 10) : ''}
+                    onChange={(e) => patchLead.mutate({ storageStartAt: e.target.value ? `${e.target.value}T00:00:00.000Z` : null })}
+                    style={{ flex: 1, height: 40, padding: '0 12px', borderRadius: 12, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                  />
+                  {lead.storageStartAt && (
+                    <button
+                      type="button"
+                      onClick={() => patchLead.mutate({ storageStartAt: null })}
+                      className="cursor-pointer"
+                      style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {lead.storageStartAt && (() => {
+                  const day = String(lead.storageStartAt).slice(0, 10)
+                  const { days } = followUpState(day)
+                  return (
+                    <div className="flex items-start" style={{ gap: 8, background: PURPLE_50, borderRadius: 14, padding: '10px 12px', fontSize: 13, color: days < 0 ? '#DC2626' : INK_2 }}>
+                      <ClipboardList size={15} style={{ flexShrink: 0, marginTop: 2, color: PURPLE }} />
+                      <span>
+                        <b>Reminder task set</b> for {lead.owner?.name || 'the owner'} · {days < 0 ? `${-days} day${days === -1 ? '' : 's'} ago` : days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}
+                      </span>
+                    </div>
+                  )
+                })()}
+              </div>
+            </Card>
+          )}
 
           {/* When we next deal with this person, kept beside who they are
               rather than buried among the pipeline controls. Only ever shows
@@ -1084,10 +1294,66 @@ export default function PersonProfile() {
               </div>
             </Card>
           )}
+
+          {/* Size needed — a standing fact. Sizes come from the units, each
+              says how many are free; full ones cannot be picked. */}
+          {lead && (
+            <Card title="Unit size">
+              <div className="flex flex-col" style={{ gap: 12 }}>
+                <span style={{ color: FAINT, fontSize: 12 }}>
+                  {lead.storageSizeValue && lead.storageSizeValue > 0 ? `${lead.storageSizeValue} sq ft` : lead.storageSizeValue === -1 ? 'Not decided yet' : 'Not asked yet'}
+                  {(lead.unitsNeeded ?? 1) > 1 ? ` · ${lead.unitsNeeded} units` : ''}
+                </span>
+                <div role="group" aria-label="Unit size" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
+                  {sizes.map((b) => {
+                    const on = lead.storageSizeValue === b.sizeSqf
+                    const full = b.available === 0
+                    return (
+                      <button
+                        key={b.sizeSqf}
+                        type="button"
+                        aria-pressed={on}
+                        disabled={full}
+                        onClick={() => patchLead.mutate({ storageSizeValue: on ? 0 : b.sizeSqf, storageSizeUnit: 'sqft' })}
+                        className="cursor-pointer disabled:cursor-not-allowed"
+                        style={{
+                          minHeight: 48, padding: '6px 10px', borderRadius: 12, textAlign: 'left', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, fontFamily: 'inherit',
+                          ...(full
+                            ? { border: `1px dashed ${LINE}`, background: PAGE, color: FAINT }
+                            : on
+                              ? { border: `1px solid ${PURPLE}`, background: PURPLE_50, color: DEEP, boxShadow: `0 0 0 1px ${PURPLE}` }
+                              : { border: `1px solid ${LINE}`, background: '#fff', color: INK }),
+                        }}
+                      >
+                        <span style={{ fontWeight: 700, fontSize: 13.5 }}>{b.sizeSqf} sq ft</span>
+                        <span style={{ fontSize: 12, color: full ? FAINT : b.available === 1 ? '#B45309' : INK_2, fontWeight: b.available === 1 ? 600 : 400 }}>
+                          {full ? `Full · 0 of ${b.total}` : `${b.available} free of ${b.total}`}
+                        </span>
+                      </button>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    aria-pressed={lead.storageSizeValue === -1}
+                    onClick={() => patchLead.mutate({ storageSizeValue: lead.storageSizeValue === -1 ? 0 : -1, storageSizeUnit: 'sqft' })}
+                    className="cursor-pointer"
+                    style={{
+                      gridColumn: '1 / -1', minHeight: 44, padding: '6px 10px', borderRadius: 12, textAlign: 'left', fontFamily: 'inherit', fontWeight: 700, fontSize: 13.5,
+                      ...(lead.storageSizeValue === -1
+                        ? { border: `1px solid ${PURPLE}`, background: PURPLE_50, color: DEEP, boxShadow: `0 0 0 1px ${PURPLE}` }
+                        : { border: `1px solid ${LINE}`, background: '#fff', color: INK }),
+                    }}
+                  >
+                    Not decided yet <span style={{ fontWeight: 400, fontSize: 12, color: FAINT }}>· customer unsure</span>
+                  </button>
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* ── The running account ─────────────────────────────────────────── */}
-        <div className="flex flex-col" style={{ flex: '3 1 480px', gap: 20, order: 1, minWidth: 0 }}>
+        <div className="flex flex-col" style={{ flex: '999 1 480px', gap: 20, order: 2, minWidth: 0 }}>
           {/* The conversation, on the page about the person.
               Rendered by the console itself rather than a copy of it, so the
               history, the live updates, quick replies, voice notes,
@@ -1124,216 +1390,6 @@ export default function PersonProfile() {
           {pane === 'chat' && waNumber && <WhatsAppConsole embeddedPhone={waNumber} onPanelOpenChange={setChatPanelOpen} />}
 
           {pane === 'details' && (<>
-          {lead && (
-            <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: 22 }}>
-              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, alignItems: 'start' }}>
-          <div className="flex flex-wrap" style={{ gap: 8, justifySelf: 'end', alignSelf: 'start' }}>
-            <button
-              type="button"
-              onClick={() => setTaskOpen(true)}
-              className="inline-flex items-center cursor-pointer"
-              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
-              title="Create a reminder task about this lead"
-            >
-              <ClipboardList size={13} /> Reminder task
-            </button>
-            <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 6, height: 34, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 13, boxShadow: '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)', whiteSpace: 'nowrap' }}>
-              <PackageCheck size={13} /> Book unit
-            </Link>
-            {nextReminder?.dueDate && (
-              <div style={{ flexBasis: '100%', textAlign: 'right', fontSize: 11.5, color: new Date(nextReminder.dueDate).getTime() < nowTick ? '#B91C1C' : FAINT }}>
-                Reminder {countdown(nextReminder.dueDate)}
-                {nextReminder.assignedTo?.name ? ` · ${nextReminder.assignedTo.name}` : ''}
-                <span style={{ display: 'block', color: FAINT }}>{nextReminder.title}</span>
-              </div>
-            )}
-          </div>
-                <div>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: FAINT, display: 'block', marginBottom: 6 }}>Assigned to</span>
-                  {isAdmin ? (
-                    <select
-                      value={lead.owner?._id ?? ''}
-                      onChange={(e) => assign.mutate(e.target.value)}
-                      className="cursor-pointer"
-                      style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
-                    >
-                      <option value="">Nobody</option>
-                      {assignable.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
-                    </select>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: 14, fontWeight: 700 }}>{lead.owner?.name || 'Nobody'}</div>
-                      {/* Reps work their own leads and do not hand them on, so
-                          say who can rather than leaving a name that looks
-                          editable and is not. */}
-                    </>
-                  )}
-                  {lead.owner && (lead.autoAssigned || lead.assignedBy?.name) && (
-                    <span style={{ display: 'block', fontSize: 11, color: FAINT, marginTop: 5 }}>
-                      Assigned {lead.autoAssigned ? 'by the rota' : `by ${lead.assignedBy?.name}`}
-                      {lead.assignedAt ? ` · ${formatDateTime(lead.assignedAt)}` : ''}
-                    </span>
-                  )}
-                </div>
-
-                <div>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: FAINT, display: 'block', marginBottom: 6 }}>Stage</span>
-                  <select
-                    value={pendingStage || lead.status}
-                    onChange={(e) => {
-                      const next = e.target.value
-                      // Same stage again is not a change worth recording.
-                      if (next === lead.status) { setPendingStage(''); setStageNote(''); return }
-                      setPendingStage(next)
-                    }}
-                    className="cursor-pointer"
-                    style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
-                  >
-                    {LEAD_STATUS_FLOW.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                  </select>
-
-                  {/* What the stage means somebody should do next, so the
-                      status is an instruction rather than a label. */}
-                  <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
-                    {pendingStage
-                      ? 'Unsaved — see below.'
-                      : LEAD_STATUS_FLOW.find((s) => s.value === lead.status)?.next}
-                  </p>
-                </div>
-
-                {/* A standing fact about the lead, not only something asked
-                    once on the way to Contacted. Sizes come from the units
-                    themselves, so every size that exists can be picked and
-                    each says how many are free. */}
-                <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Size needed</span>
-                  <select
-                    value={lead.storageSizeValue ? String(lead.storageSizeValue) : ''}
-                    onChange={(e) => patchLead.mutate({
-                      storageSizeValue: e.target.value ? Number(e.target.value) : 0,
-                      storageSizeUnit: 'sqft',
-                    })}
-                    className="cursor-pointer"
-                    style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
-                  >
-                    <option value="">Not asked yet</option>
-                    {/* Asked, and they genuinely do not know — which is a
-                        different thing from nobody having asked, and the one
-                        that tells the next person not to ask again. */}
-                    <option value="-1">Not decided yet</option>
-                    {sizes.map((b) => (
-                      <option key={b.sizeSqf} value={String(b.sizeSqf)}>
-                        {b.sizeSqf} sqft — {b.available} free of {b.total}
-                      </option>
-                    ))}
-                    {/* A size somebody recorded before it existed as a unit
-                        still has to be selectable, or opening the lead would
-                        silently change it. */}
-                    {(lead.storageSizeValue ?? 0) > 0 && !sizes.some((b) => b.sizeSqf === lead.storageSizeValue) && (
-                      <option value={String(lead.storageSizeValue)}>{lead.storageSizeValue} sqft</option>
-                    )}
-                  </select>
-                  {(lead.unitsNeeded ?? 1) > 1 && (
-                    <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>{lead.unitsNeeded} units</p>
-                  )}
-                </div>
-
-                {/* When they want the storage to start — "next month", "after
-                    Eid". Its own date: the follow-up is when we chase them and
-                    the site visit is when they come to look; this is when they
-                    are ready to take a unit. Presets for the gaps people
-                    actually say; the date box is there for the rest. */}
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Needs storage from</span>
-                  <div className="flex flex-wrap items-center" style={{ gap: 8 }}>
-                    <input
-                      type="date"
-                      value={lead.storageStartAt ? String(lead.storageStartAt).slice(0, 10) : ''}
-                      onChange={(e) => patchLead.mutate({ storageStartAt: e.target.value ? `${e.target.value}T00:00:00.000Z` : null })}
-                      style={{ height: 40, padding: '0 10px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
-                    />
-                    {([['1 week', 7], ['2 weeks', 14], ['1 month', 30], ['2 months', 60], ['3 months', 90]] as const).map(([label, days]) => (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => patchLead.mutate({ storageStartAt: inDays(days, '00:00') })}
-                        className="cursor-pointer"
-                        style={{ height: 32, padding: '0 12px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK_2, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                    {lead.storageStartAt && (
-                      <button
-                        type="button"
-                        onClick={() => patchLead.mutate({ storageStartAt: null })}
-                        className="cursor-pointer"
-                        style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                  {lead.storageStartAt && (() => {
-                    const day = String(lead.storageStartAt).slice(0, 10)
-                    const { days } = followUpState(day)
-                    return (
-                      <p style={{ fontSize: 12.5, color: days < 0 ? '#DC2626' : FAINT, marginTop: 6 }}>
-                        {formatDate(day)} · {days < 0 ? `${-days} day${days === -1 ? '' : 's'} ago` : days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}
-                      </p>
-                    )
-                  })()}
-                </div>
-
-                {/* Moving a stage is the moment somebody knows why. Asking
-                    here — rather than leaving them to write it separately — is
-                    the difference between a timeline that reads as an account
-                    and one that reads as a list of state changes. The note
-                    goes with the change in one request, so a stage cannot land
-                    without it.
-
-                    Full width rather than inside the Stage cell: squeezed into
-                    a quarter of the card it was a textarea three words wide. */}
-                {pendingStage && (
-                  <div style={{ gridColumn: '1 / -1', borderRadius: 12, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, padding: 14 }}>
-                    <p style={{ fontSize: 13, color: INK_2, marginBottom: 8 }}>
-                      Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((s) => s.value === pendingStage)?.label}</b> — what happened?
-                    </p>
-                    <textarea
-                      value={stageNote}
-                      onChange={(e) => setStageNote(e.target.value)}
-                      rows={2}
-                      autoFocus
-                      placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
-                      style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
-                    />
-                    <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
-                      <button
-                        type="button"
-                        disabled={setStatus.isPending}
-                        onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
-                        className="cursor-pointer disabled:opacity-50"
-                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
-                      >
-                        {setStatus.isPending ? 'Saving…' : 'Save stage'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={setStatus.isPending}
-                        onClick={() => { setPendingStage(''); setStageNote('') }}
-                        className="cursor-pointer disabled:opacity-50"
-                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-              </div>
-            </div>
-          )}
-
           {lead && (
             <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '22px 26px' }}>
               <h3 style={{ ...DISPLAY, fontSize: 16, fontWeight: 700, margin: '0 0 14px' }}>Activity</h3>
