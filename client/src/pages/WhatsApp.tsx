@@ -3531,7 +3531,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     <div
       className={cn(
         'wa-shell flex flex-col rounded-2xl overflow-hidden min-h-[520px]',
-        embedded ? 'h-[70vh]' : 'h-[calc(100vh-5rem)] md:h-[calc(100vh-5.5rem)]',
+        embedded ? 'h-[calc(100vh-7rem)] min-h-[680px]' : 'h-[calc(100vh-5rem)] md:h-[calc(100vh-5.5rem)]',
       )}
       style={{ border: `1px solid ${LINE}`, background: '#fff', boxShadow: embedded ? 'none' : '0 6px 28px rgba(20,8,31,.07)' }}
     >
@@ -4444,7 +4444,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
           {/* A suggested reply. It is never sent on its own — someone reads it
               and presses Send, or edits it first. */}
           {selectedConvo?.botDraft && selectedConvo.botActionId && (
-            <div className="shrink-0 mx-6 mb-2 rounded-xl px-3.5 py-3"
+            <div className={cn('shrink-0 rounded-xl', embedded ? 'mx-3 mb-1.5 px-3 py-2' : 'mx-6 mb-2 px-3.5 py-3')}
               style={{ background: '#F3EEFF', border: '1px solid #D9CBFA' }}>
               <div className="flex items-center gap-1.5 mb-1.5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: selectedConvo.botAgentColor || '#4A1FA0' }}>
                 <Bot size={13} /> {selectedConvo.botAgentName ? `${selectedConvo.botAgentName} suggests` : 'Suggested reply'}
@@ -4475,7 +4475,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               {editingDraft ? (
                 <Textarea rows={3} value={draftEditText} onChange={(e) => setDraftEditText(e.target.value)} />
               ) : (
-                <div className="whitespace-pre-wrap" style={{ fontSize: 13, color: MUTED_INK }}>
+                <div className="whitespace-pre-wrap overflow-y-auto" style={{ fontSize: 13, color: MUTED_INK, maxHeight: embedded ? '9vh' : '18vh' }}>
                   {selectedConvo.botDraft}
                 </div>
               )}

@@ -3,11 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Calendar, Clock, FileText, MessageCircle, MessageSquare,
-  ClipboardList, ExternalLink, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
+  Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
-import { openWhatsApp } from '../lib/whatsappLink'
 import WhatsAppConsole from './WhatsApp'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES } from '../components/ui'
@@ -35,7 +34,6 @@ const LINE = 'rgba(20,8,31,0.10)'
 const LINE_STRONG = 'rgba(20,8,31,0.16)'
 const WARM = '#D97706'
 const SHADOW_SM = '0 1px 2px rgba(20,8,31,.06), 0 2px 8px rgba(20,8,31,.04)'
-const SHADOW_MD = '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)'
 const DISPLAY = { fontFamily: "'Bricolage Grotesque', serif", letterSpacing: '-0.02em' } as const
 
 /* The gaps people actually reach for. A follow-up is an instant now rather
@@ -216,7 +214,6 @@ export default function PersonProfile() {
   const [followUpNote, setFollowUpNote] = useState('')
   // The standing note on the lead — what this person is about, not a dated
   // entry in the timeline below.
-  const [notes, setNotes] = useState('')
   const [stageNote, setStageNote] = useState('')
   // The attempt being logged, if one is.
   const [logging, setLogging] = useState(false)
@@ -259,7 +256,6 @@ export default function PersonProfile() {
     if (!l || hydrated.current === l._id) return
     hydrated.current = l._id
     setFollowUpNote(l.followUpNote || '')
-    setNotes(l.notes || '')
     if (l.followUpAt) setFollowUpTime(String(l.followUpAt).slice(11, 16) || '09:00')
   }, [data?.lead])
 
@@ -413,14 +409,6 @@ export default function PersonProfile() {
   const phone = customer?.phone || lead?.phone || ''
   const email = customer?.email || lead?.email || ''
   const waNumber = (lead?.phoneNormalized || phone).replace(/\D/g, '')
-  // The number for the real WhatsApp app: the lead's own WhatsApp number when
-  // it has one, in the international form WhatsApp's links need (no +, no 00,
-  // and a local UAE 05… number becomes 9715…).
-  const waExternal = (() => {
-    const d = (lead?.whatsappNo || '').replace(/\D/g, '').replace(/^00/, '')
-    if (!d) return waNumber
-    return d.startsWith('0') ? `971${d.slice(1)}` : d
-  })()
   // Which half of the right-hand column is showing. The chat is a tab rather
   // than another card because it needs the height.
   const isCustomer = stage === 'customer'
@@ -641,69 +629,6 @@ export default function PersonProfile() {
             </div>
           </div>
 
-          <div className="flex flex-wrap" style={{ gap: 8 }}>
-            {phone && (
-              <a href={`tel:${phone}`} className="inline-flex items-center" style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13 }}>
-                <Phone size={13} /> Call
-              </a>
-            )}
-            {/* Two different places, so both are offered rather than one
-                standing in for the other: our inbox has the history and is
-                where a reply gets recorded; wa.me is their actual WhatsApp,
-                which is what you want for a voice note or an attachment. */}
-            {waNumber && (
-              <Link
-                to={`/whatsapp?phone=${waNumber}`}
-                title="Open the conversation inside PurpleBox"
-                className="inline-flex items-center cursor-pointer"
-                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13 }}
-              >
-                <MessageCircle size={13} /> Chat
-              </Link>
-            )}
-            {/* The real WhatsApp, not our inbox: opens this number in the
-                desktop app if there is one, else WhatsApp Web — what you want
-                for a voice note, an attachment, or just your own phone's
-                history with them. */}
-            {waExternal && (
-              <a
-                href={`https://wa.me/${waExternal}`}
-                target="_blank"
-                rel="noreferrer"
-                // Tries the installed WhatsApp app first and falls back to
-                // wa.me (WhatsApp Web) if nothing opens — see lib/whatsappLink.
-                // The href stays as the real address, so open-in-new-tab,
-                // copy-link and middle-click all still work.
-                onClick={(e) => {
-                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-                  e.preventDefault()
-                  openWhatsApp(waExternal)
-                }}
-                title="Open this number in the WhatsApp app (or WhatsApp Web if it is not installed)"
-                className="inline-flex items-center"
-                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(22,163,74,.28)', background: 'rgba(22,163,74,.09)', color: '#047857', fontWeight: 600, fontSize: 13 }}
-              >
-                <MessageCircle size={13} /> WhatsApp <ExternalLink size={11} style={{ opacity: 0.7 }} />
-              </a>
-            )}
-            {/* Raising a task about somebody was only possible from their chat,
-                which is the wrong place to be when you are reading their
-                profile — and impossible for a lead who has never messaged. */}
-            <button
-              type="button"
-              onClick={() => setTaskOpen(true)}
-              className="inline-flex items-center cursor-pointer"
-              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
-              title="Create a task about this lead"
-            >
-              <ClipboardList size={13} /> Task
-            </button>
-            {/* Available at both stages: the wizard creates the customer when a
-                lead is booked, which is the point at which they become one. */}
-            <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 6, height: 34, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 13, boxShadow: SHADOW_MD, whiteSpace: 'nowrap' }}>
-              <PackageCheck size={13} /> Book unit
-            </Link>
-          </div>
         </div>
 
         {/* The one time-critical fact, said in words rather than left as a date
@@ -1098,42 +1023,6 @@ export default function PersonProfile() {
                     </div>
                   )}
               </div>
-            </Card>
-          )}
-
-          {/* Admins write this one; everybody else reads it.
-              The server refuses the change either way — hiding a text box is
-              not a permission — but showing a rep a field they cannot save
-              would only waste their typing. Reps have the timeline below for
-              their own running commentary.
-
-              Shown to an admin even when empty, since a card that appears only
-              once a note exists leaves no way to write the first one. Hidden
-              from everyone else when empty, because an empty box they cannot
-              fill in is just clutter. */}
-          {lead && (isAdmin || lead.notes) && (
-            <Card title="Notes">
-              {isAdmin ? (
-                <>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    onBlur={() => { if (notes !== (lead.notes || '')) patchLead.mutate({ notes }) }}
-                    rows={12}
-                    placeholder="What they are storing, what was agreed, who referred them."
-                    style={{
-                      width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff',
-                      padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', color: INK,
-                      resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5, minHeight: 240,
-                    }}
-                  />
-                  <p style={{ fontSize: 12, color: FAINT, marginTop: 6 }}>
-                    Saves when you click away.
-                  </p>
-                </>
-              ) : (
-                <p style={{ fontSize: 14, color: INK_2, whiteSpace: 'pre-wrap' }}>{lead.notes}</p>
-              )}
             </Card>
           )}
         </div>
