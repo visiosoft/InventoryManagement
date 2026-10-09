@@ -205,6 +205,7 @@ export default function PersonProfile() {
   const isAdmin = user?.role === 'admin'
   const [err, setErr] = useState('')
   const [taskOpen, setTaskOpen] = useState(false)
+  const [chatPanelOpen, setChatPanelOpen] = useState(false)
   const [note, setNote] = useState('')
   // A stage picked but not yet committed, and the note going with it.
   const [pendingStage, setPendingStage] = useState('')
@@ -499,7 +500,7 @@ export default function PersonProfile() {
       {/* ── Body: details and ownership beside the running account ────────── */}
       <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
 
-        <div className="flex flex-col" style={{ flex: '1 1 300px', maxWidth: 360, gap: 20, order: 2 }}>
+        <div className="flex flex-col" style={{ flex: '1 1 300px', maxWidth: 360, gap: 20, order: 2, display: pane === 'chat' && chatPanelOpen ? 'none' : undefined }}>
       {/* ── Header card ───────────────────────────────────────────────────── */}
       <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '18px 20px' }}>
         <div className="flex items-start justify-between flex-wrap" style={{ gap: 20 }}>
@@ -1110,7 +1111,7 @@ export default function PersonProfile() {
             </div>
           )}
 
-          {pane === 'chat' && waNumber && <WhatsAppConsole embeddedPhone={waNumber} />}
+          {pane === 'chat' && waNumber && <WhatsAppConsole embeddedPhone={waNumber} onPanelOpenChange={setChatPanelOpen} />}
 
           {pane === 'details' && (<>
           {lead && (

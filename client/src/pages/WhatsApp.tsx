@@ -2301,7 +2301,7 @@ function ChatDangerActions({ convo, onDeleted, onChanged }: { convo: WhatsAppCon
  * replies, voice notes, attachments, editing, assigning and the rest are the
  * same code in both places, so the tab cannot quietly fall behind the console.
  */
-export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } = {}) {
+export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embeddedPhone?: string; onPanelOpenChange?: (open: boolean) => void } = {}) {
   const embedded = Boolean(embeddedPhone)
   const qc = useQueryClient()
 
@@ -2469,6 +2469,12 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     return () => document.removeEventListener('mousedown', away)
   }, [notifOpen])
   const [qrOpen, setQrOpen] = useState(false)
+  // Embedded on a lead page, the parent gives the side cards up while the
+  // quick-replies panel is open so the chat keeps its width.
+  useEffect(() => {
+    onPanelOpenChange?.(qrOpen)
+    return () => onPanelOpenChange?.(false)
+  }, [qrOpen, onPanelOpenChange])
   // The score rail's own open state — now consulted at every width (see
   // the .wa-score CSS). Starts open on a wide screen and closed on a
   // narrow one, matching what was previously true unconditionally on each
