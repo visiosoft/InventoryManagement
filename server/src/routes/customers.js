@@ -22,7 +22,7 @@ import { deleteContractRecord } from './contracts.js';
 const router = Router();
 
 
-async function deleteCustomerCascade(customerId, userId) {
+export async function deleteCustomerCascade(customerId, userId) {
   const customer = await Customer.findById(customerId);
   const contracts = await Contract.find({ customer: customerId });
   for (const contract of contracts) {

@@ -2275,7 +2275,7 @@ function ChatDangerActions({ convo, onDeleted, onChanged }: { convo: WhatsAppCon
 
       <Modal open={confirming === 'delete'} onClose={() => setConfirming(null)} title="Delete this contact?">
         <div className="space-y-3 text-sm">
-          <p>Every message in this conversation is removed, and so is the <strong>lead</strong> for this number, with its open reminders. A customer record, if there is one, is not touched. If this number writes in again it starts as a new contact.</p>
+          <p>Every message in this conversation is removed, and so is the <strong>lead</strong> for this number, with its open reminders. If this number is a <strong>customer</strong>, their record, contracts, invoices and documents are deleted too — refused while any contract is still active. If this number writes in again it starts as a new contact.</p>
           {err && <p className="text-xs text-red-600">{err}</p>}
           {dialogButtons(del.isPending, () => del.mutate(), 'Delete contact')}
         </div>

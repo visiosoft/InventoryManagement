@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
-import { WhatsAppMessage, Lead, Customer, User, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate, Task } from '../models/index.js';
+import { WhatsAppMessage, Lead, Customer, User, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate, Task, Contract } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate, windowOpenFor } from '../services/whatsapp.js';
 import { pauseBotForHuman, markFirstResponse } from '../services/aiBot.js';
 import { agentStatusForLeads } from '../agents/service.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
+import { phoneClauses } from '../utils/phoneSearch.js';
+import { deleteCustomerCascade } from './customers.js';
 import { promotePlaceholderName } from '../services/leadNames.js';
 import { quickReplyWatchLink } from '../services/renewalLink.js';
 import { videoNeedsHosting } from '../services/videoThumbnail.js';
@@ -249,6 +251,21 @@ router.delete('/conversations/:phoneNormalized', async (req, res) => {
     if (isSalesRep(req)) return res.status(403).json({ error: 'Not allowed to delete a conversation' });
     const phoneNormalized = req.params.phoneNormalized;
     try {
+        // "Delete contact" on a number that is a customer removes that record
+        // too (with its contracts, invoices and documents) — but never while a
+        // contract is still active, and that check comes before anything is
+        // deleted so a refusal leaves the chat intact.
+        let customers = [];
+        if (req.query.contact === '1') {
+            const or = phoneClauses(phoneNormalized);
+            customers = or.length ? await Customer.find({ $or: or }).select('_id fullName') : [];
+            if (customers.length) {
+                const live = await Contract.countDocuments({ customer: { $in: customers.map((c) => c._id) }, status: 'active' });
+                if (live) {
+                    return res.status(409).json({ error: `${customers[0].fullName} has ${live} active contract${live === 1 ? '' : 's'}. End or delete them first, then delete the contact.` });
+                }
+            }
+        }
         const result = await softDeleteMany(WhatsAppMessage, { phoneNormalized }, req.user.id, { deletedAtField: 'removedAt', deletedByField: 'removedBy' });
         const [chatLabel, labelState] = await Promise.all([
             WhatsAppChatLabel.findOne({ phoneNormalized }),
@@ -270,7 +287,8 @@ router.delete('/conversations/:phoneNormalized', async (req, res) => {
                 deletedLeads += 1;
             }
         }
-        res.json({ ok: true, deletedMessages: result.modifiedCount, deletedLeads });
+        for (const c of customers) await deleteCustomerCascade(c._id, req.user.id);
+        res.json({ ok: true, deletedMessages: result.modifiedCount, deletedLeads, deletedCustomers: customers.length });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
