@@ -32,7 +32,7 @@
  * Nothing here throws.
  */
 
-import { Lead, LeadRoutingConfig, LeadRoutingRule, User } from '../models/index.js';
+import { Lead, LeadRoutingConfig, LeadRoutingRule, User, WhatsAppMessage } from '../models/index.js';
 import { countsForToday, pickOwner } from './leadRouting.js';
 import { notifyLeadAssigned, leadLabel } from './leadNotify.js';
 import { mailConfigured, sendMail } from './mail.js';
@@ -203,7 +203,7 @@ export async function runLeadSla({ now = new Date(), dry = false, limit = 50 } =
       assignedAt: { $lte: new Date(new Date(now).getTime() - earliest * MINUTE_MS), $gte: new Date(new Date(now).getTime() - 3 * 864e5) },
       firstResponseAt: null,
       status: { $nin: ['won', 'lost', 'already_customer'] },
-   }).select('fullName phone whatsappProfileName source owner assignedAt firstResponseAt status slaNudgedAt slaReassignedAt timeline')
+   }).select('fullName phone phoneNormalized whatsappProfileName source owner assignedAt firstResponseAt status slaNudgedAt slaReassignedAt timeline')
       .sort({ assignedAt: 1 }).limit(limit).lean();
 
    if (!leads.length) return out;
@@ -218,6 +218,23 @@ export async function runLeadSla({ now = new Date(), dry = false, limit = 50 } =
       let action = actionFor(lead, now, { nudgeMinutes, reassignMinutes });
       if (!action) { out.skipped += 1; continue; }
       const waited = waitedMinutes(lead, now);
+
+      /* Last look before acting: has a person already written to this
+         customer since the lead was handed over? However they did it — the
+         inbox, the WhatsApp app, a link — a human reply is an answer, and the
+         clock must not take a lead off somebody who is mid-conversation. The
+         assistant's own automatic replies do not count. */
+      const humanReply = await WhatsAppMessage.findOne({
+         phoneNormalized: lead.phoneNormalized,
+         direction: 'outbound',
+         sentByAi: { $ne: true },
+         occurredAt: { $gte: lead.assignedAt },
+      }).select('occurredAt').sort({ occurredAt: 1 }).lean();
+      if (humanReply) {
+         if (!dry) await Lead.updateOne({ _id: lead._id, firstResponseAt: null }, { $set: { firstResponseAt: humanReply.occurredAt } });
+         out.skipped += 1;
+         continue;
+      }
 
       if (action === 'reassign') {
          /* Somebody other than the person who did not answer it. */
