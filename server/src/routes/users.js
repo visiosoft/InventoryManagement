@@ -7,7 +7,8 @@ import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
-const VALID_ROLES = ['admin', 'staff', 'sales_rep', 'accounts'];
+const VALID_ROLES = ['admin', 'staff', 'sales_rep', 'accounts', 'accounts_admin'];
+const ADMIN_ROLES = ['admin', 'accounts_admin'];
 // Roles that get the sales rep's access. 'accounts' is a duplicate of
 // 'sales_rep' by design — same permissions, same own-records-only scope.
 const SALES_REP_ROLES = ['sales_rep', 'accounts'];
@@ -64,7 +65,7 @@ router.get('/assignable', async (_req, res) => {
      carries no such field, and `isActive: true` silently drops them. Only
      somebody explicitly deactivated should be excluded, which is the idiom
      used everywhere else this question is asked. */
-  const users = await User.find({ isActive: { $ne: false }, role: { $in: ['admin', 'sales_rep', 'accounts', 'staff'] } })
+  const users = await User.find({ isActive: { $ne: false }, role: { $in: ['admin', 'accounts_admin', 'sales_rep', 'accounts', 'staff'] } })
     .select('name email role')
     .sort({ name: 1 })
     .lean();
@@ -110,8 +111,8 @@ router.put('/:id', requireAdmin, async (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   // Prevent removing the last admin
-  if (user.role === 'admin' && role !== undefined && role !== 'admin') {
-    const adminCount = await User.countDocuments({ role: 'admin' });
+  if (ADMIN_ROLES.includes(user.role) && role !== undefined && !ADMIN_ROLES.includes(role)) {
+    const adminCount = await User.countDocuments({ role: { $in: ADMIN_ROLES } });
     if (adminCount <= 1) return res.status(400).json({ error: 'Cannot demote the last admin' });
   }
 
@@ -142,8 +143,8 @@ router.delete('/:id', requireAdmin, async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (req.user.id === String(user._id)) return res.status(400).json({ error: 'You cannot delete your own account' });
-  if (user.role === 'admin') {
-    const adminCount = await User.countDocuments({ role: 'admin' });
+  if (ADMIN_ROLES.includes(user.role)) {
+    const adminCount = await User.countDocuments({ role: { $in: ADMIN_ROLES } });
     if (adminCount <= 1) return res.status(400).json({ error: 'Cannot delete the last admin' });
   }
   await softDelete(user, req.user.id);

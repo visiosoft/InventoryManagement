@@ -8,6 +8,8 @@ export interface AuthUser {
   role: string          // 'admin' | 'staff'
   permissions: string[] // module keys; admins with empty list get all access
   isActive: boolean
+  /** Stored as the 'accounts_admin' role: full admin access, accounts home page. */
+  accountsAdmin?: boolean
 }
 
 interface AuthContextValue {

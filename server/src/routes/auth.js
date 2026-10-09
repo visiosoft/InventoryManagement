@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { User } from '../models/index.js';
-import { signToken, requireAuth } from '../middleware/auth.js';
+import { signToken, requireAuth, effectiveRole } from '../middleware/auth.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
 
 const router = Router();
@@ -16,7 +16,7 @@ router.post('/login', async (req, res) => {
   }
   res.json({
     token: signToken(user),
-    user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions ?? [], isActive: user.isActive ?? true },
+    user: { id: user._id, name: user.name, email: user.email, role: effectiveRole(user.role), accountsAdmin: user.role === 'accounts_admin', permissions: user.permissions ?? [], isActive: user.isActive ?? true },
   });
 });
 

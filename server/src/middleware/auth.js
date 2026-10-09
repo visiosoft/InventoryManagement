@@ -17,9 +17,17 @@ export function requireAuth(req, res, next) {
   }
 }
 
+/**
+ * 'accounts_admin' is stored as its own role so it can be listed and picked,
+ * but everything that checks access sees an admin: the session carries
+ * role 'admin' plus an `accountsAdmin` marker the client uses to land them on
+ * the accounts dashboard.
+ */
+export const effectiveRole = (role) => (role === 'accounts_admin' ? 'admin' : role);
+
 export function signToken(user) {
   return jwt.sign(
-    { id: user._id, email: user.email, name: user.name, role: user.role, permissions: user.permissions ?? [] },
+    { id: user._id, email: user.email, name: user.name, role: effectiveRole(user.role), accountsAdmin: user.role === 'accounts_admin', permissions: user.permissions ?? [] },
     process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );

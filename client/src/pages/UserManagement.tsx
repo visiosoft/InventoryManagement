@@ -189,14 +189,14 @@ function UserModal({ editing, onClose, onDone }: {
   const [password, setPassword]   = useState('')
   const [role, setRole]           = useState(editing?.role ?? 'staff')
   const [permissions, setPerms]   = useState<string[]>(
-    editing?.permissions?.length ? editing.permissions : (editing?.role === 'admin' ? ALL_MODULE_KEYS : isSalesRepRole(editing?.role) ? ['sales_board'] : [])
+    editing?.permissions?.length ? editing.permissions : ((editing?.role === 'admin' || editing?.role === 'accounts_admin') ? ALL_MODULE_KEYS : isSalesRepRole(editing?.role) ? ['sales_board'] : [])
   )
   const [isActive, setIsActive]   = useState(editing?.isActive ?? true)
   const [err, setErr]             = useState('')
   const [busy, setBusy]           = useState(false)
   const qc = useQueryClient()
 
-  const isAdmin = role === 'admin'
+  const isAdmin = role === 'admin' || role === 'accounts_admin'
   const isSalesRep = isSalesRepRole(role)
 
   // Deactivating a rep never touches their leads on its own — this just
@@ -257,6 +257,7 @@ function UserModal({ editing, onClose, onDone }: {
               <option value="admin">Admin — full access to everything</option>
               <option value="sales_rep">Sales Rep — only their assigned leads</option>
               <option value="accounts">Accounts — same access as a sales rep</option>
+              <option value="accounts_admin">Accounts + Admin — accounts home page, full access to everything</option>
             </Select>
           </Field>
 
@@ -613,13 +614,13 @@ export default function UserManagement() {
                     </Td>
                     <Td>
                       <span className={`flex items-center gap-1 text-xs font-semibold rounded-full px-2 py-0.5 w-fit
-                        ${u.role === 'admin' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : isSalesRepRole(u.role) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
-                        {u.role === 'admin' ? <ShieldCheck size={11} /> : <UserCog size={11} />}
+                        ${(u.role === 'admin' || u.role === 'accounts_admin') ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : isSalesRepRole(u.role) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+                        {(u.role === 'admin' || u.role === 'accounts_admin') ? <ShieldCheck size={11} /> : <UserCog size={11} />}
                         {roleLabel(u.role)}
                       </span>
                     </Td>
                     <Td>
-                      {u.role === 'admin' && moduleCount === 0 ? (
+                      {(u.role === 'admin' || u.role === 'accounts_admin') && moduleCount === 0 ? (
                         <span className="text-xs text-muted-foreground italic">All modules</span>
                       ) : isSalesRepRole(u.role) ? (
                         <span className="text-xs text-muted-foreground italic">My Leads board only</span>
