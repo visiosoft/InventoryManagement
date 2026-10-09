@@ -630,20 +630,6 @@ export default function PersonProfile() {
             </div>
           </div>
 
-          <div className="flex flex-wrap" style={{ gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => setTaskOpen(true)}
-              className="inline-flex items-center cursor-pointer"
-              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
-              title="Create a task about this lead"
-            >
-              <ClipboardList size={13} /> Task
-            </button>
-            <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 6, height: 34, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 13, boxShadow: '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)', whiteSpace: 'nowrap' }}>
-              <PackageCheck size={13} /> Book unit
-            </Link>
-          </div>
         </div>
 
         {/* The one time-critical fact, said in words rather than left as a date
@@ -662,6 +648,20 @@ export default function PersonProfile() {
       <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
 
         <div className="flex flex-col" style={{ flex: '1 1 300px', maxWidth: 360, gap: 20, order: 2 }}>
+          <div className="flex flex-wrap" style={{ gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setTaskOpen(true)}
+              className="inline-flex items-center cursor-pointer"
+              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
+              title="Create a task about this lead"
+            >
+              <ClipboardList size={13} /> Task
+            </button>
+            <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 6, height: 34, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 13, boxShadow: '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)', whiteSpace: 'nowrap' }}>
+              <PackageCheck size={13} /> Book unit
+            </Link>
+          </div>
           {/* When we next deal with this person, kept beside who they are
               rather than buried among the pipeline controls. Only ever shows
               the date the stage in play is actually about. */}
