@@ -684,6 +684,7 @@ export default function Leads() {
 
     const [search, setSearch] = useState('')
     const [status, setStatus] = useState('')
+    const [moreOpen, setMoreOpen] = useState(false)
     const [source, setSource] = useState('')
     const [owner, setOwner] = useState('')
     // Where the chase has got to, and who did it.
@@ -1126,8 +1127,8 @@ export default function Leads() {
     }
 
     const isFiltered = !!(search.trim() || status || source || owner || chase || attemptBy || from || to)
+    const advancedActive = !!(chase || attemptBy || from || to)
 
-    const totalLeads = stats?.total ?? leadsPage?.total ?? 0
     const newCount = stats?.byStatus?.new ?? 0
 
     const statusChips = LEAD_STATUSES.map(s => {
@@ -1234,42 +1235,9 @@ export default function Leads() {
                     </div>
                 </div>
 
-                {/* ── Status tabs ── */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
-                    <button
-                        onClick={() => setStatus('')}
-                        style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px',
-                            borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                            border: `1px solid ${!status ? '#5B2BC9' : 'rgba(20,8,31,.14)'}`,
-                            background: !status ? '#F7F3FF' : '#fff',
-                            color: !status ? '#4A1FA0' : INK,
-                        }}
-                    >
-                        All
-                        <span style={{ background: !status ? '#5B2BC9' : '#F6F0E4', color: !status ? '#fff' : '#4A4357', borderRadius: 999, padding: '1px 7px', fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>{totalLeads}</span>
-                    </button>
-                    {statusChips.map(chip => (
-                        <button
-                            key={chip.key}
-                            onClick={() => setStatus(chip.active ? '' : chip.key)}
-                            style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px',
-                                borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                                border: `1px solid ${chip.active ? '#5B2BC9' : 'rgba(20,8,31,.14)'}`,
-                                background: chip.active ? '#F7F3FF' : '#fff',
-                                color: chip.active ? '#4A1FA0' : INK,
-                            }}
-                        >
-                            {chip.label}
-                            <span style={{ background: chip.active ? '#5B2BC9' : '#F6F0E4', color: chip.active ? '#fff' : '#4A4357', borderRadius: 999, padding: '1px 7px', fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>{chip.count}</span>
-                        </button>
-                    ))}
-                </div>
-
                 {/* ── Filter bar ── */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: 12, background: '#F6F0E4', border: '1px solid rgba(20,8,31,.10)', borderRadius: 16, marginBottom: 18 }}>
-                    <div style={{ flex: '1 1 220px', minWidth: 220, display: 'flex', alignItems: 'center', gap: 10, height: 44, padding: '0 16px', background: '#fff', border: '1px solid rgba(20,8,31,.12)', borderRadius: 999 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+                    <div style={{ flex: '1 1 220px', minWidth: 220, display: 'flex', alignItems: 'center', gap: 10, height: 40, padding: '0 16px', background: '#fff', border: '1px solid rgba(20,8,31,.12)', borderRadius: 999 }}>
                         <Search size={16} style={{ color: MUTED_COLOR, flexShrink: 0 }} />
                         <input
                             value={search}
@@ -1281,7 +1249,7 @@ export default function Leads() {
                     <select
                         value={status}
                         onChange={(e) => setStatus(e.target.value)}
-                        style={{ height: 44, minWidth: 170, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                        style={{ height: 40, minWidth: 170, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
                     >
                         <option value="">All stages</option>
                         {statusChips.map((c) => <option key={c.key} value={c.key}>{c.label} ({c.count})</option>)}
@@ -1289,25 +1257,11 @@ export default function Leads() {
                     <select
                         value={source}
                         onChange={(e) => setSource(e.target.value)}
-                        style={{ height: 44, minWidth: 150, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                        style={{ height: 40, minWidth: 150, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
                     >
                         <option value="">All sources</option>
                         {LEAD_SOURCES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                     </select>
-                    {/* Where the chasing has got to. "Nobody has tried" is the
-                        one worth looking at first — those are the leads that
-                        rot without anybody noticing. */}
-                    <select
-                        value={chase}
-                        onChange={(e) => setChase(e.target.value)}
-                        style={{ height: 44, minWidth: 170, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
-                    >
-                        <option value="">Any chase state</option>
-                        <option value="none">Nobody has tried{stats?.chase ? ` (${stats.chase.none})` : ''}</option>
-                        <option value="active">Being chased{stats?.chase ? ` (${stats.chase.active})` : ''}</option>
-                        <option value="exhausted">Needs a decision{stats?.chase ? ` (${stats.chase.exhausted})` : ''}</option>
-                    </select>
-
                     {/* Who currently owns the lead — separate from who has
                         chased it below. Reassigning a lead moves this
                         instantly; it only catches up in "Contacted by" once
@@ -1316,7 +1270,7 @@ export default function Leads() {
                         <select
                             value={owner && owner !== 'unassigned' ? owner : ''}
                             onChange={(e) => setOwner(e.target.value)}
-                            style={{ height: 44, minWidth: 160, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                            style={{ height: 40, minWidth: 160, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
                         >
                             <option value="">Assigned to anyone</option>
                             {(stats?.byOwner ?? []).map((o) => (
@@ -1325,6 +1279,21 @@ export default function Leads() {
                         </select>
                     )}
 
+                    {(moreOpen || advancedActive) && (<>
+                    {/* Where the chasing has got to. "Nobody has tried" is the
+                        one worth looking at first — those are the leads that
+                        rot without anybody noticing. */}
+                    <select
+                        value={chase}
+                        onChange={(e) => setChase(e.target.value)}
+                        style={{ height: 40, minWidth: 170, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                    >
+                        <option value="">Any chase state</option>
+                        <option value="none">Nobody has tried{stats?.chase ? ` (${stats.chase.none})` : ''}</option>
+                        <option value="active">Being chased{stats?.chase ? ` (${stats.chase.active})` : ''}</option>
+                        <option value="exhausted">Needs a decision{stats?.chase ? ` (${stats.chase.exhausted})` : ''}</option>
+                    </select>
+
                     {/* Who did the chasing, which is not who owns it: leads get
                         reassigned, and the record of the work — who actually
                         logged an attempt — stays with the person who did it. */}
@@ -1332,7 +1301,7 @@ export default function Leads() {
                         <select
                             value={attemptBy}
                             onChange={(e) => setAttemptBy(e.target.value)}
-                            style={{ height: 44, minWidth: 160, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                            style={{ height: 40, minWidth: 160, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
                         >
                             <option value="">Contacted by anyone</option>
                             {(stats?.byChaser ?? []).map((c) => (
@@ -1342,9 +1311,17 @@ export default function Leads() {
                     )}
 
                     <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-                        style={{ height: 44, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK }} />
+                        style={{ height: 40, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK }} />
                     <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-                        style={{ height: 44, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK }} />
+                        style={{ height: 40, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK }} />
+                    </>)}
+                    <button
+                        type="button"
+                        onClick={() => setMoreOpen((v) => !v)}
+                        style={{ height: 40, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: (moreOpen || advancedActive) ? '#F7F3FF' : '#fff', fontSize: 13, fontWeight: 600, color: (moreOpen || advancedActive) ? '#4A1FA0' : INK, cursor: 'pointer' }}
+                    >
+                        {(moreOpen || advancedActive) ? 'Fewer filters' : 'More filters'}
+                    </button>
                     {isFiltered && (
                         <button
                             onClick={() => { setSearch(''); setStatus(''); setSource(''); setOwner(''); setChase(''); setAttemptBy(''); setFrom(''); setTo('') }}
