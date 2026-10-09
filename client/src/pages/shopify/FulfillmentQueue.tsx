@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
@@ -214,7 +215,13 @@ export default function FulfillmentQueue() {
   const qc = useQueryClient()
   const [status, setStatus] = useState('')
   const [creating, setCreating] = useState(false)
-  const [openJobId, setOpenJobId] = useState<string | null>(null)
+  // ?job=<id> opens that job straight away (linked from the orders page).
+  const [params, setParams] = useSearchParams()
+  const [openJobId, setOpenJobIdState] = useState<string | null>(params.get('job'))
+  const setOpenJobId = (id: string | null) => {
+    setOpenJobIdState(id)
+    if (!id && params.has('job')) setParams({}, { replace: true })
+  }
 
   const { data: jobs, isLoading } = useQuery<FulfillmentJob[]>({
     queryKey: ['shopify-jobs', status],

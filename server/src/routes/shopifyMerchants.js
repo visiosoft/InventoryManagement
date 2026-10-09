@@ -209,6 +209,46 @@ router.patch('/skus/:id', asyncRoute(async (req, res) => {
 }));
 
 // ── Fulfillment jobs ─────────────────────────────────────────────────────
+// ── Orders (everything Shopify has sent us, newest first) ─────────────────
+const ORDER_VIEWS = {
+  open: { status: { $nin: ['SHIPPED', 'CANCELLED'] } },
+  backorder: { status: 'PARTIAL_BACKORDER' },
+  shipped: { status: 'SHIPPED' },
+  cancelled: { status: 'CANCELLED' },
+};
+router.get('/orders', asyncRoute(async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 100);
+  const page = Math.max(Number(req.query.page) || 1, 1);
+  const filter = {};
+  if (req.query.merchant) filter.merchant = String(req.query.merchant);
+  const search = String(req.query.search || '').trim();
+  if (search) {
+    const re = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter.$or = [{ shopifyOrderName: re }, { 'shippingAddress.name': re }, { 'shippingAddress.phone': re }, { 'lineItems.title': re }, { 'lineItems.sku': re }];
+  }
+  if (req.query.tests !== 'true') filter.shopifyOrderId = { $not: /^MANUAL-/ };
+  // Fulfillment state lives on the job, so a status view filters orders by
+  // their job's status.
+  const view = ORDER_VIEWS[req.query.view];
+  if (view) {
+    const jobs = await FulfillmentJob.find({ ...view, ...(filter.merchant ? { merchant: filter.merchant } : {}) }).select('shopifyOrder').lean();
+    filter._id = { $in: jobs.map(j => j.shopifyOrder) };
+  }
+
+  const [total, orders] = await Promise.all([
+    ShopifyOrder.countDocuments(filter),
+    ShopifyOrder.find(filter).select('-rawWebhookPayload').sort({ receivedAt: -1 }).skip((page - 1) * limit).limit(limit)
+      .populate({ path: 'merchant', model: Merchant, select: 'name' }).lean(),
+  ]);
+  const jobs = await FulfillmentJob.find({ shopifyOrder: { $in: orders.map(o => o._id) } })
+    .select('shopifyOrder status carrier trackingNumber shippedAt shopifyFulfillmentId shopifyPushFailedAt backorderNote').lean();
+  const jobByOrder = new Map(jobs.map(j => [j.shopifyOrder, j]));
+  res.json({
+    orders: orders.map(o => ({ ...o, job: jobByOrder.get(o._id) || null })),
+    total, page, pages: Math.ceil(total / limit), limit,
+  });
+}));
+
 router.get('/jobs', asyncRoute(async (req, res) => {
   const filter = {};
   if (req.query.merchant) filter.merchant = req.query.merchant;
