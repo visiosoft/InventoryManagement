@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
@@ -61,6 +61,7 @@ export default function WaitingStrip({ compact = false }: { compact?: boolean })
   // A sound can only play where somebody has already clicked.
   useEffect(() => listenForPingPriming(), [])
 
+  const [showAll, setShowAll] = useState(false)
   const wasWaiting = useRef(false)
   useEffect(() => {
     const now = (data?.count ?? 0) > 0
@@ -97,8 +98,8 @@ export default function WaitingStrip({ compact = false }: { compact?: boolean })
 
       {/* Longest first, so this reads in the order to work it. Capped: past
           about five, the number in the heading says more than the list does. */}
-      <div className="flex flex-col" style={{ gap: 6, marginTop: 10 }}>
-        {rows.slice(0, 5).map((r) => (
+      <div className="flex flex-col" style={{ gap: 6, marginTop: 10, ...(showAll ? { maxHeight: 360, overflowY: 'auto' } : {}) }}>
+        {(showAll ? rows : rows.slice(0, 5)).map((r) => (
           <Link
             key={r._id}
             to={`/leads/${r._id}`}
@@ -118,7 +119,17 @@ export default function WaitingStrip({ compact = false }: { compact?: boolean })
           </Link>
         ))}
         {rows.length > 5 && (
-          <span style={{ fontSize: 12, color: MUTED }}>and {rows.length - 5} more</span>
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className="cursor-pointer"
+            style={{ fontSize: 12, fontWeight: 700, color: RED, background: 'none', border: 'none', textAlign: 'left', padding: 0 }}
+          >
+            {showAll ? 'Show fewer' : `Show all — ${rows.length - 5} more`}
+          </button>
+        )}
+        {showAll && count > rows.length && (
+          <span style={{ fontSize: 11.5, color: MUTED }}>Showing the {rows.length} longest-waiting of {count}.</span>
         )}
       </div>
     </div>
