@@ -72,6 +72,105 @@ test('login: wrong code is rejected and attempts are capped', async () => {
   assert.equal(locked.status, 429);
 });
 
+test('login: the email on file logs the tenant straight into their units', async () => {
+  const t = await seedTenant('+971506663333', 'C-8');
+  await Customer.updateOne({ _id: t.customer._id }, { email: 'Eight@Example.com' });
+
+  const otp = await request(app).post('/api/customer-auth/request-otp').send({ identifier: 'eight@example.com' });
+  assert.equal(otp.status, 200);
+  assert.equal(otp.body.channel, 'email');
+  assert.match(otp.body.sentTo, /^Ei•+@Example\.com$/);
+
+  // A phone code can't answer an email login.
+  const asPhone = await request(app).post('/api/customer-auth/verify-otp').send({ phone: '+971506663333', code: otp.body.code });
+  assert.equal(asPhone.status, 401);
+
+  const res = await request(app).post('/api/customer-auth/verify-otp').send({ identifier: 'EIGHT@example.com', code: otp.body.code });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.isNew, false);
+  assert.equal(String(res.body.customer.id), String(t.customer._id));
+
+  const contracts = await request(app).get('/api/customer-portal/storage/contracts').set({ Authorization: `Bearer ${res.body.token}` });
+  assert.deepEqual(contracts.body.map((c) => c.contractNo), ['C-8']);
+});
+
+test('login: an email we do not hold is turned away, and creates nobody', async () => {
+  const r = await request(app).post('/api/customer-auth/request-otp').send({ identifier: 'nobody@example.com' });
+  assert.equal(r.status, 404);
+  assert.equal(r.body.code, 'unknown_email');
+  assert.equal(await Customer.countDocuments(), 0);
+});
+
+test('login: a phone shared with a prospect record opens the tenant', async () => {
+  await Customer.create({ fullName: 'Old prospect', phone: '+971506664444', phones: ['+971506664444'], stage: 'prospect' });
+  const t = await seedTenant('0506664444', 'C-9');
+  const a = await login('+971506664444');
+  assert.equal(String(a.customer.id), String(t.customer._id));
+});
+
+test('login: a number staff typed with spaces or dashes is still recognised', async () => {
+  const t = await seedTenant('050-666 5555', 'C-10');
+  const a = await login('+971506665555');
+  assert.equal(a.isNew, false);
+  assert.equal(String(a.customer.id), String(t.customer._id));
+  // Same last digits, different country: not the same person.
+  const other = await login('+447506665555');
+  assert.equal(other.isNew, true);
+});
+
+test('login: a doubled +971 or stray spaces still reach the tenant, and create nobody', async () => {
+  const t = await seedTenant('+971 50 666 4444', 'C-11');
+  for (const typed of ['  +971 50 666 4444  ', '+971 +971 50 666 4444', '+971971506664444', '+971 0506664444']) {
+    await CustomerOtp.deleteMany({});
+    const a = await login(typed);
+    assert.equal(a.isNew, false, `${JSON.stringify(typed)} finds the tenant`);
+    assert.equal(String(a.customer.id), String(t.customer._id));
+  }
+  assert.equal(await Customer.countDocuments(), 1);
+});
+
+test('me: a login stuck on an empty record moves onto the tenant renting on that number', async () => {
+  // Signed in before the stored spelling was recognised: an empty record with a token for it.
+  const stray = await Customer.create({ fullName: 'Zed', phone: '+971506667777', phones: ['+971506667777'], stage: 'prospect' });
+  const { signCustomerToken } = await import('../src/routes/customerAuth.js');
+  const oldToken = signCustomerToken(stray);
+  const t = await seedTenant('+971 50 666 7777', 'C-11');
+
+  const me = await request(app).get('/api/customer-auth/me').set({ Authorization: `Bearer ${oldToken}` });
+  assert.equal(me.status, 200);
+  assert.equal(String(me.body.customer.id), String(t.customer._id));
+  assert.ok(me.body.token);
+  const contracts = await request(app).get('/api/customer-portal/storage/contracts').set({ Authorization: `Bearer ${me.body.token}` });
+  assert.deepEqual(contracts.body.map((c) => c.contractNo), ['C-11']);
+
+  // The number now belongs to the tenant alone, so the next login goes straight there.
+  assert.equal((await Customer.findById(stray._id)).phone, '');
+  const again = await login('+971506667777');
+  assert.equal(String(again.customer.id), String(t.customer._id));
+});
+
+test('me: a phone typed in after Google sign-in proves nothing and moves nobody', async () => {
+  const g = await Customer.create({ fullName: 'G', phone: '+971506668888', googleId: 'g-1', stage: 'prospect' });
+  await seedTenant('+971506668888', 'C-12');
+  const { signCustomerToken } = await import('../src/routes/customerAuth.js');
+  const me = await request(app).get('/api/customer-auth/me').set({ Authorization: `Bearer ${signCustomerToken(g)}` });
+  assert.equal(String(me.body.customer.id), String(g._id));
+  assert.equal(me.body.token, undefined);
+});
+
+test('login: a stored number with a stray leading space, plus an empty record from an earlier login', async () => {
+  // As found in the CRM: phone " 0501402556", no phones list.
+  const t = await seedTenant('0501402556', 'C-13');
+  await Customer.collection.updateOne({ _id: t.customer._id }, { $set: { phone: ' 0501402556', phones: [] } });
+  // The empty record an earlier login made when the space hid the match.
+  await Customer.create({ fullName: '+971501402556', phone: '+971501402556', phones: ['+971501402556'], stage: 'prospect' });
+
+  const otp = await request(app).post('/api/customer-auth/request-otp').send({ identifier: '+971501402556' });
+  const res = await request(app).post('/api/customer-auth/verify-otp').send({ identifier: '+971501402556', code: otp.body.code });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.customer.fullName, 'Tenant C-13');
+});
+
 test('login: spelling variants of one number reach the same customer', async () => {
   await seedTenant('0501234567', 'C-1');
   const a = await login('+971 50 123 4567');
@@ -134,6 +233,40 @@ test('a customer cannot read another customer’s contract, invoice, receipt or 
   assert.equal(docs.body.receipts.length, 1);
 });
 
+test('document link: opens your own PDF without a header, and only that PDF', async () => {
+  const mine = await seedTenant('+971503331111', 'C-L1');
+  const theirs = await seedTenant('+971504441111', 'C-L2');
+  const { token } = await login('+971503331111');
+  const auth = { Authorization: `Bearer ${token}` };
+  const href = `/customer-portal/storage/invoices/${mine.invoice._id}/pdf`;
+
+  const bad = await request(app).post('/api/customer-auth/document-link').set(auth).send({ href: '/customer-portal/storage/home' });
+  assert.equal(bad.status, 400, 'only document paths get a link');
+  const noLogin = await request(app).post('/api/customer-auth/document-link').send({ href });
+  assert.equal(noLogin.status, 401);
+
+  const { body } = await request(app).post('/api/customer-auth/document-link').set(auth).send({ href });
+  const open = await request(app).get(`/api${href}?dt=${body.token}`);
+  assert.equal(open.status, 200);
+  assert.equal(open.headers['content-type'], 'application/pdf');
+  assert.match(open.headers['content-disposition'], /^inline/);
+
+  // The link is for that one path: not another of my documents, not a JSON route.
+  const other = await request(app).get(`/api/customer-portal/storage/contracts/${mine.contract._id}/pdf?dt=${body.token}`);
+  assert.equal(other.status, 401);
+  const json = await request(app).get(`/api/customer-portal/storage/invoices?dt=${body.token}`);
+  assert.equal(json.status, 401);
+  // The login token is not a document link.
+  const asLink = await request(app).get(`/api${href}?dt=${token}`);
+  assert.equal(asLink.status, 401);
+
+  // A link for someone else's document still meets the ownership check.
+  const theirHref = `/customer-portal/storage/invoices/${theirs.invoice._id}/pdf`;
+  const theirLink = await request(app).post('/api/customer-auth/document-link').set(auth).send({ href: theirHref });
+  const theirOpen = await request(app).get(`/api${theirHref}?dt=${theirLink.body.token}`);
+  assert.equal(theirOpen.status, 404);
+});
+
 test('check-out change: validates, records a pending request and blocks duplicates', async () => {
   const t = await seedTenant('+971505550000', 'C-3');
   const { token } = await login('+971505550000');
@@ -154,6 +287,33 @@ test('check-out change: validates, records a pending request and blocks duplicat
 
   const dup = await request(app).post(url).set(auth).send({ action: 'extend', months: 12 });
   assert.equal(dup.status, 409);
+});
+
+test('billing: says so when Zoho Books is not set up, instead of showing empty accounts', async () => {
+  const saved = process.env.ZOHO_BOOKS_ORG_ID;
+  delete process.env.ZOHO_BOOKS_ORG_ID;
+  try {
+    const { token } = await login('+971501119999', 'Bill Payer');
+    const r = await request(app).get('/api/customer-portal/storage/billing').set({ Authorization: `Bearer ${token}` });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.configured, false);
+    assert.deepEqual(r.body.totals, { invoiced: 0, paid: 0, outstanding: 0 });
+  } finally {
+    if (saved !== undefined) process.env.ZOHO_BOOKS_ORG_ID = saved;
+  }
+});
+
+test('profile: an email typed in the app is marked unproven; re-saving the same one is not', async () => {
+  const t = await seedTenant('+971501118888', 'C-14');
+  await Customer.updateOne({ _id: t.customer._id }, { email: 'staff@example.com' });
+  const { token } = await login('+971501118888');
+  const auth = { Authorization: `Bearer ${token}` };
+
+  await request(app).patch('/api/customer-auth/profile').set(auth).send({ fullName: 'Tenant C-14', email: 'STAFF@example.com' });
+  assert.equal((await Customer.findById(t.customer._id)).emailFromApp, false);
+
+  await request(app).patch('/api/customer-auth/profile').set(auth).send({ email: 'someone.else@example.com' });
+  assert.equal((await Customer.findById(t.customer._id)).emailFromApp, true);
 });
 
 test('link-unit: code goes to the agreement’s phone and moves the login to the tenant', async () => {
@@ -182,6 +342,46 @@ test('link-unit: code goes to the agreement’s phone and moves the login to the
   assert.equal(String(again.customer.id), String(t.customer._id));
   const owner = await request(app).get('/api/customer-portal/storage/contracts').set({ Authorization: `Bearer ${again.token}` });
   assert.deepEqual(owner.body.map((c) => c.contractNo), ['C-4']);
+});
+
+test('link-unit: the tenant’s phone on file finds their account', async () => {
+  const t = await seedTenant('0506661111', 'C-6');
+  const { token } = await login('+971507771111', 'Visitor');
+  const auth = { Authorization: `Bearer ${token}` };
+  const base = '/api/customer-portal/storage/link-unit';
+
+  const unknown = await request(app).post(`${base}/request`).set(auth).send({ identifier: '+971500000000' });
+  assert.equal(unknown.status, 404);
+
+  const r = await request(app).post(`${base}/request`).set(auth).send({ identifier: '+971 50 666 1111' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.channel, 'phone');
+  assert.equal(r.body.sentTo, '••• 111');
+
+  const done = await request(app).post(`${base}/confirm`).set(auth).send({ identifier: '+971 50 666 1111', code: r.body.code });
+  assert.equal(done.status, 200);
+  assert.equal(String(done.body.customer.id), String(t.customer._id));
+});
+
+test('link-unit: the tenant’s email on file finds their account, case-insensitively', async () => {
+  const t = await seedTenant('+971506662222', 'C-7');
+  await Customer.updateOne({ _id: t.customer._id }, { email: 'Tenant.Seven@Example.com' });
+  // A prospect sharing the email but renting nothing must not be picked.
+  await Customer.create({ fullName: 'Dup', email: 'tenant.seven@example.com', phone: '', stage: 'prospect' });
+  const { token } = await login('+971507772222', 'Visitor');
+  const auth = { Authorization: `Bearer ${token}` };
+  const base = '/api/customer-portal/storage/link-unit';
+
+  const r = await request(app).post(`${base}/request`).set(auth).send({ identifier: 'tenant.seven@example.com' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.channel, 'email');
+  assert.match(r.body.sentTo, /^Te•+@Example\.com$/);
+
+  const wrong = await request(app).post(`${base}/confirm`).set(auth).send({ identifier: 'tenant.seven@example.com', code: r.body.code === '000000' ? '111111' : '000000' });
+  assert.equal(wrong.status, 401);
+  const done = await request(app).post(`${base}/confirm`).set(auth).send({ identifier: 'TENANT.SEVEN@example.com', code: r.body.code });
+  assert.equal(done.status, 200);
+  assert.equal(String(done.body.customer.id), String(t.customer._id));
 });
 
 test('link-unit: an agreement already on your account is a conflict', async () => {

@@ -61,6 +61,19 @@ test('sizes: lists only what is free, with the amount payable today', async () =
   assert.equal(res.body[0].payToday, 1748);
 });
 
+test('term: any whole number of weeks from 4 to 32', async () => {
+  await seedUnits(1);
+  const { auth } = await login('+971501000009');
+  for (const weeks of [3, 33, 4.5, 'x']) {
+    const bad = await request(app).get(`${BASE}/sizes?startDate=${today()}&weeks=${weeks}`).set(auth);
+    assert.equal(bad.status, 400, `weeks=${weeks} is refused`);
+  }
+  const b = await request(app).post(`${BASE}/reserve`).set(auth).send({ sizeSqf: 50, startDate: today(), weeks: 7 });
+  assert.equal(b.status, 201);
+  const days = (new Date(b.body.unit.endDate) - new Date(b.body.unit.startDate)) / 86_400_000;
+  assert.equal(days, 49);
+});
+
 test('reserve: holds a unit, prices it, and refuses bad input', async () => {
   await seedUnits(1);
   const { auth } = await login('+971501000002');

@@ -18,7 +18,11 @@ import { retrieveCheckoutSession, stripeConfigured } from './stripe.js';
  * ready for the customer to sign, which activates it.
  */
 
-export const TERM_MONTHS = [1, 3, 6, 12];
+// A term is a whole number of weeks, 4 to 32. Older app builds send months
+// (1, 3, 6 or 12), read as 4 weeks each since a billing month is 28 days.
+export const MIN_TERM_WEEKS = 4;
+export const MAX_TERM_WEEKS = 32;
+const LEGACY_TERM_MONTHS = [1, 3, 6, 12];
 export const HOLD_MINUTES = 15;
 // While a customer is on Stripe's page the hold must outlive the session
 // (Stripe's minimum session life is 30 minutes).
@@ -27,21 +31,23 @@ export const CARD_FEE_PCT = 3;
 export const MAX_START_DAYS_AHEAD = 30;
 
 const DAY = 86_400_000;
-// One month is 28 days everywhere billing is concerned (services/billingCycle.js).
-const termDays = (months) => months * 28;
 
 const fail = (status, message, extra = {}) => Object.assign(new Error(message), { status, ...extra });
 
-export function parseTerm({ startDate, months }) {
-  const m = Number(months);
-  if (!TERM_MONTHS.includes(m)) throw fail(400, 'Choose a term of 1, 3, 6 or 12 months');
+export function parseTerm({ startDate, weeks, months }) {
+  const w = weeks !== undefined && weeks !== null && weeks !== ''
+    ? Number(weeks)
+    : (LEGACY_TERM_MONTHS.includes(Number(months)) ? Number(months) * 4 : NaN);
+  if (!Number.isInteger(w) || w < MIN_TERM_WEEKS || w > MAX_TERM_WEEKS) {
+    throw fail(400, `Choose a term of ${MIN_TERM_WEEKS} to ${MAX_TERM_WEEKS} weeks`);
+  }
   const start = startDate ? new Date(startDate) : new Date();
   if (Number.isNaN(start.getTime())) throw fail(400, 'Choose a valid start date');
   start.setUTCHours(0, 0, 0, 0);
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
   if (start < today) throw fail(400, 'The start date cannot be in the past');
   if (start.getTime() - today.getTime() > MAX_START_DAYS_AHEAD * DAY) throw fail(400, `The start date must be within ${MAX_START_DAYS_AHEAD} days`);
-  return { start, end: new Date(start.getTime() + termDays(m) * DAY), months: m };
+  return { start, end: new Date(start.getTime() + w * 7 * DAY), weeks: w };
 }
 
 const unitLine = (unit, start, end) => ({
@@ -63,8 +69,8 @@ export function pricingFor(quoteLike) {
 }
 
 /** Sizes that can be booked for the chosen dates, with what the customer would pay today. */
-export async function listSizes({ startDate, months }) {
-  const { start, end } = parseTerm({ startDate, months });
+export async function listSizes({ startDate, weeks, months }) {
+  const { start, end } = parseTerm({ startDate, weeks, months });
   const available = await computeUnitAvailability({ from: start, to: end });
   const bySize = new Map();
   for (const u of available.allUnits) {
@@ -102,13 +108,13 @@ async function releaseCustomerHolds(customerId) {
   }
 }
 
-export async function reserve(customerId, { sizeSqf, startDate, months }) {
+export async function reserve(customerId, { sizeSqf, startDate, weeks, months }) {
   const customer = await Customer.findById(customerId);
   if (!customer) throw fail(404, 'Customer not found');
   const gaps = profileGaps(customer);
   if (gaps.name || gaps.email) throw fail(422, 'Add your name and email to continue', { code: 'profile_incomplete', gaps });
 
-  const { start, end, months: m } = parseTerm({ startDate, months });
+  const { start, end, weeks: w } = parseTerm({ startDate, weeks, months });
   await releaseCustomerHolds(customerId);
 
   const available = await computeUnitAvailability({ from: start, to: end });
@@ -126,7 +132,7 @@ export async function reserve(customerId, { sizeSqf, startDate, months }) {
       quoteNo: await nextQuoteNo(),
       customer: customer._id,
       flowStep: 3,
-      notes: `Booked in the customer app — ${m} month${m === 1 ? '' : 's'}.`,
+      notes: `Booked in the customer app — ${w} weeks.`,
       appBooking: { active: true },
       timeline: [{ type: 'created', text: 'Unit held from the customer app, pending payment.' }],
     });

@@ -6,7 +6,11 @@ import { buildContractPdf } from '../services/contractDocument.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
 import { renderReceiptPdf } from '../services/receiptPdf.js';
 import { checkOtp, issueOtp, normalizePhone } from '../services/customerOtp.js';
-import { createCheckoutSession, stripeConfigured } from '../services/stripe.js';
+import { findCustomersByContact, maskEmail, maskPhone, parseContact } from '../services/customerLookup.js';
+import { createCheckoutSession, stripeConfigured, stripeEmbeddedConfigured, stripePublishableKey } from '../services/stripe.js';
+import {
+  fetchZohoInvoicePdf, fetchZohoInvoicesForContacts, fetchZohoPaymentsForContacts, findZohoContactsFor, zohoBooksConfigured,
+} from '../services/zohoBooks.js';
 
 /**
  * What a storage tenant can see of their own account.
@@ -171,37 +175,59 @@ router.post('/contracts/:id/checkout-change', wrap(async (req, res) => {
 }));
 
 // ── Link a unit ─────────────────────────────────────────────────────────────
-// The signed-in phone is already proven by OTP, but an agreement may be filed
-// under a different number. The code goes to the number *on the agreement*, so
-// only someone holding that phone can attach it to this login.
-router.post('/link-unit/request', otpLimiter, wrap(async (req, res) => {
-  const contractNo = String(req.body?.contractNo || '').trim();
-  if (!contractNo) throw badRequest('Enter your agreement number');
-  const contract = await Contract.findOne({ contractNo, status: { $in: VISIBLE_CONTRACT_STATUSES } }).populate('customer', 'phone');
-  const phone = contract?.customer?.phone;
-  if (!contract || !phone) throw notFound('Agreement');
-  if (String(contract.customer._id) === String(req.customer.customerId)) {
-    throw Object.assign(new Error('That agreement is already on your account'), { status: 409 });
+// The signed-in phone is already proven by OTP, but the tenant record may be
+// filed under a different number or only an email. The tenant types the phone
+// or email we hold for them; the code goes to *that* phone or email, so only
+// someone who controls it can attach the record to this login. A contract
+// number still works, for app builds that ask for one.
+async function findTenantToLink(body) {
+  const contractNo = String(body?.contractNo || '').trim();
+  if (contractNo) {
+    const contract = await Contract.findOne({ contractNo, status: { $in: VISIBLE_CONTRACT_STATUSES } }).populate('customer', 'phone');
+    if (!contract?.customer?.phone) return null;
+    return { tenant: contract.customer, phone: contract.customer.phone, key: contractNo };
   }
-  const sent = await issueOtp({ key: `link:${req.customer.customerId}:${contractNo}`, phone });
-  const digits = normalizePhone(phone);
-  res.json({ maskedPhone: `••• ${digits.slice(-3)}`, ...(sent.devCode ? { code: sent.devCode } : {}) });
+
+  if (!String(body?.identifier || '').trim()) throw badRequest('Enter the mobile number or email on your account');
+  const contact = parseContact(body.identifier);
+  // A phone or email can sit on several records (old duplicates, prospects);
+  // the one to link is the one renting something.
+  const { customers, renting } = await findCustomersByContact(contact);
+  const tenant = customers.find((c) => renting.has(String(c._id)));
+  if (!tenant) return null;
+  return contact.kind === 'email'
+    ? { tenant, email: tenant.email, key: `email:${tenant.email.toLowerCase()}` }
+    : { tenant, phone: contact.value, key: contact.key };
+}
+
+router.post('/link-unit/request', otpLimiter, wrap(async (req, res) => {
+  const found = await findTenantToLink(req.body);
+  if (!found) throw Object.assign(new Error("We couldn't find a storage account with those details. Use the mobile or email you gave us when you signed up."), { status: 404 });
+  if (String(found.tenant._id) === String(req.customer.customerId)) {
+    throw Object.assign(new Error('That storage account is already yours'), { status: 409 });
+  }
+  const sent = await issueOtp({ key: `link:${req.customer.customerId}:${found.key}`, phone: found.phone, email: found.email });
+  res.json({
+    channel: found.email ? 'email' : 'phone',
+    sentTo: found.email ? maskEmail(found.email) : maskPhone(found.phone),
+    maskedPhone: found.email ? maskEmail(found.email) : maskPhone(found.phone), // older app builds read this
+    ...(sent.devCode ? { code: sent.devCode } : {}),
+  });
 }));
 
 router.post('/link-unit/confirm', otpLimiter, wrap(async (req, res) => {
-  const contractNo = String(req.body?.contractNo || '').trim();
-  await checkOtp({ key: `link:${req.customer.customerId}:${contractNo}`, code: req.body?.code });
+  const found = await findTenantToLink(req.body);
+  if (!found) throw notFound('Storage account');
+  await checkOtp({ key: `link:${req.customer.customerId}:${found.key}`, code: req.body?.code });
 
-  const contract = await Contract.findOne({ contractNo, status: { $in: VISIBLE_CONTRACT_STATUSES } });
-  if (!contract) throw notFound('Agreement');
-  const tenantId = contract.customer;
+  const tenantId = found.tenant._id;
   const visitor = await Customer.findById(req.customer.customerId);
   const e164 = visitor?.phone ? `+${normalizePhone(visitor.phone)}` : '';
 
   // One phone must resolve to one customer, or the next login picks at random.
   // The tenant record takes the number; the throwaway prospect gives it up
   // (its data stays, only the login handle moves).
-  if (e164) {
+  if (e164 && String(visitor._id) !== String(tenantId)) {
     await Customer.updateOne({ _id: tenantId }, { $addToSet: { phones: e164 } });
     await Customer.updateOne({ _id: visitor._id }, { $set: { phone: '', phones: [] } });
   }
@@ -241,6 +267,8 @@ router.post('/invoices/:id/pay', wrap(async (req, res) => {
 
   const customer = await Customer.findById(req.customer.customerId).select('email').lean();
   const clientOrigin = process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae';
+  // `embedded: true`: Stripe's card form inside the app's own checkout page.
+  const embedded = req.body?.embedded === true && stripeEmbeddedConfigured();
   const session = await createCheckoutSession({
     amountAed: balanceDue,
     productName: `Invoice ${invoice.invoiceNo}`,
@@ -250,8 +278,65 @@ router.post('/invoices/:id/pay', wrap(async (req, res) => {
     successUrl: `${clientOrigin}/pay/success?invoice=${invoice.invoiceNo}`,
     cancelUrl: `${clientOrigin}/pay/success?invoice=${invoice.invoiceNo}&cancelled=1`,
     feePct: invoice.cardFeeEnabled ? invoice.cardFeePct : 0,
+    embedded,
   });
-  res.json({ url: session.url, sessionId: session.id, balanceDue: money(balanceDue) });
+  res.json({
+    ...(embedded ? { clientSecret: session.clientSecret, publishableKey: stripePublishableKey() } : { url: session.url }),
+    sessionId: session.id, balanceDue: money(balanceDue), cardFee: session.feeAmount,
+    totalCharged: Math.round((balanceDue + session.feeAmount) * 100) / 100,
+  });
+}));
+
+// ── Billing from Zoho Books ─────────────────────────────────────────────────
+// The accounts live in Zoho Books, matched to this customer on details they
+// can't simply type in: phone numbers (proven by a login code, or entered by
+// staff) and the email only if staff entered it. Otherwise someone could put a
+// stranger's email on their profile and read that person's invoices.
+async function zohoBillingFor(customerId) {
+  if (!zohoBooksConfigured()) return { configured: false, invoices: [], payments: [] };
+  const c = await Customer.findById(customerId).select('email emailFromApp phone phones googleId').lean();
+  if (!c) return { configured: true, invoices: [], payments: [] };
+  // A Google account's phone is typed in (set-phone), not proven — trust it
+  // only once staff have put a contract on the record.
+  const rents = await Contract.exists({ customer: customerId, status: { $in: VISIBLE_CONTRACT_STATUSES } });
+  const phones = c.googleId && !rents ? [] : [...(c.phones || []), c.phone].filter(Boolean);
+  const emails = c.email && !c.emailFromApp ? [c.email] : [];
+  const { contacts } = await findZohoContactsFor({ emails, phones });
+  const ids = contacts.map((x) => x.id);
+  const [{ invoices }, { payments }] = await Promise.all([fetchZohoInvoicesForContacts(ids), fetchZohoPaymentsForContacts(ids)]);
+  return { configured: true, invoices: invoices.filter((i) => i.status !== 'draft' && i.status !== 'void'), payments };
+}
+
+const round2 = (n) => Math.round(n * 100) / 100;
+
+router.get('/billing', wrap(async (req, res) => {
+  const { configured, invoices, payments } = await zohoBillingFor(req.customer.customerId);
+  res.json({
+    configured,
+    invoices: invoices.map((i) => ({
+      id: i.id, number: i.number, date: i.date, dueDate: i.dueDate, total: i.total, balance: i.balance, status: i.status, url: i.url,
+    })),
+    payments: payments.map((p) => ({
+      id: p.id, number: p.number, date: p.date, amount: p.amount, mode: p.mode, reference: p.reference, invoiceNumbers: p.invoiceNumbers,
+    })),
+    totals: {
+      invoiced: round2(invoices.reduce((s, i) => s + i.total, 0)),
+      paid: round2(payments.reduce((s, p) => s + p.amount, 0)),
+      outstanding: round2(invoices.reduce((s, i) => s + i.balance, 0)),
+    },
+  });
+}));
+
+// Only an invoice from this customer's own Zoho contacts, never one by guessed id.
+router.get('/billing/invoices/:invoiceId/pdf', wrap(async (req, res) => {
+  const { invoices } = await zohoBillingFor(req.customer.customerId);
+  const invoice = invoices.find((i) => String(i.id) === String(req.params.invoiceId));
+  if (!invoice) throw notFound('Invoice');
+  const { pdf } = await fetchZohoInvoicePdf(invoice.id);
+  if (!pdf) throw Object.assign(new Error('Zoho Books returned no PDF'), { status: 502 });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${String(invoice.number || 'invoice').replace(/[^\w.-]/g, '_')}.pdf"`);
+  res.send(pdf);
 }));
 
 async function paidPayments(customerId) {

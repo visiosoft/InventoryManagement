@@ -2,7 +2,8 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 import { Customer } from '../models/index.js';
-import { checkOtp, issueOtp, normalizePhone, phoneVariants } from '../services/customerOtp.js';
+import { checkOtp, issueOtp, normalizePhone } from '../services/customerOtp.js';
+import { findCustomersByContact, maskEmail, parseContact } from '../services/customerLookup.js';
 
 const router = Router();
 
@@ -14,9 +15,10 @@ export const otpLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === 'test',
 });
 
-export function signCustomerToken(customer) {
+/** `via: 'phone'` marks a login whose phone was proven by a code just now. */
+export function signCustomerToken(customer, via) {
   return jwt.sign(
-    { customerId: customer._id, phone: customer.phone, type: 'customer' },
+    { customerId: customer._id, phone: customer.phone, type: 'customer', ...(via ? { via } : {}) },
     process.env.JWT_SECRET,
     { expiresIn: '30d' },
   );
@@ -26,10 +28,30 @@ export function customerPayload(customer) {
   return { id: customer._id, fullName: customer.fullName, phone: customer.phone, email: customer.email };
 }
 
+// A browser tab or the in-app browser can't send our Bearer header, so to open
+// a PDF the app swaps its login for a document link: good for one path, for a
+// few minutes, and for nothing else. The login token itself never goes in a URL.
+const DOCUMENT_PATH = /^\/customer-portal\/(storage\/(contracts|invoices)\/[a-f\d]{24}\/pdf|storage\/payments\/[a-f\d]{24}\/receipt|booking\/[a-f\d]{24}\/contract\.pdf)$/;
+
+function documentLinkCustomer(req) {
+  if (req.method !== 'GET' || typeof req.query.dt !== 'string') return null;
+  try {
+    const d = jwt.verify(req.query.dt, process.env.JWT_SECRET);
+    if (d.type !== 'customer_doc' || d.path !== req.originalUrl.split('?')[0]) return null;
+    return { customerId: d.customerId, type: 'customer' };
+  } catch {
+    return null;
+  }
+}
+
 export function requireCustomer(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'Authentication required' });
+  if (!token) {
+    const viaLink = documentLinkCustomer(req);
+    if (viaLink) { req.customer = viaLink; return next(); }
+    return res.status(401).json({ error: 'Authentication required' });
+  }
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     if (decoded.type !== 'customer') return res.status(401).json({ error: 'Invalid token type' });
@@ -40,12 +62,35 @@ export function requireCustomer(req, res, next) {
   }
 }
 
+// Log in with the mobile or the email we hold for you. A mobile we don't know
+// starts a new account; an email we don't know is turned away, because every
+// account needs a mobile and an email alone can't create one.
+// `phone` is what older app builds send; `identifier` takes either.
+const contactOf = (body) => parseContact(body?.identifier ?? body?.phone);
+const otpKey = (contact) => (contact.kind === 'phone' ? contact.digits : `login:${contact.key}`);
+
+// `href` is the document's API path as the app lists it; the route serving it
+// still checks the document belongs to this customer.
+router.post('/document-link', requireCustomer, (req, res) => {
+  const href = String(req.body?.href || '');
+  if (!DOCUMENT_PATH.test(href)) return res.status(400).json({ error: 'Not a document' });
+  const token = jwt.sign({ type: 'customer_doc', customerId: req.customer.customerId, path: `/api${href}` }, process.env.JWT_SECRET, { expiresIn: '5m' });
+  res.json({ token, expiresIn: 300 });
+});
+
 router.post('/request-otp', otpLimiter, async (req, res) => {
   try {
-    const phone = normalizePhone(req.body?.phone);
-    if (phone.length < 9) return res.status(400).json({ error: 'A valid phone number is required' });
-    const sent = await issueOtp({ key: phone, phone });
-    res.json({ message: 'OTP sent', ...(sent.devCode ? { code: sent.devCode } : {}) });
+    const contact = contactOf(req.body);
+    if (contact.kind === 'email') {
+      const { customers } = await findCustomersByContact(contact);
+      if (!customers.length) {
+        return res.status(404).json({ error: "We don't have that email on file. Log in with your mobile number instead.", code: 'unknown_email' });
+      }
+      const sent = await issueOtp({ key: otpKey(contact), email: customers[0].email });
+      return res.json({ message: 'OTP sent', channel: 'email', sentTo: maskEmail(customers[0].email), ...(sent.devCode ? { code: sent.devCode } : {}) });
+    }
+    const sent = await issueOtp({ key: otpKey(contact), phone: contact.digits });
+    res.json({ message: 'OTP sent', channel: 'phone', ...(sent.devCode ? { code: sent.devCode } : {}) });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
@@ -53,17 +98,19 @@ router.post('/request-otp', otpLimiter, async (req, res) => {
 
 router.post('/verify-otp', otpLimiter, async (req, res) => {
   try {
-    const phone = normalizePhone(req.body?.phone);
     const code = String(req.body?.code || '').trim();
-    if (!phone || !code) return res.status(400).json({ error: 'Phone and code are required' });
+    if (!code) return res.status(400).json({ error: 'Phone and code are required' });
+    const contact = contactOf(req.body);
 
-    await checkOtp({ key: phone, code });
+    await checkOtp({ key: otpKey(contact), code });
 
-    let customer = await Customer.findOne({ $or: [{ phone: { $in: phoneVariants(phone) } }, { phones: { $in: phoneVariants(phone) } }] });
+    // The record that rents something wins, so the app opens on their units.
+    let customer = (await findCustomersByContact(contact)).customers[0];
     const isNew = !customer;
     if (!customer) {
+      if (contact.kind === 'email') return res.status(404).json({ error: "We don't have that email on file." });
       const { fullName } = req.body;
-      const e164 = `+${phone}`;
+      const e164 = `+${normalizePhone(contact.value)}`;
       /* Signing in is not renting.
        *
        * Anybody can reach the portal and get themselves a record; before this
@@ -72,7 +119,7 @@ router.post('/verify-otp', otpLimiter, async (req, res) => {
       customer = await Customer.create({ fullName: fullName || e164, phone: e164, phones: [e164], stage: 'prospect' });
     }
 
-    const token = signCustomerToken(customer);
+    const token = signCustomerToken(customer, contact.kind === 'phone' ? 'phone' : 'email');
     res.json({ token, customer: customerPayload(customer), isNew });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
@@ -133,11 +180,32 @@ router.patch('/set-phone', requireCustomer, async (req, res) => {
   }
 });
 
+// Whether this login's phone was proven by a code. Tokens from before `via`
+// existed came from phone codes unless the record was made by Google, where
+// the phone is only typed in (set-phone) and proves nothing.
+const phoneProven = (decoded, customer) => decoded.via === 'phone' || (!decoded.via && !customer.googleId);
+
 router.get('/me', requireCustomer, async (req, res) => {
   try {
-    const customer = await Customer.findById(req.customer.customerId).lean();
+    let customer = await Customer.findById(req.customer.customerId).lean();
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
-    res.json({ customer: { ...customerPayload(customer), nationality: customer.nationality, address: customer.address } });
+
+    // Logged in before their stored number was recognised, so they got an
+    // empty record of their own? Move them onto the one renting on that
+    // number — the same hand-over link-unit does — and give the app a new token.
+    let token;
+    if (phoneProven(req.customer, customer) && customer.phone) {
+      const { customers, renting } = await findCustomersByContact({ kind: 'phone', value: customer.phone });
+      const tenant = renting.has(String(customer._id)) ? null : customers.find((c) => renting.has(String(c._id)));
+      if (tenant) {
+        const e164 = `+${normalizePhone(customer.phone)}`;
+        await Customer.updateOne({ _id: tenant._id }, { $addToSet: { phones: e164 } });
+        await Customer.updateOne({ _id: customer._id }, { $set: { phone: '', phones: [] } });
+        customer = await Customer.findById(tenant._id).lean();
+        token = signCustomerToken(customer, 'phone');
+      }
+    }
+    res.json({ customer: { ...customerPayload(customer), nationality: customer.nationality, address: customer.address }, ...(token ? { token } : {}) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -151,6 +219,10 @@ router.patch('/profile', requireCustomer, async (req, res) => {
     if (email !== undefined) update.email = email;
     if (nationality !== undefined) update.nationality = nationality;
     if (address !== undefined) update.address = address;
+    if (email !== undefined) {
+      const before = await Customer.findById(req.customer.customerId).select('email').lean();
+      if (String(before?.email || '').trim().toLowerCase() !== String(email || '').trim().toLowerCase()) update.emailFromApp = true;
+    }
     const customer = await Customer.findByIdAndUpdate(req.customer.customerId, update, { new: true }).lean();
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
     res.json({ customer: { ...customerPayload(customer), nationality: customer.nationality, address: customer.address } });

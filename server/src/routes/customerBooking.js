@@ -4,7 +4,7 @@ import { requireCustomer, otpLimiter } from './customerAuth.js';
 import { CARD_FEE_PCT, PAYING_HOLD_MINUTES, bookingState, listSizes, pricingFor, reserve, syncBookingPayment } from '../services/appBooking.js';
 import { buildContractPdf } from '../services/contractDocument.js';
 import { signContract } from '../services/contractSigning.js';
-import { createCheckoutSession, stripeConfigured } from '../services/stripe.js';
+import { createCheckoutSession, expireCheckoutSession, stripeConfigured, stripeEmbeddedConfigured, stripePublishableKey } from '../services/stripe.js';
 
 /**
  * A signed-in customer booking a unit for themselves: pick a size, hold it, pay
@@ -48,7 +48,7 @@ async function view(quote) {
 }
 
 router.get('/sizes', wrap(async (req, res) => {
-  res.json(await listSizes({ startDate: req.query.startDate, months: req.query.months }));
+  res.json(await listSizes({ startDate: req.query.startDate, weeks: req.query.weeks, months: req.query.months }));
 }));
 
 router.post('/reserve', otpLimiter, wrap(async (req, res) => {
@@ -82,10 +82,20 @@ router.post('/:id/pay', wrap(async (req, res) => {
   if (quote.stripePaidAt) throw fail(409, 'This booking is already paid');
   if (quote.status !== 'sent' || quote.expiryDate <= new Date()) throw fail(410, 'Your reservation has expired. Please choose a unit again.');
 
+  // `embedded: true` asks for Stripe's card form inside the app's own checkout
+  // page; without a publishable key it falls back to Stripe's hosted page.
+  const embedded = req.body?.embedded === true && stripeEmbeddedConfigured();
+
   // A session lasts 30 minutes and the hold is stretched to 40 when it starts, so
   // while the hold still has 10+ minutes the existing session is still usable.
-  if (quote.stripePaymentLinkUrl && quote.expiryDate.getTime() - Date.now() > 10 * 60_000 && quote.appBooking.checkoutStartedAt) {
+  if (!embedded && quote.stripePaymentLinkUrl && quote.expiryDate.getTime() - Date.now() > 10 * 60_000 && quote.appBooking.checkoutStartedAt) {
     return res.json({ url: quote.stripePaymentLinkUrl, reused: true });
+  }
+  // Only one session may be payable at a time. If the old one was paid in the
+  // meantime, the booking is settled — don't open a second.
+  if (quote.stripeCheckoutSessionId) {
+    const previous = await expireCheckoutSession(quote.stripeCheckoutSessionId);
+    if (previous === 'complete') throw fail(409, 'Your payment went through — we are finishing your booking');
   }
 
   const pricing = pricingFor(quote);
@@ -101,13 +111,17 @@ router.post('/:id/pay', wrap(async (req, res) => {
     cancelUrl: `${done}?booking=${quote.quoteNo}&cancelled=1`,
     feePct: CARD_FEE_PCT,
     expiresInMinutes: 30,
+    embedded,
   });
   quote.stripeCheckoutSessionId = session.id;
-  quote.stripePaymentLinkUrl = session.url;
+  quote.stripePaymentLinkUrl = embedded ? '' : session.url;
   quote.appBooking.checkoutStartedAt = new Date();
   quote.expiryDate = new Date(Date.now() + PAYING_HOLD_MINUTES * 60_000);
   await quote.save();
-  res.json({ url: session.url, amount: pricing.total, cardFee: session.feeAmount, totalCharged: Math.round((pricing.total + session.feeAmount) * 100) / 100 });
+  res.json({
+    ...(embedded ? { clientSecret: session.clientSecret, publishableKey: stripePublishableKey() } : { url: session.url }),
+    amount: pricing.total, cardFee: session.feeAmount, totalCharged: Math.round((pricing.total + session.feeAmount) * 100) / 100,
+  });
 }));
 
 async function paidContract(req) {

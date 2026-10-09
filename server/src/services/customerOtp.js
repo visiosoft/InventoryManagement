@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { CustomerOtp } from '../models/index.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
+import { mailConfigured, sendMail } from './mail.js';
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_MS = 30 * 1000;
@@ -15,10 +16,15 @@ const hashOtp = (key, code) =>
 
 // "+971 50 123 4567", "0501234567" and "971501234567" are one person. Stored
 // customers have whatever was typed at the time, so lookups try each spelling.
+// The country code can also arrive twice ("+971 +971 55…", typed over a
+// prefilled +971) or with the trunk 0 kept ("+971 055…"); both are one number.
 export function normalizePhone(input) {
-  let d = String(input || '').replace(/\D/g, '');
+  let d = String(input || '').trim().replace(/\D/g, '');
   if (d.startsWith('00')) d = d.slice(2);
+  while (d.startsWith('971971')) d = d.slice(3);
+  if (d.startsWith('9710')) d = `971${d.slice(4)}`;
   if (d.startsWith('0') && d.length === 10) d = `971${d.slice(1)}`;
+  if (d.startsWith('5') && d.length === 9) d = `971${d}`;
   return d;
 }
 
@@ -29,7 +35,22 @@ export function phoneVariants(input) {
   return [...variants].filter(Boolean);
 }
 
-async function deliver(phone, code) {
+async function deliver(phone, code, email) {
+  if (email) {
+    if (mailConfigured()) {
+      await sendMail({
+        to: email,
+        subject: `${code} is your PurpleBox code`,
+        text: `Your PurpleBox verification code is ${code}. It expires in 5 minutes.
+
+If you didn't ask for this, you can ignore this email.`,
+        context: { kind: 'auth', label: 'App verification code' },
+      });
+      return {};
+    }
+    if (process.env.NODE_ENV === 'production') throw fail(503, 'Email codes are not available right now. Please contact support.');
+    return { devCode: code };
+  }
   const template = process.env.WHATSAPP_OTP_TEMPLATE;
   if (template && whatsappSendConfigured()) {
     await sendWhatsAppTemplate({
@@ -45,11 +66,12 @@ async function deliver(phone, code) {
 }
 
 /**
- * Create a code under `key` and send it to `phone`. `key` is what the code is
- * checked against later: the phone itself for login, or a scoped string for
- * other flows so two flows can't answer each other's codes.
+ * Create a code under `key` and send it to `phone` (WhatsApp) or, when given,
+ * `email`. `key` is what the code is checked against later: the phone itself
+ * for login, or a scoped string for other flows so two flows can't answer each
+ * other's codes.
  */
-export async function issueOtp({ key, phone }) {
+export async function issueOtp({ key, phone, email }) {
   const existing = await CustomerOtp.findOne({ phone: key }).lean();
   if (existing && Date.now() - new Date(existing.updatedAt).getTime() < OTP_RESEND_MS) {
     throw fail(429, 'A code was just sent. Please wait a few seconds before requesting another.');
@@ -60,7 +82,7 @@ export async function issueOtp({ key, phone }) {
     { codeHash: hashOtp(key, code), attempts: 0, expiresAt: new Date(Date.now() + OTP_TTL_MS) },
     { upsert: true },
   );
-  return deliver(phone, code);
+  return deliver(phone, code, email);
 }
 
 /** Throws unless `code` is the live code for `key`; a correct code is spent. */

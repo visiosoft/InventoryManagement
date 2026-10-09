@@ -2767,7 +2767,10 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     queryKey: ['whatsapp-templates'],
     queryFn: () => api.get('/whatsapp/templates').then((r) => r.data),
     enabled: qrOpen && panelTab === 'templates',
-    staleTime: 10 * 60_000,
+    // Read again each time the tab is opened, so a template deleted in Meta
+    // drops out here instead of staying until someone presses Refresh.
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
   // Bypasses the server's own 10-minute cache — a template just approved
   // in Meta Business Manager would otherwise sit invisible here for up to
@@ -3204,6 +3207,15 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     const msLeft = new Date(last).getTime() + 24 * 3600_000 - Date.now()
     return { open: msLeft > 0, known: true, hoursLeft: Math.max(0, Math.floor(msLeft / 3600_000)) }
   }, [selectedConvo?.lastInboundAt])
+  const windowClosed = replyWindow.known && !replyWindow.open
+
+  /* Opening a cold chat lands the panel on the list that can still reach them.
+     Keyed on the chat, so a rep who switches back to quick replies by hand
+     is left there. */
+  useEffect(() => {
+    if (windowClosed) setPanelTab((tab) => (tab === 'quick' ? 'templates' : tab))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPhone, windowClosed])
 
   async function stopRecording() {
     const file = await voice.stop()
@@ -3441,7 +3453,14 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
       stickToBottom.current = true
       onSent()
     },
-    onError: (e) => setSendErr(apiError(e)),
+    onError: (e) => {
+      setSendErr(apiError(e))
+      // Deleted or no longer approved in Meta: take it off the list now.
+      if ((e as { response?: { data?: { templateGone?: boolean } } })?.response?.data?.templateGone) {
+        setOpenTemplate('')
+        qc.invalidateQueries({ queryKey: ['whatsapp-templates'] })
+      }
+    },
   })
 
   /* What to put in {{1}} before anybody types.
@@ -4948,7 +4967,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                               <button
                                 type="button"
                                 onClick={() => sendQuickReply.mutate(t._id)}
-                                disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
+                                disabled={!selectedPhone || windowClosed || send.isPending || sendQuickReply.isPending}
                                 className="text-left w-full cursor-pointer hover:opacity-75 disabled:opacity-40"
                                 style={{ fontSize: 12.5, color: MUTED_INK, whiteSpace: 'pre-wrap' }}
                                 title={t.mediaKind ? `Send this, with the ${t.mediaKind}` : 'Send this now'}
@@ -4959,7 +4978,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                             <button
                               type="button"
                               onClick={() => sendQuickReply.mutate(t._id)}
-                              disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
+                              disabled={!selectedPhone || windowClosed || send.isPending || sendQuickReply.isPending}
                               className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer active:scale-90 transition-transform duration-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
                               style={{ width: 26, height: 26, background: '#5B2BC9', color: '#fff' }}
                               title="Send now"
@@ -5048,7 +5067,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                       key={t._id}
                       type="button"
                       onClick={() => sendQuickReply.mutate(t._id)}
-                      disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
+                      disabled={!selectedPhone || windowClosed || send.isPending || sendQuickReply.isPending}
                       className="text-left cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden"
                       style={{ border: `1px solid ${LINE}`, borderRadius: 12, background: '#fff' }}
                       title="Send this video — its snapshot, with a watch link"

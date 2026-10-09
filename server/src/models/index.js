@@ -167,6 +167,9 @@ const customerSchema = new Schema(
     source: { type: String, enum: ['manual', 'import_csv', 'google'], default: 'manual' },
     importBatch: { type: String, default: null },
     googleId: { type: String, default: '' },
+    // Set when the customer typed this email in the app (unproven), so it is
+    // not trusted to match their records in Zoho Books.
+    emailFromApp: { type: Boolean, default: false },
     // Excluded from marketing campaigns. Never consulted for transactional mail
     // — an invoice or a contract still has to reach them.
     unsubscribed: { type: Boolean, default: false },
