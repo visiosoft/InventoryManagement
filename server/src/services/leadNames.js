@@ -1,4 +1,4 @@
-import { Customer } from '../models/index.js';
+import { Customer, Lead } from '../models/index.js';
 
 /**
  * A lead auto-created from an inbound WhatsApp message is named
@@ -78,4 +78,21 @@ export async function resolvePlaceholderNames(items, nameKey = 'fullName') {
         if (name) l[nameKey] = name;
     }
     return items;
+}
+
+/**
+ * One-time (and harmless to repeat) catch-up: leads that were assigned while
+ * still named "WhatsApp Contact 1234" take the WhatsApp profile name already
+ * stored on them. Unassigned bookkeeping contacts and typed names are skipped.
+ */
+export async function backfillPlaceholderNames() {
+    const res = await Lead.updateMany(
+        {
+            assignedAt: { $ne: null },
+            fullName: { $regex: PLACEHOLDER_NAME.source, $options: 'i' },
+            whatsappProfileName: { $exists: true, $nin: ['', null], $not: { $regex: PLACEHOLDER_NAME.source, $options: 'i' } },
+        },
+        [{ $set: { fullName: { $trim: { input: '$whatsappProfileName' } } } }],
+    );
+    return res.modifiedCount ?? 0;
 }

@@ -401,6 +401,13 @@ async function start() {
   console.log(`Connected to MongoDB (db: ${process.env.DB_NAME})`);
   app.listen(PORT, () => console.log(`PurpleBox API listening on http://localhost:${PORT}`));
 
+  // Assigned leads still named "WhatsApp Contact …" take their WhatsApp profile
+  // name. Idempotent, so running on every start is fine.
+  import('./services/leadNames.js')
+    .then((m) => m.backfillPlaceholderNames())
+    .then((n) => console.log(`[Leads] gave ${n} assigned WhatsApp lead(s) their profile name`))
+    .catch((e) => console.error('[Leads] name backfill failed:', e.message));
+
   // Reconcile WhatsApp label-driven lead state every 15 minutes.
   const WHATSAPP_RECONCILE_INTERVAL = 15 * 60 * 1000;
   if (process.env.WHATSAPP_LABEL_SYNC_ENABLED === 'true') {
