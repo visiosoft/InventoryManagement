@@ -757,62 +757,7 @@ export default function PersonProfile() {
               )}
             </dl>
 
-            {/* The stage as steps, so what comes next is visible. Choosing one
-                still asks what happened before it is saved. */}
-            <div className="flex flex-col" style={{ gap: 6 }}>
-              <span style={{ color: FAINT, fontSize: 12, fontWeight: 600 }}>Stage</span>
-              <select
-                aria-label="Stage"
-                value={pendingStage || lead.status}
-                onChange={(e) => {
-                  const next = e.target.value
-                  if (next === lead.status) { setPendingStage(''); setStageNote(''); return }
-                  setPendingStage(next)
-                }}
-                className="cursor-pointer"
-                style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
-              >
-                {LEAD_STATUS_FLOW.map((st, i) => <option key={st.value} value={st.value}>{i + 1}. {st.label}</option>)}
-              </select>
-              <p style={{ fontSize: 12.5, color: FAINT }}>
-                {pendingStage ? 'Unsaved — say what happened below.' : LEAD_STATUS_FLOW.find((x) => x.value === lead.status)?.next}
-              </p>
-              {pendingStage && (
-                <div style={{ borderRadius: 12, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, padding: 12 }}>
-                  <p style={{ fontSize: 13, color: INK_2, marginBottom: 8 }}>
-                    Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((x) => x.value === pendingStage)?.label}</b> — what happened?
-                  </p>
-                  <textarea
-                    value={stageNote}
-                    onChange={(e) => setStageNote(e.target.value)}
-                    rows={2}
-                    autoFocus
-                    placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
-                    style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
-                  />
-                  <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
-                    <button
-                      type="button"
-                      disabled={setStatus.isPending}
-                      onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
-                      className="cursor-pointer disabled:opacity-50"
-                      style={{ height: 36, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
-                    >
-                      {setStatus.isPending ? 'Saving…' : 'Save stage'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={setStatus.isPending}
-                      onClick={() => { setPendingStage(''); setStageNote('') }}
-                      className="cursor-pointer disabled:opacity-50"
-                      style={{ height: 36, padding: '0 16px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+
           </div>
         )}
 
@@ -827,62 +772,6 @@ export default function PersonProfile() {
 
         {err && <p style={{ fontSize: 12.5, color: '#C0392B', marginTop: 12 }}>{err}</p>}
       </div>
-
-          {/* Needs storage from — when they are ready to take a unit. Its own
-              date, apart from when we chase them or when they come to look. */}
-          {lead && (
-            <Card title="Needs storage from">
-              <div className="flex flex-col" style={{ gap: 12 }}>
-                <span style={{ color: FAINT, fontSize: 13 }}>
-                  {lead.storageStartAt ? `Move-in ${formatDate(String(lead.storageStartAt).slice(0, 10))}` : 'Not asked yet'}
-                </span>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
-                  {([['ASAP', 0], ['1 week', 7], ['2 weeks', 14], ['1 month', 30], ['2 months', 60], ['3 months', 90]] as const).map(([label, days]) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => patchLead.mutate({ storageStartAt: inDays(days, '00:00') })}
-                      className="cursor-pointer"
-                      style={{ height: 36, padding: '0 6px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-center" style={{ gap: 8 }}>
-                  <input
-                    type="date"
-                    aria-label="Or pick a date"
-                    value={lead.storageStartAt ? String(lead.storageStartAt).slice(0, 10) : ''}
-                    onChange={(e) => patchLead.mutate({ storageStartAt: e.target.value ? `${e.target.value}T00:00:00.000Z` : null })}
-                    style={{ flex: 1, height: 40, padding: '0 12px', borderRadius: 12, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
-                  />
-                  {lead.storageStartAt && (
-                    <button
-                      type="button"
-                      onClick={() => patchLead.mutate({ storageStartAt: null })}
-                      className="cursor-pointer"
-                      style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                {lead.storageStartAt && (() => {
-                  const day = String(lead.storageStartAt).slice(0, 10)
-                  const { days } = followUpState(day)
-                  return (
-                    <div className="flex items-start" style={{ gap: 8, background: PURPLE_50, borderRadius: 14, padding: '10px 12px', fontSize: 13, color: days < 0 ? '#DC2626' : INK_2 }}>
-                      <ClipboardList size={15} style={{ flexShrink: 0, marginTop: 2, color: PURPLE }} />
-                      <span>
-                        <b>Reminder task set</b> for {lead.owner?.name || 'the owner'} · {days < 0 ? `${-days} day${days === -1 ? '' : 's'} ago` : days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}
-                      </span>
-                    </div>
-                  )
-                })()}
-              </div>
-            </Card>
-          )}
 
           {/* When we next deal with this person, kept beside who they are
               rather than buried among the pipeline controls. Only ever shows
@@ -1341,6 +1230,119 @@ export default function PersonProfile() {
           {pane === 'chat' && waNumber && <WhatsAppConsole embeddedPhone={waNumber} onPanelOpenChange={setChatPanelOpen} />}
 
           {pane === 'details' && (<>
+          {lead && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
+              <Card title="Stage">
+            {/* The stage as steps, so what comes next is visible. Choosing one
+                still asks what happened before it is saved. */}
+            <div className="flex flex-col" style={{ gap: 6 }}>
+              <select
+                aria-label="Stage"
+                value={pendingStage || lead.status}
+                onChange={(e) => {
+                  const next = e.target.value
+                  if (next === lead.status) { setPendingStage(''); setStageNote(''); return }
+                  setPendingStage(next)
+                }}
+                className="cursor-pointer"
+                style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+              >
+                {LEAD_STATUS_FLOW.map((st, i) => <option key={st.value} value={st.value}>{i + 1}. {st.label}</option>)}
+              </select>
+              <p style={{ fontSize: 12.5, color: FAINT }}>
+                {pendingStage ? 'Unsaved — say what happened below.' : LEAD_STATUS_FLOW.find((x) => x.value === lead.status)?.next}
+              </p>
+              {pendingStage && (
+                <div style={{ borderRadius: 12, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, padding: 12 }}>
+                  <p style={{ fontSize: 13, color: INK_2, marginBottom: 8 }}>
+                    Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((x) => x.value === pendingStage)?.label}</b> — what happened?
+                  </p>
+                  <textarea
+                    value={stageNote}
+                    onChange={(e) => setStageNote(e.target.value)}
+                    rows={2}
+                    autoFocus
+                    placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
+                    style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                  />
+                  <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
+                    <button
+                      type="button"
+                      disabled={setStatus.isPending}
+                      onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
+                      className="cursor-pointer disabled:opacity-50"
+                      style={{ height: 36, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
+                    >
+                      {setStatus.isPending ? 'Saving…' : 'Save stage'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={setStatus.isPending}
+                      onClick={() => { setPendingStage(''); setStageNote('') }}
+                      className="cursor-pointer disabled:opacity-50"
+                      style={{ height: 36, padding: '0 16px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+              </Card>
+              <Card title="Needs storage from">
+              <div className="flex flex-col" style={{ gap: 12 }}>
+                <span style={{ color: FAINT, fontSize: 13 }}>
+                  {lead.storageStartAt ? `Move-in ${formatDate(String(lead.storageStartAt).slice(0, 10))}` : 'Not asked yet'}
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+                  {([['ASAP', 0], ['1 week', 7], ['2 weeks', 14], ['1 month', 30], ['2 months', 60], ['3 months', 90]] as const).map(([label, days]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => patchLead.mutate({ storageStartAt: inDays(days, '00:00') })}
+                      className="cursor-pointer"
+                      style={{ height: 36, padding: '0 6px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center" style={{ gap: 8 }}>
+                  <input
+                    type="date"
+                    aria-label="Or pick a date"
+                    value={lead.storageStartAt ? String(lead.storageStartAt).slice(0, 10) : ''}
+                    onChange={(e) => patchLead.mutate({ storageStartAt: e.target.value ? `${e.target.value}T00:00:00.000Z` : null })}
+                    style={{ flex: 1, height: 40, padding: '0 12px', borderRadius: 12, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                  />
+                  {lead.storageStartAt && (
+                    <button
+                      type="button"
+                      onClick={() => patchLead.mutate({ storageStartAt: null })}
+                      className="cursor-pointer"
+                      style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {lead.storageStartAt && (() => {
+                  const day = String(lead.storageStartAt).slice(0, 10)
+                  const { days } = followUpState(day)
+                  return (
+                    <div className="flex items-start" style={{ gap: 8, background: PURPLE_50, borderRadius: 14, padding: '10px 12px', fontSize: 13, color: days < 0 ? '#DC2626' : INK_2 }}>
+                      <ClipboardList size={15} style={{ flexShrink: 0, marginTop: 2, color: PURPLE }} />
+                      <span>
+                        <b>Reminder task set</b> for {lead.owner?.name || 'the owner'} · {days < 0 ? `${-days} day${days === -1 ? '' : 's'} ago` : days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}
+                      </span>
+                    </div>
+                  )
+                })()}
+              </div>
+            </Card>
+            </div>
+          )}
+
           {lead && (
             <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '22px 26px' }}>
               <h3 style={{ ...DISPLAY, fontSize: 16, fontWeight: 700, margin: '0 0 14px' }}>Activity</h3>
