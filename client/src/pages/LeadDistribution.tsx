@@ -287,21 +287,17 @@ export default function LeadDistribution() {
                       {[5, 10, 15, 20, 30, 45, 60].map((m) => <option key={m} value={m}>{m} minutes</option>)}
                     </Select>
                   </Field>
-                  <Field label="Give it to somebody else after">
-                    <Select
-                      value={String(config.slaReassignMinutes ?? 30)}
-                      onChange={(e) => saveConfig.mutate({ slaReassignMinutes: Number(e.target.value) })}
-                    >
-                      <option value="0">Never — leave it with them</option>
-                      {[15, 30, 45, 60, 90, 120].map((m) => <option key={m} value={m}>{m} minutes</option>)}
-                    </Select>
+                  <Field label="If still unanswered">
+                    <div style={{ height: 40, display: 'flex', alignItems: 'center', fontSize: 13, color: MUTED }}>
+                      Stays with its owner
+                    </div>
                   </Field>
                 </div>
                 <p className="flex items-start gap-2" style={{ fontSize: 12, color: MUTED }}>
                   <Clock size={14} style={{ marginTop: 1, flexShrink: 0 }} />
                   The clock stops when the rep logs an attempt or moves the stage — opening the lead does
-                  not count. A lead is only ever moved once, and never moved at all when there is nobody
-                  else on shift to take it; in that case the owner is reminded instead.
+                  not count. A lead that already has an owner is never moved to somebody else automatically — the
+                  owner is reminded, and an admin can reassign it by hand.
                 </p>
               </CardBody>
             </Card>

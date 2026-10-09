@@ -189,7 +189,9 @@ export async function runLeadSla({ now = new Date(), dry = false, limit = 50 } =
    if (!config?.enabled) return { ...out, reason: 'distribution is off' };
 
    const nudgeMinutes = Number(config.slaNudgeMinutes ?? SLA_DEFAULTS.nudgeMinutes);
-   const reassignMinutes = Number(config.slaReassignMinutes ?? SLA_DEFAULTS.reassignMinutes);
+   // A lead that has an owner stays with them: the clock only reminds, it never
+   // takes a lead from the rep it was given to, whatever an old setting says.
+   const reassignMinutes = 0;
    if (nudgeMinutes <= 0 && reassignMinutes <= 0) return { ...out, reason: 'the clock is switched off' };
 
    const timeZone = config.timeZone || 'Asia/Dubai';
