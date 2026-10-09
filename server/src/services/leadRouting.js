@@ -183,17 +183,10 @@ export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone =
       availability rules above (shifts, caps, absence) still decide who is in
       the draw. */
    if (typeof random === 'function') {
-      const weights = available.map((a) => (totalShare > 0 ? (shares.get(a.id) || 0) : 1));
-      const sum = weights.reduce((x, y) => x + y, 0) || available.length;
-      let roll = random() * sum;
-      let idx = 0;
-      for (; idx < available.length - 1; idx += 1) {
-         roll -= totalShare > 0 ? weights[idx] : 1;
-         if (roll < 0) break;
-      }
-      const a = available[idx];
-      const share = totalShare > 0 ? (shares.get(a.id) || 0) / totalShare : 1 / available.length;
-      return { ownerId: a.id, reason: `random pick, ${Math.round(share * 100)}% share`, share, excluded };
+      // Plain random among whoever is available right now — shares do not
+      // weight it. Shifts, absence and daily caps above still decide who is in.
+      const a = available[Math.min(available.length - 1, Math.floor(random() * available.length))];
+      return { ownerId: a.id, reason: `random pick of ${available.length} available`, share: 1 / available.length, excluded };
    }
 
    let best = null;

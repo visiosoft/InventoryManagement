@@ -189,7 +189,7 @@ export default function LeadDistribution() {
                     onChange={(e) => saveConfig.mutate({ randomize: e.target.checked })}
                     disabled={saveConfig.isPending}
                   />
-                  Pick at random (weighted by share)
+                  Pick at random among reps on shift
                 </label>
                 <Button
                   variant={config.enabled ? 'outline' : 'default'}
