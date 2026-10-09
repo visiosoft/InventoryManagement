@@ -711,8 +711,8 @@ export const whatsappApi = {
     api.post<{ action: 'created' | 'updated' | 'exists'; lead: WhatsAppLeadRef }>(
       `/whatsapp/conversations/${phoneNormalized}/lead`, body,
     ).then((r) => r.data),
-  deleteConversation: (phoneNormalized: string) =>
-    api.delete<{ ok: boolean; deletedMessages: number }>(`/whatsapp/conversations/${phoneNormalized}`).then((r) => r.data),
+  deleteConversation: (phoneNormalized: string, contact = false) =>
+    api.delete<{ ok: boolean; deletedMessages: number; deletedLeads?: number }>(`/whatsapp/conversations/${phoneNormalized}${contact ? '?contact=1' : ''}`).then((r) => r.data),
   blockNumber: (phoneNormalized: string, reason?: string) =>
     api.post<{ ok: boolean; blocked: boolean }>(`/whatsapp/conversations/${phoneNormalized}/block`, { reason }).then((r) => r.data),
   unblockNumber: (phoneNormalized: string) =>

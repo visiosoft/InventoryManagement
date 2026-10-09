@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
-import { WhatsAppMessage, Lead, Customer, User, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate } from '../models/index.js';
+import { WhatsAppMessage, Lead, Customer, User, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate, Task } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate, windowOpenFor } from '../services/whatsapp.js';
 import { pauseBotForHuman, markFirstResponse } from '../services/aiBot.js';
 import { agentStatusForLeads } from '../agents/service.js';
@@ -258,7 +258,19 @@ router.delete('/conversations/:phoneNormalized', async (req, res) => {
             chatLabel ? softDelete(chatLabel, req.user.id) : null,
             labelState ? softDelete(labelState, req.user.id) : null,
         ]);
-        res.json({ ok: true, deletedMessages: result.modifiedCount });
+        // "Delete contact": the lead behind the number goes too, with its open
+        // reminders, so it stops showing in Leads. A Customer record is never
+        // touched here — contracts and payments hang off it.
+        let deletedLeads = 0;
+        if (req.query.contact === '1') {
+            const leads = await Lead.find({ phoneNormalized }).select('_id');
+            for (const lead of leads) {
+                await softDelete(await Lead.findById(lead._id), req.user.id);
+                await softDeleteMany(Task, { leadId: lead._id, leadType: 'storage', status: 'todo' }, req.user.id);
+                deletedLeads += 1;
+            }
+        }
+        res.json({ ok: true, deletedMessages: result.modifiedCount, deletedLeads });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

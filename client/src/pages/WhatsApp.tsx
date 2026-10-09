@@ -2218,14 +2218,14 @@ function ChatDangerActions({ convo, onDeleted, onChanged }: { convo: WhatsAppCon
   const [err, setErr] = useState('')
 
   const del = useMutation({
-    mutationFn: () => whatsappApi.deleteConversation(convo.phoneNormalized),
+    mutationFn: () => whatsappApi.deleteConversation(convo.phoneNormalized, true),
     onSuccess: () => { setConfirming(null); setErr(''); onDeleted() },
     onError: (e) => setErr(apiError(e)),
   })
 
   const deleteAndBlock = useMutation({
     mutationFn: async () => {
-      await whatsappApi.deleteConversation(convo.phoneNormalized)
+      await whatsappApi.deleteConversation(convo.phoneNormalized, true)
       await whatsappApi.blockNumber(convo.phoneNormalized)
     },
     onSuccess: () => { setConfirming(null); setErr(''); onDeleted() },
@@ -2258,7 +2258,7 @@ function ChatDangerActions({ convo, onDeleted, onChanged }: { convo: WhatsAppCon
     <>
       <button type="button" onClick={() => { setErr(''); setConfirming('delete') }} className={MENU_ROW} style={{ color: '#B91C1C' }}>
         <Trash2 size={15} />
-        <span className="flex-1">Delete chat</span>
+        <span className="flex-1">Delete contact</span>
       </button>
 
       {convo.blocked ? (
@@ -2273,17 +2273,17 @@ function ChatDangerActions({ convo, onDeleted, onChanged }: { convo: WhatsAppCon
         </button>
       )}
 
-      <Modal open={confirming === 'delete'} onClose={() => setConfirming(null)} title="Delete this chat?">
+      <Modal open={confirming === 'delete'} onClose={() => setConfirming(null)} title="Delete this contact?">
         <div className="space-y-3 text-sm">
-          <p>Every message in this conversation is permanently removed from the console. The lead or customer record itself is not affected, and this number can still write in again.</p>
+          <p>Every message in this conversation is removed, and so is the <strong>lead</strong> for this number, with its open reminders. A customer record, if there is one, is not touched. If this number writes in again it starts as a new contact.</p>
           {err && <p className="text-xs text-red-600">{err}</p>}
-          {dialogButtons(del.isPending, () => del.mutate(), 'Delete chat')}
+          {dialogButtons(del.isPending, () => del.mutate(), 'Delete contact')}
         </div>
       </Modal>
 
       <Modal open={confirming === 'block'} onClose={() => setConfirming(null)} title="Delete and block this number?">
         <div className="space-y-3 text-sm">
-          <p>Deletes every message in this conversation, then blocks <strong>{convo.phone || `+${convo.phoneNormalized}`}</strong> — future messages from this number will be silently dropped, with no reply and no new lead created. Undo any time from this same menu.</p>
+          <p>Deletes the lead and every message in this conversation, then blocks <strong>{convo.phone || `+${convo.phoneNormalized}`}</strong> — future messages from this number will be silently dropped, with no reply and no new lead created. Undo any time from this same menu.</p>
           {err && <p className="text-xs text-red-600">{err}</p>}
           {dialogButtons(deleteAndBlock.isPending, () => deleteAndBlock.mutate(), 'Delete and block')}
         </div>
