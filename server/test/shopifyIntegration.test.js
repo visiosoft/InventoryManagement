@@ -20,7 +20,7 @@ const run = (operation, input, fn) => svc.command(admin, { requestId: randomUUID
 const level = sku => InventoryLevel.findOne({ merchant: merchant._id, sku: sku._id, warehouse: 'WH1' }).lean();
 const setStock = (sku, onHand) => InventoryLevel.updateOne(
   { merchant: merchant._id, sku: sku._id, warehouse: 'WH1' },
-  { $set: { onHand, reserved: 0 }, $setOnInsert: { _id: randomUUID(), site: site._id } },
+  { $set: { onHand, reserved: 0, stockRecordedAt: new Date() }, $setOnInsert: { _id: randomUUID(), site: site._id } },
   { upsert: true },
 );
 const orderPayload = (id, lines, extra = {}) => ({
@@ -257,4 +257,31 @@ test('catalog sync keeps variants that have no SKU code in Shopify', async () =>
   await setStock(sku, 2);
   const res = await deliver('orders/create', orderPayload(4001, [[333, 1, '']]));
   assert.equal((await FulfillmentJob.findById(res.body.job).lean()).status, 'READY_TO_PICK');
+});
+
+test('pulling orders from Shopify creates jobs once, same as a webhook would', async () => {
+  await setStock(skuA, 5);
+  fakeShopify(() => ({ orders: {
+    pageInfo: { hasNextPage: false, endCursor: null },
+    nodes: [{
+      id: 'gid://shopify/Order/5001', name: '#5001', cancelledAt: null,
+      displayFinancialStatus: 'PENDING', displayFulfillmentStatus: 'UNFULFILLED',
+      shippingAddress: { name: 'Mona', city: 'Dubai' },
+      lineItems: { nodes: [{ sku: 'ABC-1', title: 'Robe', variantTitle: 'S', quantity: 2, unfulfilledQuantity: 2, requiresShipping: true, variant: { id: 'gid://shopify/ProductVariant/111' } }] },
+    }],
+  } }));
+  assert.equal((await svc.pullRecentOrders(merchant._id, { days: 30 })).created, 1);
+  assert.equal((await svc.pullRecentOrders(merchant._id, { days: 30 })).created, 0);
+  const job = await FulfillmentJob.findOne().lean();
+  assert.equal(job.status, 'READY_TO_PICK');
+  assert.equal((await ShopifyOrder.findById(job.shopifyOrder).lean()).financialStatus, 'pending');
+});
+
+test('an order for stock nobody has counted does not push a 0 to Shopify', async () => {
+  // No setStock: the reservation creates an empty, never-counted row.
+  await deliver('orders/create', orderPayload(6001, [[222, 1, 'ABC-2']]));
+  const calls = fakeShopify(() => ({ inventorySetQuantities: { userErrors: [] } }));
+  const out = await svc.pushInventory(merchant._id, { full: true });
+  assert.equal(out.pushed, 0);
+  assert.equal(calls.length, 0);
 });

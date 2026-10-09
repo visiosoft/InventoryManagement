@@ -7,7 +7,7 @@ import { fail } from '../services/warehouseRules.js';
 import {
   syncMerchantCatalog, createManualFulfillmentJob, assignWorker,
   pickFulfillmentLine, markPacked, markShipped, resolveBackorder,
-  adjustStock, pushFulfillment, pushInventory,
+  adjustStock, pushFulfillment, pushInventory, pullRecentOrders,
 } from '../services/shopifyFulfillment.js';
 import {
   verifyShopifyCredentials, encryptMerchantSecret, forgetMerchantClient, safeMerchant,
@@ -151,6 +151,13 @@ router.post('/merchants/:id/webhooks', requireAdminHere, asyncRoute(async (req, 
   catch (e) { return res.status(502).json({ error: e.message }); }
   await Merchant.updateOne({ _id: req.params.id }, { $set: { webhooksRegisteredAt: new Date() } });
   res.json({ ...result, webhookUrl: webhookUrl() });
+}));
+
+// Fetches open orders straight from Shopify (last 30 days) — for a store
+// just connected, or when webhooks haven't been arriving.
+router.post('/merchants/:id/pull-orders', requireAdminHere, asyncRoute(async (req, res) => {
+  try { res.json(await pullRecentOrders(req.params.id, { days: 30 })); }
+  catch (e) { res.status(e.status || 502).json({ error: e.message }); }
 }));
 
 router.post('/merchants/:id/push-inventory', requireAdminHere, asyncRoute(async (req, res) => {

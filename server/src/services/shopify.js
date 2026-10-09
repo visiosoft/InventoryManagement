@@ -383,3 +383,49 @@ export async function setAvailableQuantities(merchant, locationId, items) {
     assertNoUserErrors(data.inventorySetQuantities, 'Updating Shopify stock');
   }
 }
+
+const lower = v => (v ? String(v).toLowerCase() : '');
+
+/**
+ * Orders updated since a moment, shaped like the REST webhook payload so they
+ * go through exactly the same ingest code as a webhook delivery. Shopify only
+ * returns the last 60 days of orders without the read_all_orders scope,
+ * which is plenty for this.
+ */
+export async function fetchOrdersUpdatedSince(merchantId, since) {
+  const orders = [];
+  let after = null;
+  do {
+    const data = await shopifyGraphql(merchantId, `
+      query Orders($q: String, $after: String) {
+        orders(first: 50, after: $after, query: $q, sortKey: UPDATED_AT) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            id name cancelledAt displayFinancialStatus displayFulfillmentStatus
+            shippingAddress { name address1 address2 city province zip country phone }
+            lineItems(first: 100) {
+              nodes { sku title variantTitle quantity unfulfilledQuantity requiresShipping variant { id } }
+            }
+          }
+        }
+      }`, { q: `updated_at:>='${since.toISOString()}'`, after });
+    for (const o of data.orders.nodes) {
+      orders.push({
+        id: numericId(o.id),
+        name: o.name,
+        cancelled_at: o.cancelledAt,
+        financial_status: lower(o.displayFinancialStatus),
+        fulfillment_status: o.displayFulfillmentStatus === 'FULFILLED' ? 'fulfilled' : null,
+        shipping_address: o.shippingAddress || null,
+        line_items: o.lineItems.nodes.map(li => ({
+          variant_id: li.variant ? numericId(li.variant.id) : null,
+          sku: li.sku || '', title: li.title, variant_title: li.variantTitle,
+          quantity: li.quantity, fulfillable_quantity: li.unfulfilledQuantity,
+          requires_shipping: li.requiresShipping,
+        })),
+      });
+    }
+    after = data.orders.pageInfo.hasNextPage ? data.orders.pageInfo.endCursor : null;
+  } while (after);
+  return orders;
+}

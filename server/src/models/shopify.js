@@ -65,6 +65,9 @@ const merchantSchema = new Schema({
   isActive: { type: Boolean, default: true },
   lastInventorySyncAt: { type: Date, default: null },
   lastOrderWebhookAt: { type: Date, default: null },
+  // Orders are also pulled from Shopify periodically, in case a webhook was
+  // missed (endpoint down, deploy in progress). This is how far that got.
+  lastOrderPollAt: { type: Date, default: null },
   createdBy: ref('User', true),
 }, { timestamps: true });
 merchantSchema.index({ isActive: 1 });
@@ -109,6 +112,10 @@ const inventoryLevelSchema = new Schema({
   reserved: { type: Number, default: 0, min: 0 },
   shopifyInventoryItemId: { type: String, default: '' },
   lastSyncedAt: { type: Date, default: null },
+  // When someone last received or counted this SKU here. A row can also be
+  // created by an order reserving against stock nobody has entered yet; until
+  // this is set, its 0 is "unknown", not "none", and is never sent to Shopify.
+  stockRecordedAt: { type: Date, default: null },
 }, { timestamps: true });
 inventoryLevelSchema.index({ merchant: 1, sku: 1, warehouse: 1 }, { unique: true });
 

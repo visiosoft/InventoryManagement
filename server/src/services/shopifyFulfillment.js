@@ -3,7 +3,7 @@ import { command } from './warehouse.js';
 import { fail } from './warehouseRules.js';
 import { ScanEvent } from '../models/warehouse.js';
 import { Merchant, Sku, InventoryLevel, ShopifyOrder, FulfillmentJob } from '../models/shopify.js';
-import { fetchProductsAndVariants, createFulfillment, setAvailableQuantities } from './shopify.js';
+import { fetchProductsAndVariants, createFulfillment, setAvailableQuantities, fetchOrdersUpdatedSince } from './shopify.js';
 
 export { command };
 
@@ -358,7 +358,7 @@ export async function adjustStock(ctx, input) {
     fail(`On hand can't go below ${before.reserved} — that many are reserved for open orders.`, 409);
   }
   // Conditional on nothing having moved since it was read, same as reserveUpTo.
-  const res = await InventoryLevel.updateOne({ ...key, onHand: before.onHand, reserved: before.reserved }, { $set: { onHand: target } });
+  const res = await InventoryLevel.updateOne({ ...key, onHand: before.onHand, reserved: before.reserved }, { $set: { onHand: target, stockRecordedAt: new Date() } });
   if (!res.matchedCount) fail('Stock changed while you were editing — refresh and try again.', 409);
 
   scheduleInventoryPush(merchant._id);
@@ -511,10 +511,11 @@ export async function retryFailedFulfillmentPushes() {
 
 /**
  * Writes this warehouse's free stock (on hand minus reserved) to the
- * merchant's Shopify location. `full` pushes every SKU we hold a stock
- * record for; otherwise only those changed since the last push. SKUs the
- * warehouse has never recorded stock for are left alone, so turning sync on
- * doesn't zero out products the merchant stocks somewhere else.
+ * merchant's Shopify location. `full` pushes every SKU whose stock has been
+ * received or counted here; otherwise only those changed since the last
+ * push. SKUs nobody has entered stock for are left alone, so turning sync
+ * on — or an order arriving before the count — doesn't zero out products in
+ * Shopify.
  */
 export async function pushInventory(merchantId, { full = false } = {}) {
   const merchant = await Merchant.findById(merchantId);
@@ -523,7 +524,7 @@ export async function pushInventory(merchantId, { full = false } = {}) {
   if (!merchant.shopifyLocationId) fail('Choose this warehouse\'s Shopify location first.', 409);
 
   const startedAt = new Date();
-  const filter = { merchant: merchant._id, warehouse: merchant.warehouse };
+  const filter = { merchant: merchant._id, warehouse: merchant.warehouse, stockRecordedAt: { $ne: null } };
   if (!full && merchant.lastInventoryPushAt) filter.updatedAt = { $gte: new Date(merchant.lastInventoryPushAt.getTime() - 60_000) };
   const levels = await InventoryLevel.find(filter).lean();
   const skus = await Sku.find({ _id: { $in: levels.map(l => l.sku) }, shopifyInventoryItemId: { $ne: '' } }).lean();
@@ -573,6 +574,54 @@ export async function runInventorySync() {
   const results = [];
   for (const m of merchants) {
     try { results.push({ merchant: m.name, ...(await pushInventory(m._id)) }); }
+    catch (e) { results.push({ merchant: m.name, error: e.message }); }
+  }
+  return results;
+}
+
+/**
+ * Pulls orders changed in Shopify since the last pull (the first pull goes
+ * back 30 days) and runs each through the webhook ingest, which already
+ * ignores anything it has seen. A backstop for missed webhooks, and how a
+ * newly connected store's open orders get in.
+ */
+export async function pullRecentOrders(merchantId, { days } = {}) {
+  const merchant = await Merchant.findById(merchantId);
+  if (!merchant) fail('Merchant not found.', 404);
+  if (!merchant.isActive) fail('Merchant is not active.', 409);
+  // Without the catalog every line would be "not in the synced catalog" and
+  // the job created from it would stay wrong after the catalog arrived.
+  if (!await Sku.exists({ merchant: merchant._id })) fail("Sync this store's catalog before importing orders.", 409);
+  const startedAt = new Date();
+  const since = days
+    ? new Date(Date.now() - days * 86_400_000)
+    : merchant.lastOrderPollAt
+      ? new Date(merchant.lastOrderPollAt.getTime() - 5 * 60_000)
+      : new Date(Date.now() - 30 * 86_400_000);
+
+  const orders = await fetchOrdersUpdatedSince(merchant._id, since);
+  const counts = { seen: orders.length, created: 0, cancelled: 0, errors: 0 };
+  for (const payload of orders) {
+    try {
+      const out = await ingestOrderWebhook(merchant, payload.cancelled_at ? 'orders/cancelled' : 'orders/updated', payload);
+      if (out.action === 'created') counts.created += 1;
+      if (out.action === 'cancelled') counts.cancelled += 1;
+    } catch (e) {
+      counts.errors += 1;
+      console.error(`[Shopify] pulling order ${payload.name} for ${merchant.name}:`, e.message);
+    }
+  }
+  await Merchant.updateOne({ _id: merchant._id }, { $set: { lastOrderPollAt: startedAt } });
+  return counts;
+}
+
+/** The periodic pull, for every active merchant. */
+export async function runOrderPull() {
+  const merchants = await Merchant.find({ isActive: true }).select('_id name').lean();
+  const results = [];
+  for (const m of merchants) {
+    if (!await Sku.exists({ merchant: m._id })) continue;
+    try { results.push({ merchant: m.name, ...(await pullRecentOrders(m._id)) }); }
     catch (e) { results.push({ merchant: m.name, error: e.message }); }
   }
   return results;

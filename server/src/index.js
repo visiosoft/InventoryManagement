@@ -31,7 +31,7 @@ import unitRoutes from './routes/units.js';
 import warehouseRoutes from './routes/warehouse.js';
 import shopifyMerchantRoutes from './routes/shopifyMerchants.js';
 import shopifyWebhookRoutes from './routes/shopifyWebhook.js';
-import { retryFailedFulfillmentPushes, runInventorySync } from './services/shopifyFulfillment.js';
+import { retryFailedFulfillmentPushes, runInventorySync, runOrderPull } from './services/shopifyFulfillment.js';
 import warehouseJobPublicRoutes from './routes/warehouseJobPublic.js';
 import floorPlanRoutes from './routes/floorPlans.js';
 import siteRoutes from './routes/sites.js';
@@ -617,12 +617,16 @@ async function start() {
     }
   }, 60 * 60 * 1000), 90_000);
 
-  /* Shopify: retry fulfillments that didn't reach Shopify when they shipped,
-     and push stock for merchants with sync on. Stock changes already push
+  /* Shopify: pull any orders a webhook missed, retry fulfillments that didn't
+     reach Shopify when they shipped, and push stock for merchants with sync on. Stock changes already push
      about 30 seconds after they happen; this catches anything a restart or a
      Shopify outage dropped. */
   setTimeout(() => setInterval(async () => {
     try {
+      for (const r of await runOrderPull()) {
+        if (r.error) console.error(`[Shopify] order pull for ${r.merchant}:`, r.error);
+        else if (r.created || r.cancelled) console.log(`[Shopify] ${r.merchant}: pulled ${r.created} new, ${r.cancelled} cancelled order(s)`);
+      }
       const out = await retryFailedFulfillmentPushes();
       if (out.tried) console.log(`[Shopify] fulfillment retries: ${out.fixed}/${out.tried} sent`);
       for (const r of await runInventorySync()) {

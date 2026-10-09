@@ -179,6 +179,19 @@ function MerchantSetup({ merchant, onClose, onChanged }: { merchant: Merchant; o
             })}>
             {busy === 'webhooks' ? 'Registering…' : 'Register order webhooks'}
           </Button>
+          <p className="text-xs text-muted-foreground pt-1">
+            Orders placed before the webhooks existed, or missed while the server was down, can be fetched directly.
+            This also runs on its own every 10 minutes.
+          </p>
+          <Button variant="outline" disabled={!!busy}
+            onClick={() => act('pull', async () => {
+              const { data } = await api.post(`/shopify/merchants/${merchant._id}/pull-orders`)
+              return `Checked ${data.seen} order(s) from the last 30 days: ${data.created} new in the fulfillment queue`
+                + (data.cancelled ? `, ${data.cancelled} cancelled` : '')
+                + (data.errors ? `, ${data.errors} failed (see server log)` : '') + '.'
+            })}>
+            {busy === 'pull' ? 'Importing…' : 'Import open orders now'}
+          </Button>
         </section>
 
         <section className="space-y-2">
