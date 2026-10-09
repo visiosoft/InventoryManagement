@@ -363,7 +363,9 @@ router.get('/nav-order', async (req, res) => {
  */
 router.get('/stats', async (req, res) => {
     try {
-        const filter = {};
+        // deletedAt: null — aggregate() skips the soft-delete filter that find and
+        // count apply, so deleted leads were counted here and nowhere else.
+        const filter = { deletedAt: null };
         if (isSalesRep(req)) filter.owner = req.user.id;
         if (req.query.includeUnsaved !== '1') filter.fullName = { $not: /^whatsapp\s*contact/i };
 
@@ -551,7 +553,7 @@ router.get('/month-funnel', async (req, res) => {
 
         const [byStatus, overdueFollowUps] = await Promise.all([
             Lead.aggregate([
-                { $match: { ...base, leadDateTime: { $gte: monthStart, $lt: monthEnd } } },
+                { $match: { ...base, deletedAt: null, leadDateTime: { $gte: monthStart, $lt: monthEnd } } },
                 { $group: { _id: { $ifNull: ['$status', 'new'] }, n: { $sum: 1 } } },
             ]),
             Lead.countDocuments({

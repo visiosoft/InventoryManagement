@@ -212,7 +212,7 @@ router.get('/', async (req, res) => {
          collection, and a string would match nothing and report a pipeline of
          zeros — the kind of wrong that looks like a quiet month. */
       const pipelineRows = await Lead.aggregate([
-         { $match: { owner: new Types.ObjectId(me) } },
+         { $match: { owner: new Types.ObjectId(me), deletedAt: null } },
          { $group: { _id: { status: '$status', temperature: '$temperature' }, n: { $sum: 1 } } },
       ]).catch(() => []);
 

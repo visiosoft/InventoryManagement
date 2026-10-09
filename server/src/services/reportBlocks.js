@@ -267,7 +267,7 @@ export const BLOCKS = {
             // drop every enquiry that has not been placed yet.
             const f = parseDate(from, new Date(2000, 0, 1));
             const t = parseDate(to, new Date());
-            const match = { createdAt: { $gte: f, $lte: t } };
+            const match = { deletedAt: null, createdAt: { $gte: f, $lte: t } };
             const [byStatus, bySource] = await Promise.all([
                 Lead.aggregate([{ $match: match }, { $group: { _id: '$status', n: { $sum: 1 } } }, { $sort: { n: -1 } }]),
                 Lead.aggregate([{ $match: match }, { $group: { _id: '$source', n: { $sum: 1 } } }, { $sort: { n: -1 } }]),
