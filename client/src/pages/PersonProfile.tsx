@@ -765,39 +765,19 @@ export default function PersonProfile() {
                 still asks what happened before it is saved. */}
             <div className="flex flex-col" style={{ gap: 6 }}>
               <span style={{ color: FAINT, fontSize: 12, fontWeight: 600 }}>Stage</span>
-              <div role="group" aria-label="Pipeline stage" className="flex flex-col" style={{ gap: 2, background: PAGE, borderRadius: 14, padding: 4 }}>
-                {LEAD_STATUS_FLOW.map((st, i) => {
-                  const curIdx = LEAD_STATUS_FLOW.findIndex((x) => x.value === lead.status)
-                  const chosen = (pendingStage || lead.status) === st.value
-                  const done = i < curIdx && !pendingStage
-                  return (
-                    <button
-                      key={st.value}
-                      type="button"
-                      aria-pressed={chosen}
-                      onClick={() => {
-                        if (st.value === lead.status) { setPendingStage(''); setStageNote(''); return }
-                        setPendingStage(st.value)
-                      }}
-                      className="cursor-pointer"
-                      style={{
-                        height: 38, padding: '0 10px', borderRadius: 10, border: 'none', textAlign: 'left',
-                        display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', fontSize: 13.5,
-                        background: chosen ? '#fff' : 'transparent',
-                        boxShadow: chosen ? `0 0 0 1px ${LINE}` : 'none',
-                        fontWeight: chosen ? 700 : 500, color: chosen || done ? INK : FAINT,
-                      }}
-                    >
-                      <span style={{
-                        width: 22, height: 22, borderRadius: 999, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700,
-                        background: chosen || done ? PURPLE : '#fff', color: chosen || done ? '#fff' : FAINT,
-                        boxShadow: chosen || done ? 'none' : `inset 0 0 0 1px ${LINE}`,
-                      }}>{done ? '✓' : i + 1}</span>
-                      {st.label}
-                    </button>
-                  )
-                })}
-              </div>
+              <select
+                aria-label="Stage"
+                value={pendingStage || lead.status}
+                onChange={(e) => {
+                  const next = e.target.value
+                  if (next === lead.status) { setPendingStage(''); setStageNote(''); return }
+                  setPendingStage(next)
+                }}
+                className="cursor-pointer"
+                style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+              >
+                {LEAD_STATUS_FLOW.map((st, i) => <option key={st.value} value={st.value}>{i + 1}. {st.label}</option>)}
+              </select>
               <p style={{ fontSize: 12.5, color: FAINT }}>
                 {pendingStage ? 'Unsaved — say what happened below.' : LEAD_STATUS_FLOW.find((x) => x.value === lead.status)?.next}
               </p>
