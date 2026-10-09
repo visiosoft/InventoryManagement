@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
 import { notifyLeadAssigned, notifyBulkReassignment, pendingAssignmentBadge } from '../services/leadNotify.js';
 import { promotePlaceholderName, resolvePlaceholderNames } from '../services/leadNames.js';
-import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask } from '../services/followUps.js';
+import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask, syncStorageStartTask } from '../services/followUps.js';
 import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
 import { summarise } from '../services/speedToLead.js';
 import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
@@ -1335,6 +1335,7 @@ router.put('/:id', async (req, res) => {
     // rep can see what is coming rather than being told on the day.
     await syncFollowUpTask(lead);
     await syncSiteVisitTask(lead);
+    await syncStorageStartTask(lead);
 
     await lead.save();
 
@@ -1447,6 +1448,7 @@ router.patch('/:id/status', async (req, res) => {
     // than sitting on somebody's board for a closed lead.
     await syncFollowUpTask(lead);
     await syncSiteVisitTask(lead);
+    await syncStorageStartTask(lead);
 
     await lead.save();
 

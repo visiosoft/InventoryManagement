@@ -18,6 +18,7 @@ import { listWhatsAppTemplates } from '../services/whatsapp.js';
 
 const router = Router();
 const admin = (req, res, next) => (req.user?.role === 'admin' ? next() : res.status(403).json({ error: 'Admin only' }));
+const staff = (req, res, next) => (['admin', 'sales_rep'].includes(req.user?.role) ? next() : res.status(403).json({ error: 'Not allowed' }));
 const wrap = (fn) => (req, res) => fn(req, res).catch((e) => res.status(e.status || 400).json({ error: e.message }));
 const OWNABLE = [...BUCKET_ORDER, 'tenant'];
 
@@ -153,7 +154,15 @@ router.get('/inbox', wrap(async (req, res) => {
     res.json(await inbox({ agentId: req.query.agent || null }));
 }));
 
-router.post('/actions/:id/resolve', admin, wrap(async (req, res) => {
+// Staff, not admin only: the suggestion card sits in the chat a rep is working,
+// so Send / Edit / Dismiss have to work for them — on their own leads.
+router.post('/actions/:id/resolve', staff, wrap(async (req, res) => {
+    if (req.user?.role === 'sales_rep') {
+        const act = await AgentAction.findById(req.params.id).populate('lead', 'owner').lean();
+        if (act?.lead && String(act.lead.owner || '') !== String(req.user.id)) {
+            return res.status(403).json({ error: 'Not your lead' });
+        }
+    }
     const resolution = String(req.body?.resolution || '');
     if (!RESOLUTIONS.includes(resolution)) throw new Error(`resolution must be one of ${RESOLUTIONS.join(', ')}`);
     try {
@@ -303,7 +312,6 @@ router.post('/leads/:leadId/adopt', admin, wrap(async (req, res) => {
 // new one exists, so a failed attempt never leaves the chat with nothing; and
 // when our team has already answered and nothing is waiting, the stale
 // suggestion goes without being replaced.
-const staff = (req, res, next) => (['admin', 'sales_rep'].includes(req.user?.role) ? next() : res.status(403).json({ error: 'Not allowed' }));
 router.post('/leads/:leadId/suggest-again', staff, wrap(async (req, res) => {
     const lead = await Lead.findById(req.params.leadId).lean();
     if (!lead) return res.status(404).json({ error: 'No such lead' });

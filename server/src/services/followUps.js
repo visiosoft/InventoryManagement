@@ -326,3 +326,50 @@ export async function pushDueFollowUps({ now = new Date() } = {}) {
 
   return { due: due.length, pushed };
 }
+
+/**
+ * "Needs storage from" as a task for the rep who owns the lead.
+ *
+ * The customer has said when they want a unit. That date is the moment to
+ * have one ready and to call, so it lands on the owner's board for the day —
+ * the same arrangement as a site visit. Moving the date moves the task;
+ * clearing it, reassigning the lead or closing it takes the task away again
+ * unless somebody has already started it.
+ */
+export async function syncStorageStartTask(lead) {
+  const existing = lead.storageStartTaskId ? await Task.findById(lead.storageStartTaskId) : null;
+  const closed = ['won', 'lost', 'already_customer'].includes(lead.status);
+
+  if (!lead.storageStartAt || !lead.owner || closed) {
+    if (existing && existing.status === 'todo') await softDelete(existing, null);
+    lead.storageStartTaskId = null;
+    return null;
+  }
+
+  const name = lead.fullName || lead.phone || 'this lead';
+  const day = dayKeyFor(lead.storageStartAt);
+  const fields = {
+    title: `Needs a unit from today — ${name}`,
+    description: `${name} said they need storage from ${day}. Confirm the unit and move-in.${lead.notes ? ` Notes: ${String(lead.notes).slice(0, 1000)}` : ''}`,
+    assignedTo: lead.owner,
+    leadId: lead._id,
+    leadType: 'storage',
+    leadName: name,
+    dueDate: dayRange(day).from,
+    priority: 'high',
+    status: 'todo',
+    createdByName: 'Needs storage reminder',
+  };
+
+  if (existing && existing.status !== 'todo') {
+    lead.storageStartTaskId = null;
+  } else if (existing) {
+    Object.assign(existing, fields);
+    await existing.save();
+    return existing;
+  }
+
+  const task = await Task.create(fields);
+  lead.storageStartTaskId = task._id;
+  return task;
+}

@@ -303,6 +303,7 @@ const leadSchema = new Schema(
        siteVisitAt is when they come to look, and this is when they are ready
        to take the unit. A day, not an instant: nobody needs storage "at 4pm". */
     storageStartAt: { type: Date, default: null },
+    storageStartTaskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
     siteVisitTaskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
 
     /* Every attempt made to reach them, oldest first. "Attempt 2 of 3" is this

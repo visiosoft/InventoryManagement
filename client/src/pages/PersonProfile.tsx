@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Calendar, Clock, FileText, MessageCircle, MessageSquare,
-  Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
+  ClipboardList, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
@@ -210,6 +210,7 @@ export default function PersonProfile() {
   const [pendingStage, setPendingStage] = useState('')
   // The follow-up being set: which preset, at what time, and what it is for.
   const [presetDays, setPresetDays] = useState(0)
+  const [attemptTime, setAttemptTime] = useState('09:00')
   const [followUpTime, setFollowUpTime] = useState('09:00')
   const [followUpNote, setFollowUpNote] = useState('')
   // The standing note on the lead — what this person is about, not a dated
@@ -324,7 +325,7 @@ export default function PersonProfile() {
       channel: attempt.channel,
       outcome: attempt.outcome,
       note: attempt.note.trim(),
-      nextAt: attempt.nextAt || undefined,
+      nextAt: attempt.nextAt ? (attemptTime ? `${attempt.nextAt}T${attemptTime}` : attempt.nextAt) : undefined,
     }),
     onSuccess: (res) => {
       setErr('')
@@ -629,6 +630,20 @@ export default function PersonProfile() {
             </div>
           </div>
 
+          <div className="flex flex-wrap" style={{ gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setTaskOpen(true)}
+              className="inline-flex items-center cursor-pointer"
+              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
+              title="Create a task about this lead"
+            >
+              <ClipboardList size={13} /> Task
+            </button>
+            <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 6, height: 34, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 13, boxShadow: '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)', whiteSpace: 'nowrap' }}>
+              <PackageCheck size={13} /> Book unit
+            </Link>
+          </div>
         </div>
 
         {/* The one time-critical fact, said in words rather than left as a date
@@ -786,12 +801,20 @@ export default function PersonProfile() {
                     {!outcomeOf(attempt.outcome).ends && (
                       <div style={{ marginTop: 10 }}>
                         <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Next attempt on</span>
+                        <div className="flex" style={{ gap: 8 }}>
                         <input
                           type="date"
                           value={attempt.nextAt}
                           onChange={(e) => setAttempt((a) => ({ ...a, nextAt: e.target.value }))}
-                          style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                          style={{ flex: 1, minWidth: 0, height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
                         />
+                        <input
+                          type="time"
+                          value={attemptTime}
+                          onChange={(e) => setAttemptTime(e.target.value)}
+                          style={{ width: 118, height: 40, padding: '0 10px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                        />
+                        </div>
                         {!attempt.nextAt && (
                           <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
                             Leave it blank and the chase ends here, for somebody to decide on.
