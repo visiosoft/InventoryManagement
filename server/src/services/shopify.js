@@ -115,6 +115,7 @@ async function postGraphql(shopDomain, apiVersion, token, query, variables) {
 export async function shopifyGraphql(merchantOrId, query, variables = {}) {
   const merchant = await loadMerchant(merchantOrId);
   if (!merchant.isActive) throw new Error('Merchant is not active');
+  let refreshed = false;
   for (let attempt = 0; ; attempt += 1) {
     const token = await accessTokenFor(merchant);
     let res;
@@ -124,7 +125,8 @@ export async function shopifyGraphql(merchantOrId, query, variables = {}) {
       const status = e.response?.status;
       // A client-credentials token can be revoked early (app reinstalled,
       // secret rotated in Shopify). Fetch a fresh one once before giving up.
-      if (status === 401 && merchant.authMode === 'client_credentials' && attempt === 0) {
+      if (status === 401 && merchant.authMode === 'client_credentials' && !refreshed) {
+        refreshed = true;
         forgetMerchantClient(merchant._id);
         continue;
       }
@@ -138,9 +140,37 @@ export async function shopifyGraphql(merchantOrId, query, variables = {}) {
         await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
         continue;
       }
+      if (errors.some(isAccessDenied)) {
+        // A client-credentials token carries the scopes the app had when it
+        // was issued, and is cached for up to a day. If scopes were added in
+        // the Dev Dashboard since, a fresh token picks them up.
+        if (merchant.authMode === 'client_credentials' && !refreshed) {
+          refreshed = true;
+          forgetMerchantClient(merchant._id);
+          continue;
+        }
+        throw new Error(`Shopify: ${describeGraphqlErrors(errors)}. ${await missingScopesHint(merchant, token)}`);
+      }
       throw new Error(`Shopify: ${describeGraphqlErrors(errors)}`);
     }
     return data;
+  }
+}
+
+const isAccessDenied = e => e.extensions?.code === 'ACCESS_DENIED' || /access denied/i.test(e.message || '');
+
+/** Names the scopes the store's app is missing, so an access-denied error
+ *  says what to tick in Shopify rather than just "denied". A write_ scope
+ *  includes its read_ counterpart. */
+async function missingScopesHint(merchant, token) {
+  try {
+    const { data } = await postGraphql(merchant.shopDomain, merchant.apiVersion, token, '{ currentAppInstallation { accessScopes { handle } } }', {});
+    const granted = new Set((data?.data?.currentAppInstallation?.accessScopes || []).map(s => s.handle));
+    const missing = REQUIRED_SCOPES.filter(s => !granted.has(s) && !granted.has(s.replace(/^read_/, 'write_')));
+    if (!missing.length) return 'The app seems to have every scope needed — try again in a minute.';
+    return `The store's app is missing these scopes: ${missing.join(', ')}. Add them to the app in Shopify, release the new version, and approve it on the store.`;
+  } catch {
+    return `Check the store's app has these scopes: ${REQUIRED_SCOPES.join(', ')}.`;
   }
 }
 
