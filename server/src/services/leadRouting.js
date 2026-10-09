@@ -371,7 +371,9 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
       const decision = await routeInboundLead({ phoneNormalized: lead.phoneNormalized, at });
       if (!decision.ownerId) break;   // still nobody on shift; try again later
 
-      await Lead.updateOne({ _id: lead._id }, {
+      // owner: null in the filter too — a lead somebody was given in the meantime
+      // is never overwritten, even in a race with this sweep.
+      const claimed = await Lead.updateOne({ _id: lead._id, owner: null }, {
          $set: {
             owner: decision.ownerId,
             assignedAt: at,
@@ -382,6 +384,7 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
          },
          $push: { timeline: { type: 'note', text: `Assigned by distribution rules — ${decision.reason}` } },
       });
+      if (!claimed.modifiedCount) continue;   // somebody got it first; leave it
       assigned += 1;
 
       notifyLeadAssigned({ lead, ownerId: decision.ownerId, reason: decision.reason })

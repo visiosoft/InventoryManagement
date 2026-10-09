@@ -250,7 +250,9 @@ export async function runLeadSla({ now = new Date(), dry = false, limit = 50 } =
             });
             if (dry) continue;
 
-            await Lead.updateOne({ _id: lead._id }, {
+            // Dead code while reassignMinutes is 0; owner is pinned anyway so an
+            // owned lead can never be overwritten if it is ever switched back on.
+            await Lead.updateOne({ _id: lead._id, owner: lead.owner }, {
                $set: {
                   owner: decision.ownerId,
                   assignedAt: now,
