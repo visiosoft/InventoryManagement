@@ -42,6 +42,18 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem('pb_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
 
+  // Accounts + Admin leaves a reason for every deletion, kept in the audit log.
+  if ((config.method || '').toLowerCase() === 'delete') {
+    try {
+      const me = JSON.parse(localStorage.getItem('pb_user') || 'null')
+      if (me?.accountsAdmin) {
+        const reason = (window.prompt('Why are you deleting this? (kept in the audit log)') || '').trim()
+        if (!reason) return Promise.reject(new Error('Deletion cancelled — a reason is required.'))
+        config.headers['X-Audit-Reason'] = encodeURIComponent(reason)
+      }
+    } catch { /* not signed in as that role */ }
+  }
+
   const siteId = localStorage.getItem('pb_site_id')
   if (siteId && isSiteScoped(config.url) && config.params?.site === undefined) {
     config.params = { ...(config.params ?? {}), site: siteId }

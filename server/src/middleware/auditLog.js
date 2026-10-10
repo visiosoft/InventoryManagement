@@ -1,3 +1,5 @@
+import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import { AuditLog } from '../models/index.js';
 
 const OBJECT_ID_RE = /^[0-9a-fA-F]{24}$/;
@@ -59,6 +61,57 @@ export function parseAuditTarget(method, segments) {
   return { entity, entityId, action };
 }
 
+/**
+ * Accounts + Admin is watched more closely than anybody else: a deletion or
+ * an update by that role records why it was done (the reason typed in the
+ * app), what was sent, the record as it stood before, the browser and the IP.
+ * This runs ahead of requireAuth, so it reads the token itself.
+ */
+function watchedActor(req) {
+  try {
+    const header = req.headers.authorization || '';
+    if (!header.startsWith('Bearer ')) return null;
+    const payload = jwt.verify(header.slice(7), process.env.JWT_SECRET);
+    return payload?.accountsAdmin === true ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+const SECRET_KEY = /pass|token|secret|hash|otp|pin/i;
+const MAX_JSON = 8000;
+
+function redact(value, depth = 0) {
+  if (value === null || typeof value !== 'object' || depth > 4) return value;
+  if (Array.isArray(value)) return value.slice(0, 50).map((v) => redact(v, depth + 1));
+  const out = {};
+  for (const [k, v] of Object.entries(value)) out[k] = SECRET_KEY.test(k) ? '[hidden]' : redact(v, depth + 1);
+  return out;
+}
+
+function snapshot(value) {
+  if (value === undefined || value === null) return '';
+  try {
+    const text = JSON.stringify(redact(value));
+    return text.length > MAX_JSON ? `${text.slice(0, MAX_JSON)}…[truncated]` : text;
+  } catch {
+    return '';
+  }
+}
+
+/** The record about to be changed or deleted, found by the entity name in the URL. */
+async function recordBefore(entity, entityId) {
+  if (!entityId) return null;
+  const names = [entity, entity.replace(/ies$/, 'y'), entity.replace(/es$/, ''), entity.replace(/s$/, '')];
+  const name = names.find((n) => mongoose.models[n]);
+  if (!name) return null;
+  try {
+    return await mongoose.models[name].findById(entityId).setOptions({ includeDeleted: true }).lean();
+  } catch {
+    return null;
+  }
+}
+
 /** Who made the request, across every auth style this app uses. */
 export function actorFrom(req) {
   if (req.user) return { user: req.user.id || null, userName: req.user.name || '', userEmail: req.user.email || '' };
@@ -73,8 +126,27 @@ export function actorFrom(req) {
  * change. Only acts after the response is sent (res.on('finish')), so it
  * never adds latency, and only for a request that actually succeeded.
  */
-export function auditLogMiddleware(req, res, next) {
+export async function auditLogMiddleware(req, res, next) {
   if (!MUTATING_METHODS.has(req.method)) return next();
+
+  // Watched accounts: capture the "before" now, while the record still exists.
+  const watched = watchedActor(req);
+  let beforeText = '';
+  if (watched && req.method !== 'POST') {
+    try {
+      const segs = req.path.split('/').filter(Boolean).filter((x) => x !== 'api');
+      if (segs.length) {
+        const t = parseAuditTarget(req.method, segs);
+        beforeText = snapshot(await recordBefore(t.entity, t.entityId));
+      }
+    } catch { /* never block the request */ }
+  }
+  const bodyText = watched ? snapshot(req.body) : '';
+  let reason = '';
+  if (watched) {
+    try { reason = decodeURIComponent(String(req.headers['x-audit-reason'] || '')).slice(0, 500); } catch { reason = ''; }
+    if (!reason && req.body && typeof req.body.reason === 'string') reason = req.body.reason.slice(0, 500);
+  }
 
   // Meta calls this every time a message/status update arrives — dozens of
   // times a day, from Meta's own servers, not a person. It's noise that
@@ -109,7 +181,14 @@ export function auditLogMiddleware(req, res, next) {
         method: req.method,
         path: req.path,
         ipAddress: req.ip || '',
-        detail: `${actor.userName || 'Someone'} ${action} ${entity}${resolvedId ? ` ${resolvedId}` : ''}`,
+        ...(watched ? {
+          userRole: 'Accounts + Admin',
+          userAgent: String(req.headers['user-agent'] || '').slice(0, 300),
+          reason,
+          changes: bodyText,
+          before: beforeText,
+        } : {}),
+        detail: `${actor.userName || 'Someone'} ${action} ${entity}${resolvedId ? ` ${resolvedId}` : ''}${reason ? ` — ${reason}` : ''}`,
       }).catch((err) => console.error('AuditLog write failed:', err));
     } catch (err) {
       console.error('auditLogMiddleware failed:', err);

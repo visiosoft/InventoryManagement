@@ -1685,6 +1685,13 @@ const auditLogSchema = new Schema(
     path: { type: String, default: '' },
     ipAddress: { type: String, default: '' },
     detail: { type: String, default: '' },
+    // For watched accounts (Accounts + Admin): the role label, the browser, why
+    // it was done, what was sent, and the record as it stood before the change.
+    userRole: { type: String, default: '' },
+    userAgent: { type: String, default: '' },
+    reason: { type: String, default: '' },
+    changes: { type: String, default: '' },
+    before: { type: String, default: '' },
   },
   { timestamps: true }
 );
