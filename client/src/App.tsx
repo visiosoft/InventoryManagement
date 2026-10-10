@@ -41,7 +41,7 @@ function SmartHome() {
   /* Accounts get their own dashboard: the company one answers a manager's
      questions, and their day is invoices, not occupancy. Checked before the
      sales-rep line below, which counts accounts as a rep-ish role. */
-  if (user?.role === 'accounts' || user?.accountsAdmin) {
+  if (user?.role === 'accounts') {
     return <AccountsDashboard />
   }
   /* A rep's home is their day, not a board.

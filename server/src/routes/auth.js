@@ -16,7 +16,7 @@ router.post('/login', async (req, res) => {
   }
   res.json({
     token: signToken(user),
-    user: { id: user._id, name: user.name, email: user.email, role: effectiveRole(user.role), accountsAdmin: user.role === 'accounts_admin', permissions: user.permissions ?? [], isActive: user.isActive ?? true },
+    user: { id: user._id, name: user.name, email: user.email, role: effectiveRole(user.role), accountsAdmin: user.role === 'accounts_admin', permissions: user.role === 'accounts_admin' ? [] : (user.permissions ?? []), isActive: user.isActive ?? true },
   });
 });
 

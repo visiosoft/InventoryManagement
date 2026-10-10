@@ -95,7 +95,7 @@ router.post('/', requireAdmin, async (req, res) => {
     passwordHash,
     role: normalizedRole,
     // Sales reps default to their own board when no explicit permissions are given.
-    permissions: withRoleFloor(
+    permissions: normalizedRole === 'accounts_admin' ? [] : withRoleFloor(
         normalizedRole,
         cleanPermissions.length === 0 && SALES_REP_ROLES.includes(normalizedRole) ? SALES_REP_DEFAULT_PERMISSIONS : cleanPermissions,
     ),
@@ -132,6 +132,9 @@ router.put('/:id', requireAdmin, async (req, res) => {
   // Whatever was chosen, the role's floor goes back on — including when the
   // role itself has just changed.
   user.permissions = withRoleFloor(user.role, user.permissions);
+  // Accounts + Admin has full access: an empty list means everything for an
+  // admin, and a leftover list from an earlier role would restrict them.
+  if (user.role === 'accounts_admin') user.permissions = [];
   if (isActive !== undefined) user.isActive = Boolean(isActive);
 
   await user.save();

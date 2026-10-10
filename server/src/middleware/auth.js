@@ -27,7 +27,7 @@ export const effectiveRole = (role) => (role === 'accounts_admin' ? 'admin' : ro
 
 export function signToken(user) {
   return jwt.sign(
-    { id: user._id, email: user.email, name: user.name, role: effectiveRole(user.role), accountsAdmin: user.role === 'accounts_admin', permissions: user.permissions ?? [] },
+    { id: user._id, email: user.email, name: user.name, role: effectiveRole(user.role), accountsAdmin: user.role === 'accounts_admin', permissions: user.role === 'accounts_admin' ? [] : (user.permissions ?? []) },
     process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );

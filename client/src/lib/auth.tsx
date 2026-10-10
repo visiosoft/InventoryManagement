@@ -71,6 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // An admin with no explicit list gets everything; an admin with a list is
     // held to it, which is why a 17-module admin can be missing a screen.
     if (user.role === 'admin' && !user.permissions?.length) return true
+    // Accounts + Admin: full access whatever an earlier role left in the list.
+    if (user.accountsAdmin) return true
     const wanted = Array.isArray(module) ? module : [module]
     if (wanted.some((m) => user.permissions.includes(m))) return true
     // Some things a role cannot work without, whatever its stored list says.
