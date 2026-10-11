@@ -678,20 +678,30 @@ function ContactDetailPanel({ row, onUpdateLead }: { row: WhatsAppLeadRow; onUpd
     )
 }
 
+/* The list's filters, page and sort are kept for the browser session, so
+   opening a lead and coming back lands on the same filtered list. A fresh tab
+   or a new login starts clean. */
+const LEADS_VIEW_KEY = 'pb_leads_view'
+type SavedView = { search?: string; status?: string; source?: string; owner?: string; chase?: string; attemptBy?: string; from?: string; to?: string; sort?: 'newest' | 'followUp' | 'needFrom'; page?: number; limit?: number; moreOpen?: boolean }
+function loadLeadsView(): SavedView {
+    try { return JSON.parse(sessionStorage.getItem(LEADS_VIEW_KEY) || '{}') as SavedView } catch { return {} }
+}
+
 export default function Leads() {
     const qc = useQueryClient()
     const navigate = useNavigate()
+    const saved = useRef<SavedView>(loadLeadsView()).current
 
-    const [search, setSearch] = useState('')
-    const [status, setStatus] = useState('')
-    const [moreOpen, setMoreOpen] = useState(false)
-    const [source, setSource] = useState('')
-    const [owner, setOwner] = useState('')
+    const [search, setSearch] = useState(saved.search ?? '')
+    const [status, setStatus] = useState(saved.status ?? '')
+    const [moreOpen, setMoreOpen] = useState(saved.moreOpen ?? false)
+    const [source, setSource] = useState(saved.source ?? '')
+    const [owner, setOwner] = useState(saved.owner ?? '')
     // Where the chase has got to, and who did it.
-    const [chase, setChase] = useState('')
-    const [attemptBy, setAttemptBy] = useState('')
-    const [from, setFrom] = useState('')
-    const [to, setTo] = useState('')
+    const [chase, setChase] = useState(saved.chase ?? '')
+    const [attemptBy, setAttemptBy] = useState(saved.attemptBy ?? '')
+    const [from, setFrom] = useState(saved.from ?? '')
+    const [to, setTo] = useState(saved.to ?? '')
 
     const [selected, setSelected] = useState<string[]>([])
     const [drawerId, setDrawerId] = useState<string | null>(null)
@@ -820,12 +830,12 @@ export default function Leads() {
         onError: (e) => { setReassignError(apiError(e)); setReassignResult('') },
     })
 
-    const [page, setPage] = useState(1)
-    const [limit, setLimit] = useState(25)
+    const [page, setPage] = useState(saved.page ?? 1)
+    const [limit, setLimit] = useState(saved.limit ?? 25)
     // 'newest' is the long-standing order. 'needFrom' puts whoever wants storage
     // soonest at the top, 'followUp' whoever is to be chased soonest. Set from the
     // column headers.
-    const [sort, setSort] = useState<'newest' | 'followUp' | 'needFrom'>('newest')
+    const [sort, setSort] = useState<'newest' | 'followUp' | 'needFrom'>(saved.sort ?? 'newest')
 
     const queryParams = useMemo(
         () => ({
@@ -844,8 +854,19 @@ export default function Leads() {
         [search, status, source, owner, chase, attemptBy, from, to, sort, page, limit]
     )
 
-    // Back to page 1 whenever a filter changes
-    useEffect(() => { setPage(1) }, [search, status, source, owner, chase, attemptBy, from, to, sort, limit])
+    // Back to page 1 whenever a filter changes — but not when the page loads
+    // with a remembered view, which should come back on the page it was left on.
+    const firstFilterRun = useRef(true)
+    useEffect(() => {
+        if (firstFilterRun.current) { firstFilterRun.current = false; return }
+        setPage(1)
+    }, [search, status, source, owner, chase, attemptBy, from, to, sort, limit])
+
+    useEffect(() => {
+        try {
+            sessionStorage.setItem(LEADS_VIEW_KEY, JSON.stringify({ search, status, source, owner, chase, attemptBy, from, to, sort, page, limit, moreOpen }))
+        } catch { /* storage can be unavailable; the list just will not be remembered */ }
+    }, [search, status, source, owner, chase, attemptBy, from, to, sort, page, limit, moreOpen])
 
     const { data: leadsPage, isLoading } = useQuery<LeadPage>({
         queryKey: ['leads', queryParams],
