@@ -171,11 +171,22 @@ type ReminderTask = {
 }
 
 /** One reminder: the title up front, the date and owner under it, everything else on hover. */
-function ReminderItem({ t, now, countdown }: { t: ReminderTask; now: number; countdown: (iso: string) => string }) {
+function ReminderItem({ t, now, countdown, onDelete, deleting }: { t: ReminderTask; now: number; countdown: (iso: string) => string; onDelete: (t: ReminderTask) => void; deleting: boolean }) {
   const overdue = t.dueDate ? new Date(t.dueDate).getTime() < now : false
   return (
     <div className="group relative" style={{ borderRadius: 12, border: `1px solid ${overdue ? 'rgba(220,38,38,.25)' : LINE}`, background: overdue ? 'rgba(220,38,38,.05)' : '#fff', padding: '8px 10px' }} tabIndex={0}>
-      <div className="line-clamp-2" style={{ fontSize: 13, fontWeight: 700, color: INK }}>{t.title}</div>
+      <button
+        type="button"
+        onClick={() => onDelete(t)}
+        disabled={deleting}
+        aria-label={`Delete reminder: ${t.title}`}
+        title="Delete this reminder"
+        className="absolute cursor-pointer disabled:opacity-40"
+        style={{ top: 6, right: 6, background: 'none', border: 'none', color: FAINT, padding: 2, lineHeight: 1 }}
+      >
+        <Trash2 size={13} />
+      </button>
+      <div className="line-clamp-2" style={{ fontSize: 13, fontWeight: 700, color: INK, paddingRight: 20 }}>{t.title}</div>
       <div style={{ fontSize: 11.5, color: overdue ? '#B91C1C' : FAINT, marginTop: 2 }}>
         {t.dueDate ? `${formatDateTime(t.dueDate)} · ${countdown(t.dueDate)}` : 'No date'}
         {t.assignedTo?.name ? ` · ${t.assignedTo.name}` : ''}
@@ -313,6 +324,15 @@ export default function PersonProfile() {
     queryKey: ['person-tasks', data?.lead?._id],
     queryFn: () => api.get('/tasks', { params: { leadId: data!.lead!._id, status: 'todo,in_progress' } }).then((r) => r.data ?? []),
     enabled: Boolean(data?.lead?._id),
+  })
+  const deleteReminder = useMutation({
+    mutationFn: (taskId: string) => api.delete(`/tasks/${taskId}`),
+    onSuccess: () => {
+      setErr('')
+      qc.invalidateQueries({ queryKey: ['person-tasks'] })
+      qc.invalidateQueries({ queryKey: ['person', id] })
+    },
+    onError: (e) => setErr(apiError(e)),
   })
   const countdown = (iso: string) => {
     const ms = new Date(iso).getTime() - nowTick
@@ -785,7 +805,7 @@ export default function PersonProfile() {
                   .sort((a, b) => (a.dueDate ? new Date(a.dueDate).getTime() : Infinity) - (b.dueDate ? new Date(b.dueDate).getTime() : Infinity))
                   .slice(0, 5)
                   .map((t) => (
-                    <ReminderItem key={t._id} t={t} now={nowTick} countdown={countdown} />
+                    <ReminderItem key={t._id} t={t} now={nowTick} countdown={countdown} onDelete={(x) => { if (window.confirm(`Delete the reminder "${x.title}"?`)) deleteReminder.mutate(x._id) }} deleting={deleteReminder.isPending} />
                   ))}
               </div>
             )}
@@ -1492,7 +1512,7 @@ export default function PersonProfile() {
           the chat are the same thing. */}
       <TaskComposer
         open={taskOpen}
-        onOpenChange={(v) => { setTaskOpen(v); if (!v) qc.invalidateQueries({ queryKey: ['person-tasks'] }) }}
+        onOpenChange={(v) => { setTaskOpen(v); if (!v) { qc.invalidateQueries({ queryKey: ['person-tasks'] }); qc.invalidateQueries({ queryKey: ['person', id] }) } }}
         subjectName={name}
         leadId={lead?._id ?? null}
         subtitle={`About ${name}`}

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { Task, User, nextTaskNo } from '../models/index.js';
+import { Task, User, Lead, nextTaskNo } from '../models/index.js';
 import { uploadFile } from '../services/drive.js';
 import { notifyTaskAssigned } from '../services/taskNotify.js';
 import { runDayBriefs } from '../services/dayBrief.js';
@@ -79,6 +79,21 @@ router.get('/', async (req, res) => {
   res.json(tasks);
 });
 
+
+/** A reminder raised on, or removed from, a lead shows in that lead's Activity. */
+async function noteOnLead(task, text, userId) {
+  try {
+    if (!task.leadId || (task.leadType && task.leadType !== 'storage')) return;
+    await Lead.updateOne({ _id: task.leadId }, { $push: { timeline: { type: 'note', text, user: userId, at: new Date() } } });
+  } catch (e) {
+    console.error('[Tasks] could not note on lead:', e.message);
+  }
+}
+
+const dubaiStamp = (d) => d
+  ? new Date(d).toLocaleString('en-GB', { timeZone: 'Asia/Dubai', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  : 'no date';
+
 router.post('/', async (req, res) => {
   const title = String(req.body?.title || '').trim();
   if (!title) return res.status(400).json({ error: 'Title is required' });
@@ -113,6 +128,7 @@ router.post('/', async (req, res) => {
     }],
   });
 
+  await noteOnLead(task, `Reminder task created by ${byName}: "${task.title}" — due ${dubaiStamp(task.dueDate)}, for ${assignee.name || assignee.email}${task.description ? `. ${String(task.description).slice(0, 200)}` : ''}`, req.user.id);
   res.status(201).json(await task.populate('assignedTo', 'name email'));
 
   /* After the response, not before it.
@@ -243,6 +259,7 @@ router.delete('/:id', async (req, res) => {
   const isCreator = String(task.createdBy) === String(req.user.id);
   if (!isPrivileged(req) && !isCreator) return res.status(403).json({ error: 'Only the creator or an admin can delete this task' });
   await softDelete(task, req.user.id);
+  await noteOnLead(task, `Reminder task deleted by ${req.user.name || req.user.email || 'someone'}: "${task.title}" — was due ${dubaiStamp(task.dueDate)}${task.createdByName ? `, set by ${task.createdByName}` : ''}`, req.user.id);
   res.json({ ok: true });
 });
 

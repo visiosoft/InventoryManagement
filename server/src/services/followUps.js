@@ -371,5 +371,7 @@ export async function syncStorageStartTask(lead) {
 
   const task = await Task.create(fields);
   lead.storageStartTaskId = task._id;
+  // Said in the lead's Activity, as a hand-made reminder is.
+  lead.timeline.push({ type: 'note', text: `Reminder task created: "${fields.title}" — due ${day}, for the lead's owner`, at: new Date() });
   return task;
 }

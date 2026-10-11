@@ -3058,6 +3058,16 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
   const [pointerInList, setPointerInList] = useState(false)
   const heldOrder = useRef<{ key: string; index: Map<string, number> } | null>(null)
   const orderKey = `${debouncedSearch}|${ownerFilter}|${labelFilter}`
+  /* Keep the reader's place in the chat list.
+     Assigning a lead refreshes the list, and the rows under the reader's
+     finger were replaced — the list snapped back to the top and they had to
+     scroll down to where they were again. The scroll position is remembered
+     as it changes; if the list comes back reset to the top while it was
+     scrolled down, it is put back before it is painted. Changing the filter
+     or the search is a different list, and does start at the top. */
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const listTop = useRef(0)
+  useLayoutEffect(() => { listTop.current = 0 }, [ownerFilter, debouncedSearch])
   const displayConvos = useMemo(() => {
     if (!pointerInList) { heldOrder.current = null; return filteredConvos }
     if (!heldOrder.current || heldOrder.current.key !== orderKey) {
@@ -3070,6 +3080,11 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
       (a, b) => (index.get(a.phoneNormalized) ?? unseen) - (index.get(b.phoneNormalized) ?? unseen),
     )
   }, [filteredConvos, pointerInList, orderKey])
+
+  useLayoutEffect(() => {
+    const el = listRef.current
+    if (el && el.scrollTop < 5 && listTop.current > 50) el.scrollTop = listTop.current
+  }, [displayConvos, loadingConvos])
 
   /* The open conversation, from the list where the filter kept it and from the
      server's `pinned` where it did not. It used to be pushed into the list
@@ -3797,6 +3812,8 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
           </div>
 
           <div
+            ref={listRef}
+            onScroll={(e) => { listTop.current = e.currentTarget.scrollTop }}
             className="wa-scroll flex-1 min-h-0"
             onPointerEnter={() => setPointerInList(true)}
             onPointerLeave={() => setPointerInList(false)}
