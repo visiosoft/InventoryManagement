@@ -163,6 +163,39 @@ function eventMeta(t: TimelineEntry): string {
   return [formatDate(t.at), time, t.user?.name].filter(Boolean).join(' · ')
 }
 
+
+type ReminderTask = {
+  _id: string; title: string; description?: string; dueDate?: string | null; status: string
+  priority?: string; taskNo?: string; createdByName?: string
+  assignedTo?: { name: string } | null
+}
+
+/** One reminder: the title up front, the date and owner under it, everything else on hover. */
+function ReminderItem({ t, now, countdown }: { t: ReminderTask; now: number; countdown: (iso: string) => string }) {
+  const overdue = t.dueDate ? new Date(t.dueDate).getTime() < now : false
+  return (
+    <div className="group relative" style={{ borderRadius: 12, border: `1px solid ${overdue ? 'rgba(220,38,38,.25)' : LINE}`, background: overdue ? 'rgba(220,38,38,.05)' : '#fff', padding: '8px 10px' }} tabIndex={0}>
+      <div className="line-clamp-2" style={{ fontSize: 13, fontWeight: 700, color: INK }}>{t.title}</div>
+      <div style={{ fontSize: 11.5, color: overdue ? '#B91C1C' : FAINT, marginTop: 2 }}>
+        {t.dueDate ? `${formatDateTime(t.dueDate)} · ${countdown(t.dueDate)}` : 'No date'}
+        {t.assignedTo?.name ? ` · ${t.assignedTo.name}` : ''}
+      </div>
+      <div className="hidden group-hover:block group-focus:block absolute z-30" style={{ left: 0, top: '100%', marginTop: 6, width: 280, background: '#fff', border: `1px solid ${LINE_STRONG}`, borderRadius: 14, boxShadow: '0 12px 32px rgba(20,8,31,.16)', padding: 12, fontSize: 12.5, color: INK_2 }}>
+        <div style={{ fontWeight: 700, color: INK, fontSize: 13.5 }}>{t.title}</div>
+        {t.description && <p className="line-clamp-6" style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>{t.description}</p>}
+        <dl style={{ margin: '8px 0 0', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 10px' }}>
+          <dt style={{ color: FAINT }}>Due</dt><dd style={{ margin: 0 }}>{t.dueDate ? formatDateTime(t.dueDate) : '—'}</dd>
+          <dt style={{ color: FAINT }}>For</dt><dd style={{ margin: 0 }}>{t.assignedTo?.name || '—'}</dd>
+          {t.priority && <><dt style={{ color: FAINT }}>Priority</dt><dd style={{ margin: 0, textTransform: 'capitalize' }}>{t.priority}</dd></>}
+          <dt style={{ color: FAINT }}>Status</dt><dd style={{ margin: 0 }}>{t.status === 'in_progress' ? 'In progress' : 'To do'}</dd>
+          {t.createdByName && <><dt style={{ color: FAINT }}>Set by</dt><dd style={{ margin: 0 }}>{t.createdByName}</dd></>}
+          {t.taskNo && <><dt style={{ color: FAINT }}>Task</dt><dd style={{ margin: 0 }}>{t.taskNo}</dd></>}
+        </dl>
+      </div>
+    </div>
+  )
+}
+
 export default function PersonProfile() {
   const [pane, setPane] = useState<'details' | 'chat'>('details')
   const { id = '' } = useParams()
@@ -276,14 +309,11 @@ export default function PersonProfile() {
     staleTime: 5 * 60_000,
   })
 
-  const { data: leadTasks } = useQuery<{ _id: string; title: string; dueDate?: string | null; status: string; assignedTo?: { name: string } | null }[]>({
+  const { data: leadTasks } = useQuery<ReminderTask[]>({
     queryKey: ['person-tasks', data?.lead?._id],
     queryFn: () => api.get('/tasks', { params: { leadId: data!.lead!._id, status: 'todo,in_progress' } }).then((r) => r.data ?? []),
     enabled: Boolean(data?.lead?._id),
   })
-  const nextReminder = (leadTasks ?? [])
-    .filter((t) => t.dueDate)
-    .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime())[0]
   const countdown = (iso: string) => {
     const ms = new Date(iso).getTime() - nowTick
     const over = ms < 0
@@ -744,18 +774,21 @@ export default function PersonProfile() {
                 <dt style={{ color: FAINT, flexGrow: 1, fontSize: 13 }}>Came in</dt>
                 <dd style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{lead.leadDateTime ? formatDateTime(lead.leadDateTime) : '—'}</dd>
               </div>
-              {nextReminder?.dueDate && (
-                <div className="flex items-start" style={{ gap: 8, padding: '9px 0', borderTop: `1px solid ${LINE}` }}>
-                  <dt style={{ color: FAINT, flexGrow: 1, fontSize: 13 }}>Reminder</dt>
-                  <dd style={{ margin: 0, textAlign: 'right', fontSize: 13, fontWeight: 600, color: new Date(nextReminder.dueDate).getTime() < nowTick ? '#B91C1C' : INK }}>
-                    {countdown(nextReminder.dueDate)}
-                    <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: FAINT }}>
-                      {nextReminder.assignedTo?.name ? `${nextReminder.assignedTo.name} · ` : ''}{nextReminder.title}
-                    </span>
-                  </dd>
-                </div>
-              )}
             </dl>
+
+            {/* The reminders raised for this lead: what to do, when, and who
+                it will nudge. Hover for the details. */}
+            {(leadTasks ?? []).length > 0 && (
+              <div className="flex flex-col" style={{ gap: 6 }}>
+                <span style={{ color: FAINT, fontSize: 12, fontWeight: 600 }}>Reminders</span>
+                {[...(leadTasks ?? [])]
+                  .sort((a, b) => (a.dueDate ? new Date(a.dueDate).getTime() : Infinity) - (b.dueDate ? new Date(b.dueDate).getTime() : Infinity))
+                  .slice(0, 5)
+                  .map((t) => (
+                    <ReminderItem key={t._id} t={t} now={nowTick} countdown={countdown} />
+                  ))}
+              </div>
+            )}
 
 
           </div>
