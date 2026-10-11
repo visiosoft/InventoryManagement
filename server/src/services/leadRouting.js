@@ -217,7 +217,7 @@ export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone =
  * who owns this chat?
  */
 
-import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule } from '../models/index.js';
+import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, User } from '../models/index.js';
 import { notifyLeadAssigned } from './leadNotify.js';
 
 /** The last nine digits of a number, however it was written down. */
@@ -314,7 +314,11 @@ export async function routeInboundLead({ phoneNormalized, at = new Date() } = {}
       }
    }
 
-   const rules = await LeadRoutingRule.find({}).lean();
+   /* Only people who can actually take a lead: a deactivated or deleted user
+      left on the list must not be handed anything. */
+   const allRules = await LeadRoutingRule.find({}).lean();
+   const liveUsers = new Set((await User.find({ _id: { $in: allRules.map((r) => r.user) }, isActive: { $ne: false } }).select('_id').lean()).map((u) => String(u._id)));
+   const rules = allRules.filter((r) => liveUsers.has(String(r.user)));
    const counts = await countsForToday({ at, timeZone });
    const decision = pickOwner({ rules, counts, at, timeZone, random: config.randomize === false ? null : Math.random });
    if (decision.ownerId) return decision;

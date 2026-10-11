@@ -294,10 +294,10 @@ export function extractMessagesFromPayload(payload) {
     return out;
 }
 
-async function getDefaultOwnerId() {
-    const admin = await User.findOne({ isActive: { $ne: false } }).select('_id').sort({ createdAt: 1 });
-    return admin?._id || null;
-}
+/* There is no "default owner" any more. A new lead goes to somebody only through
+   the distribution list; otherwise it stays unassigned for an admin to place.
+   Falling back to the first user on the system put leads on admins who were
+   never in the rotation. */
 
 export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status: statusIn = 'new', timelineText, fullName, ownerId: ownerOverride, profileName = '' }) {
     /* Who this belongs to.
@@ -306,9 +306,9 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
      * chosen. Otherwise the distribution rules decide: by share, by who is on
      * shift, and by what has gone out today. See services/leadRouting.js.
      *
-     * With distribution switched off this is exactly what it always was, the
-     * first user on the system, so turning it on is a decision somebody makes
-     * rather than something that happens to them. */
+     * Only the distribution list ever hands out a lead. With distribution off,
+     * or nobody available, the lead is created unassigned — never given to the
+     * first user on the system, who is usually an admin outside the rotation. */
     let status = statusIn;
     let ownerId = ownerOverride || null;
     let routingNote = '';
@@ -320,7 +320,8 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
                 ? `Assigned by distribution rules — ${decision.reason}`
                 : `Left unassigned — ${decision.reason}`;
         } else {
-            ownerId = await getDefaultOwnerId();
+            ownerId = null;
+            routingNote = decision?.off ? 'Left unassigned — distribution is off' : 'Left unassigned — could not route';
         }
     }
     // An unowned lead is a real outcome out of hours; only a lead with nobody
@@ -696,16 +697,7 @@ export async function processWhatsAppWebhookPayload(payload) {
             return { ok: true, skipped: true, reason: eventDoc.detail, eventKey };
         }
 
-        const ownerId = await getDefaultOwnerId();
-        if (!ownerId) {
-            eventDoc.status = 'failed';
-            eventDoc.detail = 'No active owner found to create lead';
-            await eventDoc.save();
-            whatsappLabelSyncState.errors += 1;
-            whatsappLabelSyncState.lastError = eventDoc.detail;
-            whatsappLabelSyncState.at = new Date().toISOString();
-            return { ok: false, eventKey, error: eventDoc.detail };
-        }
+        const ownerId = null;   // unassigned: only the distribution list hands leads out
 
         lead = await Lead.create({
             fullName: `WhatsApp Contact ${parsed.phoneNormalized.slice(-4)}`,
@@ -800,11 +792,7 @@ export async function runWhatsAppLabelReconciliation() {
             const lead = await Lead.findOne({ phoneNormalized: state.phoneNormalized });
             if (!lead) {
                 if (state.labels.includes('lead')) {
-                    const ownerId = await getDefaultOwnerId();
-                    if (!ownerId) {
-                        errors += 1;
-                        continue;
-                    }
+                    const ownerId = null;   // unassigned: only the distribution list hands leads out
                     await Lead.create({
                         fullName: `WhatsApp Contact ${state.phoneNormalized.slice(-4)}`,
                         email: '',
