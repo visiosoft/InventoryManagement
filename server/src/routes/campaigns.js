@@ -93,6 +93,25 @@ router.post('/opt-in/backfill', async (req, res) => {
     res.json({ ok: true, dryRun: false, customers: c.modifiedCount, leads: l.modifiedCount });
 });
 
+/**
+ * Record an opt-in for the people picked in Campaign Studio.
+ *
+ * For people who agreed some other way than writing to us first (a form, a
+ * call, a signed agreement). The caller must say they have that consent; the
+ * source is stored as 'manual' with who recorded it, so there is a trail.
+ */
+router.post('/opt-in/selected', async (req, res) => {
+    const { leadIds, confirm } = req.body || {};
+    if (confirm !== true) return res.status(400).json({ error: 'Confirm that these people agreed to receive WhatsApp messages' });
+    const ids = Array.isArray(leadIds) ? leadIds.filter(Boolean).slice(0, 20000) : [];
+    if (!ids.length) return res.status(400).json({ error: 'Nobody selected' });
+    const r = await Lead.updateMany(
+        { _id: { $in: ids }, 'whatsappOptIn.at': null },
+        { $set: { whatsappOptIn: { at: new Date(), source: `manual:${req.user?.email || req.user?.id || ''}` } } },
+    );
+    res.json({ ok: true, optedIn: r.modifiedCount });
+});
+
 router.get('/', async (_req, res) => {
     const campaigns = await Campaign.find().sort({ createdAt: -1 }).limit(100).lean();
     res.json(campaigns);

@@ -11,7 +11,7 @@ const MUTED = '#756E80'
  * previewed action rather than a default, because it is a judgement about your
  * customers to make once and knowingly.
  */
-export function OptInPanel() {
+export function OptInPanel({ selectedIds = [] }: { selectedIds?: string[] }) {
   const qc = useQueryClient()
   const [preview, setPreview] = useState<{ customers: number; leads: number } | null>(null)
   const [done, setDone] = useState('')
@@ -28,6 +28,15 @@ export function OptInPanel() {
     onSuccess: (d) => {
       setDone(`${d.customers} tenants and ${d.leads} leads now opted in`)
       setPreview(null)
+      qc.invalidateQueries()
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const manual = useMutation({
+    mutationFn: () => api.post('/campaigns/opt-in/selected', { leadIds: selectedIds, confirm: true }).then((r) => r.data),
+    onSuccess: (d) => {
+      setDone(`${d.optedIn} of the selected people are now opted in`)
       qc.invalidateQueries()
     },
     onError: (e) => setErr(apiError(e)),
@@ -69,6 +78,22 @@ export function OptInPanel() {
             </Button>
           )}
         </div>
+        {selectedIds.length > 0 && (
+          <div className="pt-2.5 mt-1 border-t space-y-1.5">
+            <p style={{ color: MUTED }}>
+              Already have their agreement another way (a form, a call, a signed contract)? Opt in just the {selectedIds.length} selected {selectedIds.length === 1 ? 'person' : 'people'}.
+            </p>
+            <Button
+              onClick={() => {
+                if (!confirm(`Confirm that the ${selectedIds.length} selected people agreed to receive WhatsApp messages from PurpleBox? This is recorded against your name.`)) return
+                manual.mutate()
+              }}
+              disabled={manual.isPending}
+            >
+              {manual.isPending ? 'Recording…' : `Opt in the ${selectedIds.length} selected`}
+            </Button>
+          </div>
+        )}
       </CardBody>
     </Card>
   )

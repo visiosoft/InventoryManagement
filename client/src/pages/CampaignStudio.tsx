@@ -603,7 +603,7 @@ export default function CampaignStudio() {
                   <p className="flex items-start gap-1.5 text-amber-700"><AlertTriangle size={13} className="mt-0.5" /> Meta requires an opt-in before a marketing message. People who wrote to you first can be opted in with the box below.</p>
                 )}
               </div>
-              {counts && counts.counts.noWhatsAppOptIn > 0 && <OptInPanel />}
+              {counts && counts.counts.noWhatsAppOptIn > 0 && <OptInPanel selectedIds={[...selected]} />}
               {err && <p className="text-sm text-destructive">{err}</p>}
               {note && <p className="text-sm font-medium text-emerald-600">{note}</p>}
               <Button
