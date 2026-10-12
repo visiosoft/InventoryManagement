@@ -38,10 +38,21 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
-/** Admins and sales reps — the people who run WhatsApp campaigns. */
-export function requireCampaignAccess(req, res, next) {
-  if (!['admin', 'sales_rep'].includes(req.user?.role)) return res.status(403).json({ error: 'Campaign access required' });
-  next();
+/**
+ * Campaign Studio: admins, plus anyone an admin ticked "Campaign Studio" for in
+ * Settings → Users. Read from the database rather than the token, so a grant
+ * (or its removal) takes effect without the person logging out and in.
+ */
+export async function requireCampaignAccess(req, res, next) {
+  try {
+    if (req.user?.role === 'admin') return next();
+    const { User } = await import('../models/index.js');
+    const u = await User.findById(req.user?.id).select('permissions isActive').lean();
+    if (u?.isActive !== false && u?.permissions?.includes('campaign_studio')) return next();
+    return res.status(403).json({ error: 'Campaign Studio has not been turned on for you' });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
 }
 
 /**

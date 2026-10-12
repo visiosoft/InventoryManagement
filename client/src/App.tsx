@@ -18,6 +18,12 @@ function PermGuard({ module, orSalesRep, children }: { module: string | string[]
   return allowed ? <>{children}</> : <Navigate to="/" replace />
 }
 
+/** Campaign Studio: admins, or anyone granted it in Settings → Users. */
+function CampaignGuard({ children }: { children: React.ReactNode }) {
+  const { user, hasPermission } = useAuth()
+  return user?.role === 'admin' || hasPermission('campaign_studio') ? <>{children}</> : <Navigate to="/" replace />
+}
+
 /** Admin-only guard */
 function AdminGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -289,7 +295,7 @@ export default function App() {
         <Route path="/settings/flow-templates" element={<AdminGuard><WhatsAppFlowTemplates /></AdminGuard>} />
         <Route path="/settings/assistant" element={<AdminGuard><AssistantSettings /></AdminGuard>} />
         <Route path="/marketing" element={<AdminGuard><Marketing /></AdminGuard>} />
-        <Route path="/campaign-studio" element={<RoleGuard roles={['admin', 'sales_rep']}><CampaignStudio /></RoleGuard>} />
+        <Route path="/campaign-studio" element={<CampaignGuard><CampaignStudio /></CampaignGuard>} />
         <Route path="/settings/sent-emails" element={<AdminGuard><SentEmails /></AdminGuard>} />
         <Route path="/whatsapp" element={<WhatsApp />} />
         <Route path="/whatsapp/setup" element={<AdminGuard><WhatsAppSetup /></AdminGuard>} />

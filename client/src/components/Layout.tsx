@@ -137,7 +137,7 @@ const salesRepNavGroups = [
       { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board', notFor: 'accounts' },
       { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
       { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },
-      { key: 'campaign-studio', to: '/campaign-studio', label: 'Campaign Studio', icon: Send, perm: 'sales_board', notFor: 'accounts' },
+      { key: 'campaign-studio', to: '/campaign-studio', label: 'Campaign Studio', icon: Send, perm: 'campaign_studio' },
     ],
   },
   {

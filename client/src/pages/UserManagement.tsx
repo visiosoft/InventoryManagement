@@ -90,6 +90,7 @@ const MODULE_GROUPS = [
     label: 'Sales Rep Tools',
     modules: [
       { key: 'sales_board', label: 'My Day, My Leads, Follow-Ups, Leaderboard, Estimator, My Reports' },
+      { key: 'campaign_studio', label: 'Campaign Studio (WhatsApp campaigns, templates, reports)' },
     ],
   },
   {

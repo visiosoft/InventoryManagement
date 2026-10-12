@@ -25,6 +25,8 @@ const ALL_MODULES = [
   'moving_claims',
   // Sales reps' personal "My Leads" board — leads/moving_leads scoped to the logged-in rep.
   'sales_board',
+  // WhatsApp Campaign Studio for non-admins; granted per person in Settings → Users.
+  'campaign_studio',
 ];
 
 const userSchema = new Schema(
