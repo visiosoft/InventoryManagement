@@ -183,9 +183,7 @@ export async function buildAudience(audience = {}) {
         if (p.email && recentEmail.has(id)) { p.email = ''; p.skipEmail = 'messaged recently'; }
         if (p.phoneNormalized) {
             if (recentWhatsApp.has(id)) { p.phoneNormalized = ''; p.skipWhatsApp = 'messaged recently'; }
-            // Meta requires a recorded opt-in before a marketing template.
-            // Without it the person is simply not a WhatsApp audience.
-            else if (!p.whatsappOptIn) { p.phoneNormalized = ''; p.skipWhatsApp = 'no opt-in'; }
+            // No opt-in gate: the business decided every contact may be messaged.
         }
         if (p.skipEmail === 'messaged recently' || p.skipWhatsApp === 'messaged recently') excluded.recentlyMessaged += 1;
         if (p.skipWhatsApp === 'no opt-in') excluded.noWhatsAppOptIn += 1;

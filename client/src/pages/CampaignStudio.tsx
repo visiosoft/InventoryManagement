@@ -6,7 +6,6 @@ import { api, apiError } from '../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, PageHeader, Select, Spinner, Table, Th, Td } from '../components/ui'
 import { statusLabel } from '../components/ui'
 import CampaignTemplates from './CampaignTemplates'
-import { OptInPanel } from '../components/OptInPanel'
 
 const PURPLE = '#5B2BC9'
 const MUTED = '#756E80'
@@ -458,7 +457,6 @@ export default function CampaignStudio() {
               <div className="flex flex-wrap gap-4 text-[13px]">
                 <label className="flex items-center gap-2"><input type="checkbox" checked={excludeCustomers} onChange={(e) => setExcludeCustomers(e.target.checked)} /> Leave out customers</label>
                 <label className="flex items-center gap-2"><input type="checkbox" checked={hasEmail} onChange={(e) => setHasEmail(e.target.checked)} /> Only with an email</label>
-                <label className="flex items-center gap-2"><input type="checkbox" checked={optInOnly} onChange={(e) => setOptInOnly(e.target.checked)} /> Only with a WhatsApp opt-in</label>
                 {isFetching && <span style={{ color: MUTED }}>Loading…</span>}
               </div>
 
@@ -473,7 +471,7 @@ export default function CampaignStudio() {
               <div className="overflow-x-auto">
                 <Table>
                   <thead>
-                    <tr><Th className="w-8"></Th><Th>Name</Th><Th>Phone</Th><Th>Email</Th><Th>Stage</Th><Th>Came in</Th><Th>Opt-in</Th><Th>Last campaign</Th></tr>
+                    <tr><Th className="w-8"></Th><Th>Name</Th><Th>Phone</Th><Th>Email</Th><Th>Stage</Th><Th>Came in</Th><Th>Last campaign</Th></tr>
                   </thead>
                   <tbody>
                     {(people?.rows ?? []).map((p) => (
@@ -484,7 +482,6 @@ export default function CampaignStudio() {
                         <Td className="max-w-48 truncate">{p.email}</Td>
                         <Td>{statusLabel(p.stage)}</Td>
                         <Td className="text-xs whitespace-nowrap">{fmt(p.leadDate)}</Td>
-                        <Td>{p.optIn ? <Badge tone="green">Yes</Badge> : <Badge tone="default">No</Badge>}</Td>
                         <Td className="text-xs">
                           {p.lastCampaign ? <>{p.lastCampaign.name}<div style={{ color: MUTED }}>{fmt(p.lastCampaign.at)}{p.lastCampaign.replied ? ' · replied' : p.lastCampaign.read ? ' · read' : ''}</div></> : '—'}
                         </Td>
@@ -595,15 +592,10 @@ export default function CampaignStudio() {
                 {counts && (
                   <p style={{ color: MUTED }}>
                     <strong style={{ color: PURPLE }}>{counts.counts.byWhatsApp}</strong> will actually be sent to
-                    {counts.counts.noWhatsAppOptIn > 0 && ` · ${counts.counts.noWhatsAppOptIn} held back: no WhatsApp opt-in`}
                     {counts.counts.recentlyMessaged > 0 && ` · ${counts.counts.recentlyMessaged} messaged in the last 3 days`}
                   </p>
                 )}
-                {counts && counts.counts.noWhatsAppOptIn > 0 && (
-                  <p className="flex items-start gap-1.5 text-amber-700"><AlertTriangle size={13} className="mt-0.5" /> Meta requires an opt-in before a marketing message. People who wrote to you first can be opted in with the box below.</p>
-                )}
               </div>
-              {counts && counts.counts.noWhatsAppOptIn > 0 && <OptInPanel selectedIds={[...selected]} />}
               {err && <p className="text-sm text-destructive">{err}</p>}
               {note && <p className="text-sm font-medium text-emerald-600">{note}</p>}
               <Button
