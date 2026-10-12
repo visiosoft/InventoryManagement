@@ -354,19 +354,19 @@ export default function CampaignStudio() {
         subtitle="Pick people, send them a Meta-approved WhatsApp template, then follow what they do."
       />
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {([['new', 'New campaign'], ['templates', 'My templates'], ['reports', 'Reports & retargeting']] as const).map(([k, label]) => (
           <button
             key={k}
             type="button"
             onClick={() => setTab(k)}
-            className="rounded-full px-4 h-9 text-sm font-semibold cursor-pointer"
+            className="rounded-full px-4 h-9 text-sm font-semibold cursor-pointer whitespace-nowrap"
             style={{ background: tab === k ? PURPLE : '#fff', color: tab === k ? '#fff' : '#14081F', border: `1px solid ${tab === k ? PURPLE : LINE}` }}
           >
             {label}
           </button>
         ))}
-        <Link to="/marketing" className="ml-auto self-center text-xs font-semibold" style={{ color: MUTED }}>Email & tenant campaigns →</Link>
+        <Link to="/marketing" className="sm:ml-auto basis-full sm:basis-auto self-center text-xs font-semibold" style={{ color: MUTED }}>Email & tenant campaigns →</Link>
       </div>
 
       {tab === 'templates' && <CampaignTemplates />}

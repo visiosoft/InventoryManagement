@@ -134,12 +134,12 @@ export function Card({ children, className }: { children: ReactNode; className?:
 
 export function CardHeader({ title, subtitle, action }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-5 pt-4 pb-3 gap-3">
-      <div className="flex-1">
+    <div className="flex flex-wrap items-center justify-between px-5 pt-4 pb-3 gap-3">
+      <div className="flex-1 min-w-[min(100%,14rem)]">
         <h3 className="font-semibold text-sm">{title}</h3>
         {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
+      {action && <div className="shrink-0 max-w-full">{action}</div>}
     </div>
   )
 }

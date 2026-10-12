@@ -110,7 +110,7 @@ function Editor({ initial, onDone }: { initial: Tpl | null; onDone: () => void }
         <div className="space-y-2">
           <div className="text-xs font-semibold">Buttons (optional, up to 3)</div>
           {f.buttons.map((b, i) => (
-            <div key={i} className="flex gap-2 items-center">
+            <div key={i} className="flex flex-wrap gap-2 items-center">
               <Select value={b.type} onChange={(e) => { const x = [...f.buttons]; x[i] = { ...b, type: e.target.value as Btn['type'] }; setF({ ...f, buttons: x }) }}>
                 <option value="QUICK_REPLY">Quick reply</option><option value="URL">Open a link</option>
               </Select>
@@ -123,7 +123,7 @@ function Editor({ initial, onDone }: { initial: Tpl | null; onDone: () => void }
         </div>
 
         {err && <p className="text-sm text-destructive">{err}</p>}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={() => { setErr(''); save.mutate() }} disabled={save.isPending || !f.name || !f.bodyText.trim()}>Save draft</Button>
           <Button variant="outline" onClick={onDone}>Cancel</Button>
         </div>
@@ -157,7 +157,7 @@ export default function CampaignTemplates() {
         title="Your WhatsApp templates"
         subtitle="Write a template here and send it to Meta for review (a few minutes to about a day). The status below updates by itself."
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => refresh.mutate()} disabled={refresh.isPending}><RefreshCw size={13} /> Check Meta now</Button>
             <Button onClick={() => setEditing('new')}><Plus size={13} /> New template</Button>
           </div>
@@ -170,8 +170,8 @@ export default function CampaignTemplates() {
           const s = STATUS[t.status] ?? { label: t.status, tone: 'gray' }
           const editable = t.status === 'draft' || t.status === 'REJECTED'
           return (
-            <div key={t._id} className="rounded-xl p-3 flex gap-3" style={{ border: `1px solid ${LINE}` }}>
-              {t.imageUrl && <img src={t.imageUrl} alt="" className="h-20 w-20 rounded-lg object-cover shrink-0" />}
+            <div key={t._id} className="rounded-xl p-3 flex flex-col sm:flex-row gap-3" style={{ border: `1px solid ${LINE}` }}>
+              {t.imageUrl && <img src={t.imageUrl} alt="" className="h-32 w-full sm:h-20 sm:w-20 rounded-lg object-cover shrink-0" />}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-sm">{t.name}</span>
@@ -188,7 +188,7 @@ export default function CampaignTemplates() {
                 {t.lastError && editable && <p className="text-xs mt-1 text-destructive">Meta refused it: {t.lastError}</p>}
                 {editable && t.problems.length > 0 && <p className="text-xs mt-1" style={{ color: '#B45309' }}>To fix first: {t.problems[0]}</p>}
               </div>
-              <div className="flex flex-col gap-1.5 shrink-0">
+              <div className="flex flex-row flex-wrap sm:flex-col gap-1.5 shrink-0">
                 {editable && <Button onClick={() => submit.mutate(t._id)} disabled={submit.isPending || t.problems.length > 0} style={{ background: PURPLE }}><Send size={13} /> Send to Meta</Button>}
                 {editable && <Button variant="outline" onClick={() => setEditing(t)}><Pencil size={13} /> Edit</Button>}
                 {t.status === 'draft' && <Button variant="outline" onClick={() => { if (confirm('Delete this draft?')) del.mutate(t._id) }}><Trash2 size={13} /> Delete</Button>}
