@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Megaphone, Send, RefreshCw, Repeat, ArrowLeft, Check, CheckCheck, Eye, MessageCircle, AlertTriangle } from 'lucide-react'
+import { Megaphone, Send, RefreshCw, Repeat, ArrowLeft, ArrowRight, Check, CheckCheck, Eye, MessageCircle, AlertTriangle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, PageHeader, Select, Spinner, Table, Th, Td } from '../components/ui'
 import { statusLabel } from '../components/ui'
@@ -236,9 +236,59 @@ function ReportDetail({ id, onBack, onRetarget }: { id: string; onBack: () => vo
   )
 }
 
+const STEP_LABELS = ['Who gets it', 'The message', 'Review and send'] as const
+
+/** 1 · 2 · 3 across the top; a step opens once the one before it is filled in. */
+function Stepper({ step, setStep, canGo2, canGo3 }: { step: number; setStep: (n: 1 | 2 | 3) => void; canGo2: boolean; canGo3: boolean }) {
+  return (
+    <div className="flex items-center gap-2">
+      {STEP_LABELS.map((label, i) => {
+        const n = (i + 1) as 1 | 2 | 3
+        const open = n === 1 || (n === 2 && canGo2) || (n === 3 && canGo3)
+        const on = step === n
+        const done = step > n
+        return (
+          <div key={label} className="flex items-center gap-2 flex-1 min-w-0 last:flex-none">
+            <button
+              type="button"
+              disabled={!open}
+              onClick={() => setStep(n)}
+              className="flex items-center gap-2 min-w-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span
+                className="h-7 w-7 shrink-0 rounded-full text-xs font-bold flex items-center justify-center"
+                style={{ background: on || done ? PURPLE : '#fff', color: on || done ? '#fff' : MUTED, border: `1px solid ${on || done ? PURPLE : LINE}` }}
+              >
+                {done ? <Check size={14} /> : n}
+              </span>
+              <span className={`text-sm truncate ${on ? 'font-semibold' : ''} ${on ? '' : 'hidden sm:inline'}`} style={{ color: on ? '#14081F' : MUTED }}>{label}</span>
+            </button>
+            {i < STEP_LABELS.length - 1 && <div className="h-px flex-1 min-w-3" style={{ background: done ? PURPLE : LINE }} />}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function StepNav({ onBack, onNext, nextDisabled, nextHint }: { onBack?: () => void; onNext?: () => void; nextDisabled?: boolean; nextHint?: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      {onBack && <Button variant="outline" onClick={onBack}><ArrowLeft size={13} /> Back</Button>}
+      {onNext && (
+        <>
+          <Button onClick={onNext} disabled={nextDisabled}>Next <ArrowRight size={13} /></Button>
+          {nextHint && <span className="text-xs" style={{ color: MUTED }}>{nextHint}</span>}
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function CampaignStudio() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<'new' | 'reports' | 'templates'>('new')
+  const [step, setStep] = useState<1 | 2 | 3>(1)
 
   // 1 · people
   const [search, setSearch] = useState('')
@@ -327,6 +377,7 @@ export default function CampaignStudio() {
       setSelected(new Set()); setDraftId(null); setName('')
       qc.invalidateQueries({ queryKey: ['campaign-reports'] })
       setTab('reports')
+      setStep(1)
     },
     onError: (e) => { setNote(''); setErr(apiError(e)) },
   })
@@ -340,6 +391,7 @@ export default function CampaignStudio() {
       setSelected(new Set((data.campaign.audience.leadIds ?? []).map(String)))
       setTemplateName(''); setHeaderImageUrl(''); setVariables([])
       setTab('new')
+      setStep(2)
       setNote('Follow-up draft: choose a new template below, then send.')
     } catch (e) { setErr(apiError(e)) }
   }
@@ -376,6 +428,8 @@ export default function CampaignStudio() {
       {tab === 'new' && (
         <>
           {/* 1 · People */}
+          <Stepper step={step} setStep={setStep} canGo2={selected.size > 0} canGo3={selected.size > 0 && Boolean(picked)} />
+          {step === 1 && (<>
           <Card>
             <CardHeader title="1 · Who gets it" subtitle={`${selected.size} selected${people ? ` · ${people.total} match the filters` : ''}`} />
             <CardBody className="space-y-3">
@@ -448,8 +502,11 @@ export default function CampaignStudio() {
               )}
             </CardBody>
           </Card>
+          <StepNav onNext={() => setStep(2)} nextDisabled={selected.size === 0} nextHint={selected.size === 0 ? 'Pick at least one person' : `${selected.size} selected`} />
+          </>)}
 
           {/* 2 · Message */}
+          {step === 2 && (<>
           <Card>
             <CardHeader
               title="2 · The message"
@@ -524,8 +581,11 @@ export default function CampaignStudio() {
               )}
             </CardBody>
           </Card>
+          <StepNav onBack={() => setStep(1)} onNext={() => setStep(3)} nextDisabled={!picked || !imageOk} nextHint={!picked ? 'Choose an approved template' : !imageOk ? 'Add the image link' : picked.name} />
+          </>)}
 
           {/* 3 · Send */}
+          {step === 3 && (<>
           <Card>
             <CardHeader title="3 · Review and send" />
             <CardBody className="space-y-3">
@@ -557,6 +617,8 @@ export default function CampaignStudio() {
               <p className="text-xs flex items-center gap-1.5" style={{ color: MUTED }}><MessageCircle size={12} /> Messages go out in small batches. Delivered, read and replies appear in Reports as Meta reports them.</p>
             </CardBody>
           </Card>
+          <StepNav onBack={() => setStep(2)} />
+          </>)}
         </>
       )}
       <div style={{ display: 'none' }}><Megaphone /></div>
