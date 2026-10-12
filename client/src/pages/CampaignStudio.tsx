@@ -6,6 +6,7 @@ import { api, apiError } from '../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, PageHeader, Select, Spinner, Table, Th, Td } from '../components/ui'
 import { statusLabel } from '../components/ui'
 import CampaignTemplates from './CampaignTemplates'
+import { OptInPanel } from '../components/OptInPanel'
 
 const PURPLE = '#5B2BC9'
 const MUTED = '#756E80'
@@ -539,9 +540,10 @@ export default function CampaignStudio() {
                   </p>
                 )}
                 {counts && counts.counts.noWhatsAppOptIn > 0 && (
-                  <p className="flex items-start gap-1.5 text-amber-700"><AlertTriangle size={13} className="mt-0.5" /> Meta requires an opt-in before a marketing message. People who wrote to you first can be opted in under Marketing → "Record opt-in".</p>
+                  <p className="flex items-start gap-1.5 text-amber-700"><AlertTriangle size={13} className="mt-0.5" /> Meta requires an opt-in before a marketing message. People who wrote to you first can be opted in with the box below.</p>
                 )}
               </div>
+              {counts && counts.counts.noWhatsAppOptIn > 0 && <OptInPanel />}
               {err && <p className="text-sm text-destructive">{err}</p>}
               {note && <p className="text-sm font-medium text-emerald-600">{note}</p>}
               <Button
