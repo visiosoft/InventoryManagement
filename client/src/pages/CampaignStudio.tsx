@@ -6,13 +6,14 @@ import { api, apiError } from '../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, PageHeader, Select, Spinner, Table, Th, Td } from '../components/ui'
 import { statusLabel } from '../components/ui'
 import CampaignTemplates from './CampaignTemplates'
+import DoNotMessage from './DoNotMessage'
 
 const PURPLE = '#5B2BC9'
 const MUTED = '#756E80'
 const LINE = 'rgba(20,8,31,.10)'
 
 type Person = {
-  id: string; name: string; phone: string; email: string; stage: string; source: string; leadDate: string; optIn: boolean
+  id: string; name: string; phone: string; email: string; stage: string; source: string; leadDate: string; optIn: boolean; doNotMessage?: boolean
   lastCampaign: { name: string; at: string; read: boolean; replied: boolean } | null
 }
 type People = { total: number; page: number; pages: number; rows: Person[] }
@@ -286,7 +287,7 @@ function StepNav({ onBack, onNext, nextDisabled, nextHint }: { onBack?: () => vo
 
 export default function CampaignStudio() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'new' | 'reports' | 'templates'>('new')
+  const [tab, setTab] = useState<'new' | 'reports' | 'templates' | 'block'>('new')
   const [step, setStep] = useState<1 | 2 | 3>(1)
 
   // 1 · people
@@ -330,7 +331,7 @@ export default function CampaignStudio() {
   const picked = templates.find((t) => t.name === templateName && t.status === 'APPROVED')
 
   const audience = { tenants: false, pastTenants: false, leads: true, leadIds: [...selected], excludeCustomers: false, minDaysBetween: 3 }
-  const { data: counts } = useQuery<{ counts: { total: number; byWhatsApp: number; noWhatsAppOptIn: number; recentlyMessaged: number } }>({
+  const { data: counts } = useQuery<{ counts: { total: number; byWhatsApp: number; noWhatsAppOptIn: number; recentlyMessaged: number; doNotMessage?: number } }>({
     queryKey: ['studio-preview', [...selected].sort().join(',')],
     queryFn: () => api.post('/campaigns/preview', { audience }).then((r) => r.data),
     enabled: selected.size > 0,
@@ -407,7 +408,7 @@ export default function CampaignStudio() {
       />
 
       <div className="flex flex-wrap gap-2">
-        {([['new', 'New campaign'], ['templates', 'My templates'], ['reports', 'Reports & retargeting']] as const).map(([k, label]) => (
+        {([['new', 'New campaign'], ['templates', 'My templates'], ['reports', 'Reports & retargeting'], ['block', 'Do not message']] as const).map(([k, label]) => (
           <button
             key={k}
             type="button"
@@ -422,6 +423,7 @@ export default function CampaignStudio() {
       </div>
 
       {tab === 'templates' && <CampaignTemplates />}
+      {tab === 'block' && <DoNotMessage />}
       {tab === 'reports' && <Reports onRetarget={openDraft} />}
 
       {tab === 'new' && (
@@ -478,7 +480,7 @@ export default function CampaignStudio() {
                       <tr key={p.id} className="cursor-pointer hover:bg-muted/40" onClick={() => toggle(p.id)}>
                         <Td><input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} onClick={(e) => e.stopPropagation()} /></Td>
                         <Td>{p.name || <span style={{ color: MUTED }}>(no name)</span>}</Td>
-                        <Td className="whitespace-nowrap">{p.phone}</Td>
+                        <Td className="whitespace-nowrap">{p.phone}{p.doNotMessage && <span className="ml-1.5"><Badge tone="red">Do not message</Badge></span>}</Td>
                         <Td className="max-w-48 truncate">{p.email}</Td>
                         <Td>{statusLabel(p.stage)}</Td>
                         <Td className="text-xs whitespace-nowrap">{fmt(p.leadDate)}</Td>
@@ -593,6 +595,7 @@ export default function CampaignStudio() {
                   <p style={{ color: MUTED }}>
                     <strong style={{ color: PURPLE }}>{counts.counts.byWhatsApp}</strong> will actually be sent to
                     {counts.counts.recentlyMessaged > 0 && ` · ${counts.counts.recentlyMessaged} messaged in the last 3 days`}
+                    {(counts.counts.doNotMessage ?? 0) > 0 && ` · ${counts.counts.doNotMessage} left out: on the Do not message list`}
                   </p>
                 )}
               </div>

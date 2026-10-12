@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireCampaignAccess } from '../middleware/auth.js';
-import { Campaign, CampaignRecipient, Customer, Lead, WhatsAppMessage } from '../models/index.js';
+import { Campaign, CampaignRecipient, Customer, Lead, WhatsAppMessage, MarketingBlock } from '../models/index.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { buildAudience } from '../services/campaignAudience.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
@@ -112,6 +112,28 @@ router.post('/opt-in/selected', async (req, res) => {
     res.json({ ok: true, optedIn: r.modifiedCount });
 });
 
+/* Numbers that must never get a campaign message. */
+router.get('/do-not-message', async (_req, res) => {
+    res.json(await MarketingBlock.find().sort({ createdAt: -1 }).lean());
+});
+
+router.post('/do-not-message', async (req, res) => {
+    const phone = String(req.body?.phone || '').trim();
+    const key = digitTail(phone);
+    if (!key) return res.status(400).json({ error: 'Enter a phone number with at least 9 digits' });
+    const doc = await MarketingBlock.findOneAndUpdate(
+        { phoneKey: key },
+        { $set: { phone, label: String(req.body?.label || '').trim(), reason: String(req.body?.reason || '').trim(), addedBy: req.user?.id || null, addedByName: req.user?.name || req.user?.email || '' } },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+    ).lean();
+    res.status(201).json(doc);
+});
+
+router.delete('/do-not-message/:id', async (req, res) => {
+    await MarketingBlock.deleteOne({ _id: req.params.id });
+    res.json({ ok: true });
+});
+
 router.get('/', async (_req, res) => {
     const campaigns = await Campaign.find().sort({ createdAt: -1 }).limit(100).lean();
     res.json(campaigns);
@@ -169,6 +191,7 @@ router.get('/people', async (req, res) => {
         const slice = kept.slice((page - 1) * limit, page * limit);
 
         // The last campaign each of them was in, so nobody is messaged blindly twice.
+        const blockedKeys = new Set((await MarketingBlock.find().select('phoneKey').lean()).map((b) => b.phoneKey));
         const ids = slice.map((l) => l._id);
         const last = ids.length ? await CampaignRecipient.aggregate([
             { $match: { refId: { $in: ids }, channel: 'whatsapp', status: 'sent' } },
@@ -192,6 +215,7 @@ router.get('/people', async (req, res) => {
                     source: l.source || '',
                     leadDate: l.leadDateTime,
                     optIn: Boolean(l.whatsappOptIn?.at),
+                    doNotMessage: blockedKeys.has(digitTail(l.phoneNormalized || l.phone)),
                     lastCampaign: lc ? { name: names.get(String(lc.campaign)) || '', at: lc.at, read: Boolean(lc.readAt), replied: Boolean(lc.repliedAt) } : null,
                 };
             }),

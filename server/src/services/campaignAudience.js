@@ -1,4 +1,4 @@
-import { Customer, Contract, Lead, WhatsAppChatLabel, CampaignRecipient } from '../models/index.js';
+import { Customer, Contract, Lead, WhatsAppChatLabel, CampaignRecipient, MarketingBlock } from '../models/index.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from './zohoBooks.js';
 import { customerContactKeys } from './customerLeads.js';
 
@@ -176,11 +176,15 @@ export async function buildAudience(audience = {}) {
         }
     }
 
-    const excluded = { recentlyMessaged: 0, noWhatsAppOptIn: 0 };
+    const excluded = { recentlyMessaged: 0, noWhatsAppOptIn: 0, doNotMessage: 0 };
+    const blocked = new Set((await MarketingBlock.find().select('phoneKey').lean()).map((b) => b.phoneKey));
 
     for (const p of people) {
         const id = String(p.refId);
         if (p.email && recentEmail.has(id)) { p.email = ''; p.skipEmail = 'messaged recently'; }
+        if (p.phoneNormalized && blocked.has(phoneKey(p.phoneNormalized))) {
+            p.phoneNormalized = ''; p.skipWhatsApp = 'do not message'; excluded.doNotMessage += 1;
+        }
         if (p.phoneNormalized) {
             if (recentWhatsApp.has(id)) { p.phoneNormalized = ''; p.skipWhatsApp = 'messaged recently'; }
             // No opt-in gate: the business decided every contact may be messaged.
@@ -202,5 +206,6 @@ function countsFor(people, excluded = {}) {
         unreachable: people.filter((p) => !p.email && !p.phoneNormalized).length,
         recentlyMessaged: excluded.recentlyMessaged || 0,
         noWhatsAppOptIn: excluded.noWhatsAppOptIn || 0,
+        doNotMessage: excluded.doNotMessage || 0,
     };
 }
