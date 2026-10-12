@@ -38,6 +38,12 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
+/** Admins and sales reps — the people who run WhatsApp campaigns. */
+export function requireCampaignAccess(req, res, next) {
+  if (!['admin', 'sales_rep'].includes(req.user?.role)) return res.status(403).json({ error: 'Campaign access required' });
+  next();
+}
+
 /**
  * Look, but do not touch.
  *

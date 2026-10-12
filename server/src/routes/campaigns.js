@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireCampaignAccess } from '../middleware/auth.js';
 import { Campaign, CampaignRecipient, Customer, Lead, WhatsAppMessage } from '../models/index.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { buildAudience } from '../services/campaignAudience.js';
@@ -12,8 +12,8 @@ import { digitTail } from '../services/leadRouting.js';
 
 const router = Router();
 
-// Marketing goes to people who are not expecting it, so it stays admin-only.
-router.use(requireAdmin);
+// Marketing goes to people who are not expecting it: admins and sales reps only.
+router.use(requireCampaignAccess);
 
 // What can be sent at all, so the composer can say why a channel is unavailable
 // rather than failing at send time.

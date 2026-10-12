@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireCampaignAccess } from '../middleware/auth.js';
 import { CampaignTemplate, TemplateImage } from '../models/index.js';
 import { softDelete } from '../utils/softDelete.js';
 import { validateTemplate, submitTemplate, refreshTemplateStatuses, newImageKey } from '../services/templateManager.js';
 
 const router = Router();
-router.use(requireAdmin);
+router.use(requireCampaignAccess);
 
 // Meta accepts JPG/PNG up to 5 MB for a template's sample header image.
 const upload = multer({
