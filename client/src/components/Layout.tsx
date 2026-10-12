@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import {
-  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck } from 'lucide-react'
+  Shuffle, Bot, Megaphone, Send, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -75,6 +75,7 @@ const profileMenuGroups = [
       { to: '/settings/assistant', label: 'Ask the system', icon: Sparkles, perm: 'settings', adminOnly: true },
       { to: '/settings/lead-distribution', label: 'Lead Distribution', icon: Shuffle, perm: 'settings', adminOnly: true },
       { to: '/settings/sent-emails', label: 'Sent Emails', icon: Mail, perm: 'settings', adminOnly: true },
+      { to: '/campaign-studio', label: 'Campaign Studio', icon: Send, perm: 'settings', adminOnly: true },
       { to: '/marketing', label: 'Marketing', icon: Megaphone, perm: 'settings', adminOnly: true },
       { to: '/agents', label: 'AI Agents', icon: Bot, perm: 'settings', adminOnly: true },
     ],

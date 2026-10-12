@@ -52,13 +52,14 @@ async function sendOne(campaign, recipient) {
     }
 
     if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured');
-    await sendWhatsAppTemplate({
+    const payload = await sendWhatsAppTemplate({
         to: recipient.phoneNormalized,
         name: campaign.whatsapp?.templateName,
         language: campaign.whatsapp?.language || 'en',
         variables: fillVariables(campaign.whatsapp?.variables || [], recipient.name),
         headerImageUrl: campaign.whatsapp?.headerImageUrl || undefined,
     });
+    return payload?.messages?.[0]?.id || '';
 }
 
 export async function runCampaignTick() {
@@ -93,7 +94,9 @@ export async function runCampaignTick() {
             if (!claimed) continue; // another pass already took it
 
             try {
-                await sendOne(campaign, recipient);
+                const messageId = await sendOne(campaign, recipient);
+                // Kept so Meta's delivered / read receipts can be matched back to this person.
+                if (messageId) await CampaignRecipient.updateOne({ _id: recipient._id }, { $set: { messageId } });
                 campaignState.sent += 1;
             } catch (e) {
                 await CampaignRecipient.updateOne(

@@ -48,6 +48,7 @@ export async function buildAudience(audience = {}) {
         leadFrom = '',
         leadTo = '',
         excludeCustomers = true,
+        leadIds = [],
     } = audience;
 
     const people = [];
@@ -116,6 +117,9 @@ export async function buildAudience(audience = {}) {
     if (leads) {
         const filter = { unsubscribed: { $ne: true } };
         if (leadStatuses.length) filter.status = { $in: leadStatuses };
+        // Picked by hand: exactly these people, whatever the other filters say.
+        const picked = Array.isArray(leadIds) && leadIds.length > 0;
+        if (picked) { delete filter.status; filter._id = { $in: leadIds }; }
 
         // A label narrows to the chats carrying it — the labels applied in the
         // WhatsApp console, so a segment built there can be mailed here.
@@ -131,7 +135,7 @@ export async function buildAudience(audience = {}) {
         const day = (v, end) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? new Date(`${v}T${end ? '23:59:59.999' : '00:00:00.000'}+04:00`) : null);
         const from = day(leadFrom, false);
         const to = day(leadTo, true);
-        if (from || to) {
+        if ((from || to) && !picked) {
             filter.leadDateTime = {};
             if (from) filter.leadDateTime.$gte = from;
             if (to) filter.leadDateTime.$lte = to;
@@ -140,7 +144,7 @@ export async function buildAudience(audience = {}) {
         const rows = await Lead.find(filter).select('fullName whatsappProfileName email phone whatsappNo phoneNormalized whatsappOptIn').lean();
         // Somebody who already signed is a customer, not a lead to win back —
         // unless the campaign is explicitly for tenants too.
-        const keys = excludeCustomers && !tenants && !pastTenants ? await customerContactKeys() : null;
+        const keys = excludeCustomers && !picked && !tenants && !pastTenants ? await customerContactKeys() : null;
         for (const l of rows) {
             if (keys) {
                 const t = phoneKey(l.phoneNormalized) || firstPhone(l);

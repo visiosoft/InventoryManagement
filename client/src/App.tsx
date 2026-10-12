@@ -89,6 +89,7 @@ import AiAssistant from './pages/AiAssistant'
 import WhatsAppFlowTemplates from './pages/WhatsAppFlowTemplates'
 import AssistantSettings from './pages/AssistantSettings'
 import Marketing from './pages/Marketing'
+import CampaignStudio from './pages/CampaignStudio'
 import SentEmails from './pages/SentEmails'
 import Backup from './pages/Backup'
 import AgentInbox from './pages/agents/AgentInbox'
@@ -288,6 +289,7 @@ export default function App() {
         <Route path="/settings/flow-templates" element={<AdminGuard><WhatsAppFlowTemplates /></AdminGuard>} />
         <Route path="/settings/assistant" element={<AdminGuard><AssistantSettings /></AdminGuard>} />
         <Route path="/marketing" element={<AdminGuard><Marketing /></AdminGuard>} />
+        <Route path="/campaign-studio" element={<AdminGuard><CampaignStudio /></AdminGuard>} />
         <Route path="/settings/sent-emails" element={<AdminGuard><SentEmails /></AdminGuard>} />
         <Route path="/whatsapp" element={<WhatsApp />} />
         <Route path="/whatsapp/setup" element={<AdminGuard><WhatsAppSetup /></AdminGuard>} />

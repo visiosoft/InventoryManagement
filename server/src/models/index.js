@@ -1861,6 +1861,8 @@ const campaignSchema = new Schema({
     leadFrom: { type: String, default: '' },
     leadTo: { type: String, default: '' },
     excludeCustomers: { type: Boolean, default: true },
+    // People picked by hand in Campaign Studio. When present, only these leads.
+    leadIds: [{ type: Schema.Types.ObjectId, ref: 'Lead' }],
   },
 
   emailSubject: { type: String, default: '' },
@@ -1910,8 +1912,16 @@ const campaignRecipientSchema = new Schema({
   status: { type: String, enum: ['pending', 'sent', 'failed', 'skipped'], default: 'pending' },
   reason: { type: String, default: '' },
   sentAt: { type: Date, default: null },
+  // From Meta's delivery receipts and the chat itself: what happened after it left.
+  messageId: { type: String, default: '' },
+  deliveredAt: { type: Date, default: null },
+  readAt: { type: Date, default: null },
+  repliedAt: { type: Date, default: null },
+  errorDetail: { type: String, default: '' },
 }, { timestamps: true });
 campaignRecipientSchema.index({ campaign: 1, status: 1 });
+campaignRecipientSchema.index({ messageId: 1 });
+campaignRecipientSchema.index({ phoneNormalized: 1, sentAt: -1 });
 // The same person must not appear twice on one campaign and one channel, even
 // if they arrived from both the tenant list and the lead list.
 campaignRecipientSchema.index(

@@ -2,6 +2,7 @@ import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage, 
 import { routeInboundLead } from './leadRouting.js';
 import { PLACEHOLDER_NAME } from './leadNames.js';
 import { isExistingCustomerPhone } from './customerLeads.js';
+import { applyCampaignStatus, markCampaignReply } from './campaignStats.js';
 import { notifyLeadAssigned, notifyInboundWhatsAppMessage } from './leadNotify.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
 import { getAiBotConfig, noteInboundForBot, pauseBotForHuman, markFirstResponse } from './aiBot.js';
@@ -409,6 +410,8 @@ async function persistMessages(messages) {
                     console.error(`[WhatsApp] send failed (${msg.errorCode}) ${msg.errorTitle}: ${msg.errorDetail}`);
                 }
                 await WhatsAppMessage.updateOne({ messageId: msg.messageId }, { $set: set });
+                // Campaign messages: delivered / read / failed feed the campaign report.
+                try { await applyCampaignStatus(msg); } catch { /* reporting must never break delivery */ }
             }
             continue;
         }
@@ -433,6 +436,11 @@ async function persistMessages(messages) {
             ? await WhatsAppMessage.findOne({ messageId: msg.messageId }).select('_id')
             : null;
         if (existing) continue;
+
+        // A reply to a campaign message counts for that campaign's report.
+        if (msg.direction === 'inbound') {
+            try { await markCampaignReply(msg.phoneNormalized, msg.occurredAt); } catch { /* never break delivery */ }
+        }
 
         let lead = await Lead.findOne({ phoneNormalized: msg.phoneNormalized });
         // Whether this message is the one that creates the lead — if so it
