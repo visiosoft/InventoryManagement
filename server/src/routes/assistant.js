@@ -12,16 +12,10 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 const PROMPT_LIMIT = 20000;
 
-/** Who may ask. Set on the config; reports are admin and accounts, and this
- *  sees the same figures, so that is the default. */
+/** Everyone signed in may ask. What it can *do* (actions) is still limited by
+ *  the action roles on the config, and what it can see by each tool's own checks. */
 async function allowed(req) {
-   const config = await getAssistantConfig();
-   // sales_rep in the default: BayOps (the mobile command bar) is a rep tool
-   // first — a fresh install with nobody having touched this config should
-   // not leave reps locked out of the thing built for them. Still fully
-   // admin-configurable from here down.
-   const roles = config.roles?.length ? config.roles : ['admin', 'accounts', 'sales_rep'];
-   return roles.includes(req.user?.role);
+   return Boolean(req.user);
 }
 
 /**

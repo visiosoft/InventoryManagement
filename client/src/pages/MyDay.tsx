@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import DashboardAsk from '../components/DashboardAsk'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, AlarmClock, Check, ChevronsRight, MessageCircle, Plus } from 'lucide-react'
@@ -236,6 +237,8 @@ export default function MyDay() {
           [data-pulse] { animation:none !important; }
         }
       `}</style>
+
+      <div style={{ marginBottom: 20 }}><DashboardAsk /></div>
 
       {/* ── Greeting + range ─────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-end gap-5" style={{ marginBottom: 20 }}>

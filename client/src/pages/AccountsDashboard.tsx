@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import DashboardAsk from '../components/DashboardAsk'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, ClipboardList, FileSignature, Loader2, ReceiptText, Wallet } from 'lucide-react'
 import { api } from '../lib/api'
@@ -73,6 +74,8 @@ export default function AccountsDashboard() {
         title={firstName ? `Good day, ${firstName}` : 'Accounts'}
         subtitle="What you have been asked to raise, what is waiting to be invoiced, and who owes us"
       />
+
+      <div className="mb-5"><DashboardAsk /></div>
 
       {isLoading || !data ? <Spinner /> : (
         <div className="space-y-5">
