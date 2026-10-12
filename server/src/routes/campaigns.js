@@ -5,7 +5,7 @@ import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { buildAudience } from '../services/campaignAudience.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { listWhatsAppTemplates, sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
-import { runCampaignTick } from '../services/campaignSender.js';
+import { runCampaignTick, fillVariables } from '../services/campaignSender.js';
 
 const router = Router();
 
@@ -172,7 +172,8 @@ router.post('/:id/test', async (req, res) => {
                 to: phone,
                 name: campaign.whatsapp.templateName,
                 language: campaign.whatsapp.language || 'en',
-                variables: campaign.whatsapp.variables || [],
+                variables: fillVariables(campaign.whatsapp.variables || [], String(req.body?.name || 'Test')),
+                headerImageUrl: campaign.whatsapp.headerImageUrl || undefined,
             });
             done.push(`WhatsApp to ${phone}`);
         }
@@ -202,6 +203,14 @@ router.post('/:id/send', async (req, res) => {
     if (wantsWhatsApp && !whatsappSendConfigured()) return res.status(501).json({ error: 'WhatsApp is not configured' });
     if (wantsWhatsApp && !campaign.whatsapp?.templateName) {
         return res.status(400).json({ error: 'WhatsApp marketing must use a template Meta has approved' });
+    }
+    if (wantsWhatsApp) {
+        const list = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
+        const tpl = (list.templates || []).find((t) => t.name === campaign.whatsapp.templateName && t.status === 'APPROVED');
+        if (!tpl) return res.status(400).json({ error: 'That template is not approved by Meta (or no longer exists)' });
+        if (tpl.headerFormat === 'IMAGE' && !/^https:\/\//i.test(campaign.whatsapp.headerImageUrl || '')) {
+            return res.status(400).json({ error: 'This template has an image header — add a public https link to the image' });
+        }
     }
 
     const { people } = await buildAudience(campaign.audience || {});

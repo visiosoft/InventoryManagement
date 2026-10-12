@@ -29,6 +29,15 @@ export const campaignState = {
 
 const stripHtml = (html) => String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
+/** {name} and {first_name} in a value become the person's own name. */
+export function fillVariables(variables = [], name = '') {
+    const full = String(name || '').trim();
+    const first = full.split(/\s+/)[0] || '';
+    return variables.map((v) => String(v ?? '')
+        .replace(/\{first_name\}/gi, first || 'there')
+        .replace(/\{name\}/gi, full || 'there'));
+}
+
 async function sendOne(campaign, recipient) {
     if (recipient.channel === 'email') {
         if (!mailConfigured()) throw new Error('Email is not configured');
@@ -47,7 +56,8 @@ async function sendOne(campaign, recipient) {
         to: recipient.phoneNormalized,
         name: campaign.whatsapp?.templateName,
         language: campaign.whatsapp?.language || 'en',
-        variables: campaign.whatsapp?.variables || [],
+        variables: fillVariables(campaign.whatsapp?.variables || [], recipient.name),
+        headerImageUrl: campaign.whatsapp?.headerImageUrl || undefined,
     });
 }
 

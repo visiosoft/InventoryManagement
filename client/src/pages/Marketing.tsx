@@ -15,6 +15,9 @@ type Audience = {
   leadStatuses: string[]
   renewalIntent: string
   owingOnly: boolean
+  leadFrom?: string
+  leadTo?: string
+  excludeCustomers?: boolean
 }
 
 type Campaign = {
@@ -24,14 +27,14 @@ type Campaign = {
   audience: Audience
   emailSubject: string
   emailHtml: string
-  whatsapp: { templateName: string; language: string; variables: string[] }
+  whatsapp: { templateName: string; language: string; variables: string[]; headerImageUrl?: string }
   status: 'draft' | 'sending' | 'sent' | 'cancelled' | 'failed'
   stats: { targeted: number; sent: number; failed: number; skipped: number }
   createdByName: string
   createdAt: string
 }
 
-type WaTemplate = { name: string; language: string; status: string; category: string; bodyText: string; variableCount: number }
+type WaTemplate = { name: string; language: string; status: string; category: string; bodyText: string; variableCount: number; headerFormat?: string }
 
 type Channels = {
   email: boolean
@@ -44,6 +47,7 @@ type Counts = { total: number; byEmail: number; byWhatsApp: number; unreachable:
 const emptyAudience: Audience = {
   tenants: true, pastTenants: false, leads: false,
   leadStatuses: [], renewalIntent: '', owingOnly: false,
+  leadFrom: '', leadTo: '', excludeCustomers: true,
 }
 
 const statusTone: Record<string, string> = {
@@ -423,6 +427,39 @@ function Composer({ campaign, channels, onClose, onDelete }: {
             </label>
           </div>
 
+          {draft.audience.leads && (
+            <div className="rounded-lg p-3 space-y-3" style={{ background: '#fff', border: '1px solid rgba(20,8,31,.08)' }}>
+              <div className="text-[12px] font-semibold" style={{ color: MUTED }}>Leads</div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Field label="Stage">
+                  <Select value={draft.audience.leadStatuses?.[0] ?? ''} disabled={readOnly}
+                    onChange={(e) => setAud({ leadStatuses: e.target.value ? [e.target.value] : [] })}>
+                    <option value="">Any stage</option>
+                    <option value="lost">Dead Lead / Lost</option>
+                    <option value="new">New Lead</option>
+                    <option value="contact_attempted">Contact Attempted</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="site_visit_scheduled">Site Visit Scheduled</option>
+                    <option value="follow_up_scheduled">Follow-Up Scheduled</option>
+                    <option value="quotation_sent">Quotation Sent</option>
+                  </Select>
+                </Field>
+                <Field label="Came in from">
+                  <Input type="date" disabled={readOnly} value={draft.audience.leadFrom ?? ''} onChange={(e) => setAud({ leadFrom: e.target.value })} />
+                </Field>
+                <Field label="Up to (optional)">
+                  <Input type="date" disabled={readOnly} value={draft.audience.leadTo ?? ''} onChange={(e) => setAud({ leadTo: e.target.value })} />
+                </Field>
+              </div>
+              <label className="flex items-center gap-2 text-[13px] cursor-pointer">
+                <input type="checkbox" disabled={readOnly || draft.audience.tenants || draft.audience.pastTenants}
+                  checked={draft.audience.excludeCustomers !== false}
+                  onChange={(e) => setAud({ excludeCustomers: e.target.checked })} />
+                Leave out anybody who is already a customer
+              </label>
+            </div>
+          )}
+
           {counts && (
             <div className="text-[12.5px] space-y-1" style={{ color: MUTED }}>
               <p>
@@ -473,7 +510,7 @@ function Composer({ campaign, channels, onClose, onDelete }: {
                 disabled={readOnly || approved.length === 0}
                 onChange={(e) => {
                   const t = approved.find((x) => x.name === e.target.value)
-                  set({ whatsapp: { templateName: e.target.value, language: t?.language || 'en', variables: [] } })
+                  set({ whatsapp: { templateName: e.target.value, language: t?.language || 'en', variables: [], headerImageUrl: draft.whatsapp?.headerImageUrl ?? '' } })
                 }}
               >
                 <option value="">{approved.length ? 'Choose an approved template' : 'No approved templates available'}</option>
@@ -488,6 +525,27 @@ function Composer({ campaign, channels, onClose, onDelete }: {
                   style={{ background: '#D9FDD3', color: '#111B21' }}>
                   {picked.bodyText}
                 </div>
+                {picked.headerFormat === 'IMAGE' && (
+                  <div className="space-y-2">
+                    <Field label="Image above the text (public https link)">
+                      <Input
+                        disabled={readOnly}
+                        placeholder="https://purplebox.ae/images/offer.jpg"
+                        value={draft.whatsapp.headerImageUrl ?? ''}
+                        onChange={(e) => set({ whatsapp: { ...draft.whatsapp, headerImageUrl: e.target.value.trim() } })}
+                      />
+                    </Field>
+                    {/^https:\/\//i.test(draft.whatsapp.headerImageUrl ?? '') && (
+                      <img src={draft.whatsapp.headerImageUrl} alt="Header preview" className="rounded-lg max-h-48 object-cover" />
+                    )}
+                  </div>
+                )}
+                {picked.headerFormat && picked.headerFormat !== 'IMAGE' && picked.headerFormat !== 'TEXT' && (
+                  <p className="text-xs text-amber-700">This template has a {picked.headerFormat.toLowerCase()} header, which campaigns can't fill yet. Use a template with an image or text header.</p>
+                )}
+                {picked.variableCount > 0 && (
+                  <p className="text-xs" style={{ color: MUTED }}>Type <code>{'{first_name}'}</code> or <code>{'{name}'}</code> to put each person's own name in.</p>
+                )}
                 {Array.from({ length: picked.variableCount }).map((_, i) => (
                   <Field key={i} label={`Value for {{${i + 1}}}`}>
                     <Input

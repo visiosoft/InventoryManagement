@@ -1857,6 +1857,10 @@ const campaignSchema = new Schema({
     // Skip anyone who already had a campaign on this channel within N days, so
     // two campaigns in a week do not both land on the same person.
     minDaysBetween: { type: Number, default: 7 },
+    // Leads only: when they came in, and whether to leave out signed customers.
+    leadFrom: { type: String, default: '' },
+    leadTo: { type: String, default: '' },
+    excludeCustomers: { type: Boolean, default: true },
   },
 
   emailSubject: { type: String, default: '' },
@@ -1868,6 +1872,8 @@ const campaignSchema = new Schema({
     templateName: { type: String, default: '' },
     language: { type: String, default: 'en' },
     variables: { type: [String], default: [] },
+    // Public https link to the image shown above the text, for templates with an image header.
+    headerImageUrl: { type: String, default: '' },
   },
 
   status: {

@@ -316,6 +316,8 @@ export async function listWhatsAppTemplates({ force = false } = {}) {
         // {{1}}, {{2}} … in the body, which the campaign has to supply values for.
         variableCount: countTemplateVariables(t.components || []),
         bodyText: (t.components || []).find((c) => c.type === 'BODY')?.text || '',
+        // IMAGE / VIDEO / DOCUMENT / TEXT, or '' when there is no header.
+        headerFormat: (t.components || []).find((c) => c.type === 'HEADER')?.format || '',
     }));
 
     const data = { configured: true, error: '', templates };
@@ -355,15 +357,21 @@ export function windowOpenFor({ lastInboundAt = null, now = new Date() } = {}) {
  * `variables` fill {{1}}, {{2}} … in order. Passing the wrong number of them is
  * rejected by Meta rather than silently truncated, so the caller checks first.
  */
-export async function sendWhatsAppTemplate({ to, name, language = 'en', variables = [], urlButtonText }) {
+export async function sendWhatsAppTemplate({ to, name, language = 'en', variables = [], urlButtonText, headerImageUrl }) {
     if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured');
     const normalizedTo = normalizeRecipientPhone(to);
     if (!normalizedTo) throw new Error('Recipient phone number is required');
     if (!name) throw new Error('A template name is required');
 
-    const components = variables.length
-        ? [{ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: String(v ?? '') })) }]
-        : [];
+    const components = [];
+    // A template with an image header is rejected by Meta unless the image is
+    // supplied at send time, as a public https link.
+    if (headerImageUrl) {
+        components.push({ type: 'header', parameters: [{ type: 'image', image: { link: String(headerImageUrl) } }] });
+    }
+    if (variables.length) {
+        components.push({ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: String(v ?? '') })) });
+    }
     // Meta's authentication templates carry a copy-code button that must be
     // filled with the same code as the body.
     if (urlButtonText !== undefined) {
