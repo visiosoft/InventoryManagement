@@ -75,7 +75,7 @@ const profileMenuGroups = [
       { to: '/settings/assistant', label: 'Ask the system', icon: Sparkles, perm: 'settings', adminOnly: true },
       { to: '/settings/lead-distribution', label: 'Lead Distribution', icon: Shuffle, perm: 'settings', adminOnly: true },
       { to: '/settings/sent-emails', label: 'Sent Emails', icon: Mail, perm: 'settings', adminOnly: true },
-      { to: '/campaign-studio', label: 'Campaign Studio', icon: Send, perm: 'settings', adminOnly: true },
+      { to: '/campaign-studio', label: 'Campaign Studio', icon: Send, perm: 'campaign_studio', adminOnly: false, adminAlways: true },
       { to: '/marketing', label: 'Marketing', icon: Megaphone, perm: 'settings', adminOnly: true },
       { to: '/agents', label: 'AI Agents', icon: Bot, perm: 'settings', adminOnly: true },
     ],
@@ -670,7 +670,7 @@ export default function Layout() {
         {/* Settings & admin — mobile only; desktop reaches these via the profile dropdown */}
         {!isSalesRepUser && (() => {
           const visibleProfile = profileMenuItems.filter(
-            ({ perm, adminOnly }) => (!perm || hasPermission(perm)) && (!adminOnly || isAdmin)
+            (item) => { const { perm, adminOnly } = item as { perm?: string | string[]; adminOnly?: boolean; adminAlways?: boolean }; return ((item as { adminAlways?: boolean }).adminAlways && isAdmin) || ((!perm || hasPermission(perm)) && (!adminOnly || isAdmin)) }
           )
           if (visibleProfile.length === 0 && !isAdmin) return null
           return (
@@ -868,7 +868,7 @@ export default function Layout() {
                 <div className="grid grid-cols-2 overflow-y-auto" style={{ columnGap: 28, rowGap: 22, padding: '20px 24px', minHeight: 0, flex: '1 1 auto' }}>
                   {profileMenuGroups.map((group) => {
                     const items = group.items.filter(
-                      (i) => (!i.perm || hasPermission(i.perm)) && (!i.adminOnly || isAdmin)
+                      (i) => ((i as { adminAlways?: boolean }).adminAlways && isAdmin) || ((!i.perm || hasPermission(i.perm)) && (!i.adminOnly || isAdmin))
                     )
                     if (items.length === 0) return null
                     return (

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api } from './api'
 
 export interface AuthUser {
@@ -45,6 +45,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const raw = localStorage.getItem('pb_user')
     return raw ? JSON.parse(raw) : null
   })
+
+  // Pick up changes an admin made since this person logged in (a module
+  // granted in Settings → Users, a role change) on every page load.
+  useEffect(() => {
+    if (!localStorage.getItem('pb_token')) return
+    api.get('/auth/me').then(({ data }) => {
+      const fresh = data?.user
+      if (!fresh?.id) return
+      const raw = localStorage.getItem('pb_user')
+      const prev = raw ? JSON.parse(raw) : null
+      const next = { ...prev, ...fresh }
+      if (JSON.stringify(next) === JSON.stringify(prev)) return
+      localStorage.setItem('pb_user', JSON.stringify(next))
+      setUser(next)
+    }).catch(() => {})
+  }, [])
 
   async function login(email: string, password: string) {
     const { data } = await api.post('/auth/login', { email, password })
