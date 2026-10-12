@@ -9,6 +9,17 @@ import { digitTail } from './leadRouting.js';
  * way the inbox decides to show the green Customer tag: the last nine digits
  * of the number, against people who have signed (not prospects).
  */
+export async function customerContactKeys() {
+   const customers = await Customer.find({ stage: { $ne: 'prospect' } }).select('phone phones email').lean();
+   const tails = new Set();
+   const emails = new Set();
+   for (const c of customers) {
+      for (const p of [...(c.phones || []), c.phone]) { const t = digitTail(p); if (t) tails.add(t); }
+      if (c.email) emails.add(String(c.email).trim().toLowerCase());
+   }
+   return { tails, emails };
+}
+
 async function customerTails() {
    const customers = await Customer.find({ stage: { $ne: 'prospect' } }).select('phone phones').lean();
    const tails = new Set();

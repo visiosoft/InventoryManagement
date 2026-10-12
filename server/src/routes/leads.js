@@ -2,13 +2,15 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
 import { notifyLeadAssigned, notifyBulkReassignment, pendingAssignmentBadge } from '../services/leadNotify.js';
-import { promotePlaceholderName, resolvePlaceholderNames } from '../services/leadNames.js';
+import { displayNameFor, promotePlaceholderName, resolvePlaceholderNames } from '../services/leadNames.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask, syncStorageStartTask } from '../services/followUps.js';
 import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
 import { summarise } from '../services/speedToLead.js';
 import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { QUEUE_SINCE } from '../services/followUpQueue.js';
+import { customerContactKeys } from '../services/customerLeads.js';
+import { digitTail } from '../services/leadRouting.js';
 import { buildFunnel } from '../services/leadFunnel.js';
 import { scoreForLead, highIntentToday, intakeChecklist } from '../services/leadScore.js';
 import { summariseConversation } from '../services/conversationSummary.js';
@@ -326,6 +328,71 @@ router.get('/', async (req, res) => {
  * for a browser that never visited the list, and unfiltered is the only
  * order left to fall back on then.
  */
+/**
+ * A contact list for a campaign: leads in one stage (lost by default) that came
+ * in on or after a date, leaving out anybody who is already a customer — by
+ * phone (last nine digits) or by email — and anybody who appears twice.
+ * Returned as rows; the client turns them into the Excel file.
+ */
+router.get('/campaign-list', async (req, res) => {
+    try {
+        if (isSalesRep(req)) return res.status(403).json({ error: 'Not allowed' });
+        const stage = String(req.query.stage || 'lost');
+        // Whole Dubai days: from 00:00 of the first day to 23:59 of the last.
+        const day = (v, end) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? new Date(`${v}T${end ? '23:59:59.999' : '00:00:00.000'}+04:00`) : parseDate(v));
+        const from = day(req.query.from, false);
+        const to = day(req.query.to, true);
+        const onlyEmail = req.query.onlyEmail === '1';
+        const named = req.query.unnamed === '0';
+
+        const filter = { deletedAt: null };
+        if (stage !== 'any') filter.status = stage;
+        else filter.status = { $nin: ['won', 'already_customer'] };
+        if (from || to) {
+            filter.leadDateTime = {};
+            if (from) filter.leadDateTime.$gte = from;
+            if (to) filter.leadDateTime.$lte = to;
+        }
+
+        const [leads, keys] = await Promise.all([
+            Lead.find(filter)
+                .select('fullName whatsappProfileName phone phoneNormalized email status source leadDateTime owner')
+                .populate('owner', 'name')
+                .sort({ leadDateTime: -1 })
+                .lean(),
+            customerContactKeys(),
+        ]);
+
+        const seen = new Set();
+        const rows = [];
+        let skippedCustomers = 0;
+        for (const l of leads) {
+            const tail = digitTail(l.phoneNormalized || l.phone);
+            const email = String(l.email || '').trim().toLowerCase();
+            if ((tail && keys.tails.has(tail)) || (email && keys.emails.has(email))) { skippedCustomers += 1; continue; }
+            const dedupeKey = tail || email || String(l._id);
+            if (seen.has(dedupeKey)) continue;
+            seen.add(dedupeKey);
+            const name = displayNameFor(l);
+            const hasName = !/^whatsapp\s*contact/i.test(name) && name !== 'Unknown';
+            if (named && !hasName) continue;
+            if (onlyEmail && !email) continue;
+            rows.push({
+                name: hasName ? name : '',
+                phone: l.phoneNormalized ? `+${l.phoneNormalized}` : (l.phone || ''),
+                email: l.email || '',
+                stage: l.status,
+                source: l.source || '',
+                leadDate: l.leadDateTime,
+                owner: l.owner?.name || '',
+            });
+        }
+        res.json({ rows, total: rows.length, skippedCustomers });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/nav-order', async (req, res) => {
     const filter = buildLeadListFilter(req);
 

@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth'
 import { fromDubaiDatetimeLocal, toDubaiDatetimeLocal } from '../lib/timezone'
 import WaitingStrip from '../components/WaitingStrip'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
+import { ExportButtons } from '../components/ExportButtons'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
 import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
@@ -678,6 +679,68 @@ function ContactDetailPanel({ row, onUpdateLead }: { row: WhatsAppLeadRow; onUpd
     )
 }
 
+
+type CampaignRow = { name: string; phone: string; email: string; stage: string; source: string; leadDate: string; owner: string }
+
+/** A contact list for a campaign: one stage, from a date, leaving out customers. */
+function CampaignExport({ onClose }: { onClose: () => void }) {
+    const [from, setFrom] = useState('2026-08-15')
+    const [to, setTo] = useState('')
+    const [stage, setStage] = useState('lost')
+    const [onlyEmail, setOnlyEmail] = useState(false)
+    const [namedOnly, setNamedOnly] = useState(false)
+
+    const params = { from: from || undefined, to: to || undefined, stage, onlyEmail: onlyEmail ? '1' : '0', unnamed: namedOnly ? '0' : '1' }
+    const { data, isFetching, error } = useQuery<{ rows: CampaignRow[]; total: number; skippedCustomers: number }>({
+        queryKey: ['campaign-list', from, to, stage, onlyEmail, namedOnly],
+        queryFn: () => api.get('/leads/campaign-list', { params }).then((r) => r.data),
+    })
+
+    const fmt = (iso: string) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Dubai' }) : '')
+    return (
+        <Modal open onClose={onClose} title="Campaign list">
+            <div className="space-y-3 text-sm">
+                <p style={{ color: MUTED_COLOR }}>
+                    Leads who came in on or after the date, excluding anybody who is already a customer (matched by phone or email) and anybody listed twice.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                    <Field label="Came in from"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+                    <Field label="Up to (optional)"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+                </div>
+                <Field label="Stage">
+                    <Select value={stage} onChange={(e) => setStage(e.target.value)}>
+                        <option value="lost">Dead Lead / Lost</option>
+                        <option value="any">Every stage except Won and Customer</option>
+                    </Select>
+                </Field>
+                <label className="flex items-center gap-2"><input type="checkbox" checked={onlyEmail} onChange={(e) => setOnlyEmail(e.target.checked)} /> Only people with an email address</label>
+                <label className="flex items-center gap-2"><input type="checkbox" checked={namedOnly} onChange={(e) => setNamedOnly(e.target.checked)} /> Skip contacts with no name</label>
+                <div className="rounded-lg p-3" style={{ background: '#FBF8F3', border: '1px solid rgba(20,8,31,.10)' }}>
+                    {isFetching ? 'Counting…' : error ? <span style={{ color: '#B91C1C' }}>{apiError(error)}</span> : (
+                        <>
+                            <strong>{data?.total ?? 0}</strong> people in the list
+                            {data ? <span style={{ color: MUTED_COLOR }}> · {data.skippedCustomers} left out because they are customers</span> : null}
+                            {data && data.rows.length > 0 && (
+                                <div className="mt-2" style={{ fontSize: 12, color: MUTED_COLOR }}>
+                                    {data.rows.slice(0, 3).map((r, i) => <div key={i}>{r.name || '(no name)'} · {r.phone}{r.email ? ` · ${r.email}` : ''}</div>)}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+                <div className="flex justify-end">
+                    <ExportButtons
+                        title={`Campaign list${from ? ` from ${fmt(from)}` : ''}`}
+                        columns={[{ label: 'Name' }, { label: 'Phone' }, { label: 'Email' }, { label: 'Stage' }, { label: 'Source' }, { label: 'Came in' }, { label: 'Last owner' }]}
+                        rows={(data?.rows ?? []).map((r) => [r.name, r.phone, r.email, statusLabel(r.stage), statusLabel(r.source), fmt(r.leadDate), r.owner])}
+                        total={data?.total}
+                    />
+                </div>
+            </div>
+        </Modal>
+    )
+}
+
 /* The list's filters, page and sort are kept for the browser session, so
    opening a lead and coming back lands on the same filtered list. A fresh tab
    or a new login starts clean. */
@@ -695,6 +758,7 @@ export default function Leads() {
     const [search, setSearch] = useState(saved.search ?? '')
     const [status, setStatus] = useState(saved.status ?? '')
     const [moreOpen, setMoreOpen] = useState(saved.moreOpen ?? false)
+    const [campaignOpen, setCampaignOpen] = useState(false)
     const [source, setSource] = useState(saved.source ?? '')
     const [owner, setOwner] = useState(saved.owner ?? '')
     // Where the chase has got to, and who did it.
@@ -1231,6 +1295,18 @@ export default function Leads() {
                             <Upload size={17} />
                             {importContacts.isPending ? 'Importing…' : 'Import CSV'}
                         </button>
+                        {isAdmin && (
+                            <button
+                                onClick={() => setCampaignOpen(true)}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 9, height: 46, padding: '0 20px',
+                                    borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', background: 'transparent',
+                                    color: INK, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                                }}
+                            >
+                                <Mail size={17} /> Campaign list
+                            </button>
+                        )}
                         {isAdmin && (
                             <button
                                 onClick={() => { setReassignError(''); setReassignResult(''); setReassigning(true) }}
@@ -1836,6 +1912,8 @@ export default function Leads() {
                     />
                 )}
             </Modal>
+
+            {campaignOpen && <CampaignExport onClose={() => setCampaignOpen(false)} />}
 
             <Modal open={reassigning} onClose={() => setReassigning(false)} title="Reassign leads">
                 {reassignResult ? (
