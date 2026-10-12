@@ -322,7 +322,12 @@ router.put('/:id', async (req, res) => {
     // Once it has started going out, the wording is history — editing it would
     // make the record disagree with what people actually received.
     if (campaign.status !== 'draft') {
-        return res.status(409).json({ error: 'This campaign has already been sent and can no longer be edited' });
+        // Only the label can change; the record of what went out stays as sent.
+        const name = String(req.body?.name || '').trim();
+        if (!name) return res.status(409).json({ error: 'This campaign has already been sent; only its name can be changed' });
+        campaign.name = name;
+        await campaign.save();
+        return res.json(campaign);
     }
     for (const k of ['name', 'channel', 'audience', 'emailSubject', 'emailHtml', 'whatsapp']) {
         if (req.body?.[k] !== undefined) campaign[k] = req.body[k];

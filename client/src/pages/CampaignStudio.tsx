@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Megaphone, Send, RefreshCw, Repeat, ArrowLeft, ArrowRight, Check, CheckCheck, Eye, MessageCircle, AlertTriangle } from 'lucide-react'
+import { Megaphone, Send, RefreshCw, Repeat, ArrowLeft, ArrowRight, Check, CheckCheck, Eye, MessageCircle, AlertTriangle, Pencil, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, PageHeader, Select, Spinner, Table, Th, Td } from '../components/ui'
 import { statusLabel } from '../components/ui'
@@ -50,7 +50,7 @@ const STAGES = [
 ] as const
 
 /** The second half of the page: who got what, and what they did with it. */
-function Reports({ onRetarget }: { onRetarget: (campaignId: string) => void }) {
+function Reports({ onRetarget, onEdit }: { onRetarget: (campaignId: string) => void; onEdit: (campaignId: string) => void }) {
   const qc = useQueryClient()
   const [openId, setOpenId] = useState<string | null>(null)
 
@@ -60,18 +60,31 @@ function Reports({ onRetarget }: { onRetarget: (campaignId: string) => void }) {
     refetchInterval: 20_000,
   })
 
+  const [err, setErr] = useState('')
+  const del = useMutation({
+    mutationFn: (id: string) => api.delete(`/campaigns/${id}`),
+    onSuccess: () => { setErr(''); qc.invalidateQueries({ queryKey: ['campaign-reports'] }) },
+    onError: (e) => setErr(apiError(e)),
+  })
+  const rename = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.put(`/campaigns/${id}`, { name }),
+    onSuccess: () => { setErr(''); qc.invalidateQueries({ queryKey: ['campaign-reports'] }) },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   if (openId) return <ReportDetail id={openId} onBack={() => { setOpenId(null); qc.invalidateQueries({ queryKey: ['campaign-reports'] }) }} onRetarget={onRetarget} />
 
   return (
     <Card>
       <CardHeader title="Campaign reports" subtitle="Sent, delivered, read and replied — from Meta's delivery receipts and your inbox" />
       <CardBody>
+        {err && <p className="text-sm text-destructive mb-2">{err}</p>}
         {isLoading ? <Spinner /> : !list?.length ? (
           <p className="text-sm" style={{ color: MUTED }}>No campaigns yet. Send your first one from "New campaign".</p>
         ) : (
           <Table>
             <thead>
-              <tr><Th>Campaign</Th><Th>Sent</Th><Th>Delivered</Th><Th>Read</Th><Th>Replied</Th><Th>Failed</Th><Th>When</Th></tr>
+              <tr><Th>Campaign</Th><Th>Sent</Th><Th>Delivered</Th><Th>Read</Th><Th>Replied</Th><Th>Failed</Th><Th>When</Th><Th></Th></tr>
             </thead>
             <tbody>
               {list.map((c) => (
@@ -86,6 +99,18 @@ function Reports({ onRetarget }: { onRetarget: (campaignId: string) => void }) {
                   <Td>{c.funnel.replied}<span className="text-xs" style={{ color: MUTED }}> {pct(c.funnel.replied, c.funnel.sent)}</span></Td>
                   <Td>{c.funnel.failed || '—'}</Td>
                   <Td className="text-xs whitespace-nowrap">{fmt(c.startedAt || c.createdAt)}</Td>
+                  <Td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex gap-1.5">
+                      {c.status === 'draft'
+                        ? <Button variant="outline" onClick={() => onEdit(c._id)}><Pencil size={13} /> Edit</Button>
+                        : <Button variant="outline" onClick={() => { const n = window.prompt('Rename campaign', c.name); if (n && n.trim() && n.trim() !== c.name) rename.mutate({ id: c._id, name: n.trim() }) }}><Pencil size={13} /> Rename</Button>}
+                      <Button
+                        variant="outline"
+                        disabled={c.status === 'sending' || del.isPending}
+                        onClick={() => { if (confirm(`Delete "${c.name}"${c.status === 'draft' ? '' : ' and its report'}? This cannot be undone.`)) del.mutate(c._id) }}
+                      ><Trash2 size={13} /> Delete</Button>
+                    </div>
+                  </Td>
                 </tr>
               ))}
             </tbody>
@@ -396,12 +421,30 @@ export default function CampaignStudio() {
     } catch (e) { setErr(apiError(e)) }
   }
 
+  /** Reopen a saved draft exactly as it was left: people, template, image. */
+  async function editDraft(id: string) {
+    try {
+      const { data } = await api.get<{ campaign: { _id: string; name: string; audience: { leadIds?: string[] }; whatsapp?: { templateName?: string; variables?: string[]; headerImageUrl?: string } } }>(`/campaigns/${id}`)
+      const c = data.campaign
+      setDraftId(id)
+      setName(c.name)
+      setSelected(new Set((c.audience.leadIds ?? []).map(String)))
+      setTemplateName(c.whatsapp?.templateName ?? '')
+      setHeaderImageUrl(c.whatsapp?.headerImageUrl ?? '')
+      setVariables(c.whatsapp?.variables ?? [])
+      setTab('new')
+      setStep(1)
+      setNote('')
+      setErr('')
+    } catch (e) { setErr(apiError(e)) }
+  }
+
   const needsImage = picked?.headerFormat === 'IMAGE'
   const imageOk = !needsImage || /^https:\/\//i.test(headerImageUrl)
   const canSend = selected.size > 0 && Boolean(picked) && imageOk && (counts?.counts.byWhatsApp ?? 1) > 0 && !send.isPending
 
   return (
-    <div className="max-w-6xl space-y-4">
+    <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-4 sm:p-9 space-y-4">
       <PageHeader
         title="Campaign Studio"
         subtitle="Pick people, send them a Meta-approved WhatsApp template, then follow what they do."
@@ -424,7 +467,7 @@ export default function CampaignStudio() {
 
       {tab === 'templates' && <CampaignTemplates />}
       {tab === 'block' && <DoNotMessage />}
-      {tab === 'reports' && <Reports onRetarget={openDraft} />}
+      {tab === 'reports' && <Reports onRetarget={openDraft} onEdit={editDraft} />}
 
       {tab === 'new' && (
         <>
