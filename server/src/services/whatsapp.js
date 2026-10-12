@@ -300,7 +300,7 @@ export async function listWhatsAppTemplates({ force = false } = {}) {
     }
     if (!force && templateCache.data && Date.now() - templateCache.at < TEMPLATE_CACHE_MS) return templateCache.data;
 
-    const url = `https://graph.facebook.com/v20.0/${waba}/message_templates?limit=200`;
+    const url = `https://graph.facebook.com/v20.0/${waba}/message_templates?limit=200&fields=id,name,status,category,language,components,rejected_reason,quality_score`;
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) {
@@ -308,9 +308,11 @@ export async function listWhatsAppTemplates({ force = false } = {}) {
     }
 
     const templates = (body.data || []).map((t) => ({
+        id: t.id,
         name: t.name,
         language: t.language,
         status: t.status,
+        rejectedReason: t.rejected_reason && t.rejected_reason !== 'NONE' ? t.rejected_reason : '',
         category: t.category,
         components: t.components || [],
         // {{1}}, {{2}} … in the body, which the campaign has to supply values for.

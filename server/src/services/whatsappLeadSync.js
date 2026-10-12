@@ -1,4 +1,5 @@
 import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage, WhatsAppBlockedNumber } from '../models/index.js';
+import { applyTemplateStatusEvent } from './templateManager.js';
 import { routeInboundLead } from './leadRouting.js';
 import { PLACEHOLDER_NAME } from './leadNames.js';
 import { isExistingCustomerPhone } from './customerLeads.js';
@@ -623,6 +624,14 @@ function pushTimeline(lead, type, text) {
 }
 
 export async function processWhatsAppWebhookPayload(payload) {
+    // Meta's verdict on a template we submitted (approved / rejected / paused).
+    for (const entry of Array.isArray(payload?.entry) ? payload.entry : []) {
+        for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+            if (change?.field === 'message_template_status_update') {
+                await applyTemplateStatusEvent(change.value).catch((e) => console.error('[Templates]', e.message));
+            }
+        }
+    }
     const extractedMessages = extractMessagesFromPayload(payload);
     if (extractedMessages.length > 0) {
         await persistMessages(extractedMessages);

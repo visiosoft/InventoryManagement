@@ -1931,6 +1931,41 @@ campaignRecipientSchema.index(
 campaignSchema.plugin(softDeletePlugin);
 campaignRecipientSchema.plugin(softDeletePlugin);
 
+// ── Campaign templates: written here, submitted to Meta, tracked until approved ─
+const templateImageSchema = new Schema({
+  key: { type: String, required: true, unique: true },
+  data: { type: Buffer, required: true },
+  contentType: { type: String, default: 'image/jpeg' },
+  fileName: { type: String, default: '' },
+  size: { type: Number, default: 0 },
+}, { timestamps: true });
+
+const campaignTemplateSchema = new Schema({
+  name: { type: String, required: true },
+  language: { type: String, default: 'en' },
+  category: { type: String, enum: ['MARKETING', 'UTILITY'], default: 'MARKETING' },
+  headerType: { type: String, enum: ['none', 'image'], default: 'none' },
+  imageKey: { type: String, default: '' },
+  bodyText: { type: String, required: true },
+  bodyExamples: { type: [String], default: [] },
+  footerText: { type: String, default: '' },
+  buttons: [{ type: { type: String, enum: ['QUICK_REPLY', 'URL'] }, text: String, url: String }],
+  // draft = not sent to Meta yet; the rest are Meta's own words.
+  status: { type: String, default: 'draft' },
+  metaId: { type: String, default: '' },
+  rejectedReason: { type: String, default: '' },
+  lastError: { type: String, default: '' },
+  submittedAt: { type: Date, default: null },
+  statusChangedAt: { type: Date, default: null },
+  statusCheckedAt: { type: Date, default: null },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  createdByName: { type: String, default: '' },
+}, { timestamps: true });
+campaignTemplateSchema.index({ name: 1, language: 1 });
+campaignTemplateSchema.plugin(softDeletePlugin);
+export const TemplateImage = model('TemplateImage', templateImageSchema);
+export const CampaignTemplate = model('CampaignTemplate', campaignTemplateSchema);
+
 export const Campaign = model('Campaign', campaignSchema);
 export const CampaignRecipient = model('CampaignRecipient', campaignRecipientSchema);
 

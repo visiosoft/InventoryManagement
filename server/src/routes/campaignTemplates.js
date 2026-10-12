@@ -1,0 +1,96 @@
+import { Router } from 'express';
+import multer from 'multer';
+import { requireAdmin } from '../middleware/auth.js';
+import { CampaignTemplate, TemplateImage } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
+import { validateTemplate, submitTemplate, refreshTemplateStatuses, newImageKey } from '../services/templateManager.js';
+
+const router = Router();
+router.use(requireAdmin);
+
+// Meta accepts JPG/PNG up to 5 MB for a template's sample header image.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, ['image/jpeg', 'image/png'].includes(file.mimetype)),
+});
+
+function fieldsFrom(body) {
+  const parse = (v, d) => { try { return typeof v === 'string' ? JSON.parse(v) : (v ?? d); } catch { return d; } };
+  return {
+    name: String(body.name || '').trim().toLowerCase(),
+    language: String(body.language || 'en').trim() || 'en',
+    category: body.category === 'UTILITY' ? 'UTILITY' : 'MARKETING',
+    headerType: body.headerType === 'image' ? 'image' : 'none',
+    bodyText: String(body.bodyText || '').trim(),
+    bodyExamples: parse(body.bodyExamples, []).map(String),
+    footerText: String(body.footerText || '').trim(),
+    buttons: parse(body.buttons, []).filter((b) => b && b.text).map((b) => ({ type: b.type === 'URL' ? 'URL' : 'QUICK_REPLY', text: String(b.text), url: String(b.url || '') })),
+  };
+}
+
+const present = (t) => ({
+  ...t,
+  imageUrl: t.imageKey ? `/api/public/template-media/${t.imageKey}` : '',
+  problems: t.status === 'draft' || t.status === 'REJECTED' ? validateTemplate(t) : [],
+});
+
+router.get('/', async (_req, res) => {
+  const rows = await CampaignTemplate.find().sort({ createdAt: -1 }).lean();
+  res.json(rows.map(present));
+});
+
+router.post('/refresh', async (_req, res) => {
+  try { res.json(await refreshTemplateStatuses()); } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+router.post('/', upload.single('image'), async (req, res) => {
+  const f = fieldsFrom(req.body);
+  if (await CampaignTemplate.findOne({ name: f.name, language: f.language })) return res.status(409).json({ error: 'You already have a template with this name and language' });
+  const doc = new CampaignTemplate({ ...f, createdBy: req.user.id, createdByName: req.user.name || req.user.email || '' });
+  if (req.file) {
+    doc.imageKey = newImageKey();
+    await TemplateImage.create({ key: doc.imageKey, data: req.file.buffer, contentType: req.file.mimetype, fileName: req.file.originalname, size: req.file.size });
+    doc.headerType = 'image';
+  }
+  await doc.save();
+  res.status(201).json(present(doc.toObject()));
+});
+
+router.put('/:id', upload.single('image'), async (req, res) => {
+  const doc = await CampaignTemplate.findById(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  // Meta does not let an approved or waiting template be edited here.
+  if (!['draft', 'REJECTED'].includes(doc.status)) return res.status(400).json({ error: 'Only a draft or rejected template can be edited' });
+  Object.assign(doc, fieldsFrom(req.body));
+  if (req.file) {
+    doc.imageKey = newImageKey();
+    await TemplateImage.create({ key: doc.imageKey, data: req.file.buffer, contentType: req.file.mimetype, fileName: req.file.originalname, size: req.file.size });
+    doc.headerType = 'image';
+  }
+  if (doc.headerType === 'none') doc.imageKey = '';
+  await doc.save();
+  res.json(present(doc.toObject()));
+});
+
+router.post('/:id/submit', async (req, res) => {
+  try { res.json(present((await submitTemplate(req.params.id)).toObject())); } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.delete('/:id', async (req, res) => {
+  const doc = await CampaignTemplate.findById(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  await softDelete(doc, req.user?.id);
+  res.json({ ok: true });
+});
+
+export const publicMediaRouter = Router();
+// Meta fetches nothing from here for review (we upload the bytes), but the
+// editor shows the picture back to the admin without a token on <img>.
+publicMediaRouter.get('/:key', async (req, res) => {
+  const img = await TemplateImage.findOne({ key: String(req.params.key) }).lean();
+  if (!img) return res.status(404).end();
+  res.set('Content-Type', img.contentType).set('Cache-Control', 'public, max-age=86400').send(Buffer.from(img.data.buffer ?? img.data));
+});
+
+export default router;

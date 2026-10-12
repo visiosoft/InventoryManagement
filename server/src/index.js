@@ -55,6 +55,8 @@ import whatsappRoutes from './routes/whatsapp.js';
 import aiBotRoutes from './routes/aiBot.js';
 import whatsappFlowTemplateRoutes from './routes/whatsappFlowTemplates.js';
 import campaignRoutes from './routes/campaigns.js';
+import campaignTemplateRoutes, { publicMediaRouter as templateMediaPublic } from './routes/campaignTemplates.js';
+import { refreshTemplateStatuses } from './services/templateManager.js';
 import sentEmailRoutes from './routes/sentEmails.js';
 import marketingPublicRoutes from './routes/marketingPublic.js';
 import contractsPublicRoutes from './routes/contractsPublic.js';
@@ -247,6 +249,7 @@ app.use('/api/moving-leads/public', express.urlencoded({ extended: true }), movi
 app.use('/api/public/bookings', publicBookingRoutes);
 // The website's price list: sizes, prices and discounts, no token. Read-only.
 app.use('/api/public/pricing', publicPricingRoutes);
+app.use('/api/public/template-media', templateMediaPublic);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.
@@ -337,6 +340,7 @@ app.use('/api/ai-bot', requireAuth, aiBotRoutes);
 app.use('/api/whatsapp-flow-templates', requireAuth, whatsappFlowTemplateRoutes);
 app.use('/api/marketing', marketingPublicRoutes);
 app.use('/api/campaigns', requireAuth, campaignRoutes);
+app.use('/api/campaign-templates', requireAuth, campaignTemplateRoutes);
 app.use('/api/sent-emails', requireAuth, sentEmailRoutes);
 app.use('/api/reminder-config', requireAuth, reminderConfigRoutes);
 app.use('/api/message-templates', requireAuth, messageTemplateRoutes);
@@ -472,6 +476,12 @@ async function start() {
   setTimeout(() => setInterval(() => {
     runCampaignTick().catch((e) => console.error('[Campaign]', e.message));
   }, 15 * 1000), 25_000);
+
+  // Meta's verdict on submitted templates normally arrives by webhook; this
+  // is the net underneath it for when the webhook field isn't subscribed.
+  setTimeout(() => setInterval(() => {
+    refreshTemplateStatuses().catch((e) => console.error('[Templates]', e.message));
+  }, 10 * 60 * 1000), 60_000);
 
   // The original assistant's own drafting is retired: the Agents system
   // (below) now drafts and escalates for every inbound message, and its

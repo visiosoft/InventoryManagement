@@ -5,6 +5,7 @@ import { Megaphone, Send, RefreshCw, Repeat, ArrowLeft, Check, CheckCheck, Eye, 
 import { api, apiError } from '../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, PageHeader, Select, Spinner, Table, Th, Td } from '../components/ui'
 import { statusLabel } from '../components/ui'
+import CampaignTemplates from './CampaignTemplates'
 
 const PURPLE = '#5B2BC9'
 const MUTED = '#756E80'
@@ -236,7 +237,7 @@ function ReportDetail({ id, onBack, onRetarget }: { id: string; onBack: () => vo
 
 export default function CampaignStudio() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'new' | 'reports'>('new')
+  const [tab, setTab] = useState<'new' | 'reports' | 'templates'>('new')
 
   // 1 · people
   const [search, setSearch] = useState('')
@@ -354,7 +355,7 @@ export default function CampaignStudio() {
       />
 
       <div className="flex gap-2">
-        {([['new', 'New campaign'], ['reports', 'Reports & retargeting']] as const).map(([k, label]) => (
+        {([['new', 'New campaign'], ['templates', 'My templates'], ['reports', 'Reports & retargeting']] as const).map(([k, label]) => (
           <button
             key={k}
             type="button"
@@ -368,6 +369,7 @@ export default function CampaignStudio() {
         <Link to="/marketing" className="ml-auto self-center text-xs font-semibold" style={{ color: MUTED }}>Email & tenant campaigns →</Link>
       </div>
 
+      {tab === 'templates' && <CampaignTemplates />}
       {tab === 'reports' && <Reports onRetarget={openDraft} />}
 
       {tab === 'new' && (
@@ -482,7 +484,7 @@ export default function CampaignStudio() {
               </div>
               {templates.length === 0 && (
                 <p className="text-sm" style={{ color: MUTED }}>
-                  No templates yet. Create one in Meta Business Manager (WhatsApp Manager → Message templates), category Marketing. It shows here as "Waiting for Meta" and becomes usable the moment Meta approves it.
+                  No approved templates yet. Write one in the "My templates" tab and send it to Meta. It becomes usable here the moment Meta approves it.
                 </p>
               )}
 
