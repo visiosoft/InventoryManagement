@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { PasswordInput } from '../components/PasswordInput'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { apiError } from '../lib/api'
@@ -98,8 +99,7 @@ export default function Login() {
                 <label className="text-xs font-semibold text-foreground">Password</label>
                 <Link to="/forgot-password" className="text-xs font-medium" style={{ color: '#4C8CE4' }}>Forgot password?</Link>
               </div>
-              <input
-                type="password"
+              <PasswordInput
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

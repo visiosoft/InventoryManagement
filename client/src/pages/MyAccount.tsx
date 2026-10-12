@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { PasswordInput } from '../components/PasswordInput'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, BellOff, Check, KeyRound, Target, User } from 'lucide-react'
 import { api, apiError } from '../lib/api'
@@ -261,13 +262,13 @@ export default function MyAccount() {
             </div>
           )}
           <Field label="Current password">
-            <Input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+            <PasswordInput value={current} onChange={(e) => setCurrent(e.target.value)} />
           </Field>
           <Field label="New password">
-            <Input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="Min 8 characters" />
+            <PasswordInput value={next} onChange={(e) => setNext(e.target.value)} placeholder="Min 8 characters" />
           </Field>
           <Field label="Confirm new password">
-            <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </Field>
           {err && <p className="text-xs text-destructive">{err}</p>}
           <div className="flex justify-end">

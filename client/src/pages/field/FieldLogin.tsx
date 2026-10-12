@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { PasswordInput } from '../../components/PasswordInput'
 import { useNavigate } from 'react-router-dom'
 import { Truck } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
@@ -68,9 +69,9 @@ export default function FieldLogin() {
             <label className="text-sm font-medium text-foreground" htmlFor="password">
               Password
             </label>
-            <input
+            <PasswordInput
               id="password"
-              type="password"
+              
               required
               autoComplete="current-password"
               value={password}

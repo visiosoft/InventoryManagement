@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { PasswordInput } from '../components/PasswordInput'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, apiError } from '../lib/api'
 
@@ -106,8 +107,8 @@ export default function ResetPassword() {
               <form onSubmit={onSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-foreground mb-1.5">New password</label>
-                  <input
-                    type="password"
+                  <PasswordInput
+                    
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Min 6 characters"
@@ -118,8 +119,8 @@ export default function ResetPassword() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-foreground mb-1.5">Confirm password</label>
-                  <input
-                    type="password"
+                  <PasswordInput
+                    
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
                     placeholder="Re-enter password"

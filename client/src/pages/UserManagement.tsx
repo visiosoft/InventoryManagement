@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PasswordInput } from '../components/PasswordInput'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Edit2, KeyRound, ListTodo, Plus, ShieldCheck, ShieldOff, Target, Trash2, User, UserCog } from 'lucide-react'
 import { api, apiError } from '../lib/api'
@@ -261,7 +262,7 @@ function UserModal({ editing, onClose, onDone }: {
             <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" />
           </Field>
           <Field label={isNew ? 'Password' : 'New password (leave blank to keep current)'}>
-            <Input type="password" value={password} onChange={e => setPassword(e.target.value)}
+            <PasswordInput value={password} onChange={e => setPassword(e.target.value)}
               placeholder={isNew ? 'Min 8 characters' : 'Leave blank to keep current'} />
           </Field>
           <Field label="Role">
@@ -371,13 +372,13 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
         <>
           <div className="space-y-4">
             <Field label="Current password">
-              <Input type="password" value={current} onChange={e => setCurrent(e.target.value)} />
+              <PasswordInput value={current} onChange={e => setCurrent(e.target.value)} />
             </Field>
             <Field label="New password">
-              <Input type="password" value={next} onChange={e => setNext(e.target.value)} placeholder="Min 8 characters" />
+              <PasswordInput value={next} onChange={e => setNext(e.target.value)} placeholder="Min 8 characters" />
             </Field>
             <Field label="Confirm new password">
-              <Input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} />
+              <PasswordInput value={confirm} onChange={e => setConfirm(e.target.value)} />
             </Field>
           </div>
           <div className="flex items-center justify-between mt-5 pt-4 border-t gap-3">
