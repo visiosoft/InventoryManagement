@@ -14,6 +14,7 @@ import { isSalesRepRole } from '../lib/roles'
 
 const navTop = [
   { to: '/warehouse', label: 'Stored Inventory', icon: Package, perm: ['warehouse', 'warehouse_supervisor'] },
+  { to: '/service-requests', label: 'Service requests', icon: Truck, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/shopify/orders', label: 'Shopify orders', icon: ReceiptText, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/shopify/fulfillment', label: 'Fulfillment queue', icon: ClipboardCheck, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/shopify/inventory', label: 'Shopify inventory', icon: ShoppingBag, perm: ['warehouse', 'warehouse_supervisor'] },
