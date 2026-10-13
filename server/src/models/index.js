@@ -2017,6 +2017,20 @@ const whatsappBlockedNumberSchema = new Schema({
 }, { timestamps: true });
 export const WhatsAppBlockedNumber = model('WhatsAppBlockedNumber', whatsappBlockedNumberSchema);
 
+/* Numbers that must never get a campaign message. Unlike WhatsAppBlockedNumber
+ * (which silences a number's inbound traffic) this only keeps the number out of
+ * marketing audiences; the conversation itself carries on as normal. Identity
+ * is the last nine digits, as everywhere else. */
+const marketingBlockSchema = new Schema({
+  phoneKey: { type: String, required: true, unique: true },
+  phone: { type: String, default: '' },
+  label: { type: String, default: '' },
+  reason: { type: String, default: '' },
+  addedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  addedByName: { type: String, default: '' },
+}, { timestamps: true });
+export const MarketingBlock = model('MarketingBlock', marketingBlockSchema);
+
 // ── WhatsApp AI assistant ────────────────────────────────────────────────────
 // One config document for the whole account, the same shape reminderConfig uses.
 // `mode` is the safety switch: 'draft' writes a suggestion into the console for

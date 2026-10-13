@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Megaphone, Send, RefreshCw, Repeat, ArrowLeft, ArrowRight, Check, CheckCheck, Eye, MessageCircle, AlertTriangle } from 'lucide-react'
+import { Megaphone, Send, RefreshCw, Repeat, ArrowLeft, ArrowRight, Check, CheckCheck, Eye, MessageCircle, AlertTriangle, Pencil, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, PageHeader, Select, Spinner, Table, Th, Td } from '../components/ui'
 import { statusLabel } from '../components/ui'
 import CampaignTemplates from './CampaignTemplates'
-import { OptInPanel } from '../components/OptInPanel'
+import DoNotMessage from './DoNotMessage'
 
 const PURPLE = '#5B2BC9'
 const MUTED = '#756E80'
 const LINE = 'rgba(20,8,31,.10)'
 
 type Person = {
-  id: string; name: string; phone: string; email: string; stage: string; source: string; leadDate: string; optIn: boolean
+  id: string; name: string; phone: string; email: string; stage: string; source: string; leadDate: string; optIn: boolean; doNotMessage?: boolean
   lastCampaign: { name: string; at: string; read: boolean; replied: boolean } | null
 }
 type People = { total: number; page: number; pages: number; rows: Person[] }
@@ -50,7 +50,7 @@ const STAGES = [
 ] as const
 
 /** The second half of the page: who got what, and what they did with it. */
-function Reports({ onRetarget }: { onRetarget: (campaignId: string) => void }) {
+function Reports({ onRetarget, onEdit }: { onRetarget: (campaignId: string) => void; onEdit: (campaignId: string) => void }) {
   const qc = useQueryClient()
   const [openId, setOpenId] = useState<string | null>(null)
 
@@ -60,18 +60,31 @@ function Reports({ onRetarget }: { onRetarget: (campaignId: string) => void }) {
     refetchInterval: 20_000,
   })
 
+  const [err, setErr] = useState('')
+  const del = useMutation({
+    mutationFn: (id: string) => api.delete(`/campaigns/${id}`),
+    onSuccess: () => { setErr(''); qc.invalidateQueries({ queryKey: ['campaign-reports'] }) },
+    onError: (e) => setErr(apiError(e)),
+  })
+  const rename = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.put(`/campaigns/${id}`, { name }),
+    onSuccess: () => { setErr(''); qc.invalidateQueries({ queryKey: ['campaign-reports'] }) },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   if (openId) return <ReportDetail id={openId} onBack={() => { setOpenId(null); qc.invalidateQueries({ queryKey: ['campaign-reports'] }) }} onRetarget={onRetarget} />
 
   return (
     <Card>
       <CardHeader title="Campaign reports" subtitle="Sent, delivered, read and replied — from Meta's delivery receipts and your inbox" />
       <CardBody>
+        {err && <p className="text-sm text-destructive mb-2">{err}</p>}
         {isLoading ? <Spinner /> : !list?.length ? (
           <p className="text-sm" style={{ color: MUTED }}>No campaigns yet. Send your first one from "New campaign".</p>
         ) : (
           <Table>
             <thead>
-              <tr><Th>Campaign</Th><Th>Sent</Th><Th>Delivered</Th><Th>Read</Th><Th>Replied</Th><Th>Failed</Th><Th>When</Th></tr>
+              <tr><Th>Campaign</Th><Th>Sent</Th><Th>Delivered</Th><Th>Read</Th><Th>Replied</Th><Th>Failed</Th><Th>When</Th><Th></Th></tr>
             </thead>
             <tbody>
               {list.map((c) => (
@@ -86,6 +99,18 @@ function Reports({ onRetarget }: { onRetarget: (campaignId: string) => void }) {
                   <Td>{c.funnel.replied}<span className="text-xs" style={{ color: MUTED }}> {pct(c.funnel.replied, c.funnel.sent)}</span></Td>
                   <Td>{c.funnel.failed || '—'}</Td>
                   <Td className="text-xs whitespace-nowrap">{fmt(c.startedAt || c.createdAt)}</Td>
+                  <Td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex gap-1.5">
+                      {c.status === 'draft'
+                        ? <Button variant="outline" onClick={() => onEdit(c._id)}><Pencil size={13} /> Edit</Button>
+                        : <Button variant="outline" onClick={() => { const n = window.prompt('Rename campaign', c.name); if (n && n.trim() && n.trim() !== c.name) rename.mutate({ id: c._id, name: n.trim() }) }}><Pencil size={13} /> Rename</Button>}
+                      <Button
+                        variant="outline"
+                        disabled={c.status === 'sending' || del.isPending}
+                        onClick={() => { if (confirm(`Delete "${c.name}"${c.status === 'draft' ? '' : ' and its report'}? This cannot be undone.`)) del.mutate(c._id) }}
+                      ><Trash2 size={13} /> Delete</Button>
+                    </div>
+                  </Td>
                 </tr>
               ))}
             </tbody>
@@ -287,7 +312,7 @@ function StepNav({ onBack, onNext, nextDisabled, nextHint }: { onBack?: () => vo
 
 export default function CampaignStudio() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'new' | 'reports' | 'templates'>('new')
+  const [tab, setTab] = useState<'new' | 'reports' | 'templates' | 'block'>('new')
   const [step, setStep] = useState<1 | 2 | 3>(1)
 
   // 1 · people
@@ -331,7 +356,7 @@ export default function CampaignStudio() {
   const picked = templates.find((t) => t.name === templateName && t.status === 'APPROVED')
 
   const audience = { tenants: false, pastTenants: false, leads: true, leadIds: [...selected], excludeCustomers: false, minDaysBetween: 3 }
-  const { data: counts } = useQuery<{ counts: { total: number; byWhatsApp: number; noWhatsAppOptIn: number; recentlyMessaged: number } }>({
+  const { data: counts } = useQuery<{ counts: { total: number; byWhatsApp: number; noWhatsAppOptIn: number; recentlyMessaged: number; doNotMessage?: number } }>({
     queryKey: ['studio-preview', [...selected].sort().join(',')],
     queryFn: () => api.post('/campaigns/preview', { audience }).then((r) => r.data),
     enabled: selected.size > 0,
@@ -396,19 +421,37 @@ export default function CampaignStudio() {
     } catch (e) { setErr(apiError(e)) }
   }
 
+  /** Reopen a saved draft exactly as it was left: people, template, image. */
+  async function editDraft(id: string) {
+    try {
+      const { data } = await api.get<{ campaign: { _id: string; name: string; audience: { leadIds?: string[] }; whatsapp?: { templateName?: string; variables?: string[]; headerImageUrl?: string } } }>(`/campaigns/${id}`)
+      const c = data.campaign
+      setDraftId(id)
+      setName(c.name)
+      setSelected(new Set((c.audience.leadIds ?? []).map(String)))
+      setTemplateName(c.whatsapp?.templateName ?? '')
+      setHeaderImageUrl(c.whatsapp?.headerImageUrl ?? '')
+      setVariables(c.whatsapp?.variables ?? [])
+      setTab('new')
+      setStep(1)
+      setNote('')
+      setErr('')
+    } catch (e) { setErr(apiError(e)) }
+  }
+
   const needsImage = picked?.headerFormat === 'IMAGE'
   const imageOk = !needsImage || /^https:\/\//i.test(headerImageUrl)
   const canSend = selected.size > 0 && Boolean(picked) && imageOk && (counts?.counts.byWhatsApp ?? 1) > 0 && !send.isPending
 
   return (
-    <div className="max-w-6xl space-y-4">
+    <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-4 sm:p-9 space-y-4">
       <PageHeader
         title="Campaign Studio"
         subtitle="Pick people, send them a Meta-approved WhatsApp template, then follow what they do."
       />
 
       <div className="flex flex-wrap gap-2">
-        {([['new', 'New campaign'], ['templates', 'My templates'], ['reports', 'Reports & retargeting']] as const).map(([k, label]) => (
+        {([['new', 'New campaign'], ['templates', 'My templates'], ['reports', 'Reports & retargeting'], ['block', 'Do not message']] as const).map(([k, label]) => (
           <button
             key={k}
             type="button"
@@ -423,7 +466,8 @@ export default function CampaignStudio() {
       </div>
 
       {tab === 'templates' && <CampaignTemplates />}
-      {tab === 'reports' && <Reports onRetarget={openDraft} />}
+      {tab === 'block' && <DoNotMessage />}
+      {tab === 'reports' && <Reports onRetarget={openDraft} onEdit={editDraft} />}
 
       {tab === 'new' && (
         <>
@@ -458,7 +502,6 @@ export default function CampaignStudio() {
               <div className="flex flex-wrap gap-4 text-[13px]">
                 <label className="flex items-center gap-2"><input type="checkbox" checked={excludeCustomers} onChange={(e) => setExcludeCustomers(e.target.checked)} /> Leave out customers</label>
                 <label className="flex items-center gap-2"><input type="checkbox" checked={hasEmail} onChange={(e) => setHasEmail(e.target.checked)} /> Only with an email</label>
-                <label className="flex items-center gap-2"><input type="checkbox" checked={optInOnly} onChange={(e) => setOptInOnly(e.target.checked)} /> Only with a WhatsApp opt-in</label>
                 {isFetching && <span style={{ color: MUTED }}>Loading…</span>}
               </div>
 
@@ -473,18 +516,17 @@ export default function CampaignStudio() {
               <div className="overflow-x-auto">
                 <Table>
                   <thead>
-                    <tr><Th className="w-8"></Th><Th>Name</Th><Th>Phone</Th><Th>Email</Th><Th>Stage</Th><Th>Came in</Th><Th>Opt-in</Th><Th>Last campaign</Th></tr>
+                    <tr><Th className="w-8"></Th><Th>Name</Th><Th>Phone</Th><Th>Email</Th><Th>Stage</Th><Th>Came in</Th><Th>Last campaign</Th></tr>
                   </thead>
                   <tbody>
                     {(people?.rows ?? []).map((p) => (
                       <tr key={p.id} className="cursor-pointer hover:bg-muted/40" onClick={() => toggle(p.id)}>
                         <Td><input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} onClick={(e) => e.stopPropagation()} /></Td>
                         <Td>{p.name || <span style={{ color: MUTED }}>(no name)</span>}</Td>
-                        <Td className="whitespace-nowrap">{p.phone}</Td>
+                        <Td className="whitespace-nowrap">{p.phone}{p.doNotMessage && <span className="ml-1.5"><Badge tone="red">Do not message</Badge></span>}</Td>
                         <Td className="max-w-48 truncate">{p.email}</Td>
                         <Td>{statusLabel(p.stage)}</Td>
                         <Td className="text-xs whitespace-nowrap">{fmt(p.leadDate)}</Td>
-                        <Td>{p.optIn ? <Badge tone="green">Yes</Badge> : <Badge tone="default">No</Badge>}</Td>
                         <Td className="text-xs">
                           {p.lastCampaign ? <>{p.lastCampaign.name}<div style={{ color: MUTED }}>{fmt(p.lastCampaign.at)}{p.lastCampaign.replied ? ' · replied' : p.lastCampaign.read ? ' · read' : ''}</div></> : '—'}
                         </Td>
@@ -595,15 +637,11 @@ export default function CampaignStudio() {
                 {counts && (
                   <p style={{ color: MUTED }}>
                     <strong style={{ color: PURPLE }}>{counts.counts.byWhatsApp}</strong> will actually be sent to
-                    {counts.counts.noWhatsAppOptIn > 0 && ` · ${counts.counts.noWhatsAppOptIn} held back: no WhatsApp opt-in`}
                     {counts.counts.recentlyMessaged > 0 && ` · ${counts.counts.recentlyMessaged} messaged in the last 3 days`}
+                    {(counts.counts.doNotMessage ?? 0) > 0 && ` · ${counts.counts.doNotMessage} left out: on the Do not message list`}
                   </p>
                 )}
-                {counts && counts.counts.noWhatsAppOptIn > 0 && (
-                  <p className="flex items-start gap-1.5 text-amber-700"><AlertTriangle size={13} className="mt-0.5" /> Meta requires an opt-in before a marketing message. People who wrote to you first can be opted in with the box below.</p>
-                )}
               </div>
-              {counts && counts.counts.noWhatsAppOptIn > 0 && <OptInPanel />}
               {err && <p className="text-sm text-destructive">{err}</p>}
               {note && <p className="text-sm font-medium text-emerald-600">{note}</p>}
               <Button

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireCampaignAccess } from '../middleware/auth.js';
-import { Campaign, CampaignRecipient, Customer, Lead, WhatsAppMessage } from '../models/index.js';
+import { Campaign, CampaignRecipient, Customer, Lead, WhatsAppMessage, MarketingBlock } from '../models/index.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { buildAudience } from '../services/campaignAudience.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
@@ -93,6 +93,47 @@ router.post('/opt-in/backfill', async (req, res) => {
     res.json({ ok: true, dryRun: false, customers: c.modifiedCount, leads: l.modifiedCount });
 });
 
+/**
+ * Record an opt-in for the people picked in Campaign Studio.
+ *
+ * For people who agreed some other way than writing to us first (a form, a
+ * call, a signed agreement). The caller must say they have that consent; the
+ * source is stored as 'manual' with who recorded it, so there is a trail.
+ */
+router.post('/opt-in/selected', async (req, res) => {
+    const { leadIds, confirm } = req.body || {};
+    if (confirm !== true) return res.status(400).json({ error: 'Confirm that these people agreed to receive WhatsApp messages' });
+    const ids = Array.isArray(leadIds) ? leadIds.filter(Boolean).slice(0, 20000) : [];
+    if (!ids.length) return res.status(400).json({ error: 'Nobody selected' });
+    const r = await Lead.updateMany(
+        { _id: { $in: ids }, 'whatsappOptIn.at': null },
+        { $set: { whatsappOptIn: { at: new Date(), source: `manual:${req.user?.email || req.user?.id || ''}` } } },
+    );
+    res.json({ ok: true, optedIn: r.modifiedCount });
+});
+
+/* Numbers that must never get a campaign message. */
+router.get('/do-not-message', async (_req, res) => {
+    res.json(await MarketingBlock.find().sort({ createdAt: -1 }).lean());
+});
+
+router.post('/do-not-message', async (req, res) => {
+    const phone = String(req.body?.phone || '').trim();
+    const key = digitTail(phone);
+    if (!key) return res.status(400).json({ error: 'Enter a phone number with at least 9 digits' });
+    const doc = await MarketingBlock.findOneAndUpdate(
+        { phoneKey: key },
+        { $set: { phone, label: String(req.body?.label || '').trim(), reason: String(req.body?.reason || '').trim(), addedBy: req.user?.id || null, addedByName: req.user?.name || req.user?.email || '' } },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+    ).lean();
+    res.status(201).json(doc);
+});
+
+router.delete('/do-not-message/:id', async (req, res) => {
+    await MarketingBlock.deleteOne({ _id: req.params.id });
+    res.json({ ok: true });
+});
+
 router.get('/', async (_req, res) => {
     const campaigns = await Campaign.find().sort({ createdAt: -1 }).limit(100).lean();
     res.json(campaigns);
@@ -150,6 +191,7 @@ router.get('/people', async (req, res) => {
         const slice = kept.slice((page - 1) * limit, page * limit);
 
         // The last campaign each of them was in, so nobody is messaged blindly twice.
+        const blockedKeys = new Set((await MarketingBlock.find().select('phoneKey').lean()).map((b) => b.phoneKey));
         const ids = slice.map((l) => l._id);
         const last = ids.length ? await CampaignRecipient.aggregate([
             { $match: { refId: { $in: ids }, channel: 'whatsapp', status: 'sent' } },
@@ -173,6 +215,7 @@ router.get('/people', async (req, res) => {
                     source: l.source || '',
                     leadDate: l.leadDateTime,
                     optIn: Boolean(l.whatsappOptIn?.at),
+                    doNotMessage: blockedKeys.has(digitTail(l.phoneNormalized || l.phone)),
                     lastCampaign: lc ? { name: names.get(String(lc.campaign)) || '', at: lc.at, read: Boolean(lc.readAt), replied: Boolean(lc.repliedAt) } : null,
                 };
             }),
@@ -279,7 +322,12 @@ router.put('/:id', async (req, res) => {
     // Once it has started going out, the wording is history — editing it would
     // make the record disagree with what people actually received.
     if (campaign.status !== 'draft') {
-        return res.status(409).json({ error: 'This campaign has already been sent and can no longer be edited' });
+        // Only the label can change; the record of what went out stays as sent.
+        const name = String(req.body?.name || '').trim();
+        if (!name) return res.status(409).json({ error: 'This campaign has already been sent; only its name can be changed' });
+        campaign.name = name;
+        await campaign.save();
+        return res.json(campaign);
     }
     for (const k of ['name', 'channel', 'audience', 'emailSubject', 'emailHtml', 'whatsapp']) {
         if (req.body?.[k] !== undefined) campaign[k] = req.body[k];
