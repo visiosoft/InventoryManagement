@@ -788,6 +788,86 @@ async function withOverrideInfo(lead) {
  * One lead's score — see services/leadScore.js for how it's worked out.
  * Read-only; nothing here writes anything.
  */
+/**
+ * "Ready to close?" — the four questions a deal should be able to answer.
+ *
+ *   1. Next step, with a date          follow-up date, site visit, or an open task
+ *   2. Who decides, and spoken to?     stored on the lead
+ *   3. Why do they want it?            stored on the lead, in their words
+ *   4. Last follow-up, and what said   latest logged attempt or outbound chat
+ *
+ * The first and fourth are read, never typed, so they cannot go stale.
+ */
+const CLOSED_STATUS = new Set(['won', 'lost', 'already_customer']);
+
+router.get('/:id/deal-check', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const lead = await Lead.findById(req.params.id)
+            .select('status owner followUpAt followUpNote siteVisitAt attempts phoneNormalized decisionMaker decisionMakerSpoken whyTheyWant')
+            .lean();
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        const now = new Date();
+        const task = await Task.findOne({ leadId: lead._id, status: { $ne: 'done' }, dueDate: { $gte: now } })
+            .sort({ dueDate: 1 }).select('title dueDate').lean();
+        const steps = [
+            lead.siteVisitAt && new Date(lead.siteVisitAt) >= now ? { at: lead.siteVisitAt, label: 'Site visit', note: '' } : null,
+            lead.followUpAt && new Date(lead.followUpAt) >= now ? { at: lead.followUpAt, label: 'Follow-up', note: lead.followUpNote || '' } : null,
+            task ? { at: task.dueDate, label: 'Task', note: task.title } : null,
+        ].filter(Boolean).sort((a, b) => new Date(a.at) - new Date(b.at));
+        const nextStep = steps[0] || null;
+
+        const att = (lead.attempts || []).slice(-1)[0] || null;
+        const chat = lead.phoneNormalized
+            ? await WhatsAppMessage.findOne({ phoneNormalized: lead.phoneNormalized, direction: 'outbound' })
+                .sort({ createdAt: -1 }).select('text type createdAt').lean()
+            : null;
+        const candidates = [
+            att && { at: att.at, channel: att.channel, note: att.note || att.outcome },
+            chat && { at: chat.createdAt, channel: 'whatsapp', note: chat.text || `(${chat.type})` },
+        ].filter(Boolean).sort((a, b) => new Date(b.at) - new Date(a.at));
+        const lastFollowUp = candidates[0] || null;
+
+        const missing = [];
+        if (!nextStep) missing.push('next step with a date');
+        if (!String(lead.decisionMaker || '').trim()) missing.push('who decides');
+        else if (!lead.decisionMakerSpoken) missing.push('speak to the decision maker');
+        if (!String(lead.whyTheyWant || '').trim()) missing.push('why they want it');
+        if (!lastFollowUp) missing.push('a first follow-up');
+
+        res.json({
+            open: !CLOSED_STATUS.has(lead.status),
+            decisionMaker: lead.decisionMaker || '',
+            decisionMakerSpoken: Boolean(lead.decisionMakerSpoken),
+            whyTheyWant: lead.whyTheyWant || '',
+            nextStep, lastFollowUp,
+            attempts: (lead.attempts || []).length,
+            missing,
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.put('/:id/deal-check', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const lead = await Lead.findById(req.params.id).select('owner');
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+        const set = {};
+        if (req.body.decisionMaker !== undefined) set.decisionMaker = String(req.body.decisionMaker).trim().slice(0, 200);
+        if (req.body.decisionMakerSpoken !== undefined) set.decisionMakerSpoken = Boolean(req.body.decisionMakerSpoken);
+        if (req.body.whyTheyWant !== undefined) set.whyTheyWant = String(req.body.whyTheyWant).trim().slice(0, 1000);
+        await Lead.updateOne({ _id: lead._id }, { $set: set });
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/:id/score', async (req, res) => {
     try {
         if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });

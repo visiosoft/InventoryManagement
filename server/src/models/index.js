@@ -312,6 +312,13 @@ const leadSchema = new Schema(
        length against the plan's step count — counted, never marked, so it
        cannot disagree with what actually happened. */
     attempts: { type: [leadAttemptSchema], default: [] },
+    /* The "ready to close?" answers nothing else in the record holds: who
+       makes the decision (and whether anyone has spoken to them), and why the
+       customer wants this, in their own words. Next step and last follow-up
+       are read from the follow-up date, tasks, attempts and chat. */
+    decisionMaker: { type: String, default: '' },
+    decisionMakerSpoken: { type: Boolean, default: false },
+    whyTheyWant: { type: String, default: '' },
     /* Stamped when the last step of the plan was used and they still had not
        answered. What the "close this or give it one more" prompt reads off;
        cleared when somebody decides either way. */

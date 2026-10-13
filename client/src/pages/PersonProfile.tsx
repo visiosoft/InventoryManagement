@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
+import { DealCheck } from '../components/DealCheck'
 import WhatsAppConsole from './WhatsApp'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES } from '../components/ui'
@@ -795,6 +796,9 @@ export default function PersonProfile() {
                 <dd style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{lead.leadDateTime ? formatDateTime(lead.leadDateTime) : '—'}</dd>
               </div>
             </dl>
+
+            {/* The four questions a deal must answer before it can close. */}
+            <DealCheck leadId={lead._id} />
 
             {/* The reminders raised for this lead: what to do, when, and who
                 it will nudge. Hover for the details. */}
