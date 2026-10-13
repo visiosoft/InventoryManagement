@@ -7,7 +7,7 @@ import { applyMovingInvoicePayment } from '../services/movingInvoicePayments.js'
 import { applyInvoicePayment, syncLinkedPayment } from '../services/invoicePayments.js';
 import { notifyPaymentReceived } from '../services/movingNotifications.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
-import { recordOnlinePaymentInZoho, saveCardFromSession, settleInvoiceFromIntent } from '../services/cardPayments.js';
+import { recordOnlinePaymentInZoho, saveCardFromSession, settleInvoiceFromIntent, settleQuoteFromIntent } from '../services/cardPayments.js';
 
 const router = Router();
 
@@ -172,6 +172,9 @@ router.post('/', aw(async (req, res) => {
     const intent = event.data.object;
     if (intent.metadata?.storageInvoiceId) {
       await settleInvoiceFromIntent(intent).catch((e) => console.error('[StripeWebhook] could not settle invoice:', e.message));
+    }
+    if (intent.metadata?.storageQuoteId) {
+      await settleQuoteFromIntent(intent).catch((e) => console.error('[StripeWebhook] could not settle booking:', e.message));
     }
     if (intent.metadata?.saveCard === '1' && intent.metadata?.purpleboxCustomerId) {
       await saveCardFromSession({ mode: 'payment', payment_intent: intent, customer: intent.customer, metadata: intent.metadata })

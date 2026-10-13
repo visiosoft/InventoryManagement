@@ -316,7 +316,7 @@ router.post('/invoices/:id/pay', wrap(async (req, res) => {
   });
 }));
 
-// The app's native payment sheet (cards, Apple Pay, Google Pay). Answers 404 until STRIPE_MOBILE_API_VERSION is set,
+// The app's native payment sheet (cards, Apple Pay, Google Pay). Answers 404 until STRIPE_PAYMENT_SHEET=true,
 // which makes the app fall back to the embedded card form above.
 router.post('/invoices/:id/pay-sheet', wrap(async (req, res) => {
   if (!stripeSheetEnabled()) throw notFound('Payment sheet');
@@ -336,7 +336,7 @@ router.post('/invoices/:id/pay-sheet', wrap(async (req, res) => {
   });
   res.json({
     paymentIntentClientSecret: sheet.clientSecret, publishableKey: stripePublishableKey(), merchantDisplayName: 'PurpleBox Storage',
-    customerId: stripeCustomerId, customerEphemeralKeySecret: sheet.customerEphemeralKeySecret,
+    customerId: stripeCustomerId, customerSessionClientSecret: sheet.customerSessionClientSecret,
   });
 }));
 

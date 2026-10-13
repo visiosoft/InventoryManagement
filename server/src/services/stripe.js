@@ -211,16 +211,18 @@ export async function createSetupCheckoutSession({ stripeCustomerId, metadata = 
 }
 
 /**
- * The native payment sheet needs an ephemeral key made with the API version the app's Stripe SDK uses; that is not
- * something the server can discover, so it is set deliberately (STRIPE_MOBILE_API_VERSION). Until it is, the app's
- * request for the sheet is answered "not available" and the app uses Stripe's embedded card form instead.
+ * The native payment sheet (cards, Apple Pay, Google Pay) is opt-in: STRIPE_PAYMENT_SHEET=true. Until it is set, the app's
+ * request for the sheet is answered "not available" and the app uses Stripe's embedded card form instead, which already works.
+ * Apple Pay also needs an Apple merchant ID in the app build; Google Pay needs Stripe's Google Pay set up. See the docs.
  */
 export function stripeSheetEnabled() {
-  return stripeEmbeddedConfigured() && Boolean(process.env.STRIPE_MOBILE_API_VERSION);
+  return stripeEmbeddedConfigured() && process.env.STRIPE_PAYMENT_SHEET === 'true';
 }
 
 /**
- * A PaymentIntent plus ephemeral key for the app's native payment sheet (cards, Apple Pay, Google Pay).
+ * A PaymentIntent for the app's native payment sheet, plus a CustomerSession so the sheet can offer the customer's saved
+ * cards (a CustomerSession needs no API-version matching with the phone, unlike the older ephemeral key).
+ * Saving a card is decided by our own tick-box (`saveCard`), so the sheet's own "save" switch is left off.
  * Paying is confirmed by the payment_intent.succeeded webhook, never by the app saying so.
  */
 export async function createSheetPayment({ amountAed, feePct = 0, stripeCustomerId, saveCard = false, description, metadata = {} }) {
@@ -232,13 +234,22 @@ export async function createSheetPayment({ amountAed, feePct = 0, stripeCustomer
     amount: amountFils + feeFils,
     currency: 'aed',
     customer: stripeCustomerId,
+    // Cards plus the wallets that ride on them (Apple Pay, Google Pay).
     automatic_payment_methods: { enabled: true },
     ...(saveCard ? { setup_future_usage: 'off_session' } : {}),
     description,
     metadata: { ...metadata, amountFils: String(amountFils), feeFils: String(feeFils), feePct: String(Number(feePct) || 0) },
   });
-  const key = await client.ephemeralKeys.create({ customer: stripeCustomerId }, { apiVersion: process.env.STRIPE_MOBILE_API_VERSION });
-  return { clientSecret: intent.client_secret, id: intent.id, customerEphemeralKeySecret: key.secret, feeAmount: feeFils / 100 };
+  const session = await client.customerSessions.create({
+    customer: stripeCustomerId,
+    components: { mobile_payment_element: { enabled: true, features: { payment_method_redisplay: 'enabled', payment_method_save: 'disabled' } } },
+  });
+  return { clientSecret: intent.client_secret, id: intent.id, customerSessionClientSecret: session.client_secret, feeAmount: feeFils / 100 };
+}
+
+/** Read a PaymentIntent back from Stripe, the authoritative answer to "was it paid?". */
+export async function retrievePaymentIntent(id) {
+  return getClient().paymentIntents.retrieve(id);
 }
 
 /** Charge a saved card without the customer present. Throws a Stripe error on decline or when authentication is needed. */

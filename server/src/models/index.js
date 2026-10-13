@@ -871,6 +871,8 @@ const quoteSchema = new Schema(
     // A Stripe Checkout session for paying this quote online, and when it
     // actually cleared — the webhook sets stripePaidAt, nothing else does.
     stripeCheckoutSessionId: { type: String, default: null },
+    // Set when the customer pays with the app's native payment sheet (Apple Pay, Google Pay, card) instead of Checkout.
+    stripePaymentIntentId: { type: String, default: null },
     stripePaymentLinkUrl: { type: String, default: null },
     stripePaidAt: { type: Date, default: null },
     /* Whether a card-processing surcharge applies if this is paid by Stripe —

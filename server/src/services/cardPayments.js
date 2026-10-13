@@ -1,4 +1,5 @@
-import { Customer, Invoice } from '../models/index.js';
+import { Customer, Invoice, Quote } from '../models/index.js';
+import { finalizePaidBooking } from './appBooking.js';
 import { applyInvoicePayment, syncLinkedPayment } from './invoicePayments.js';
 import { paymentMethodOfSession, paymentMethodSummary, detachPaymentMethod } from './stripe.js';
 import { AUTOPAY_CONSENT_VERSION, afterSuccess } from './autopayRules.js';
@@ -31,11 +32,11 @@ export function patchNested(doc, prefix, patch) {
   for (const [k, v] of Object.entries(patch)) doc.set(`${prefix}.${k}`, v);
 }
 
-function thankYou({ to, name, invoiceNo, amount, autopay }) {
+function thankYou({ to, name, docNo, amount, autopay }) {
   if (!to || !mailConfigured()) return;
   const how = autopay ? 'charged automatically to your saved card' : 'received';
-  const text = `Hi ${name},\n\nYour payment of AED ${amount.toLocaleString()} for invoice ${invoiceNo} was ${how}. Thank you!\n\n— PurpleBox`;
-  sendMail({ to, subject: `Payment received — ${invoiceNo} — PurpleBox`, text, html: text.replace(/\n/g, '<br>'), context: { kind: 'payment', label: 'Payment received' } })
+  const text = `Hi ${name},\n\nYour payment of AED ${amount.toLocaleString()} for ${docNo} was ${how}. Thank you!\n\n— PurpleBox`;
+  sendMail({ to, subject: `Payment received — ${docNo} — PurpleBox`, text, html: text.replace(/\n/g, '<br>'), context: { kind: 'payment', label: 'Payment received' } })
     .catch((e) => console.error('[cardPayments] thank-you email failed:', e.message));
 }
 
@@ -64,7 +65,7 @@ export async function settleInvoiceFromIntent(intent) {
     await invoice.save();
     await syncLinkedPayment(invoice);
     await recordOnlinePaymentInZoho(invoice, Math.min(owed, balance));
-    thankYou({ to: invoice.customer?.email, name: invoice.customer?.fullName || 'there', invoiceNo: invoice.invoiceNo, amount: Math.min(owed, balance), autopay: auto });
+    thankYou({ to: invoice.customer?.email, name: invoice.customer?.fullName || 'there', docNo: `invoice ${invoice.invoiceNo}`, amount: Math.min(owed, balance), autopay: auto });
   }
   if (auto && meta.purpleboxCustomerId) {
     await Customer.updateOne({ _id: meta.purpleboxCustomerId }, { $set: Object.fromEntries(Object.entries(afterSuccess()).map(([k, v]) => [`autopay.${k}`, v])) });
@@ -98,4 +99,31 @@ export async function saveCardFromSession(session) {
   await customer.save();
   if (previous && previous !== card.id) await detachPaymentMethod(previous);
   return { saved: true, last4: card.last4, enabled: !!customer.autopay.enabled };
+}
+
+/**
+ * A booking paid with the app's native payment sheet (Apple Pay, Google Pay or card): do what the Checkout webhook does for
+ * a booking. Marks the quote paid once, then lets finalizePaidBooking make the contract. Safe to call twice (webhook plus the
+ * app's own status check): only the first call changes anything.
+ */
+export async function settleQuoteFromIntent(intent) {
+  const meta = intent.metadata || {};
+  if (!meta.storageQuoteId) return { settled: false, reason: 'no booking' };
+  const feePct = Number(meta.feePct) || 0;
+  const amount = Number.isFinite(Number(meta.amountFils)) ? Number(meta.amountFils) / 100 : (intent.amount_received ?? intent.amount ?? 0) / 100;
+  const note = `Paid in the app via Stripe payment sheet (${intent.id})${feePct > 0 ? ` incl. ${feePct}% card fee paid separately` : ''}`;
+
+  const paid = await Quote.findOneAndUpdate(
+    { _id: meta.storageQuoteId, stripePaidAt: null },
+    { $set: { stripePaidAt: new Date() }, $push: { timeline: { type: 'accepted', text: note } } },
+    { new: true },
+  ).populate('customer', 'fullName email');
+  if (paid) {
+    await Quote.updateOne({ _id: paid._id, status: { $in: ['draft', 'sent'] } }, { $set: { status: 'accepted' } });
+    thankYou({ to: paid.customer?.email, name: paid.customer?.fullName || 'there', docNo: `booking ${paid.quoteNo}`, amount });
+  }
+  // finalizePaidBooking is itself idempotent; it re-reads the quote because it saves it.
+  const quote = await Quote.findById(meta.storageQuoteId);
+  if (quote?.appBooking?.active) await finalizePaidBooking(quote, { sessionId: intent.id, amount });
+  return { settled: !!paid };
 }

@@ -6,7 +6,7 @@ import { convertQuoteToContract } from './quoteConversion.js';
 import { applyInvoicePayment, syncLinkedPayment } from './invoicePayments.js';
 import { candidatesFor, claimFirstAvailable } from '../routes/publicBooking.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
-import { retrieveCheckoutSession, stripeConfigured } from './stripe.js';
+import { retrieveCheckoutSession, retrievePaymentIntent, stripeConfigured } from './stripe.js';
 
 /**
  * Self-serve unit booking for the customer app.
@@ -223,7 +223,22 @@ export async function finalizePaidBooking(paidQuote, { sessionId, amount }) {
  * cannot reach this server at all (a local test). Returns the current quote.
  */
 export async function syncBookingPayment(quote) {
-  if (!quote.appBooking?.active || quote.stripePaidAt || !quote.stripeCheckoutSessionId || !stripeConfigured()) return quote;
+  if (!quote.appBooking?.active || quote.stripePaidAt || !stripeConfigured()) return quote;
+  // Paid with the native payment sheet (Apple Pay, Google Pay, card)? Ask Stripe about that PaymentIntent.
+  if (quote.stripePaymentIntentId) {
+    try {
+      const intent = await retrievePaymentIntent(quote.stripePaymentIntentId);
+      if (intent.status === 'succeeded' && intent.metadata?.storageQuoteId === String(quote._id)) {
+        const { settleQuoteFromIntent } = await import('./cardPayments.js'); // lazy: cardPayments imports this file
+        await settleQuoteFromIntent(intent);
+        return Quote.findById(quote._id);
+      }
+    } catch (err) {
+      console.error('[appBooking] could not read Stripe payment:', err.message);
+    }
+    if (!quote.stripeCheckoutSessionId) return quote;
+  }
+  if (!quote.stripeCheckoutSessionId) return quote;
   let session;
   try {
     session = await retrieveCheckoutSession(quote.stripeCheckoutSessionId);
