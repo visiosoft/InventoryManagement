@@ -3,12 +3,13 @@ import { Counter } from './index.js';
 
 const { Schema, model } = mongoose;
 
-export const SERVICE_TYPES = ['supplies', 'pickup', 'dropoff', 'both', 'worker'];
+export const SERVICE_TYPES = ['supplies', 'pickup', 'dropoff', 'both', 'worker', 'disposal'];
+export const DISPOSAL_LOADS = ['small', 'large'];
 export const SERVICE_STATUSES = ['requested', 'confirmed', 'scheduled', 'in_progress', 'completed', 'cancelled'];
 
 /* A valet job the customer booked from the app: boxes and labels sent out,
- * their packed things collected, stored items brought back, or a worker
- * renting by the hour at their unit.
+ * their packed things collected, stored items brought back, a worker or two
+ * at their unit, or a dump truck to take away what they no longer want.
  *
  * This is the customer's side of the job. Physical custody of each item still
  * only changes through warehouse scans; `warehouseJob` is just staff linking
@@ -26,7 +27,8 @@ const serviceRequestSchema = new Schema({
   date: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
   slot: { type: String, default: null },        // pickup / drop-off / supplies
   startTime: { type: String, default: null },   // worker, 'HH:MM'
-  hours: { type: Number, default: null },       // worker
+  hours: { type: Number, default: null },       // worker, in half hours (0.5, 1, 1.5 …)
+  workers: { type: Number, default: null },     // worker, how many (1 or 2)
   address: {
     label: { type: String, default: '' },
     line: { type: String, default: '' },
@@ -39,6 +41,10 @@ const serviceRequestSchema = new Schema({
   supplies: {
     boxes: { type: Number, default: 0 },
     extraLabels: { type: Number, default: 0 },
+  },
+  disposal: {
+    load: { type: String, enum: [...DISPOSAL_LOADS, null], default: null },
+    description: { type: String, default: '' },
   },
   items: [{ type: String, ref: 'StoredContainer' }],
   job: { type: String, default: '' },

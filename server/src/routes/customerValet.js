@@ -4,14 +4,14 @@ import { StoredContainer, ScanEvent, ItemPhoto, WarehouseJob } from '../models/w
 import { ServiceRequest, SERVICE_TYPES, nextServiceRequestNo } from '../models/serviceRequest.js';
 import { requireCustomer } from './customerAuth.js';
 import {
-  SERVICE_PRICES, CAPACITY, SLOTS, WORKER_HOURS, SERVICE_CATALOG, slotById, estimateFor,
-  workerStartTimes, workerEndTime, toMinutes, dubaiToday, addDays, isDateString, workerClosed,
+  SERVICE_PRICES, CAPACITY, SLOTS, WORKER_HOURS, SERVICE_CATALOG, DISPOSAL_LOADS, slotById, estimateFor,
+  workerStartTimes, workerEndTime, toMinutes, dubaiToday, addDays, isDateString, workerClosed, hoursLabel,
 } from '../services/servicePricing.js';
 
 /**
  * Valet storage from the customer app: the things we hold for them, and the
- * jobs they book — boxes sent out, collections, deliveries back, a worker at
- * their unit. Mounted inside customerStorage.js, under the same login.
+ * jobs they book — boxes sent out, collections, deliveries back, workers at
+ * their unit, a dump truck. Mounted inside customerStorage.js, under the same login.
  *
  * Same rule as the rest of the portal: every query starts from the signed-in
  * customer, and every response goes through a view below. Warehouse records
@@ -191,27 +191,39 @@ function checkDate(date) {
   if (!isDateString(date)) fail('Choose a date (YYYY-MM-DD)');
 }
 
-// Slots are shared by every van job (supplies, pickups, drop-offs), counted
-// until cancelled: a completed job still used the van that day.
-async function slotsOn(date) {
-  const booked = await ServiceRequest.find({ date, type: { $ne: 'worker' }, status: { $ne: 'cancelled' } }).select('slot').lean();
+// Van slots are shared by every van job (supplies, pickups, drop-offs); the
+// dump truck has slots of its own. Counted until cancelled: a completed job
+// still used the vehicle that day.
+async function slotsOn(date, type) {
+  const truck = type === 'disposal';
+  const types = truck ? { $in: ['disposal'] } : { $nin: ['worker', 'disposal'] };
+  const booked = await ServiceRequest.find({ date, type: types, status: { $ne: 'cancelled' } }).select('slot').lean();
+  const capacity = truck ? CAPACITY.truckSlotCapacity : CAPACITY.slotCapacity;
   const count = (id) => booked.filter((r) => r.slot === id).length;
-  return SLOTS.map((s) => ({ id: s.id, label: s.label, evening: s.evening, full: count(s.id) >= CAPACITY.slotCapacity }));
+  return SLOTS.map((s) => ({ id: s.id, label: s.label, evening: s.evening, full: count(s.id) >= capacity }));
 }
 
+// Half an hour to two hours, in half hours.
 function checkHours(hours) {
   const h = Number(hours);
-  if (!Number.isInteger(h) || h < WORKER_HOURS.minHours || h > WORKER_HOURS.maxHours) {
-    fail(`Choose between ${WORKER_HOURS.minHours} and ${WORKER_HOURS.maxHours} hours`);
+  if (!Number.isFinite(h) || !Number.isInteger(h / WORKER_HOURS.stepHours) || h < WORKER_HOURS.minHours || h > WORKER_HOURS.maxHours) {
+    fail(`Choose from ${hoursLabel(WORKER_HOURS.minHours)} to ${hoursLabel(WORKER_HOURS.maxHours)} hours, in half hours`);
   }
   return h;
 }
 
-// A start is free if, at every half hour it covers, fewer than `workers`
-// other bookings are already on — and it ends by closing.
-async function workerStartsOn(date, hours) {
-  const booked = (await ServiceRequest.find({ date, type: 'worker', status: { $ne: 'cancelled' } }).select('startTime hours').lean())
-    .map((r) => [toMinutes(r.startTime), toMinutes(r.startTime) + r.hours * 60]);
+function checkWorkers(workers) {
+  const n = Number(workers);
+  if (!Number.isInteger(n) || n < 1 || n > WORKER_HOURS.maxWorkers) fail(`Choose 1 to ${WORKER_HOURS.maxWorkers} workers`);
+  return n;
+}
+
+// A start is free if, at every half hour it covers, the workers already
+// booked plus the ones asked for fit the shift — and it ends by closing.
+// Bookings from before a count was asked had one worker.
+async function workerStartsOn(date, hours, workers = 1) {
+  const booked = (await ServiceRequest.find({ date, type: 'worker', status: { $ne: 'cancelled' } }).select('startTime hours workers').lean())
+    .map((r) => [toMinutes(r.startTime), toMinutes(r.startTime) + r.hours * 60, r.workers || 1]);
   const step = WORKER_HOURS.stepMinutes;
   const closing = toMinutes(WORKER_HOURS.lastEnd);
   return workerStartTimes().map((time) => {
@@ -219,7 +231,8 @@ async function workerStartsOn(date, hours) {
     const end = start + hours * 60;
     let available = end <= closing;
     for (let m = start; available && m < end; m += step) {
-      if (booked.filter(([s, e]) => s <= m && m < e).length >= CAPACITY.workers) available = false;
+      const busy = booked.filter(([s, e]) => s <= m && m < e).reduce((n, [, , w]) => n + w, 0);
+      if (busy + workers > CAPACITY.workers) available = false;
     }
     return { time, available };
   });
@@ -232,6 +245,7 @@ router.get('/services/catalog', wrap(async (req, res) => {
     prices: { ...SERVICE_PRICES, ...CAPACITY },
     slots: SLOTS,
     worker: WORKER_HOURS,
+    disposal: Object.entries(DISPOSAL_LOADS).map(([id, l]) => ({ id, ...l })),
     facility,
   });
 }));
@@ -242,13 +256,14 @@ router.get('/services/availability', wrap(async (req, res) => {
   checkDate(date);
   if (type === 'worker') {
     const hours = checkHours(req.query.hours ?? WORKER_HOURS.minHours);
+    const workers = checkWorkers(req.query.workers ?? 1);
     const closed = workerClosed(date);
     // Closed days still list every start, all unavailable, so the picker has
     // the same shape to draw either way.
-    const starts = (await workerStartsOn(date, hours)).map((s) => (closed ? { ...s, available: false } : s));
+    const starts = (await workerStartsOn(date, hours, workers)).map((s) => (closed ? { ...s, available: false } : s));
     return res.json({ date, closed, starts });
   }
-  res.json({ date, closed: false, slots: await slotsOn(date) });
+  res.json({ date, closed: false, slots: await slotsOn(date, type) });
 }));
 
 // ── Requests ────────────────────────────────────────────────────────────────
@@ -279,6 +294,8 @@ function requestView(r, expandItem) {
     slotLabel: slot?.label || null,
     startTime: r.startTime,
     hours: r.hours,
+    workers: r.type === 'worker' ? r.workers || 1 : null,
+    disposal: r.type === 'disposal' ? { load: r.disposal?.load, description: r.disposal?.description || '' } : null,
     endTime: r.startTime && r.hours ? workerEndTime(r.startTime, r.hours) : null,
     address: { label: r.address?.label || '', line: r.address?.line || '' },
     pickup: { boxes: r.pickup?.boxes || 0, bulky: r.pickup?.bulky || 0, description: r.pickup?.description || '' },
@@ -352,7 +369,9 @@ async function deliverableItems(customerId, ids) {
 
 const describe = (r) => {
   const title = SERVICE_CATALOG.find((s) => s.type === r.type).title.toLowerCase();
-  const when = r.type === 'worker' ? `${r.startTime}–${workerEndTime(r.startTime, r.hours)}` : slotById(r.slot).label;
+  const when = r.type === 'worker'
+    ? `${r.startTime}–${workerEndTime(r.startTime, r.hours)}, ${r.workers || 1} worker${(r.workers || 1) > 1 ? 's' : ''}`
+    : slotById(r.slot).label;
   return `${title} ${r.ref} on ${r.date}, ${when} (est. AED ${r.estimate.total})`;
 };
 
@@ -374,17 +393,18 @@ router.post('/services', wrap(async (req, res) => {
     if (!contract) fail('Renting a worker is for customers with an active unit', 403);
     if (workerClosed(date)) fail('Workers are not available on Sundays');
     const hours = checkHours(body.hours);
-    const start = (await workerStartsOn(date, hours)).find((s) => s.time === body.startTime);
+    const workers = checkWorkers(body.workers ?? 1);
+    const start = (await workerStartsOn(date, hours, workers)).find((s) => s.time === body.startTime);
     if (!start) fail('Choose a start time');
     if (!start.available) fail('That start time is no longer available — choose another');
     const job = freeText(body.job, 1000, 'Job description');
     if (job.length < 3) fail('Tell us what the worker should help with');
-    Object.assign(doc, { startTime: body.startTime, hours, job, address: await facilityFor(contract) });
-    doc.estimate = estimateFor(type, { hours });
+    Object.assign(doc, { startTime: body.startTime, hours, workers, job, address: await facilityFor(contract) });
+    doc.estimate = estimateFor(type, { hours, workers });
   } else {
     const slot = slotById(body.slot);
     if (!slot) fail('Choose a time slot');
-    if ((await slotsOn(date)).find((s) => s.id === slot.id).full) fail('That time slot is full — choose another');
+    if ((await slotsOn(date, type)).find((s) => s.id === slot.id).full) fail('That time slot is full — choose another');
     if (type === 'pickup' || type === 'both') {
       const boxes = count(body.pickup?.boxes, 0, 200, 'Boxes');
       const bulky = count(body.pickup?.bulky, 0, 200, 'Furniture & bulky items');
@@ -395,12 +415,24 @@ router.post('/services', wrap(async (req, res) => {
     if (type === 'supplies') {
       doc.supplies = { boxes: count(body.supplies?.boxes, 1, 200, 'Boxes'), extraLabels: count(body.supplies?.extraLabels, 0, 200, 'Extra labels') };
     }
-    // Last, so a request that fails validation doesn't save a new address.
-    doc.address = await addressFor(customerId, body);
+    if (type === 'disposal') {
+      if (!DISPOSAL_LOADS[body.disposal?.load]) fail('Choose how big the load is');
+      const description = freeText(body.disposal?.description, 1000, 'Description');
+      if (description.length < 3) fail('Tell us what we are taking away');
+      doc.disposal = { load: body.disposal.load, description };
+    }
+    // Last, so a request that fails validation doesn't save a new address. A
+    // dump truck can also clear the customer's own unit.
+    if (type === 'disposal' && body.fromUnit === true) {
+      if (!contract) fail('You have no active unit to clear', 403);
+      doc.address = await facilityFor(contract);
+    } else {
+      doc.address = await addressFor(customerId, body);
+    }
     Object.assign(doc, { slot: slot.id });
     doc.estimate = estimateFor(type, {
       boxes: doc.pickup?.boxes, bulky: doc.pickup?.bulky, items: doc.items?.length,
-      supplyBoxes: doc.supplies?.boxes, evening: slot.evening,
+      supplyBoxes: doc.supplies?.boxes, evening: slot.evening, load: doc.disposal?.load,
     });
   }
 

@@ -13,16 +13,19 @@ export const SERVICE_PRICES = {
   bulky: 40,            // per furniture / bulky piece collected
   deliveredItem: 30,    // per stored item delivered
   eveningSlot: 50,      // 18:00 – 20:00 surcharge
-  workerHourly: 50,
-  workerMinHours: 1,
-  workerMaxHours: 12,
+  workerHourly: 50,     // per worker
+  workerMinHours: 0.5,
+  workerMaxHours: 2,
+  disposalSmall: 400,   // dump truck, small load (about a pickup-truck bed)
+  disposalLarge: 800,   // dump truck, full truck
   supplyBox: 10,        // per packing box (labels included)
   supplyDelivery: 50,
 };
 
 export const CAPACITY = {
   slotCapacity: 3,      // vans per two-hour slot
-  workers: 2,           // workers on shift at any half hour
+  workers: 2,           // workers on shift at any half hour — also the most one booking can take
+  truckSlotCapacity: 1, // dump trucks per two-hour slot; they don't share the vans
 };
 
 export const SLOTS = [
@@ -36,10 +39,18 @@ export const SLOTS = [
 export const slotById = (id) => SLOTS.find((s) => s.id === id) || null;
 
 // The worker helps at the customer's unit during facility hours. A booking
-// has to finish by closing, not just start before it.
+// runs half an hour to two hours, in half hours, and has to finish by
+// closing, not just start before it. PurpleBox has two workers, so a booking
+// can ask for one or both.
 export const WORKER_HOURS = {
   firstStart: '08:00', lastEnd: '20:00', stepMinutes: 30, closedWeekdays: [0],
-  minHours: SERVICE_PRICES.workerMinHours, maxHours: SERVICE_PRICES.workerMaxHours,
+  minHours: SERVICE_PRICES.workerMinHours, maxHours: SERVICE_PRICES.workerMaxHours, stepHours: 0.5,
+  maxWorkers: CAPACITY.workers,
+};
+
+export const DISPOSAL_LOADS = {
+  small: { label: 'Small load', sub: 'A few pieces of furniture or up to 15 boxes', price: SERVICE_PRICES.disposalSmall },
+  large: { label: 'Full truck', sub: 'Clearing out a room or a whole unit', price: SERVICE_PRICES.disposalLarge },
 };
 
 export const toMinutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
@@ -53,7 +64,9 @@ export function workerStartTimes() {
   return out;
 }
 
-export const workerEndTime = (startTime, hours) => fromMinutes(toMinutes(startTime) + hours * 60);
+export const workerEndTime = (startTime, hours) => fromMinutes(toMinutes(startTime) + Math.round(hours * 60));
+// 1.5 -> "1.5", 2 -> "2": hours as people say them.
+export const hoursLabel = (h) => String(Number(h));
 
 // Dubai has no daylight saving, so "today" there is simply UTC+4. Dates are
 // compared as 'YYYY-MM-DD' strings, which sort the same as the days do.
@@ -71,8 +84,8 @@ export const workerClosed = (date) => WORKER_HOURS.closedWeekdays.includes(weekd
 
 /* What the app quotes. Line labels are shown to the customer as-is.
  * `counts` = { boxes, bulky } collected, `items` delivered, `supplyBoxes`,
- * `evening` and `hours` — whichever apply to the type. */
-export function estimateFor(type, { boxes = 0, bulky = 0, items = 0, supplyBoxes = 0, evening = false, hours = 0 } = {}) {
+ * `evening`, `hours` and `workers`, `load` — whichever apply to the type. */
+export function estimateFor(type, { boxes = 0, bulky = 0, items = 0, supplyBoxes = 0, evening = false, hours = 0, workers = 1, load = null } = {}) {
   const P = SERVICE_PRICES;
   const lines = [];
   const add = (label, amount) => lines.push({ label, amount });
@@ -80,7 +93,10 @@ export function estimateFor(type, { boxes = 0, bulky = 0, items = 0, supplyBoxes
   const delivers = type === 'dropoff' || type === 'both';
 
   if (type === 'worker') {
-    add(`Worker · ${hours} h × AED ${P.workerHourly}`, hours * P.workerHourly);
+    const who = workers > 1 ? `${workers} workers` : 'Worker';
+    add(`${who} · ${hoursLabel(hours)} h × AED ${P.workerHourly}`, hours * workers * P.workerHourly);
+  } else if (type === 'disposal') {
+    add(`Dump truck · ${DISPOSAL_LOADS[load].label}`, DISPOSAL_LOADS[load].price);
   } else if (type === 'supplies') {
     add(`Boxes & labels × ${supplyBoxes}`, supplyBoxes * P.supplyBox);
     add('Delivery', P.supplyDelivery);
@@ -99,5 +115,6 @@ export const SERVICE_CATALOG = [
   { type: 'pickup', title: 'Pickup to storage', sub: 'From your home or office', from: SERVICE_PRICES.pickup },
   { type: 'dropoff', title: 'Drop-off to you', sub: 'Stored items to your door', from: SERVICE_PRICES.dropoff },
   { type: 'both', title: 'Pickup & drop-off', sub: 'Both in one trip', from: SERVICE_PRICES.both },
-  { type: 'worker', title: 'Rent a worker', sub: `Help at your unit · AED ${SERVICE_PRICES.workerHourly}/hour, min ${SERVICE_PRICES.workerMinHours} hour`, from: SERVICE_PRICES.workerHourly },
+  { type: 'worker', title: 'Rent a worker', sub: `Help at your unit · AED ${SERVICE_PRICES.workerHourly}/hour per worker, up to ${SERVICE_PRICES.workerMaxHours} hours`, from: SERVICE_PRICES.workerHourly },
+  { type: 'disposal', title: 'Dump truck', sub: 'We take away what you no longer want', from: SERVICE_PRICES.disposalSmall },
 ];

@@ -90,14 +90,17 @@ test('catalog: services, prices, slots, worker hours and the facility of my unit
   const t = await seedTenant('+971501000001');
   const r = await request(app).get(`${base}/services/catalog`).set(t.auth);
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body.services.map((s) => s.type), ['supplies', 'pickup', 'dropoff', 'both', 'worker']);
-  assert.deepEqual(r.body.services.map((s) => s.from), [50, 250, 250, 450, 50]);
-  assert.equal(r.body.services[4].sub, 'Help at your unit · AED 50/hour, min 1 hour');
+  assert.deepEqual(r.body.services.map((s) => s.type), ['supplies', 'pickup', 'dropoff', 'both', 'worker', 'disposal']);
+  assert.deepEqual(r.body.services.map((s) => s.from), [50, 250, 250, 450, 50, 400]);
+  assert.equal(r.body.services[4].sub, 'Help at your unit · AED 50/hour per worker, up to 2 hours');
+  assert.deepEqual(r.body.disposal.map((l) => [l.id, l.price]), [['small', 400], ['large', 800]]);
   assert.equal(r.body.prices.pickup, 250);
   assert.equal(r.body.prices.slotCapacity, 3);
   assert.equal(r.body.slots.length, 6);
   assert.deepEqual(r.body.slots.at(-1), { id: '18-20', label: '18:00 – 20:00', evening: true });
-  assert.deepEqual(r.body.worker, { firstStart: '08:00', lastEnd: '20:00', stepMinutes: 30, closedWeekdays: [0], minHours: 1, maxHours: 12 });
+  assert.deepEqual(r.body.worker, {
+    firstStart: '08:00', lastEnd: '20:00', stepMinutes: 30, closedWeekdays: [0], minHours: 0.5, maxHours: 2, stepHours: 0.5, maxWorkers: 2,
+  });
   assert.deepEqual(r.body.facility, { label: 'At my unit', line: 'Unit L-114 · Warehouse 12, Al Quoz 2' });
 
   const visitor = await login('+971501000002');
@@ -125,12 +128,14 @@ test('availability: a slot fills at capacity; workers are closed on Sunday and m
   assert.equal(sun.body.closed, true);
   assert.ok(sun.body.starts.every((s) => !s.available));
 
-  const w = await request(app).get(`${base}/services/availability?type=worker&date=${day}&hours=3`).set(t.auth);
+  const w = await request(app).get(`${base}/services/availability?type=worker&date=${day}&hours=1.5`).set(t.auth);
   const at = (time) => w.body.starts.find((s) => s.time === time);
   assert.equal(w.body.starts[0].time, '08:00');
   assert.equal(w.body.starts.at(-1).time, '19:30');
-  assert.equal(at('17:00').available, true, '17:00 + 3h ends at 20:00');
-  assert.equal(at('17:30').available, false, 'would end after closing');
+  assert.equal(at('18:30').available, true, '18:30 + 1.5h ends at 20:00');
+  assert.equal(at('19:00').available, false, 'would end after closing');
+  assert.equal((await request(app).get(`${base}/services/availability?type=worker&date=${day}&hours=2.5`).set(t.auth)).status, 400, 'over 2 hours');
+  assert.equal((await request(app).get(`${base}/services/availability?type=worker&date=${day}&hours=1&workers=3`).set(t.auth)).status, 400, 'only two workers');
 
   // Two workers already on 09:00–11:00: nothing overlapping that is free.
   for (const ref of ['SR-W1', 'SR-W2']) {
@@ -139,6 +144,25 @@ test('availability: a slot fills at capacity; workers are closed on Sunday and m
   const busy = await request(app).get(`${base}/services/availability?type=worker&date=${day}&hours=1`).set(t.auth);
   const b = (time) => busy.body.starts.find((s) => s.time === time).available;
   assert.deepEqual([b('08:00'), b('08:30'), b('10:30'), b('11:00')], [true, false, false, true]);
+
+  // One booking for both workers fills the time just the same; one worker
+  // booked leaves room for one more, not two.
+  await ServiceRequest.create({ customer: t.customer._id, ref: 'SR-W3', type: 'worker', date: day, startTime: '14:00', hours: 1, workers: 2 });
+  await ServiceRequest.create({ customer: t.customer._id, ref: 'SR-W4', type: 'worker', date: day, startTime: '16:00', hours: 1, workers: 1 });
+  const one = await request(app).get(`${base}/services/availability?type=worker&date=${day}&hours=0.5&workers=1`).set(t.auth);
+  const two = await request(app).get(`${base}/services/availability?type=worker&date=${day}&hours=0.5&workers=2`).set(t.auth);
+  const o = (time) => one.body.starts.find((s) => s.time === time).available;
+  const tw = (time) => two.body.starts.find((s) => s.time === time).available;
+  assert.deepEqual([o('14:00'), o('16:00'), tw('16:00'), tw('17:00')], [false, true, false, true]);
+
+  // The dump truck has its own slots: full vans don't block it.
+  const truck = await request(app).get(`${base}/services/availability?type=disposal&date=${day}`).set(t.auth);
+  assert.equal(truck.body.slots.find((s) => s.id === '10-12').full, false);
+  await ServiceRequest.create({ customer: t.customer._id, ref: 'SR-T1', type: 'disposal', date: day, slot: '12-14' });
+  const truck2 = await request(app).get(`${base}/services/availability?type=disposal&date=${day}`).set(t.auth);
+  assert.equal(truck2.body.slots.find((s) => s.id === '12-14').full, true, 'one truck per slot');
+  const vans = await request(app).get(`${base}/services/availability?type=pickup&date=${day}`).set(t.auth);
+  assert.equal(vans.body.slots.find((s) => s.id === '12-14').full, false, 'a truck booking does not take a van');
 });
 
 test('create: each type is priced on the server, exactly', async () => {
@@ -177,18 +201,33 @@ test('create: each type is priced on the server, exactly', async () => {
   assert.equal(supplies.status, 201, JSON.stringify(supplies.body));
   assert.deepEqual(supplies.body.request.estimate, { lines: [{ label: 'Boxes & labels × 20', amount: 200 }, { label: 'Delivery', amount: 50 }], total: 250 });
 
-  const worker = await book(t.auth, { type: 'worker', date: day, startTime: '09:30', hours: 3, job: 'Rearrange shelves' });
+  const worker = await book(t.auth, { type: 'worker', date: day, startTime: '09:30', hours: 1.5, workers: 2, job: 'Rearrange shelves' });
   assert.equal(worker.status, 201, JSON.stringify(worker.body));
-  assert.deepEqual(worker.body.request.estimate, { lines: [{ label: 'Worker · 3 h × AED 50', amount: 150 }], total: 150 });
-  assert.equal(worker.body.request.endTime, '12:30');
+  assert.deepEqual(worker.body.request.estimate, { lines: [{ label: '2 workers · 1.5 h × AED 50', amount: 150 }], total: 150 });
+  assert.equal(worker.body.request.endTime, '11:00');
+  assert.equal(worker.body.request.workers, 2);
   assert.deepEqual(worker.body.request.address, { label: 'At my unit', line: 'Unit L-114 · Warehouse 12, Al Quoz 2' });
 
+  const solo = await book(t.auth, { type: 'worker', date: day, startTime: '15:00', hours: 0.5, job: 'Lift one box' });
+  assert.equal(solo.status, 201, JSON.stringify(solo.body));
+  assert.deepEqual(solo.body.request.estimate, { lines: [{ label: 'Worker · 0.5 h × AED 50', amount: 25 }], total: 25 });
+  assert.equal(solo.body.request.workers, 1, 'one worker unless asked');
+
+  const truck = await book(t.auth, { type: 'disposal', date: day, slot: '18-20', addressId, disposal: { load: 'large', description: 'Old sofa and a broken fridge' } });
+  assert.equal(truck.status, 201, JSON.stringify(truck.body));
+  assert.deepEqual(truck.body.request.estimate, { lines: [{ label: 'Dump truck · Full truck', amount: 800 }, { label: 'Evening slot', amount: 50 }], total: 850 });
+  assert.deepEqual(truck.body.request.disposal, { load: 'large', description: 'Old sofa and a broken fridge' });
+  const fromUnit = await book(t.auth, { type: 'disposal', date: day, slot: '08-10', fromUnit: true, disposal: { load: 'small', description: 'Empty boxes' } });
+  assert.equal(fromUnit.status, 201, JSON.stringify(fromUnit.body));
+  assert.deepEqual(fromUnit.body.request.address, { label: 'At my unit', line: 'Unit L-114 · Warehouse 12, Al Quoz 2' });
+
   const contract = await Contract.findById(t.contract._id);
-  assert.equal(contract.timeline.filter((e) => e.text.startsWith('Tenant requested via app:')).length, 5);
+  assert.equal(contract.timeline.filter((e) => e.text.startsWith('Tenant requested via app:')).length, 8);
   assert.ok(contract.timeline.some((e) => e.text.includes('SR-0001')));
+  assert.ok(contract.timeline.some((e) => e.text.includes('09:30–11:00, 2 workers')));
 
   const list = await request(app).get(`${base}/services`).set(t.auth);
-  assert.deepEqual(list.body.map((r) => r.type), ['worker', 'supplies', 'both', 'dropoff', 'pickup']);
+  assert.deepEqual(list.body.map((r) => r.type), ['disposal', 'disposal', 'worker', 'worker', 'supplies', 'both', 'dropoff', 'pickup']);
 });
 
 test('create: refuses what it cannot book, with a reason', async () => {
@@ -213,7 +252,12 @@ test('create: refuses what it cannot book, with a reason', async () => {
     [{ type: 'worker', date: day, startTime: '09:00', hours: 1, job: 'ok' }, 'short job'],
     [{ type: 'worker', date: day, startTime: '19:30', hours: 2, job: 'Help me' }, 'ends after 20:00'],
     [{ type: 'worker', date: day, startTime: '09:15', hours: 1, job: 'Help me' }, 'off the half hour'],
-    [{ type: 'worker', date: day, startTime: '09:00', hours: 13, job: 'Help me' }, 'too long'],
+    [{ type: 'worker', date: day, startTime: '09:00', hours: 2.5, job: 'Help me' }, 'over two hours'],
+    [{ type: 'worker', date: day, startTime: '09:00', hours: 0.75, job: 'Help me' }, 'not a half hour'],
+    [{ type: 'worker', date: day, startTime: '09:00', hours: 1, workers: 3, job: 'Help me' }, 'only two workers'],
+    [{ type: 'worker', date: day, startTime: '09:00', hours: 1, workers: 0, job: 'Help me' }, 'no workers'],
+    [{ type: 'disposal', date: day, slot: '08-10', address, disposal: { load: 'huge', description: 'Sofa' } }, 'unknown load'],
+    [{ type: 'disposal', date: day, slot: '08-10', address, disposal: { load: 'small', description: 'x' } }, 'no description'],
     [{ type: 'worker', date: sunday(), startTime: '09:00', hours: 1, job: 'Help me' }, 'Sunday'],
   ]) {
     const r = await book(t.auth, bad);

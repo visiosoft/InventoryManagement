@@ -4,7 +4,7 @@ import { api, apiError } from '../../lib/api'
 import { Badge, Button, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Textarea, Th } from '../../components/ui'
 
 /** Valet jobs customers booked in the app: boxes & labels, pickups,
- *  drop-offs and workers. Staff confirm them, assign a driver, and record
+ *  drop-offs, workers and the dump truck. Staff confirm them, assign a driver, and record
  *  what was charged once done — nothing is charged at booking. */
 
 const STATUSES = ['requested', 'confirmed', 'scheduled', 'in_progress', 'completed', 'cancelled'] as const
@@ -12,7 +12,7 @@ type Status = typeof STATUSES[number]
 const FINAL: Status[] = ['completed', 'cancelled']
 
 const TYPE_LABEL: Record<string, string> = {
-  supplies: 'Boxes & labels', pickup: 'Pickup', dropoff: 'Drop-off', both: 'Pickup & drop-off', worker: 'Worker',
+  supplies: 'Boxes & labels', pickup: 'Pickup', dropoff: 'Drop-off', both: 'Pickup & drop-off', worker: 'Worker', disposal: 'Dump truck',
 }
 const STATUS_TONE: Record<Status, string> = {
   requested: 'amber', confirmed: 'blue', scheduled: 'blue', in_progress: 'purple', completed: 'green', cancelled: 'gray',
@@ -28,6 +28,8 @@ interface ServiceRequest {
   slot: string | null
   startTime: string | null
   hours: number | null
+  workers: number | null
+  disposal: { load: 'small' | 'large' | null; description: string } | null
   address: { label: string; line: string }
   pickup: { boxes: number; bulky: number; description: string }
   supplies: { boxes: number; extraLabels: number }
@@ -44,7 +46,7 @@ interface ServiceRequest {
 }
 
 function when(r: ServiceRequest) {
-  return r.type === 'worker' ? `${r.date} · ${r.startTime} for ${r.hours} h` : `${r.date} · ${r.slot?.replace('-', ':00–')}:00`
+  return r.type === 'worker' ? `${r.date} · ${r.startTime} for ${r.hours} h · ${r.workers || 1} worker${(r.workers || 1) > 1 ? 's' : ''}` : `${r.date} · ${r.slot?.replace('-', ':00–')}:00`
 }
 
 function what(r: ServiceRequest) {
@@ -53,6 +55,7 @@ function what(r: ServiceRequest) {
   if (r.type === 'pickup' || r.type === 'both') parts.push(`collect ${r.pickup.boxes} boxes, ${r.pickup.bulky} bulky`)
   if (r.type === 'dropoff' || r.type === 'both') parts.push(`deliver ${r.items.length} item${r.items.length === 1 ? '' : 's'}`)
   if (r.type === 'worker') parts.push(r.job)
+  if (r.type === 'disposal' && r.disposal) parts.push(`${r.disposal.load === 'large' ? 'full truck' : 'small load'} — ${r.disposal.description}`)
   return parts.join(' · ')
 }
 
@@ -122,7 +125,7 @@ export default function ServiceRequests() {
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
-      <PageHeader title="Service requests" subtitle="Pickups, drop-offs, boxes and workers booked from the customer app." />
+      <PageHeader title="Service requests" subtitle="Pickups, drop-offs, boxes, workers and dump trucks booked from the customer app." />
       <Select value={status} onChange={e => setStatus(e.target.value)} className="max-w-xs">
         <option value="">All statuses</option>
         {STATUSES.map(s => <option key={s} value={s}>{statusText(s)}</option>)}
