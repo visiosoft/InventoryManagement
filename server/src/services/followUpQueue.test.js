@@ -268,3 +268,21 @@ test('the queue starts at 1 September 2026, Dubai midnight — the day reliable 
     // Dubai is UTC+4, so this is exactly 2026-09-01 00:00 local.
     assert.equal(new Date(QUEUE_SINCE.getTime() + 4 * 3600_000).toISOString().slice(0, 16), '2026-09-01T00:00');
 });
+
+test('an open lead with no date, no chat and no chase is put in front of its owner', () => {
+    const old = new Date(NOW.getTime() - 3 * 864e5);
+    const v = classify({ leadStatus: 'contacted', leadCreatedAt: old }, { now: NOW });
+    assert.equal(v.reason, 'manual_followup_due');
+    assert.equal(v.reasonDetail, 'no_next_step');
+    assert.equal(v.window, 'today');
+});
+
+test('a lead younger than a day is the first-response clock\'s business, not this list\'s', () => {
+    const fresh = new Date(NOW.getTime() - 3600_000);
+    assert.equal(classify({ leadStatus: 'new', leadCreatedAt: fresh }, { now: NOW }), null);
+});
+
+test('a closed lead never shows as having no next step', () => {
+    const old = new Date(NOW.getTime() - 9 * 864e5);
+    assert.equal(classify({ leadStatus: 'lost', leadCreatedAt: old }, { now: NOW }), null);
+});

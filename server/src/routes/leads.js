@@ -4,7 +4,7 @@ import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from 
 import { notifyLeadAssigned, notifyBulkReassignment, pendingAssignmentBadge } from '../services/leadNotify.js';
 import { displayNameFor, promotePlaceholderName, resolvePlaceholderNames } from '../services/leadNames.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask, syncStorageStartTask } from '../services/followUps.js';
-import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
+import { applyOutcome, followUpDateFrom, getFollowUpPlan, hasFutureFollowUp, nextDateFor, sequenceState } from '../services/followUpSequence.js';
 import { summarise } from '../services/speedToLead.js';
 import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
@@ -1564,6 +1564,12 @@ router.patch('/:id/status', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
+    // "Follow-Up Scheduled" with nothing scheduled is the commonest way a lead
+    // is forgotten: the stage says somebody will chase it and nothing will.
+    if (status === 'follow_up_scheduled' && !hasFutureFollowUp(lead)) {
+        return res.status(400).json({ error: 'Pick the follow-up date first — a lead cannot be Follow-Up Scheduled without one.' });
+    }
+
     lead.status = status;
 
     // The note belongs to the change, not beside it. Two timeline rows for one
@@ -1656,6 +1662,17 @@ router.post('/:id/attempts', async (req, res) => {
         const lead = await Lead.findById(req.params.id);
         if (!lead) return res.status(404).json({ error: 'Lead not found' });
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        // Having spoken to them is not the end of a deal. Unless they have
+        // said no (or the lead is already closed), a next date is required —
+        // theirs, if they gave one, otherwise one the rep sets now. "Decide in
+        // two weeks" must not turn into a lead with nothing on its calendar.
+        if (outcome === 'reached' && !CLOSED_STATUS.has(lead.status)
+            && !followUpDateFrom(req.body?.nextAt)
+            && !hasFutureFollowUp(lead)
+            && req.body?.noFollowUpNeeded !== true) {
+            return res.status(400).json({ error: 'Set the next follow-up date — when did they say they would decide? Choose "No follow-up needed" only if the deal is done.' });
+        }
 
         const plan = await getFollowUpPlan();
         const { attempt, exhausted, suggestStatus } = applyOutcome(lead, plan, {

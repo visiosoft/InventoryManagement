@@ -91,6 +91,7 @@ function fmtTime(iso: string) {
  *  it has one, else the honest fallback for where the lead sits. */
 function recommendationFor(it: FollowUpQueueItem) {
   if (it.reason === 'sales_response_overdue') return 'Reply now'
+  if (it.reasonDetail === 'no_next_step') return 'Set a next step'
   if (it.window === 'exhausted') return 'Decide: keep, nurture or close'
   if (it.nextAction) return it.nextAction
   if (it.reason === 'manual_followup_due') return 'Follow up as scheduled'
@@ -109,6 +110,7 @@ function recommendationDetail(it: FollowUpQueueItem) {
 function cadenceText(it: FollowUpQueueItem) {
   if (it.reason === 'sales_response_overdue') return 'Awaiting our reply'
   const sent = it.lastSentAt ? ` · last sent ${agoText(it.lastSentAt)}` : ''
+  if (it.reasonDetail === 'no_next_step') return 'No next step booked'
   if (it.reason === 'manual_followup_due') return `${it.reasonDetail === 'exhausted' ? 'Chase exhausted' : 'Scheduled'}${sent}`
   return `${it.quietStage.label}${sent}`
 }

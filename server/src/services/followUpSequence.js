@@ -75,6 +75,19 @@ export function nextDateFor(plan = {}, made = 0, from = new Date()) {
   return new Date(base.getTime() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
+/** A date (or date-time, Dubai wall-clock) typed by the rep, as an instant. */
+export function followUpDateFrom(nextAt) {
+  const day = String(nextAt || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const time = String(nextAt).match(/T(\d{2}:\d{2})/)?.[1];
+  return time ? new Date(`${day}T${time}:00+04:00`) : new Date(`${day}T00:00:00.000Z`);
+}
+
+/** Does this lead still have a follow-up date that has not yet passed? */
+export function hasFutureFollowUp(lead, now = new Date()) {
+  return Boolean(lead?.followUpAt) && new Date(lead.followUpAt) > now;
+}
+
 /**
  * Record an attempt and work out what happens next.
  *
@@ -97,12 +110,19 @@ export function applyOutcome(lead, plan, { channel, outcome, note = '', nextAt, 
   };
   lead.attempts = [...(lead.attempts || []), attempt];
 
-  // They answered. The chase is over whatever the plan still had planned, and
-  // the standing follow-up goes with it — a reminder to chase somebody you
-  // have just spoken to is noise.
+  // They answered, so the plan's chase is over. But a conversation usually
+  // ends with "ring me in two weeks", and that date is the whole point: it is
+  // set here when the rep gives one, and a future date already on the lead is
+  // left alone rather than wiped. The route refuses a "reached" that leaves
+  // the lead with no next date at all, unless the rep says none is needed.
   if (outcome === REACHED) {
-    lead.followUpAt = null;
     lead.sequenceExhaustedAt = null;
+    const when = followUpDateFrom(nextAt);
+    if (when) {
+      lead.followUpAt = when;
+      lead.followUpKind = 'date';
+      lead.followUpNotifiedAt = null;
+    }
     return { attempt, exhausted: false, suggestStatus: 'contacted' };
   }
 

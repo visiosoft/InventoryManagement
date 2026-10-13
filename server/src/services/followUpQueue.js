@@ -170,6 +170,18 @@ export function classify(signals = {}, { now = new Date(), stages = DEFAULT_STAG
             window = windowFor(nextContactAt, now);
         }
     }
+    // An open lead with nothing on its calendar at all: no date, no chat to
+    // read a cadence from, no exhausted chase. This is the lead that is
+    // forgotten — it has no signal anywhere — so it is put in front of the
+    // owner as work to do. Younger than a day it is still the first-response
+    // clock's business, not this list's.
+    if (!reason && signals.leadCreatedAt && (nowT - new Date(signals.leadCreatedAt).getTime()) > DAY) {
+        reason = 'manual_followup_due';
+        reasonDetail = 'no_next_step';
+        since = signals.leadCreatedAt;
+        nextContactAt = new Date(now);
+        window = 'today';
+    }
     if (!reason) return null;
 
     const daysWaiting = Math.max(0, Math.floor((nowT - new Date(since).getTime()) / DAY));
@@ -488,7 +500,7 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
     else filter.createdAt = { $gte: QUEUE_SINCE };
 
     const leads = await Lead.find(filter)
-        .select('fullName phone phoneNormalized whatsappProfileName status temperature owner followUpAt sequenceExhaustedAt attempts source')
+        .select('fullName phone phoneNormalized whatsappProfileName status temperature owner followUpAt sequenceExhaustedAt attempts source createdAt')
         .populate('owner', 'name')
         .lean();
     if (!leads.length) return [];
@@ -518,6 +530,7 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
             followUpAt: lead.followUpAt,
             sequenceExhaustedAt: lead.sequenceExhaustedAt,
             temperature: lead.temperature || null,
+            leadCreatedAt: lead.createdAt,
         }, { now, stages });
         if (!verdict) continue;
 

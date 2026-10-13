@@ -131,36 +131,17 @@ export function isWaitingOnUs({ lastInboundAt = null, lastOutboundAt = null } = 
 }
 
 /**
- * They wrote back, so the reminder is not needed.
+ * They wrote back — and the follow-up date stays exactly where it is.
  *
- * Only a reminder still in the future is cleared: one that has already fallen
- * due has become a task on somebody's board, and that task is theirs to close.
- * Never throws — a message must be delivered whatever this does.
+ * This used to clear a future follow-up on any reply, which meant "I'll decide
+ * in two weeks" was wiped by a later "ok thanks" and the lead fell off every
+ * list. The date somebody chose is the rep's promise to the customer, so a
+ * reply no longer touches it; the rep moves or clears it on purpose.
  *
- * @returns { cleared: boolean }
+ * Kept as a function so the webhook's call site stays one line. Never throws.
+ *
+ * @returns { cleared: false }
  */
-export async function cancelFollowUpOnReply(lead, { at = new Date() } = {}) {
-   try {
-      if (!lead?.followUpAt) return { cleared: false };
-      if (new Date(lead.followUpAt) <= new Date(at)) return { cleared: false };
-
-      const when = new Date(lead.followUpAt).toLocaleDateString('en-GB', {
-         day: 'numeric', month: 'short', timeZone: 'Asia/Dubai',
-      });
-      await Lead.updateOne({ _id: lead._id }, {
-         $set: { followUpAt: null, followUpNotifiedAt: null, followUpPushedAt: null },
-         $push: {
-            timeline: {
-               type: 'note',
-               // Said out loud, so a rep whose reminder vanished can see why.
-               text: `Follow-up for ${when} cleared — they replied.`,
-               at,
-            },
-         },
-      });
-      return { cleared: true };
-   } catch (e) {
-      console.error('[ChatFollowUp] could not clear a follow-up:', e.message);
-      return { cleared: false };
-   }
+export async function cancelFollowUpOnReply() {
+   return { cleared: false };
 }

@@ -176,8 +176,27 @@ router.patch('/:id', async (req, res) => {
     task.assigneeNotifiedAt = null;
   }
 
+  const justDone = req.body?.status === 'done' && task.doneAt;
   await task.save();
   res.json(await task.populate('assignedTo', 'name email'));
+
+  // Finishing the follow-up task is the follow-up having happened. The lead's
+  // date goes with it, so the lead stops reading "overdue" for something that
+  // was done — and, having no next step, shows up on the list of leads that
+  // need one instead of quietly dropping out of sight.
+  if (justDone && task.leadId) {
+    try {
+      const lead = await Lead.findById(task.leadId).select('followUpTaskId followUpAt status');
+      if (lead && String(lead.followUpTaskId || '') === String(task._id)) {
+        const open = !['won', 'lost', 'already_customer'].includes(lead.status);
+        const due = lead.followUpAt && new Date(lead.followUpAt) <= new Date();
+        await Lead.updateOne({ _id: lead._id }, {
+          $set: { followUpTaskId: null, ...(due ? { followUpAt: null } : {}) },
+          ...(open && due ? { $push: { timeline: { type: 'note', text: 'Follow-up done — set the next step.', user: req.user.id, at: new Date() } } } : {}),
+        });
+      }
+    } catch (e) { console.error('[Tasks] could not close the follow-up on the lead:', e.message); }
+  }
 
   if (reassignedTo) {
     notifyTaskAssigned({
