@@ -5,16 +5,29 @@ export function requireAuth(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Authentication required' });
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    // Customer and crew tokens share this secret; they must not unlock staff routes.
+    if (payload.type === 'customer' || payload.type === 'crew') {
+      return res.status(403).json({ error: 'Staff access required' });
+    }
+    req.user = payload;
     next();
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
 
+/**
+ * 'accounts_admin' is stored as its own role so it can be listed and picked,
+ * but everything that checks access sees an admin: the session carries
+ * role 'admin' plus an `accountsAdmin` marker the client uses to land them on
+ * the accounts dashboard.
+ */
+export const effectiveRole = (role) => (role === 'accounts_admin' ? 'admin' : role);
+
 export function signToken(user) {
   return jwt.sign(
-    { id: user._id, email: user.email, name: user.name, role: user.role, permissions: user.permissions ?? [] },
+    { id: user._id, email: user.email, name: user.name, role: effectiveRole(user.role), accountsAdmin: user.role === 'accounts_admin', permissions: user.role === 'accounts_admin' ? [] : (user.permissions ?? []) },
     process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -23,6 +36,23 @@ export function signToken(user) {
 export function requireAdmin(req, res, next) {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   next();
+}
+
+/**
+ * Campaign Studio: admins, plus anyone an admin ticked "Campaign Studio" for in
+ * Settings → Users. Read from the database rather than the token, so a grant
+ * (or its removal) takes effect without the person logging out and in.
+ */
+export async function requireCampaignAccess(req, res, next) {
+  try {
+    if (req.user?.role === 'admin') return next();
+    const { User } = await import('../models/index.js');
+    const u = await User.findById(req.user?.id).select('permissions isActive').lean();
+    if (u?.isActive !== false && u?.permissions?.includes('campaign_studio')) return next();
+    return res.status(403).json({ error: 'Campaign Studio has not been turned on for you' });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
 }
 
 /**

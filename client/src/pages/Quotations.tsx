@@ -885,7 +885,6 @@ export default function Quotations() {
         </div>
         <button
           onClick={() => navigate('/quotes/new')}
-          data-tour="booking-new"
           style={{
             background: PURPLE,
             color: '#fff',

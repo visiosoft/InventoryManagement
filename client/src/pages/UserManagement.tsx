@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PasswordInput } from '../components/PasswordInput'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Edit2, KeyRound, ListTodo, Plus, ShieldCheck, ShieldOff, Target, Trash2, User, UserCog } from 'lucide-react'
 import { api, apiError } from '../lib/api'
@@ -23,6 +24,7 @@ const MODULE_GROUPS = [
       { key: 'moving_inventory', label: 'Moving Ops' },
       { key: 'contracts',        label: 'Contracts' },
       { key: 'documents',        label: 'Documents' },
+      { key: 'agreement_templates', label: 'Agreement Templates' },
     ],
   },
   {
@@ -79,6 +81,19 @@ const MODULE_GROUPS = [
       { key: 'reports_moving_jobs',     label: 'Jobs Report' },
       { key: 'reports_moving_crew',     label: 'Crew Report' },
       { key: 'reports_moving_fleet',    label: 'Fleet Report' },
+      { key: 'reports_moving_profitability', label: 'Profitability Report' },
+      { key: 'reports_moving_payroll',  label: 'Payroll Report' },
+      { key: 'reports_moving_ar',       label: 'Accounts Receivable Report' },
+      { key: 'reports_moving_costs',    label: 'Cost Breakdown Report' },
+      { key: 'reports_moving_pipeline', label: 'Sales Pipeline Report' },
+      { key: 'reports_moving_stripe',   label: 'Stripe Payments Report' },
+    ],
+  },
+  {
+    label: 'Sales Rep Tools',
+    modules: [
+      { key: 'sales_board', label: 'My Day, My Leads, Follow-Ups, Leaderboard, Estimator, My Reports' },
+      { key: 'campaign_studio', label: 'Campaign Studio (WhatsApp campaigns, templates, reports)' },
     ],
   },
   {
@@ -190,15 +205,25 @@ function UserModal({ editing, onClose, onDone }: {
   const [password, setPassword]   = useState('')
   const [role, setRole]           = useState(editing?.role ?? 'staff')
   const [permissions, setPerms]   = useState<string[]>(
-    editing?.permissions?.length ? editing.permissions : (editing?.role === 'admin' ? ALL_MODULE_KEYS : isSalesRepRole(editing?.role) ? ['sales_board'] : [])
+    editing?.permissions?.length ? editing.permissions : ((editing?.role === 'admin' || editing?.role === 'accounts_admin') ? ALL_MODULE_KEYS : isSalesRepRole(editing?.role) ? ['sales_board'] : [])
   )
   const [isActive, setIsActive]   = useState(editing?.isActive ?? true)
   const [err, setErr]             = useState('')
   const [busy, setBusy]           = useState(false)
   const qc = useQueryClient()
 
-  const isAdmin = role === 'admin'
+  const isAdmin = role === 'admin' || role === 'accounts_admin'
   const isSalesRep = isSalesRepRole(role)
+
+  // Deactivating a rep never touches their leads on its own — this just
+  // surfaces that so it isn't discovered later as leads silently owned by
+  // someone who can no longer log in. Only worth asking for once there's a
+  // rep to check and a reason to (being turned off).
+  const leadCount = useQuery<number>({
+    queryKey: ['user-lead-count', editing?._id],
+    queryFn: () => api.get('/leads', { params: { owner: editing!._id, limit: 1 } }).then(r => r.data.total ?? 0),
+    enabled: !isNew && isSalesRep && !isActive && !!editing?._id,
+  })
 
   function changeRole(next: string) {
     setRole(next)
@@ -239,7 +264,7 @@ function UserModal({ editing, onClose, onDone }: {
             <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" />
           </Field>
           <Field label={isNew ? 'Password' : 'New password (leave blank to keep current)'}>
-            <Input type="password" value={password} onChange={e => setPassword(e.target.value)}
+            <PasswordInput value={password} onChange={e => setPassword(e.target.value)}
               placeholder={isNew ? 'Min 8 characters' : 'Leave blank to keep current'} />
           </Field>
           <Field label="Role">
@@ -248,6 +273,7 @@ function UserModal({ editing, onClose, onDone }: {
               <option value="admin">Admin — full access to everything</option>
               <option value="sales_rep">Sales Rep — only their assigned leads</option>
               <option value="accounts">Accounts — same access as a sales rep</option>
+              <option value="accounts_admin">Accounts + Admin — accounts home page, full access to everything</option>
             </Select>
           </Field>
 
@@ -259,6 +285,12 @@ function UserModal({ editing, onClose, onDone }: {
               </Select>
             </Field>
           )}
+          {!isActive && !!leadCount.data && (
+            <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+              Still owns {leadCount.data} lead{leadCount.data === 1 ? '' : 's'} — deactivating doesn't move these off their board.
+              Use <span className="font-semibold">Reassign leads</span> on the Leads page to hand them to someone else.
+            </p>
+          )}
 
           {isAdmin && (
             <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-start gap-2 text-sm">
@@ -269,21 +301,27 @@ function UserModal({ editing, onClose, onDone }: {
           {isSalesRep && (
             <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-start gap-2 text-sm">
               <ShieldCheck size={15} className="text-primary shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">Sales reps automatically get their own "My Leads" board (only leads assigned to them), plus read access to the Unit Map, Customers, and Moving Schedule.</span>
+              <span className="text-muted-foreground">Sales reps always keep their own "My Leads" board and Unit Map access, whatever is unticked below — everything else is optional.</span>
             </div>
           )}
         </div>
 
-        {/* Right: permissions */}
-        {!isSalesRep && (
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-              Module access
-            </div>
-            <PermissionGrid permissions={permissions}
-              onChange={setPerms} disabled={false} />
+        {/* Right: permissions — every role, including sales reps/accounts,
+            can be granted any module here. Sales reps used to have this
+            panel hidden entirely, silently capped at the fixed default set
+            (sales_board, units, customers, contracts, moving_schedule) with
+            no way for an admin to give one rep something extra (e.g.
+            agreement_templates) without also giving it to every rep by
+            changing the default. The server's ROLE_FLOOR still force-keeps
+            sales_board/units even if unticked here, so this can't lock a rep
+            out of their own board. */}
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+            Module access
           </div>
-        )}
+          <PermissionGrid permissions={permissions}
+            onChange={setPerms} disabled={false} />
+        </div>
       </div>
 
       {/* Footer */}
@@ -336,13 +374,13 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
         <>
           <div className="space-y-4">
             <Field label="Current password">
-              <Input type="password" value={current} onChange={e => setCurrent(e.target.value)} />
+              <PasswordInput value={current} onChange={e => setCurrent(e.target.value)} />
             </Field>
             <Field label="New password">
-              <Input type="password" value={next} onChange={e => setNext(e.target.value)} placeholder="Min 8 characters" />
+              <PasswordInput value={next} onChange={e => setNext(e.target.value)} placeholder="Min 8 characters" />
             </Field>
             <Field label="Confirm new password">
-              <Input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} />
+              <PasswordInput value={confirm} onChange={e => setConfirm(e.target.value)} />
             </Field>
           </div>
           <div className="flex items-center justify-between mt-5 pt-4 border-t gap-3">
@@ -592,13 +630,13 @@ export default function UserManagement() {
                     </Td>
                     <Td>
                       <span className={`flex items-center gap-1 text-xs font-semibold rounded-full px-2 py-0.5 w-fit
-                        ${u.role === 'admin' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : isSalesRepRole(u.role) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
-                        {u.role === 'admin' ? <ShieldCheck size={11} /> : <UserCog size={11} />}
+                        ${(u.role === 'admin' || u.role === 'accounts_admin') ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : isSalesRepRole(u.role) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+                        {(u.role === 'admin' || u.role === 'accounts_admin') ? <ShieldCheck size={11} /> : <UserCog size={11} />}
                         {roleLabel(u.role)}
                       </span>
                     </Td>
                     <Td>
-                      {u.role === 'admin' && moduleCount === 0 ? (
+                      {(u.role === 'admin' || u.role === 'accounts_admin') && moduleCount === 0 ? (
                         <span className="text-xs text-muted-foreground italic">All modules</span>
                       ) : isSalesRepRole(u.role) ? (
                         <span className="text-xs text-muted-foreground italic">My Leads board only</span>

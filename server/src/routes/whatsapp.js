@@ -1,12 +1,16 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
-import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate } from '../models/index.js';
-import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate } from '../services/whatsapp.js';
+import { WhatsAppMessage, Lead, Customer, User, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate, Task, Contract } from '../models/index.js';
+import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate, windowOpenFor } from '../services/whatsapp.js';
 import { pauseBotForHuman, markFirstResponse } from '../services/aiBot.js';
+import { agentStatusForLeads } from '../agents/service.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
+import { phoneClauses } from '../utils/phoneSearch.js';
+import { deleteCustomerCascade } from './customers.js';
+import { promotePlaceholderName } from '../services/leadNames.js';
 import { quickReplyWatchLink } from '../services/renewalLink.js';
 import { videoNeedsHosting } from '../services/videoThumbnail.js';
 import { summariseConversation, summariseRecent } from '../services/conversationSummary.js';
@@ -247,6 +251,21 @@ router.delete('/conversations/:phoneNormalized', async (req, res) => {
     if (isSalesRep(req)) return res.status(403).json({ error: 'Not allowed to delete a conversation' });
     const phoneNormalized = req.params.phoneNormalized;
     try {
+        // "Delete contact" on a number that is a customer removes that record
+        // too (with its contracts, invoices and documents) — but never while a
+        // contract is still active, and that check comes before anything is
+        // deleted so a refusal leaves the chat intact.
+        let customers = [];
+        if (req.query.contact === '1') {
+            const or = phoneClauses(phoneNormalized);
+            customers = or.length ? await Customer.find({ $or: or }).select('_id fullName') : [];
+            if (customers.length) {
+                const live = await Contract.countDocuments({ customer: { $in: customers.map((c) => c._id) }, status: 'active' });
+                if (live) {
+                    return res.status(409).json({ error: `${customers[0].fullName} has ${live} active contract${live === 1 ? '' : 's'}. End or delete them first, then delete the contact.` });
+                }
+            }
+        }
         const result = await softDeleteMany(WhatsAppMessage, { phoneNormalized }, req.user.id, { deletedAtField: 'removedAt', deletedByField: 'removedBy' });
         const [chatLabel, labelState] = await Promise.all([
             WhatsAppChatLabel.findOne({ phoneNormalized }),
@@ -256,7 +275,20 @@ router.delete('/conversations/:phoneNormalized', async (req, res) => {
             chatLabel ? softDelete(chatLabel, req.user.id) : null,
             labelState ? softDelete(labelState, req.user.id) : null,
         ]);
-        res.json({ ok: true, deletedMessages: result.modifiedCount });
+        // "Delete contact": the lead behind the number goes too, with its open
+        // reminders, so it stops showing in Leads. A Customer record is never
+        // touched here — contracts and payments hang off it.
+        let deletedLeads = 0;
+        if (req.query.contact === '1') {
+            const leads = await Lead.find({ phoneNormalized }).select('_id');
+            for (const lead of leads) {
+                await softDelete(await Lead.findById(lead._id), req.user.id);
+                await softDeleteMany(Task, { leadId: lead._id, leadType: 'storage', status: 'todo' }, req.user.id);
+                deletedLeads += 1;
+            }
+        }
+        for (const c of customers) await deleteCustomerCascade(c._id, req.user.id);
+        res.json({ ok: true, deletedMessages: result.modifiedCount, deletedLeads, deletedCustomers: customers.length });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -640,21 +672,23 @@ router.get('/conversations', async (req, res) => {
             return [lead?.owner, lead?.assignedBy];
         }).filter(Boolean).map(String),
     )];
+    const leadIds = [...new Set(
+        hydrate.map((r) => byLeadPhone.get(suffix(r._id))?._id).filter(Boolean).map(String),
+    )];
     const phones = hydrate.map((r) => r._id);
 
-    // The second wave: these three need `visible`, but not each other.
-    const [botThreads, owners, chatLabels, blockedNumbers] = await Promise.all([
-        // The AI assistant's state per thread — whether it has a suggestion
-        // waiting and whether it has handed the conversation over.
-        AiBotThread.find({ phoneNormalized: { $in: phones } })
-            .select('phoneNormalized status draftText escalationReason').lean(),
+    // The second wave: these four need `visible`, but not each other.
+    const [agentStatusByLead, owners, chatLabels, blockedNumbers] = await Promise.all([
+        // The AI agents' state per lead — whether one has a reply waiting or
+        // has handed the conversation to a person. Keyed by lead, not phone:
+        // an agent adopts a Lead, not a raw number.
+        agentStatusForLeads(leadIds),
         ownerIds.length ? User.find({ _id: { $in: ownerIds } }).select('name email').lean() : [],
         WhatsAppChatLabel.find({ phoneNormalized: { $in: phones } })
             .populate('labels', 'name color sortOrder').lean(),
         WhatsAppBlockedNumber.find({ phoneNormalized: { $in: phones } }).select('phoneNormalized').lean(),
     ]);
 
-    const byThread = new Map(botThreads.map((t) => [t.phoneNormalized, t]));
     const byOwner = new Map(owners.map((u) => [String(u._id), u.name || u.email || '']));
     const byLabels = new Map(chatLabels.map((c) => [c.phoneNormalized, c.labels || []]));
     const blockedSet = new Set(blockedNumbers.map((b) => b.phoneNormalized));
@@ -668,7 +702,7 @@ router.get('/conversations', async (req, res) => {
         const lead = byLeadPhone.get(suffix(r._id)) || null;
         const customer = byPhone.get(suffix(r._id)) || null;
         const leadName = isPlaceholderLeadName(lead?.fullName) ? '' : lead.fullName;
-        const bot = byThread.get(r._id) || null;
+        const bot = (lead ? agentStatusByLead.get(String(lead._id)) : null) || null;
         return {
             phoneNormalized: r._id,
             phone: r.phone,
@@ -723,8 +757,12 @@ router.get('/conversations', async (req, res) => {
             labels: byLabels.get(r._id) || [],
             blocked: blockedSet.has(r._id),
             botStatus: bot?.status || '',
-            botDraft: bot?.draftText || '',
+            botDraft: bot?.draft || '',
+            botActionId: bot?.draftActionId || '',
+            botDraftAt: bot?.draftAt || null,
             botEscalationReason: bot?.escalationReason || '',
+            botAgentName: bot?.agentName || '',
+            botAgentColor: bot?.agentColor || '',
         };
     };
 
@@ -950,6 +988,8 @@ router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
                     });
                 }
             }
+            // Assigning a chat with no typed name: use the WhatsApp profile name.
+            if (generated && (ownerId || existing.owner)) promotePlaceholderName(existing);
             if (email) existing.email = email;
             // Saving a chat onto a rep makes it new to them, and starts their
             // clock — this is somebody choosing an owner, which is exactly what
@@ -1009,12 +1049,33 @@ router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
     }
 });
 
+/**
+ * Refuse a free-form send Meta is certain to bounce.
+ *
+ * Meta accepts the request, returns a message id, and only later reports the
+ * message as failed (error 131047), so the rep sees it go out and then turn red.
+ * Answering here instead keeps the rep from waiting on a send that cannot
+ * arrive, and tells them what will. A chat with no inbound message on record
+ * is left to Meta: the history may simply not have been synced.
+ */
+export const WINDOW_CLOSED_ERROR = 'They last wrote over 24 hours ago, so WhatsApp will not deliver a typed message, quick reply or file. Send an approved template from the Templates tab instead.';
+
+export async function freeTextWindowClosed(to) {
+    const phoneNormalized = String(to || '').replace(/\D/g, '');
+    if (!phoneNormalized) return false;
+    const last = await WhatsAppMessage.findOne({ phoneNormalized, direction: 'inbound' })
+        .sort({ occurredAt: -1 }).select('occurredAt').lean();
+    if (!last?.occurredAt) return false;
+    return !windowOpenFor({ lastInboundAt: last.occurredAt });
+}
+
 router.post('/send', async (req, res) => {
     if (!whatsappSendConfigured()) {
         return res.status(400).json({ error: `WhatsApp not configured. Missing: ${whatsappSendMissing().join(', ')}` });
     }
     const { to, body } = req.body || {};
     if (!to || !body) return res.status(400).json({ error: 'to and body are required' });
+    if (await freeTextWindowClosed(to)) return res.status(409).json({ error: WINDOW_CLOSED_ERROR, windowClosed: true });
 
     const result = await sendWhatsAppText({ to, body });
 
@@ -1142,11 +1203,22 @@ router.post('/send-template', async (req, res) => {
         // Checked here rather than left to Meta: "(#132000) number of
         // parameters does not match" tells a rep nothing about which box they
         // left empty.
-        const known = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
-        const meta = (known.templates || []).find((t) => t.name === name);
+        // Asked fresh on every send, not read from the ten-minute cache: a
+        // template deleted or paused in Meta since then must not go out. A rep
+        // sends one at a time, so this is one extra call per send. If Meta
+        // cannot be reached, the cached list is the best answer there is.
+        const findIn = (list) => (list?.templates || []).find((t) => t.name === name);
+        const fresh = await listWhatsAppTemplates({ force: true }).catch(() => null);
+        let meta;
+        if (fresh?.configured && !fresh.error) {
+            meta = findIn(fresh);
+            if (!meta) return res.status(410).json({ error: `"${name}" no longer exists in Meta — it may have been deleted. Pick another template.`, templateGone: true });
+        } else {
+            meta = findIn(await listWhatsAppTemplates().catch(() => null));
+        }
         if (meta) {
             if (String(meta.status).toUpperCase() !== 'APPROVED') {
-                return res.status(400).json({ error: `"${name}" is ${String(meta.status).toLowerCase()}, not approved — Meta will not deliver it yet.` });
+                return res.status(400).json({ error: `"${name}" is ${String(meta.status).toLowerCase()}, not approved — Meta will not deliver it.`, templateGone: true });
             }
             if (variables.length !== meta.variableCount) {
                 return res.status(400).json({ error: `"${name}" needs ${meta.variableCount} value(s); ${variables.length} given.` });
@@ -1239,6 +1311,7 @@ router.post('/send-hosted-video', async (req, res) => {
         const thumbnailUrl = String(req.body?.thumbnailUrl || '').trim();
         if (!to) return res.status(400).json({ error: 'to is required' });
         if (!videoUrl || !thumbnailUrl) return res.status(400).json({ error: 'The video has not finished uploading yet' });
+        if (await freeTextWindowClosed(to)) return res.status(409).json({ error: WINDOW_CLOSED_ERROR, windowClosed: true });
 
         const phoneNormalized = String(to).replace(/\D/g, '');
         const caption = String(req.body?.caption || '').trim();
@@ -1259,6 +1332,8 @@ router.post('/send-quick-reply', async (req, res) => {
         }
         const to = String(req.body?.to || '').trim();
         if (!to) return res.status(400).json({ error: 'to is required' });
+
+        if (await freeTextWindowClosed(to)) return res.status(409).json({ error: WINDOW_CLOSED_ERROR, windowClosed: true });
 
         const template = await MessageTemplate.findById(req.body?.templateId).lean();
         if (!template) return res.status(404).json({ error: 'Quick reply not found' });
@@ -1421,6 +1496,7 @@ router.post('/send-media', uploadOne, async (req, res) => {
         const to = String(req.body?.to || '').trim();
         if (!to) return res.status(400).json({ error: 'to is required' });
         if (!req.file) return res.status(400).json({ error: 'A file is required' });
+        if (await freeTextWindowClosed(to)) return res.status(409).json({ error: WINDOW_CLOSED_ERROR, windowClosed: true });
 
         const caption = String(req.body?.caption || '').trim();
         const kind = whatsappMediaKind(req.file.mimetype);

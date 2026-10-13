@@ -267,7 +267,7 @@ export const BLOCKS = {
             // drop every enquiry that has not been placed yet.
             const f = parseDate(from, new Date(2000, 0, 1));
             const t = parseDate(to, new Date());
-            const match = { createdAt: { $gte: f, $lte: t } };
+            const match = { deletedAt: null, createdAt: { $gte: f, $lte: t } };
             const [byStatus, bySource] = await Promise.all([
                 Lead.aggregate([{ $match: match }, { $group: { _id: '$status', n: { $sum: 1 } } }, { $sort: { n: -1 } }]),
                 Lead.aggregate([{ $match: match }, { $group: { _id: '$source', n: { $sum: 1 } } }, { $sort: { n: -1 } }]),
@@ -334,10 +334,7 @@ export const BLOCKS = {
             const [users, rows] = await Promise.all([
                 User.find({}).select('name email').lean(),
                 Contract.aggregate([
-                    /* Credited by `salesRep` and bucketed on `createdAt`, deliberately
-                       matching routes/salesTeam.js, which is the only other place that
-                       puts money against a person. Two pages disagreeing about a rep's
-                       number is worse than either definition being imperfect.
+                    /* Credited by `salesRep` and bucketed on `createdAt`.
 
                        `totalQuotation` is the deal value; `rate` is only the periodic
                        charge, so summing rate would understate a long contract and

@@ -22,6 +22,11 @@ type AuditRow = {
   ipAddress: string
   detail: string
   createdAt: string
+  userRole?: string
+  userAgent?: string
+  reason?: string
+  changes?: string
+  before?: string
 }
 
 type Paged = {
@@ -189,9 +194,25 @@ export default function AuditLogReport() {
                   </div>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1" style={{ fontSize: 12, color: MUTED }}>
                     <span>{r.userName || 'Public'}</span>
+                    {r.userRole && (
+                      <span className="rounded-full px-2 py-0.5" style={{ background: '#EDE5FF', color: '#4A1FA0', fontSize: 10.5, fontWeight: 700 }}>{r.userRole}</span>
+                    )}
                     {r.ipAddress && <span>from {r.ipAddress}</span>}
                     <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{r.method} {r.path}</span>
                   </div>
+                  {r.reason && (
+                    <div className="mt-1" style={{ fontSize: 12.5, color: INK }}>
+                      <b>Why:</b> {r.reason}
+                    </div>
+                  )}
+                  {(r.before || r.changes || r.userAgent) && (
+                    <details className="mt-1" style={{ fontSize: 12, color: MUTED }}>
+                      <summary className="cursor-pointer">Details</summary>
+                      {r.userAgent && <p className="mt-1"><b>Browser:</b> {r.userAgent}</p>}
+                      {r.before && <p className="mt-1"><b>Before:</b> <span style={{ fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>{r.before}</span></p>}
+                      {r.changes && <p className="mt-1"><b>Sent:</b> <span style={{ fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>{r.changes}</span></p>}
+                    </details>
+                  )}
                 </div>
               )
             })}

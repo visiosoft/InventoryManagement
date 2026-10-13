@@ -5,13 +5,14 @@ import { driveConfigured } from '../services/drive.js';
 import { gmailConfigured } from '../services/gmail.js';
 import { mailConfigured, mailFromAddress } from '../services/mail.js';
 import { zohoConfigured } from '../services/zoho.js';
-import { zohoBooksConfigured, listAllZohoContacts } from '../services/zohoBooks.js';
-import { Customer, Contract, WhatsAppWebhookHit } from '../models/index.js';
+import { zohoBooksConfigured } from '../services/zohoBooks.js';
+import { WhatsAppWebhookHit } from '../models/index.js';
 import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature, verifyWhatsAppCredentials, inspectWhatsAppToken, forgetWabaId } from '../services/whatsapp.js';
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey, stripePublishableKey, stripeEmbeddedConfigured } from '../services/stripe.js';
 import { updateEnvFile } from '../utils/env.js';
 import { openaiConfigured, openaiModel, openaiKeyHint, verifyOpenAIKey, parseAvailabilityQuery } from '../services/openai.js';
+import { analyticsConfigured, analyticsMissing } from '../services/googleAnalytics.js';
 
 const router = Router();
 
@@ -26,6 +27,12 @@ router.get('/status', async (_req, res) => {
                 : '',
         },
         gmail: { configured: gmailConfigured() },
+        analytics: {
+            configured: analyticsConfigured(),
+            propertyId: process.env.GA4_PROPERTY_ID || '',
+            missing: analyticsMissing(),
+            method: analyticsConfigured() ? (process.env.GOOGLE_ANALYTICS_SERVICE_ACCOUNT_FILE ? 'service_account' : 'oauth') : '',
+        },
         // The key itself is never sent to the client — only a masked hint.
         openai: { configured: openaiConfigured(), model: openaiModel(), keyHint: openaiKeyHint() },
         // Deep link into Zoho Books' own invoice composer, so staff who raise
@@ -349,7 +356,10 @@ router.get('/gmail/connect', (_req, res) => {
     const url = gmailOAuthClient().generateAuthUrl({
         access_type: 'offline',
         prompt: 'consent',
-        scope: ['https://www.googleapis.com/auth/gmail.send'],
+        // Send, and read the inbox — the executive assistant agent sorts
+        // it each morning. An older connection granted send only; the
+        // read helpers say so plainly and point here.
+        scope: ['https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/gmail.readonly'],
     });
     res.json({ url });
 });
@@ -371,6 +381,60 @@ router.get('/gmail/callback', async (req, res) => {
     } catch (err) {
         const msg = err?.message || 'Unknown error';
         res.redirect(`${clientOrigin}/settings?gmailError=${encodeURIComponent(msg)}`);
+    }
+});
+
+// ── Google Analytics (GA4 Data API) OAuth ───────────────────────────────────
+//
+// Reuses the same OAuth client Drive/Contacts already use — Google doesn't
+// scope-lock a client, so this just asks for one more permission under it.
+// The Google account the person signs in with here still needs Viewer
+// access added directly on the GA4 property (Admin > Property Access
+// Management) — being able to log in as that account and being allowed to
+// read that specific property are two separate grants; this flow only
+// covers the first.
+
+function analyticsOAuthClient() {
+    const clientId = process.env.GOOGLE_ANALYTICS_CLIENT_ID || process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_ANALYTICS_CLIENT_SECRET || process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
+    const callbackUrl = `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5010}`}/api/integrations/analytics/callback`;
+    return new google.auth.OAuth2(clientId, clientSecret, callbackUrl);
+}
+
+router.get('/analytics/connect', (_req, res) => {
+    const clientId = process.env.GOOGLE_ANALYTICS_CLIENT_ID || process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_ANALYTICS_CLIENT_SECRET || process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+        return res.status(400).json({ error: 'Google OAuth credentials not configured. Connect Google Drive first, or set GOOGLE_ANALYTICS_CLIENT_ID/SECRET.' });
+    }
+    if (!process.env.GA4_PROPERTY_ID) {
+        return res.status(400).json({ error: 'Set GA4_PROPERTY_ID in .env first — the GA4 property to read, from Analytics Admin > Property details.' });
+    }
+    const url = analyticsOAuthClient().generateAuthUrl({
+        access_type: 'offline',
+        prompt: 'consent',
+        scope: ['https://www.googleapis.com/auth/analytics.readonly'],
+    });
+    res.json({ url });
+});
+
+router.get('/analytics/callback', async (req, res) => {
+    const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+    if (req.query.error) {
+        return res.redirect(`${clientOrigin}/settings?analyticsError=${encodeURIComponent(req.query.error)}`);
+    }
+    try {
+        const oauth2 = analyticsOAuthClient();
+        const { tokens } = await oauth2.getToken(String(req.query.code || ''));
+        if (!tokens.refresh_token) {
+            return res.redirect(`${clientOrigin}/settings?analyticsError=${encodeURIComponent('No refresh token returned. Revoke access at myaccount.google.com and try again.')}`);
+        }
+        updateEnvFile({ GOOGLE_ANALYTICS_REFRESH_TOKEN: tokens.refresh_token });
+        process.env.GOOGLE_ANALYTICS_REFRESH_TOKEN = tokens.refresh_token;
+        res.redirect(`${clientOrigin}/settings?analyticsConnected=1`);
+    } catch (err) {
+        const msg = err?.message || 'Unknown error';
+        res.redirect(`${clientOrigin}/settings?analyticsError=${encodeURIComponent(msg)}`);
     }
 });
 
@@ -423,78 +487,5 @@ router.get('/whatsapp/webhook-hits', requireAdmin, async (_req, res) => {
     res.json({ hits });
 });
 
-
-
-
-// ── Zoho Books ↔ ERP customer comparison ─────────────────────────────────────
-// Matches on normalised name OR phone digits (either matching counts).
-const zcDigits = (v) => String(v || '').replace(/\D/g, '').replace(/^00971/, '').replace(/^971/, '').replace(/^0/, '');
-const zcName = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
-
-router.get('/zoho-books/customer-comparison', async (req, res) => {
-    try {
-        if (!zohoBooksConfigured()) return res.status(501).json({ error: 'Zoho Books is not configured' });
-        const [{ contacts }, customers, contractAgg] = await Promise.all([
-            listAllZohoContacts({ force: req.query.refresh === 'true' }),
-            Customer.find({}).select('fullName company email phone phones clientId').lean(),
-            Contract.aggregate([{ $group: { _id: '$customer', n: { $sum: 1 } } }]),
-        ]);
-        const contractCount = new Map(contractAgg.map((a) => [String(a._id), a.n]));
-
-        // Index ERP customers by every name and phone key they have
-        const byKey = new Map();
-        const addKey = (k, c) => { if (!k) return; if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(c); };
-        for (const c of customers) {
-            addKey(`n:${zcName(c.fullName)}`, c);
-            if (c.company) addKey(`n:${zcName(c.company)}`, c);
-            const phones = [...(c.phones || []), c.phone].filter(Boolean);
-            for (const ph of phones) { const d = zcDigits(ph); if (d.length >= 7) addKey(`p:${d}`, c); }
-        }
-
-        const matchedErpIds = new Set();
-        const matched = [];
-        const zohoOnly = [];
-        for (const z of contacts) {
-            const keys = [];
-            if (z.name) keys.push({ k: `n:${zcName(z.name)}`, by: 'name' });
-            if (z.company && z.company !== z.name) keys.push({ k: `n:${zcName(z.company)}`, by: 'name' });
-            for (const ph of [z.phone, z.mobile]) { const d = zcDigits(ph); if (d.length >= 7) keys.push({ k: `p:${d}`, by: 'phone' }); }
-            let hit = null;
-            for (const { k, by } of keys) {
-                const found = byKey.get(k);
-                if (found?.length) { hit = { erp: found[0], by }; break; }
-            }
-            if (hit) {
-                matchedErpIds.add(String(hit.erp._id));
-                matched.push({
-                    zoho: z,
-                    erp: {
-                        _id: hit.erp._id, fullName: hit.erp.fullName, email: hit.erp.email,
-                        phone: (hit.erp.phones && hit.erp.phones[0]) || hit.erp.phone || '',
-                        contracts: contractCount.get(String(hit.erp._id)) || 0,
-                    },
-                    matchedBy: hit.by,
-                });
-            } else {
-                zohoOnly.push(z);
-            }
-        }
-        const erpOnly = customers
-            .filter((c) => !matchedErpIds.has(String(c._id)))
-            .map((c) => ({
-                _id: c._id, fullName: c.fullName, email: c.email,
-                phone: (c.phones && c.phones[0]) || c.phone || '',
-                contracts: contractCount.get(String(c._id)) || 0,
-            }));
-
-        res.json({
-            zohoTotal: contacts.length,
-            erpTotal: customers.length,
-            matched, zohoOnly, erpOnly,
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
 
 export default router;

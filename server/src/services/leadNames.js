@@ -1,4 +1,4 @@
-import { Customer } from '../models/index.js';
+import { Customer, Lead } from '../models/index.js';
 
 /**
  * A lead auto-created from an inbound WhatsApp message is named
@@ -43,6 +43,20 @@ export function displayNameFor(lead = {}, customerName = '') {
     return real || String(lead.fullName || '').trim() || 'Unknown';
 }
 
+/**
+ * When a lead stops being bookkeeping and becomes somebody's lead (assigned),
+ * give it the name the sender set on WhatsApp instead of "WhatsApp Contact
+ * 5892". Mutates and returns true only if it changed the name; a name a rep
+ * typed in is never touched.
+ */
+export function promotePlaceholderName(lead) {
+    if (!lead || !PLACEHOLDER_NAME.test(String(lead.fullName || '').trim())) return false;
+    const profile = String(lead.whatsappProfileName || '').trim();
+    if (!profile || PLACEHOLDER_NAME.test(profile)) return false;
+    lead.fullName = profile;
+    return true;
+}
+
 export async function resolvePlaceholderNames(items, nameKey = 'fullName') {
     const placeholders = items.filter((l) => PLACEHOLDER_NAME.test(l[nameKey] || ''));
     if (!placeholders.length) return items;
@@ -64,4 +78,21 @@ export async function resolvePlaceholderNames(items, nameKey = 'fullName') {
         if (name) l[nameKey] = name;
     }
     return items;
+}
+
+/**
+ * One-time (and harmless to repeat) catch-up: leads that were assigned while
+ * still named "WhatsApp Contact 1234" take the WhatsApp profile name already
+ * stored on them. Unassigned bookkeeping contacts and typed names are skipped.
+ */
+export async function backfillPlaceholderNames() {
+    const res = await Lead.updateMany(
+        {
+            assignedAt: { $ne: null },
+            fullName: { $regex: PLACEHOLDER_NAME.source, $options: 'i' },
+            whatsappProfileName: { $exists: true, $nin: ['', null], $not: { $regex: PLACEHOLDER_NAME.source, $options: 'i' } },
+        },
+        [{ $set: { fullName: { $trim: { input: '$whatsappProfileName' } } } }],
+    );
+    return res.modifiedCount ?? 0;
 }

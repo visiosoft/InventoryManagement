@@ -1,5 +1,6 @@
 import { Customer, Contract, Lead, WhatsAppChatLabel, CampaignRecipient } from '../models/index.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from './zohoBooks.js';
+import { customerContactKeys } from './customerLeads.js';
 
 /**
  * Who a campaign goes to.
@@ -44,6 +45,10 @@ export async function buildAudience(audience = {}) {
         renewalIntent = '',
         owingOnly = false,
         labels = [],
+        leadFrom = '',
+        leadTo = '',
+        excludeCustomers = true,
+        leadIds = [],
     } = audience;
 
     const people = [];
@@ -112,6 +117,9 @@ export async function buildAudience(audience = {}) {
     if (leads) {
         const filter = { unsubscribed: { $ne: true } };
         if (leadStatuses.length) filter.status = { $in: leadStatuses };
+        // Picked by hand: exactly these people, whatever the other filters say.
+        const picked = Array.isArray(leadIds) && leadIds.length > 0;
+        if (picked) { delete filter.status; filter._id = { $in: leadIds }; }
 
         // A label narrows to the chats carrying it — the labels applied in the
         // WhatsApp console, so a segment built there can be mailed here.
@@ -123,12 +131,30 @@ export async function buildAudience(audience = {}) {
             filter.phoneNormalized = { $in: numbers };
         }
 
-        const rows = await Lead.find(filter).select('fullName email phone whatsappNo phoneNormalized whatsappOptIn').lean();
+        // Whole Dubai days, as in the Leads page.
+        const day = (v, end) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? new Date(`${v}T${end ? '23:59:59.999' : '00:00:00.000'}+04:00`) : null);
+        const from = day(leadFrom, false);
+        const to = day(leadTo, true);
+        if ((from || to) && !picked) {
+            filter.leadDateTime = {};
+            if (from) filter.leadDateTime.$gte = from;
+            if (to) filter.leadDateTime.$lte = to;
+        }
+
+        const rows = await Lead.find(filter).select('fullName whatsappProfileName email phone whatsappNo phoneNormalized whatsappOptIn').lean();
+        // Somebody who already signed is a customer, not a lead to win back —
+        // unless the campaign is explicitly for tenants too.
+        const keys = excludeCustomers && !picked && !tenants && !pastTenants ? await customerContactKeys() : null;
         for (const l of rows) {
+            if (keys) {
+                const t = phoneKey(l.phoneNormalized) || firstPhone(l);
+                if ((t && keys.tails.has(t)) || (normEmail(l.email) && keys.emails.has(normEmail(l.email)))) continue;
+            }
             add({
                 kind: 'lead',
                 refId: l._id,
-                name: l.fullName || '',
+                // A lead still called "WhatsApp Contact 1234" is greeted by the name on their WhatsApp.
+                name: (/^whatsapp\s*contact/i.test(l.fullName || '') ? (l.whatsappProfileName || '') : (l.fullName || '')),
                 email: normEmail(l.email),
                 phoneNormalized: phoneKey(l.phoneNormalized) || firstPhone(l),
                 whatsappOptIn: Boolean(l.whatsappOptIn?.at),

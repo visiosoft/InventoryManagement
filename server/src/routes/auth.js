@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { User } from '../models/index.js';
-import { signToken, requireAuth } from '../middleware/auth.js';
+import { signToken, requireAuth, effectiveRole } from '../middleware/auth.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
 
 const router = Router();
@@ -16,7 +16,7 @@ router.post('/login', async (req, res) => {
   }
   res.json({
     token: signToken(user),
-    user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions ?? [], isActive: user.isActive ?? true },
+    user: { id: user._id, name: user.name, email: user.email, role: effectiveRole(user.role), accountsAdmin: user.role === 'accounts_admin', permissions: user.role === 'accounts_admin' ? [] : (user.permissions ?? []), isActive: user.isActive ?? true },
   });
 });
 
@@ -78,8 +78,24 @@ router.post('/reset-password', async (req, res) => {
   res.json({ ok: true });
 });
 
-router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: req.user });
+// Fresh from the database, not the token: permissions are baked into the token
+// at login, so a grant made in Settings → Users would otherwise not show until
+// the person logged out and back in.
+router.get('/me', requireAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-passwordHash').lean();
+    if (!user) return res.json({ user: req.user });
+    res.json({
+      user: {
+        id: user._id, name: user.name, email: user.email, role: effectiveRole(user.role),
+        accountsAdmin: user.role === 'accounts_admin',
+        permissions: user.role === 'accounts_admin' ? [] : (user.permissions ?? []),
+        isActive: user.isActive ?? true,
+      },
+    });
+  } catch {
+    res.json({ user: req.user });
+  }
 });
 
 export default router;

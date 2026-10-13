@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
+import { ArrowRightLeft, CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { fromDubaiDatetimeLocal, toDubaiDatetimeLocal } from '../lib/timezone'
 import WaitingStrip from '../components/WaitingStrip'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
+import { ExportButtons } from '../components/ExportButtons'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
+import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -29,6 +31,7 @@ const PURPLE = '#5B2BC9'
  * a lone number has nothing to say what it is.
  */
 const LEADS_CSS = `
+.lead-sort-mobile { display: none; }
 @media (max-width: 1024px) {
   .lead-shell { flex-direction: column !important; }
   .lead-rail {
@@ -40,6 +43,12 @@ const LEADS_CSS = `
 }
 
 @media (max-width: 760px) {
+  .lead-sort-mobile {
+    display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; margin-bottom: 10px; max-width: 100%;
+    border-radius: 999px; border: 1px solid rgba(20,8,31,.12); background: #fff; color: #4A4357;
+    font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+  }
+  .lead-sort-mobile[data-on="true"] { border-color: #5B2BC9; color: #5B2BC9; background: #F7F3FF; }
   /* The horizontal scroll and the width floor under it both go, or the card
      layout would still be sitting on a 980px canvas. */
   .lead-table { overflow: visible !important; }
@@ -57,24 +66,30 @@ const LEADS_CSS = `
      a card the name and its actions belong together at the top. */
   .lead-row > *:nth-child(1) { order: 1; flex: 0 0 auto; }   /* select      */
   .lead-row > *:nth-child(2) { order: 2; flex: 1 1 auto; min-width: 0; }  /* name */
-  .lead-row > *:nth-child(9) { order: 3; flex: 0 0 auto; }   /* view/book/delete */
+  .lead-row > *:nth-child(11) { order: 3; flex: 0 0 auto; }  /* view/book/delete */
   .lead-row > *:nth-child(3) { order: 4; flex: 1 0 100%; }   /* phone       */
   .lead-row > *:nth-child(4) { order: 5; flex: 0 0 auto; }   /* source      */
   .lead-row > *:nth-child(6) { order: 6; flex: 0 0 auto; }   /* status      */
-  .lead-row > *:nth-child(5) { order: 7; flex: 0 0 auto; }   /* assigned to */
-  .lead-row > *:nth-child(7) { order: 8; flex: 1 1 44%; }    /* chase       */
-  .lead-row > *:nth-child(8) { order: 9; flex: 1 1 44%; }    /* added       */
+  .lead-row > *:nth-child(7) { order: 7; flex: 1 1 44%; }    /* needs from  */
+  .lead-row > *:nth-child(8) { order: 8; flex: 1 1 44%; }    /* follow-up   */
+  .lead-row > *:nth-child(5) { order: 9; flex: 0 0 auto; }   /* assigned to */
+  .lead-row > *:nth-child(9) { order: 10; flex: 1 1 44%; }   /* chase       */
+  .lead-row > *:nth-child(10) { order: 11; flex: 1 1 44%; }  /* added       */
 
-  /* Without the header row these two are just numbers on a card. The select
-     and the pills say what they are already, so only these need telling. */
+  /* Without the header row these are just values on a card. The select and the
+     pills say what they are already, so only these need telling. */
   .lead-row > *:nth-child(7)::before,
-  .lead-row > *:nth-child(8)::before {
+  .lead-row > *:nth-child(8)::before,
+  .lead-row > *:nth-child(9)::before,
+  .lead-row > *:nth-child(10)::before {
     display: block;
     font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
     text-transform: uppercase; color: #756E80; margin-bottom: 2px;
   }
-  .lead-row > *:nth-child(7)::before { content: 'Chase'; }
-  .lead-row > *:nth-child(8)::before { content: 'Added'; }
+  .lead-row > *:nth-child(7)::before { content: 'Needs from'; }
+  .lead-row > *:nth-child(8)::before { content: 'Follow-up'; }
+  .lead-row > *:nth-child(9)::before { content: 'Chase'; }
+  .lead-row > *:nth-child(10)::before { content: 'Added'; }
 
   .lead-row > *:nth-child(3) { font-size: 14px !important; }
   /* A full-width select is easier to hit than one sized to a table column. */
@@ -83,7 +98,7 @@ const LEADS_CSS = `
 `
 
 const LEAD_STATUSES: LeadStatus[] = ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']
-const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
+const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']
 
 type WorkloadRow = { _id: string; name: string; count: number }
 type LeadStats = {
@@ -141,6 +156,8 @@ function LeadForm({
             storageSizeUnit: 'sqft',
             durationValue: Number(f.get('durationValue') || 1),
             durationUnit: String(f.get('durationUnit') || 'month'),
+            // A day. Empty clears it, which is what emptying the box means.
+            storageStartAt: f.get('storageStartAt') ? `${String(f.get('storageStartAt'))}T00:00:00.000Z` : null,
             owner: String(f.get('owner') || ''),
             unitsNeeded: Number(f.get('unitsNeeded') || 1),
             notes: String(f.get('notes') || ''),
@@ -242,6 +259,10 @@ function LeadForm({
                 </Field>
             </div>
 
+            <Field label="Needs storage from">
+                <Input name="storageStartAt" type="date" defaultValue={initial?.storageStartAt ? String(initial.storageStartAt).slice(0, 10) : ''} />
+            </Field>
+
             <Field label="Notes">
                 <Textarea name="notes" defaultValue={initial?.notes} />
             </Field>
@@ -249,6 +270,74 @@ function LeadForm({
             {error && <p className="text-xs text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={busy}>
                 {busy ? 'Saving…' : 'Save lead'}
+            </Button>
+        </form>
+    )
+}
+
+/** Move one rep's whole book to another — a terminated/removed rep, or just
+ *  a rebalance. `fromOptions` is every user (active or not: a terminated rep
+ *  still needs to show up here so their leads can be found), `toOptions` is
+ *  only who a lead can actually be handed to (active, assignable). */
+function ReassignLeadsForm({
+    fromOptions,
+    toOptions,
+    busy,
+    error,
+    onSubmit,
+}: {
+    fromOptions: { _id: string; name: string; email: string; isActive?: boolean }[]
+    toOptions: { _id: string; name: string; email: string }[]
+    busy: boolean
+    error: string
+    onSubmit: (body: { fromOwner: string; toOwner?: string; status?: string }) => void
+}) {
+    const [fromOwner, setFromOwner] = useState('')
+    const [toOwner, setToOwner] = useState('')
+    const [status, setStatus] = useState('')
+
+    function submit(e: FormEvent<HTMLFormElement>) {
+        e.preventDefault()
+        if (!fromOwner) return
+        onSubmit({ fromOwner, toOwner: toOwner || undefined, status: status || undefined })
+    }
+
+    return (
+        <form onSubmit={submit} className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+                Moves every lead currently owned by the first rep to the second — in one action, whatever the reason (terminated, removed, or just rebalancing).
+            </p>
+            <Field label="Move leads away from">
+                <Select value={fromOwner} onChange={(e) => setFromOwner(e.target.value)} required>
+                    <option value="">Select rep</option>
+                    {fromOptions.map((u) => (
+                        <option key={u._id} value={u._id}>
+                            {u.name} ({u.email}){u.isActive === false ? ' — inactive' : ''}
+                        </option>
+                    ))}
+                </Select>
+            </Field>
+            <Field label="Give them to (leave blank to unassign instead)">
+                <Select value={toOwner} onChange={(e) => setToOwner(e.target.value)}>
+                    <option value="">Leave unassigned</option>
+                    {toOptions.filter((u) => u._id !== fromOwner).map((u) => (
+                        <option key={u._id} value={u._id}>
+                            {u.name} ({u.email})
+                        </option>
+                    ))}
+                </Select>
+            </Field>
+            <Field label="Only this status (optional)">
+                <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                    <option value="">Every status — their whole book</option>
+                    {LEAD_STATUSES.map((s) => (
+                        <option key={s} value={s}>{statusLabel(s)}</option>
+                    ))}
+                </Select>
+            </Field>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <Button type="submit" className="w-full" disabled={busy || !fromOwner}>
+                {busy ? 'Reassigning…' : 'Reassign leads'}
             </Button>
         </form>
     )
@@ -590,24 +679,101 @@ function ContactDetailPanel({ row, onUpdateLead }: { row: WhatsAppLeadRow; onUpd
     )
 }
 
+
+type CampaignRow = { name: string; phone: string; email: string; stage: string; source: string; leadDate: string; owner: string }
+
+/** A contact list for a campaign: one stage, from a date, leaving out customers. */
+function CampaignExport({ onClose }: { onClose: () => void }) {
+    const [from, setFrom] = useState('2026-08-15')
+    const [to, setTo] = useState('')
+    const [stage, setStage] = useState('lost')
+    const [onlyEmail, setOnlyEmail] = useState(false)
+    const [namedOnly, setNamedOnly] = useState(false)
+
+    const params = { from: from || undefined, to: to || undefined, stage, onlyEmail: onlyEmail ? '1' : '0', unnamed: namedOnly ? '0' : '1' }
+    const { data, isFetching, error } = useQuery<{ rows: CampaignRow[]; total: number; skippedCustomers: number }>({
+        queryKey: ['campaign-list', from, to, stage, onlyEmail, namedOnly],
+        queryFn: () => api.get('/leads/campaign-list', { params }).then((r) => r.data),
+    })
+
+    const fmt = (iso: string) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Dubai' }) : '')
+    return (
+        <Modal open onClose={onClose} title="Campaign list">
+            <div className="space-y-3 text-sm">
+                <p style={{ color: MUTED_COLOR }}>
+                    Leads who came in on or after the date, excluding anybody who is already a customer (matched by phone or email) and anybody listed twice.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                    <Field label="Came in from"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+                    <Field label="Up to (optional)"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+                </div>
+                <Field label="Stage">
+                    <Select value={stage} onChange={(e) => setStage(e.target.value)}>
+                        <option value="lost">Dead Lead / Lost</option>
+                        <option value="any">Every stage except Won and Customer</option>
+                    </Select>
+                </Field>
+                <label className="flex items-center gap-2"><input type="checkbox" checked={onlyEmail} onChange={(e) => setOnlyEmail(e.target.checked)} /> Only people with an email address</label>
+                <label className="flex items-center gap-2"><input type="checkbox" checked={namedOnly} onChange={(e) => setNamedOnly(e.target.checked)} /> Skip contacts with no name</label>
+                <div className="rounded-lg p-3" style={{ background: '#FBF8F3', border: '1px solid rgba(20,8,31,.10)' }}>
+                    {isFetching ? 'Counting…' : error ? <span style={{ color: '#B91C1C' }}>{apiError(error)}</span> : (
+                        <>
+                            <strong>{data?.total ?? 0}</strong> people in the list
+                            {data ? <span style={{ color: MUTED_COLOR }}> · {data.skippedCustomers} left out because they are customers</span> : null}
+                            {data && data.rows.length > 0 && (
+                                <div className="mt-2" style={{ fontSize: 12, color: MUTED_COLOR }}>
+                                    {data.rows.slice(0, 3).map((r, i) => <div key={i}>{r.name || '(no name)'} · {r.phone}{r.email ? ` · ${r.email}` : ''}</div>)}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+                <div className="flex justify-end">
+                    <ExportButtons
+                        title={`Campaign list${from ? ` from ${fmt(from)}` : ''}`}
+                        columns={[{ label: 'Name' }, { label: 'Phone' }, { label: 'Email' }, { label: 'Stage' }, { label: 'Source' }, { label: 'Came in' }, { label: 'Last owner' }]}
+                        rows={(data?.rows ?? []).map((r) => [r.name, r.phone, r.email, statusLabel(r.stage), statusLabel(r.source), fmt(r.leadDate), r.owner])}
+                        total={data?.total}
+                    />
+                </div>
+            </div>
+        </Modal>
+    )
+}
+
+/* The list's filters, page and sort are kept for the browser session, so
+   opening a lead and coming back lands on the same filtered list. A fresh tab
+   or a new login starts clean. */
+const LEADS_VIEW_KEY = 'pb_leads_view'
+type SavedView = { search?: string; status?: string; source?: string; owner?: string; chase?: string; attemptBy?: string; from?: string; to?: string; sort?: 'newest' | 'followUp' | 'needFrom'; page?: number; limit?: number; moreOpen?: boolean }
+function loadLeadsView(): SavedView {
+    try { return JSON.parse(sessionStorage.getItem(LEADS_VIEW_KEY) || '{}') as SavedView } catch { return {} }
+}
+
 export default function Leads() {
     const qc = useQueryClient()
     const navigate = useNavigate()
+    const saved = useRef<SavedView>(loadLeadsView()).current
 
-    const [search, setSearch] = useState('')
-    const [status, setStatus] = useState('')
-    const [source, setSource] = useState('')
-    const [owner, setOwner] = useState('')
+    const [search, setSearch] = useState(saved.search ?? '')
+    const [status, setStatus] = useState(saved.status ?? '')
+    const [moreOpen, setMoreOpen] = useState(saved.moreOpen ?? false)
+    const [campaignOpen, setCampaignOpen] = useState(false)
+    const [source, setSource] = useState(saved.source ?? '')
+    const [owner, setOwner] = useState(saved.owner ?? '')
     // Where the chase has got to, and who did it.
-    const [chase, setChase] = useState('')
-    const [attemptBy, setAttemptBy] = useState('')
-    const [from, setFrom] = useState('')
-    const [to, setTo] = useState('')
+    const [chase, setChase] = useState(saved.chase ?? '')
+    const [attemptBy, setAttemptBy] = useState(saved.attemptBy ?? '')
+    const [from, setFrom] = useState(saved.from ?? '')
+    const [to, setTo] = useState(saved.to ?? '')
 
     const [selected, setSelected] = useState<string[]>([])
     const [drawerId, setDrawerId] = useState<string | null>(null)
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<Lead | null>(null)
+    const [reassigning, setReassigning] = useState(false)
+    const [reassignError, setReassignError] = useState('')
+    const [reassignResult, setReassignResult] = useState('')
     const [error, setError] = useState('')
     const [importResult, setImportResult] = useState<ImportResult | null>(null)
     const [pendingChange, setPendingChange] = useState<{ lead: Lead; newStatus: LeadStatus } | null>(null)
@@ -705,8 +871,35 @@ export default function Leads() {
     })
     const users = isAdmin ? assignableUsers : me_
 
-    const [page, setPage] = useState(1)
-    const [limit, setLimit] = useState(25)
+    /* Every user, active or not — for the "move leads away from" side of
+     * bulk reassignment. A terminated/removed rep is exactly who this tool
+     * exists for, so it can't reuse assignableUsers above, which is built to
+     * exclude someone a lead should never be newly handed to. Only fetched
+     * for an admin, and only once the tool is actually open. */
+    const { data: allUsers } = useQuery<{ _id: string; name: string; email: string; isActive?: boolean }[]>({
+        queryKey: ['all-users-for-reassign'],
+        queryFn: () => api.get('/users').then((r) => r.data ?? []),
+        enabled: isAdmin && reassigning,
+        staleTime: 5 * 60_000,
+    })
+
+    const reassignLeads = useMutation({
+        mutationFn: (body: { fromOwner: string; toOwner?: string; status?: string }) => leadApi.reassign(body),
+        onSuccess: (data) => {
+            qc.invalidateQueries({ queryKey: ['leads'] })
+            qc.invalidateQueries({ queryKey: ['lead-stats'] })
+            setReassignError('')
+            setReassignResult(data.reassigned === 0 ? 'That rep has no matching leads.' : `${data.reassigned} lead${data.reassigned === 1 ? '' : 's'} reassigned.`)
+        },
+        onError: (e) => { setReassignError(apiError(e)); setReassignResult('') },
+    })
+
+    const [page, setPage] = useState(saved.page ?? 1)
+    const [limit, setLimit] = useState(saved.limit ?? 25)
+    // 'newest' is the long-standing order. 'needFrom' puts whoever wants storage
+    // soonest at the top, 'followUp' whoever is to be chased soonest. Set from the
+    // column headers.
+    const [sort, setSort] = useState<'newest' | 'followUp' | 'needFrom'>(saved.sort ?? 'newest')
 
     const queryParams = useMemo(
         () => ({
@@ -718,14 +911,26 @@ export default function Leads() {
             attemptBy: attemptBy || undefined,
             from: from || undefined,
             to: to || undefined,
+            sort: sort === 'newest' ? undefined : sort,
             page,
             limit,
         }),
-        [search, status, source, owner, chase, attemptBy, from, to, page, limit]
+        [search, status, source, owner, chase, attemptBy, from, to, sort, page, limit]
     )
 
-    // Back to page 1 whenever a filter changes
-    useEffect(() => { setPage(1) }, [search, status, source, owner, chase, attemptBy, from, to, limit])
+    // Back to page 1 whenever a filter changes — but not when the page loads
+    // with a remembered view, which should come back on the page it was left on.
+    const firstFilterRun = useRef(true)
+    useEffect(() => {
+        if (firstFilterRun.current) { firstFilterRun.current = false; return }
+        setPage(1)
+    }, [search, status, source, owner, chase, attemptBy, from, to, sort, limit])
+
+    useEffect(() => {
+        try {
+            sessionStorage.setItem(LEADS_VIEW_KEY, JSON.stringify({ search, status, source, owner, chase, attemptBy, from, to, sort, page, limit, moreOpen }))
+        } catch { /* storage can be unavailable; the list just will not be remembered */ }
+    }, [search, status, source, owner, chase, attemptBy, from, to, sort, page, limit, moreOpen])
 
     const { data: leadsPage, isLoading } = useQuery<LeadPage>({
         queryKey: ['leads', queryParams],
@@ -746,8 +951,9 @@ export default function Leads() {
             attemptBy: attemptBy || undefined,
             from: from || undefined,
             to: to || undefined,
+            sort: sort === 'newest' ? undefined : sort,
         }),
-        [search, status, source, owner, chase, attemptBy, from, to]
+        [search, status, source, owner, chase, attemptBy, from, to, sort]
     )
     const { data: navOrderIds } = useQuery({
         queryKey: ['leads-nav-order', navFilterParams],
@@ -1006,8 +1212,8 @@ export default function Leads() {
     }
 
     const isFiltered = !!(search.trim() || status || source || owner || chase || attemptBy || from || to)
+    const advancedActive = !!(chase || attemptBy || from || to)
 
-    const totalLeads = stats?.total ?? leadsPage?.total ?? 0
     const newCount = stats?.byStatus?.new ?? 0
 
     const statusChips = LEAD_STATUSES.map(s => {
@@ -1043,11 +1249,12 @@ export default function Leads() {
         whatsapp: { bg: '#DCF3E3', fg: '#1F7A4C' },
         referral: { bg: '#EDE3CF', fg: '#4A4357' },
         walk_in: { bg: '#F6F0E4', fg: '#4A4357' },
+        website: { bg: '#DCEBF7', fg: '#1B5C8A' },
         manual: { bg: '#F7F3FF', fg: '#5B2BC9' },
         other: { bg: '#F6F0E4', fg: '#4A4357' },
     }
 
-    const GRID = '36px minmax(190px,1.3fr) 145px 112px 164px 172px 128px 104px 168px'
+    const GRID = '36px minmax(190px,1.3fr) 145px 112px 164px 150px 150px 150px 128px 104px 168px'
 
     // No outer padding or width cap here: the app layout already gutters every
     // page with p-3 sm:p-4, and 32px on top of a 1240px cap left most of a wide
@@ -1088,6 +1295,30 @@ export default function Leads() {
                             <Upload size={17} />
                             {importContacts.isPending ? 'Importing…' : 'Import CSV'}
                         </button>
+                        {isAdmin && (
+                            <button
+                                onClick={() => setCampaignOpen(true)}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 9, height: 46, padding: '0 20px',
+                                    borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', background: 'transparent',
+                                    color: INK, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                                }}
+                            >
+                                <Mail size={17} /> Campaign list
+                            </button>
+                        )}
+                        {isAdmin && (
+                            <button
+                                onClick={() => { setReassignError(''); setReassignResult(''); setReassigning(true) }}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 9, height: 46, padding: '0 20px',
+                                    borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', background: 'transparent',
+                                    color: INK, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                                }}
+                            >
+                                <ArrowRightLeft size={17} /> Reassign leads
+                            </button>
+                        )}
                         <button
                             onClick={() => setAdding(true)}
                             style={{
@@ -1101,42 +1332,9 @@ export default function Leads() {
                     </div>
                 </div>
 
-                {/* ── Status tabs ── */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
-                    <button
-                        onClick={() => setStatus('')}
-                        style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px',
-                            borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                            border: `1px solid ${!status ? '#5B2BC9' : 'rgba(20,8,31,.14)'}`,
-                            background: !status ? '#F7F3FF' : '#fff',
-                            color: !status ? '#4A1FA0' : INK,
-                        }}
-                    >
-                        All
-                        <span style={{ background: !status ? '#5B2BC9' : '#F6F0E4', color: !status ? '#fff' : '#4A4357', borderRadius: 999, padding: '1px 7px', fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>{totalLeads}</span>
-                    </button>
-                    {statusChips.map(chip => (
-                        <button
-                            key={chip.key}
-                            onClick={() => setStatus(chip.active ? '' : chip.key)}
-                            style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px',
-                                borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                                border: `1px solid ${chip.active ? '#5B2BC9' : 'rgba(20,8,31,.14)'}`,
-                                background: chip.active ? '#F7F3FF' : '#fff',
-                                color: chip.active ? '#4A1FA0' : INK,
-                            }}
-                        >
-                            {chip.label}
-                            <span style={{ background: chip.active ? '#5B2BC9' : '#F6F0E4', color: chip.active ? '#fff' : '#4A4357', borderRadius: 999, padding: '1px 7px', fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>{chip.count}</span>
-                        </button>
-                    ))}
-                </div>
-
                 {/* ── Filter bar ── */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: 12, background: '#F6F0E4', border: '1px solid rgba(20,8,31,.10)', borderRadius: 16, marginBottom: 18 }}>
-                    <div style={{ flex: '1 1 220px', minWidth: 220, display: 'flex', alignItems: 'center', gap: 10, height: 44, padding: '0 16px', background: '#fff', border: '1px solid rgba(20,8,31,.12)', borderRadius: 999 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+                    <div style={{ flex: '1 1 220px', minWidth: 220, display: 'flex', alignItems: 'center', gap: 10, height: 40, padding: '0 16px', background: '#fff', border: '1px solid rgba(20,8,31,.12)', borderRadius: 999 }}>
                         <Search size={16} style={{ color: MUTED_COLOR, flexShrink: 0 }} />
                         <input
                             value={search}
@@ -1146,20 +1344,46 @@ export default function Leads() {
                         />
                     </div>
                     <select
+                        value={status}
+                        onChange={(e) => setStatus(e.target.value)}
+                        style={{ height: 40, minWidth: 170, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                    >
+                        <option value="">All stages</option>
+                        {statusChips.map((c) => <option key={c.key} value={c.key}>{c.label} ({c.count})</option>)}
+                    </select>
+                    <select
                         value={source}
                         onChange={(e) => setSource(e.target.value)}
-                        style={{ height: 44, minWidth: 150, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                        style={{ height: 40, minWidth: 150, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
                     >
                         <option value="">All sources</option>
                         {LEAD_SOURCES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                     </select>
+                    {/* Who currently owns the lead — separate from who has
+                        chased it below. Reassigning a lead moves this
+                        instantly; it only catches up in "Contacted by" once
+                        the new owner logs an attempt on it. */}
+                    {(stats?.byOwner?.length ?? 0) > 0 && (
+                        <select
+                            value={owner && owner !== 'unassigned' ? owner : ''}
+                            onChange={(e) => setOwner(e.target.value)}
+                            style={{ height: 40, minWidth: 160, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                        >
+                            <option value="">Assigned to anyone</option>
+                            {(stats?.byOwner ?? []).map((o) => (
+                                <option key={o._id} value={o._id}>{o.name} ({o.count})</option>
+                            ))}
+                        </select>
+                    )}
+
+                    {(moreOpen || advancedActive) && (<>
                     {/* Where the chasing has got to. "Nobody has tried" is the
                         one worth looking at first — those are the leads that
                         rot without anybody noticing. */}
                     <select
                         value={chase}
                         onChange={(e) => setChase(e.target.value)}
-                        style={{ height: 44, minWidth: 170, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                        style={{ height: 40, minWidth: 170, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
                     >
                         <option value="">Any chase state</option>
                         <option value="none">Nobody has tried{stats?.chase ? ` (${stats.chase.none})` : ''}</option>
@@ -1168,24 +1392,33 @@ export default function Leads() {
                     </select>
 
                     {/* Who did the chasing, which is not who owns it: leads get
-                        reassigned, and the record of the work stays put. */}
+                        reassigned, and the record of the work — who actually
+                        logged an attempt — stays with the person who did it. */}
                     {(stats?.byChaser?.length ?? 0) > 0 && (
                         <select
                             value={attemptBy}
                             onChange={(e) => setAttemptBy(e.target.value)}
-                            style={{ height: 44, minWidth: 160, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                            style={{ height: 40, minWidth: 160, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
                         >
-                            <option value="">Chased by anyone</option>
+                            <option value="">Contacted by anyone</option>
                             {(stats?.byChaser ?? []).map((c) => (
-                                <option key={c._id} value={c._id}>{c.name} ({c.count})</option>
+                                <option key={c._id} value={c._id}>{c.name} ({c.count} contacted)</option>
                             ))}
                         </select>
                     )}
 
                     <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-                        style={{ height: 44, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK }} />
+                        style={{ height: 40, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK }} />
                     <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-                        style={{ height: 44, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK }} />
+                        style={{ height: 40, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK }} />
+                    </>)}
+                    <button
+                        type="button"
+                        onClick={() => setMoreOpen((v) => !v)}
+                        style={{ height: 40, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: (moreOpen || advancedActive) ? '#F7F3FF' : '#fff', fontSize: 13, fontWeight: 600, color: (moreOpen || advancedActive) ? '#4A1FA0' : INK, cursor: 'pointer' }}
+                    >
+                        {(moreOpen || advancedActive) ? 'Fewer filters' : 'More filters'}
+                    </button>
                     {isFiltered && (
                         <button
                             onClick={() => { setSearch(''); setStatus(''); setSource(''); setOwner(''); setChase(''); setAttemptBy(''); setFrom(''); setTo('') }}
@@ -1247,11 +1480,19 @@ export default function Leads() {
                 )}
 
                 {/* ── Table ── */}
+                {/* The column headers are hidden on a phone, and the sort lives in
+                    one of them — so a phone gets the same switch here. */}
+                <select className="lead-sort-mobile" data-on={sort !== 'newest'} value={sort}
+                    onChange={(e) => setSort(e.target.value as 'newest' | 'followUp' | 'needFrom')} aria-label="Sort leads">
+                    <option value="newest">Sort: newest first</option>
+                    <option value="needFrom">Sort: needs storage soonest</option>
+                    <option value="followUp">Sort: follow-up soonest</option>
+                </select>
                 {isLoading ? (
                     <Spinner />
                 ) : (
                     <div className="lead-table" style={{ background: '#fff', border: '1px solid rgba(20,8,31,.10)', borderRadius: 18, overflow: 'auto' }}>
-                        <div className="lead-table-inner" style={{ minWidth: 980 }}>
+                        <div className="lead-table-inner" style={{ minWidth: 1290 }}>
 
                             {/* Header row */}
                             <div className="lead-head" style={{ display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', gap: 10, padding: '14px 18px', background: '#FBF8F2', borderBottom: '1px solid rgba(20,8,31,.10)' }}>
@@ -1262,9 +1503,27 @@ export default function Leads() {
                                     style={{ width: 16, height: 16, cursor: 'pointer' }}
                                     aria-label="Select every lead on this page"
                                 />
-                                {['Name', 'Phone', 'Source', 'Assigned to', 'Status', 'Chase', 'Added'].map((h) => (
-                                    <span key={h} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: MUTED_COLOR, whiteSpace: 'nowrap' }}>{h}</span>
-                                ))}
+                                {['Name', 'Phone', 'Source', 'Assigned to', 'Status', 'Needs from', 'Follow-up', 'Chase', 'Added'].map((h) => {
+                                    /* Two headers sort. Clicking one orders the list by that
+                                       date, soonest first; clicking it again goes back to
+                                       newest first. */
+                                    const key = h === 'Needs from' ? 'needFrom' : h === 'Follow-up' ? 'followUp' : null
+                                    if (!key) {
+                                        return <span key={h} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: MUTED_COLOR, whiteSpace: 'nowrap' }}>{h}</span>
+                                    }
+                                    const on = sort === key
+                                    return (
+                                        <button
+                                            key={h}
+                                            type="button"
+                                            onClick={() => setSort(on ? 'newest' : key)}
+                                            title={on ? 'Sorted soonest first — click to go back to newest first' : `Sort by ${h.toLowerCase()}, soonest first`}
+                                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, background: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: on ? PURPLE : MUTED_COLOR, whiteSpace: 'nowrap' }}
+                                        >
+                                            {h} <span aria-hidden style={{ fontSize: 12 }}>{on ? '↑' : '↕'}</span>
+                                        </button>
+                                    )
+                                })}
                                 <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: MUTED_COLOR, textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</span>
                             </div>
 
@@ -1312,6 +1571,7 @@ export default function Leads() {
 
                                         {/* Unassigned reads amber, so a lead with nobody on it is
                                             visible without hunting down the column. */}
+                                        <div style={{ minWidth: 0 }}>
                                         {isAdmin ? (
                                             <select
                                                 value={lead.owner?._id || ''}
@@ -1326,6 +1586,12 @@ export default function Leads() {
                                                 {lead.owner?.name || 'Unassigned'}
                                             </span>
                                         )}
+                                            {lead.owner && (lead.autoAssigned || lead.assignedBy?.name) && (
+                                                <span style={{ display: 'block', fontSize: 10.5, color: '#8A8496', marginTop: 2, paddingLeft: 4 }}>
+                                                    {lead.autoAssigned ? 'by the rota' : `by ${lead.assignedBy?.name}`}
+                                                </span>
+                                            )}
+                                        </div>
 
                                         {/* Read-only here by request: assignment and stage are
                                             different decisions, and mixing both into one row made
@@ -1333,6 +1599,52 @@ export default function Leads() {
                                         <span style={{ display: 'inline-flex', alignItems: 'center', background: sc.bg, color: sc.fg, borderRadius: 999, padding: '6px 12px', fontSize: 12, fontWeight: 600, width: 'fit-content' }}>
                                             {statusLabel(lead.status)}
                                         </span>
+
+                                        {/* When they want the storage to start. The tone says how
+                                            close it is: a date that has passed on a lead still
+                                            open is somebody ready and waiting. Closed leads show
+                                            nothing. */}
+                                        <div style={{ minWidth: 0 }}>{(() => {
+                                            const closed = ['won', 'lost', 'already_customer'].includes(lead.status)
+                                            if (closed || !lead.storageStartAt) return <span style={{ fontSize: 13, color: '#B7B1C0' }}>—</span>
+                                            const day = String(lead.storageStartAt).slice(0, 10)
+                                            const { days } = followUpState(day)
+                                            const tone = days < 0 ? FOLLOW_UP_TONE.overdue : days === 0 ? FOLLOW_UP_TONE.today : days <= 7 ? FOLLOW_UP_TONE.soon : FOLLOW_UP_TONE.later
+                                            const when = days < 0 ? `Ready · ${-days}d ago` : days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : days <= 45 ? `In ${days} days` : `In ${Math.round(days / 30)} months`
+                                            const short = new Date(`${day}T00:00:00.000Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' })
+                                            return (
+                                                <>
+                                                    <span style={{ display: 'inline-flex', background: tone.bg, color: tone.color, borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>{when}</span>
+                                                    <div style={{ fontSize: 12, color: MUTED_COLOR, whiteSpace: 'nowrap', marginTop: 2 }}>{short}</div>
+                                                </>
+                                            )
+                                        })()}</div>
+
+                                        {/* When they need the unit — the follow-up date from
+                                            the lead page, with the site visit under it. Colour
+                                            and wording come from the same helper the lead page
+                                            uses, so the two never disagree. A closed lead shows
+                                            nothing: an old date on it is not somebody waiting. */}
+                                        <div style={{ minWidth: 0 }}>{(() => {
+                                            const closed = ['won', 'lost', 'already_customer'].includes(lead.status)
+                                            const day = !closed && lead.followUpAt ? reminderDay(lead.followUpAt, lead.followUpKind) : ''
+                                            const visit = !closed && lead.siteVisitAt ? String(lead.siteVisitAt).slice(0, 10) : ''
+                                            if (!day && !visit) return <span style={{ fontSize: 13, color: '#B7B1C0' }}>—</span>
+                                            const short = (d: string) => new Date(`${d}T00:00:00.000Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' })
+                                            const st = day ? followUpState(day) : null
+                                            const tint = st ? FOLLOW_UP_TONE[st.tone] : null
+                                            const when = !st ? '' : st.tone === 'overdue' ? `${-st.days}d overdue` : st.days === 0 ? 'Today' : st.days === 1 ? 'Tomorrow' : `In ${st.days} days`
+                                            const time = day && lead.followUpAt ? String(lead.followUpAt).slice(11, 16) : ''
+                                            return (
+                                                <>
+                                                    {st && tint && (
+                                                        <span style={{ display: 'inline-flex', background: tint.bg, color: tint.color, borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>{when}</span>
+                                                    )}
+                                                    {day && <div style={{ fontSize: 12, color: MUTED_COLOR, whiteSpace: 'nowrap', marginTop: 2 }}>{short(day)}{time && time !== '00:00' ? ` · ${time}` : ''}</div>}
+                                                    {visit && <div style={{ fontSize: 12, color: '#2563EB', whiteSpace: 'nowrap', marginTop: day ? 1 : 0 }}>Visit · {short(visit)}</div>}
+                                                </>
+                                            )
+                                        })()}</div>
 
                                         {/* How far the chase has got, without opening the
                                             lead. "Not tried" is the state worth spotting from
@@ -1597,6 +1909,25 @@ export default function Leads() {
                         busy={updateLead.isPending}
                         error={error}
                         onSubmit={(body) => updateLead.mutate({ id: editing._id, body })}
+                    />
+                )}
+            </Modal>
+
+            {campaignOpen && <CampaignExport onClose={() => setCampaignOpen(false)} />}
+
+            <Modal open={reassigning} onClose={() => setReassigning(false)} title="Reassign leads">
+                {reassignResult ? (
+                    <div className="space-y-4">
+                        <p className="text-sm text-foreground">{reassignResult}</p>
+                        <Button className="w-full" onClick={() => setReassigning(false)}>Done</Button>
+                    </div>
+                ) : (
+                    <ReassignLeadsForm
+                        fromOptions={allUsers || []}
+                        toOptions={assignableUsers || []}
+                        busy={reassignLeads.isPending}
+                        error={reassignError}
+                        onSubmit={(body) => reassignLeads.mutate(body)}
                     />
                 )}
             </Modal>

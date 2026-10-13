@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
+import DashboardAsk from '../components/DashboardAsk'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, AlarmClock, Check, ChevronsRight, MessageCircle, Plus, X } from 'lucide-react'
+import { AlertTriangle, AlarmClock, Check, ChevronsRight, MessageCircle, Plus } from 'lucide-react'
 import { api, leadApi, type HighIntentLead } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import WhatsApp from './WhatsApp'
 import QuietLeadsModal from '../components/QuietLeadsModal'
+import { SlideOver } from '../components/ui'
 
 /**
  * A rep's morning, on one screen.
@@ -82,6 +84,7 @@ type Booking = {
 type MyDayData = {
   reminders: Reminder[]
   tasks: Task[]
+  upcoming?: { _id: string; title: string; dueDate: string; priority: string; leadName: string; leadId: string | null }[]
   waiting: Waiting[]
   quiet: Quiet[]
   fresh: Fresh[]
@@ -222,7 +225,6 @@ export default function MyDay() {
     <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: INK }}>
       <style>{`
         @keyframes pbPulse { 0%,100% { opacity:1 } 50% { opacity:.35 } }
-        @keyframes pbSlide { from { transform:translateX(24px); opacity:0 } to { transform:translateX(0); opacity:1 } }
         .pb-wait-row:hover { border-color:${ORANGE} !important; transform:translateX(2px); }
         .pb-rm-row:hover { border-color:${PURPLE_200} !important; background:#FCFAFF !important; }
         .pb-stage:hover, .pb-task:hover { background:${PAPER}; }
@@ -235,6 +237,8 @@ export default function MyDay() {
           [data-pulse] { animation:none !important; }
         }
       `}</style>
+
+      <div style={{ marginBottom: 20 }}><DashboardAsk /></div>
 
       {/* ── Greeting + range ─────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-end gap-5" style={{ marginBottom: 20 }}>
@@ -609,6 +613,35 @@ export default function MyDay() {
         </section>
       </div>
 
+      {/* ── Reminder tasks still to come, with a countdown ─────────────── */}
+      {(data?.upcoming?.length ?? 0) > 0 && (
+        <section style={{ ...CARD, padding: 22 }}>
+          <div className="flex items-center gap-3">
+            <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>Upcoming reminders</div>
+            <div style={{ fontSize: 12.5, color: INK3 }}>{data!.upcoming!.length} coming up</div>
+            <Link to="/tasks" style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, color: PURPLE }}>The board</Link>
+          </div>
+          <div className="flex flex-col" style={{ gap: 2, marginTop: 14 }}>
+            {data!.upcoming!.map((t) => {
+              const mins = Math.max(0, Math.floor((new Date(t.dueDate).getTime() - Date.now()) / 60000))
+              const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60)
+              return (
+                <Link key={t._id} to={t.leadId ? `/leads/${t.leadId}` : '/tasks'} className="pb-task flex items-start"
+                  style={{ gap: 12, padding: '11px 10px', borderRadius: 12, color: 'inherit', textDecoration: 'none' }}>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate" style={{ fontSize: 13.5, fontWeight: 600 }}>{t.title}</span>
+                    {t.leadName && <span className="block truncate" style={{ fontSize: 11.5, color: INK3, marginTop: 3 }}>{t.leadName}</span>}
+                  </span>
+                  <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap', color: INK2, background: 'rgba(20,8,31,.06)' }}>
+                    in {d > 0 ? `${d}d ${h}h` : `${h}h`}
+                  </span>
+                </Link>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
       {/* ── What you booked, and the target ──────────────────────────────── */}
       <section style={{ ...CARD, padding: 22 }}>
         <div className="flex flex-wrap items-center gap-3" style={{ marginBottom: 16 }}>
@@ -669,31 +702,14 @@ export default function MyDay() {
       </section>
 
       {/* ── The chat, as a slide-over ────────────────────────────────────── */}
-      {chatPhone && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', justifyContent: 'flex-end' }}>
-          <div onClick={() => setChatPhone(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(20,8,31,.34)' }} />
-          <div style={{
-            position: 'relative', width: 'min(460px, 100vw)', height: '100%', background: PAPER,
-            borderLeft: '1px solid rgba(20,8,31,.12)', display: 'flex', flexDirection: 'column',
-            boxShadow: '-20px 0 60px rgba(20,8,31,.18)', animation: 'pbSlide .22s ease-out',
-          }}>
-            <div className="flex items-center" style={{ gap: 10, padding: '12px 16px', background: '#fff', borderBottom: `1px solid ${HAIRLINE}` }}>
-              <div style={{ fontSize: 13.5, fontWeight: 700 }}>Conversation</div>
-              <button type="button" onClick={() => setChatPhone(null)} className="pb-ico cursor-pointer"
-                style={{ marginLeft: 'auto', width: 32, height: 32, borderRadius: 9, background: NEUTRAL_100, color: INK2, display: 'grid', placeItems: 'center', border: 'none' }}
-                aria-label="Close">
-                <X size={15} />
-              </button>
-            </div>
-            {/* The real console, not a second composer: it already sends media
-                and voice notes, carries the assistant's suggestions, and knows
-                the 24-hour window rules. */}
-            <div style={{ flex: 1, minHeight: 0 }}>
-              <WhatsApp embeddedPhone={chatPhone} />
-            </div>
-          </div>
+      <SlideOver open={!!chatPhone} onClose={() => setChatPhone(null)} title="Conversation" width="max-w-[460px]">
+        {/* The real console, not a second composer: it already sends media
+            and voice notes, carries the assistant's suggestions, and knows
+            the 24-hour window rules. */}
+        <div style={{ margin: '-20px', height: 'calc(100% + 40px)' }}>
+          <WhatsApp embeddedPhone={chatPhone ?? ''} />
         </div>
-      )}
+      </SlideOver>
 
       {showQuiet && <QuietLeadsModal onClose={() => setShowQuiet(false)} scope="mine" />}
     </div>

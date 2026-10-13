@@ -273,7 +273,10 @@ export function forgetWabaId() {
     derivedWabaId = '';
 }
 
-// Approved templates change rarely and the composer asks on every render.
+// Approved templates change rarely and the composer asks on every render. Kept
+// to ten minutes; a template deleted or paused in Meta inside that time is
+// still caught on send, which asks Meta again before sending.
+const TEMPLATE_CACHE_MS = 10 * 60 * 1000;
 let templateCache = { at: 0, data: null };
 
 /**
@@ -295,9 +298,9 @@ export async function listWhatsAppTemplates({ force = false } = {}) {
             error: 'The WhatsApp Business Account ID is not set, and Meta would not say which account this number belongs to. Add it under Settings → Integrations → WhatsApp; it is the "WhatsApp Business Account ID" in Meta → WhatsApp → API Setup.',
         };
     }
-    if (!force && templateCache.data && Date.now() - templateCache.at < 10 * 60 * 1000) return templateCache.data;
+    if (!force && templateCache.data && Date.now() - templateCache.at < TEMPLATE_CACHE_MS) return templateCache.data;
 
-    const url = `https://graph.facebook.com/v20.0/${waba}/message_templates?limit=200`;
+    const url = `https://graph.facebook.com/v20.0/${waba}/message_templates?limit=200&fields=id,name,status,category,language,components,rejected_reason,quality_score`;
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) {
@@ -305,14 +308,18 @@ export async function listWhatsAppTemplates({ force = false } = {}) {
     }
 
     const templates = (body.data || []).map((t) => ({
+        id: t.id,
         name: t.name,
         language: t.language,
         status: t.status,
+        rejectedReason: t.rejected_reason && t.rejected_reason !== 'NONE' ? t.rejected_reason : '',
         category: t.category,
         components: t.components || [],
         // {{1}}, {{2}} … in the body, which the campaign has to supply values for.
         variableCount: countTemplateVariables(t.components || []),
         bodyText: (t.components || []).find((c) => c.type === 'BODY')?.text || '',
+        // IMAGE / VIDEO / DOCUMENT / TEXT, or '' when there is no header.
+        headerFormat: (t.components || []).find((c) => c.type === 'HEADER')?.format || '',
     }));
 
     const data = { configured: true, error: '', templates };
@@ -352,15 +359,26 @@ export function windowOpenFor({ lastInboundAt = null, now = new Date() } = {}) {
  * `variables` fill {{1}}, {{2}} … in order. Passing the wrong number of them is
  * rejected by Meta rather than silently truncated, so the caller checks first.
  */
-export async function sendWhatsAppTemplate({ to, name, language = 'en', variables = [] }) {
+export async function sendWhatsAppTemplate({ to, name, language = 'en', variables = [], urlButtonText, headerImageUrl }) {
     if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured');
     const normalizedTo = normalizeRecipientPhone(to);
     if (!normalizedTo) throw new Error('Recipient phone number is required');
     if (!name) throw new Error('A template name is required');
 
-    const components = variables.length
-        ? [{ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: String(v ?? '') })) }]
-        : [];
+    const components = [];
+    // A template with an image header is rejected by Meta unless the image is
+    // supplied at send time, as a public https link.
+    if (headerImageUrl) {
+        components.push({ type: 'header', parameters: [{ type: 'image', image: { link: String(headerImageUrl) } }] });
+    }
+    if (variables.length) {
+        components.push({ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: String(v ?? '') })) });
+    }
+    // Meta's authentication templates carry a copy-code button that must be
+    // filled with the same code as the body.
+    if (urlButtonText !== undefined) {
+        components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(urlButtonText) }] });
+    }
 
     const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
     const response = await fetch(endpoint, {

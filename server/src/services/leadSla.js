@@ -32,7 +32,7 @@
  * Nothing here throws.
  */
 
-import { Lead, LeadRoutingConfig, LeadRoutingRule, User } from '../models/index.js';
+import { Lead, LeadRoutingConfig, LeadRoutingRule, User, WhatsAppMessage } from '../models/index.js';
 import { countsForToday, pickOwner } from './leadRouting.js';
 import { notifyLeadAssigned, leadLabel } from './leadNotify.js';
 import { mailConfigured, sendMail } from './mail.js';
@@ -189,7 +189,9 @@ export async function runLeadSla({ now = new Date(), dry = false, limit = 50 } =
    if (!config?.enabled) return { ...out, reason: 'distribution is off' };
 
    const nudgeMinutes = Number(config.slaNudgeMinutes ?? SLA_DEFAULTS.nudgeMinutes);
-   const reassignMinutes = Number(config.slaReassignMinutes ?? SLA_DEFAULTS.reassignMinutes);
+   // A lead that has an owner stays with them: the clock only reminds, it never
+   // takes a lead from the rep it was given to, whatever an old setting says.
+   const reassignMinutes = 0;
    if (nudgeMinutes <= 0 && reassignMinutes <= 0) return { ...out, reason: 'the clock is switched off' };
 
    const timeZone = config.timeZone || 'Asia/Dubai';
@@ -203,7 +205,7 @@ export async function runLeadSla({ now = new Date(), dry = false, limit = 50 } =
       assignedAt: { $lte: new Date(new Date(now).getTime() - earliest * MINUTE_MS), $gte: new Date(new Date(now).getTime() - 3 * 864e5) },
       firstResponseAt: null,
       status: { $nin: ['won', 'lost', 'already_customer'] },
-   }).select('fullName phone whatsappProfileName source owner assignedAt firstResponseAt status slaNudgedAt slaReassignedAt timeline')
+   }).select('fullName phone phoneNormalized whatsappProfileName source owner assignedAt firstResponseAt status slaNudgedAt slaReassignedAt timeline')
       .sort({ assignedAt: 1 }).limit(limit).lean();
 
    if (!leads.length) return out;
@@ -219,6 +221,23 @@ export async function runLeadSla({ now = new Date(), dry = false, limit = 50 } =
       if (!action) { out.skipped += 1; continue; }
       const waited = waitedMinutes(lead, now);
 
+      /* Last look before acting: has a person already written to this
+         customer since the lead was handed over? However they did it — the
+         inbox, the WhatsApp app, a link — a human reply is an answer, and the
+         clock must not take a lead off somebody who is mid-conversation. The
+         assistant's own automatic replies do not count. */
+      const humanReply = await WhatsAppMessage.findOne({
+         phoneNormalized: lead.phoneNormalized,
+         direction: 'outbound',
+         sentByAi: { $ne: true },
+         occurredAt: { $gte: lead.assignedAt },
+      }).select('occurredAt').sort({ occurredAt: 1 }).lean();
+      if (humanReply) {
+         if (!dry) await Lead.updateOne({ _id: lead._id, firstResponseAt: null }, { $set: { firstResponseAt: humanReply.occurredAt } });
+         out.skipped += 1;
+         continue;
+      }
+
       if (action === 'reassign') {
          /* Somebody other than the person who did not answer it. */
          const decision = pickOwner({ rules, counts, at: now, timeZone, exclude: [String(lead.owner)] });
@@ -231,7 +250,9 @@ export async function runLeadSla({ now = new Date(), dry = false, limit = 50 } =
             });
             if (dry) continue;
 
-            await Lead.updateOne({ _id: lead._id }, {
+            // Dead code while reassignMinutes is 0; owner is pinned anyway so an
+            // owned lead can never be overwritten if it is ever switched back on.
+            await Lead.updateOne({ _id: lead._id, owner: lead.owner }, {
                $set: {
                   owner: decision.ownerId,
                   assignedAt: now,

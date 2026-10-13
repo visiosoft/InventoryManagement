@@ -59,7 +59,7 @@ export interface Customer {
 
 export type LeadStatus = 'new' | 'contact_attempted' | 'contacted' | 'site_visit_scheduled' | 'follow_up_scheduled' | 'quotation_sent' | 'won' | 'lost'
 export type LeadTemperature = '' | 'hot' | 'warm' | 'cold'
-export type LeadSource = 'manual' | 'whatsapp' | 'referral' | 'walk_in' | 'other'
+export type LeadSource = 'manual' | 'whatsapp' | 'referral' | 'walk_in' | 'website' | 'other'
 export type DurationUnit = 'week' | 'month'
 
 export interface LeadComment {
@@ -87,6 +87,8 @@ export interface Lead {
   followUpAt?: string | null
   followUpKind?: 'date' | 'week' | 'month'
   siteVisitAt?: string | null
+  /** When they want the storage to start — a day, 'YYYY-MM-DDT00:00:00.000Z'. */
+  storageStartAt?: string | null
   attempts?: { no: number; at: string; channel: string; outcome: string; note?: string; user?: { name: string } | null }[]
   sequenceExhaustedAt?: string | null
   _id: string
@@ -106,6 +108,10 @@ export interface Lead {
   durationValue: number
   durationUnit: DurationUnit
   owner: { _id: string; name: string; email: string }
+  /** True when the distribution rules chose the owner, not a person. */
+  autoAssigned?: boolean
+  /** The person who assigned it, where one did. */
+  assignedBy?: { _id: string; name: string } | null
   unitsNeeded: number
   notes?: string
   labels?: string[]
@@ -118,6 +124,7 @@ export interface IntegrationStatus {
   zoho: { configured: boolean }
   drive: { configured: boolean; folderId?: string; method?: string }
   gmail: { configured: boolean }
+  analytics: { configured: boolean; propertyId?: string; missing?: string[]; method?: string }
   /** keyHint is a masked fragment — the key itself never leaves the server. */
   openai?: { configured: boolean; model: string; keyHint: string }
   whatsapp: { configured: boolean; missing?: string[] }
@@ -518,6 +525,10 @@ export interface Contract {
   // Unpaid balance in Zoho Books for this contract's tenant, attached by the
   // contracts list when Zoho is connected.
   outstanding?: number
+  // Soonest unpaid Payment.dueDate for this contract, attached by the
+  // contracts list. Not the same as nextPaymentDate below, which is a stale
+  // import-time field nothing keeps current.
+  nextPaymentDue?: string
   billingPeriod: 'weekly' | 'monthly'
   rate: number
   deposit: number

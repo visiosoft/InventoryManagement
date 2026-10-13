@@ -141,3 +141,139 @@ body {
 .agreement-editor p { margin: 6px 0; }
 .agreement-editor ul, .agreement-editor ol { padding-left: 22px; margin: 6px 0; }
 ::-webkit-scrollbar-thumb:hover { background: var(--sidebar-muted); }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   "Coterie" look — warm cream canvas with a soft yellow glow, charcoal and
+   saffron accents, light rounded type, pill bars and tabs.
+
+   Scoped to `.cot`, which wraps the Settings pricing screens only, so the rest
+   of the app keeps its own style. The plain utility classes those screens
+   already use (bg-card, bg-primary, border…) are re-skinned underneath it, so
+   Bulk Pricing and Website Prices pick the look up without being rewritten.
+   ─────────────────────────────────────────────────────────────────────────── */
+.cot {
+  --cot-ink: #222222;
+  --cot-yellow: #F5C242;
+  --cot-yellow-soft: #F7E7A8;
+  --cot-card: #FBF8F2;
+  --cot-line: rgba(34, 34, 34, 0.12);
+  --cot-muted: #77726a;
+  font-family: "Outfit", "Manrope", ui-sans-serif, system-ui, sans-serif;
+  color: var(--cot-ink);
+  background:
+    radial-gradient(900px 520px at 100% 0%, var(--cot-yellow-soft) 0%, rgba(247, 231, 168, 0) 62%),
+    #F6F2EA;
+  border-radius: 36px;
+  padding: 28px;
+}
+@media (max-width: 640px) { .cot { padding: 18px; border-radius: 26px; } }
+
+/* Segmented tabs */
+.cot-tabs { display: flex; gap: 4px; padding: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.72); width: fit-content; max-width: 100%; overflow-x: auto; }
+.cot-tab { padding: 11px 22px; border-radius: 999px; font-size: 15px; font-weight: 400; color: var(--cot-ink); background: transparent; border: 0; cursor: pointer; white-space: nowrap; transition: background .2s, color .2s; }
+.cot-tab:hover { background: rgba(34, 34, 34, 0.06); }
+.cot-tab--on, .cot-tab--on:hover { background: var(--cot-ink); color: #fff; }
+
+.cot-h1 { font-size: clamp(34px, 5vw, 48px); font-weight: 300; letter-spacing: -0.02em; line-height: 1.1; margin: 28px 0 6px; }
+.cot-lede { font-size: 15px; font-weight: 300; color: var(--cot-muted); max-width: 640px; }
+
+/* Labelled pill bars: a percentage inside a filled pill. */
+.cot-bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 18px 18px; }
+.cot-bar-lab { font-size: 15px; font-weight: 300; color: var(--cot-muted); margin-bottom: 8px; }
+.cot-bar { position: relative; height: 54px; border-radius: 999px; background: rgba(34, 34, 34, 0.06); overflow: hidden; }
+.cot-bar > i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; min-width: 96px; }
+.cot-bar > span { position: absolute; left: 24px; top: 50%; transform: translateY(-50%); font-size: 15px; font-weight: 500; }
+.cot-bar--dark > i { background: var(--cot-ink); } .cot-bar--dark > span { color: #fff; }
+.cot-bar--yellow > i { background: var(--cot-yellow); }
+.cot-bar--hatch { border: 1px solid var(--cot-line); background: transparent; }
+.cot-bar--hatch > i { background: repeating-linear-gradient(135deg, rgba(34,34,34,.14) 0 2px, rgba(255,255,255,.55) 2px 11px); }
+.cot-bar--outline { background: transparent; border: 1.5px solid var(--cot-ink); }
+.cot-bar--outline > i { background: rgba(245, 194, 66, 0.35); }
+
+/* Big light numerals */
+.cot-nums { display: flex; flex-wrap: wrap; gap: 20px 56px; margin: 30px 0 4px; }
+.cot-num { font-size: clamp(44px, 7vw, 68px); font-weight: 300; letter-spacing: -0.03em; line-height: 1; }
+.cot-num-lab { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 16px; font-weight: 300; color: var(--cot-muted); }
+
+/* Cards and the money summary */
+.cot-card { background: var(--cot-card); border: 1px solid rgba(34, 34, 34, 0.07); border-radius: 30px; padding: 10px; }
+.cot-card--pad { padding: 22px 26px; }
+.cot-money { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 18px 28px; }
+.cot-money-v { font-size: 30px; font-weight: 300; letter-spacing: -0.02em; line-height: 1.15; }
+.cot-k { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--cot-muted); margin-bottom: 4px; }
+
+/* Search and chips */
+.cot-tools { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 30px 0 16px; }
+.cot-search { position: relative; flex: 1 1 260px; max-width: 420px; }
+.cot-search svg { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: var(--cot-muted); }
+.cot-search input { padding-left: 46px !important; height: 52px; width: 100%; font-size: 15px; font-weight: 300; }
+.cot-btn { display: inline-flex; align-items: center; gap: 8px; height: 52px; padding: 0 24px; border-radius: 999px; background: var(--cot-ink); color: #fff; border: 0; font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; }
+.cot-btn:hover { background: #000; }
+.cot-chips { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+.cot-chip { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 22px; border-radius: 999px; border: 1px solid var(--cot-line); background: rgba(255, 255, 255, 0.55); font-size: 16px; font-weight: 400; cursor: pointer; color: var(--cot-ink); font-family: inherit; }
+.cot-chip small { font-size: 14px; color: var(--cot-muted); }
+.cot-chip--on { background: var(--cot-ink); border-color: var(--cot-ink); color: #fff; }
+.cot-chip--on small { color: rgba(255, 255, 255, 0.6); }
+
+/* Floor heading and unit rows */
+.cot-floor { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 18px; margin: 26px 6px 10px; }
+.cot-floor h2 { font-size: 22px; font-weight: 400; margin: 0; }
+.cot-floor p { font-size: 13px; font-weight: 300; color: var(--cot-muted); }
+.cot-row { display: grid; grid-template-columns: 54px minmax(120px, 1.1fr) minmax(130px, 1fr) minmax(160px, 1.3fr) auto 32px; align-items: center; gap: 14px 18px; padding: 14px 18px; border-radius: 26px; }
+.cot-row + .cot-row { border-top: 1px solid var(--cot-line); border-top-left-radius: 0; border-top-right-radius: 0; }
+.cot-row--hot { background: var(--cot-yellow); border-radius: 26px !important; border-top-color: transparent !important; }
+.cot-row--hot + .cot-row { border-top-color: transparent; }
+/* Narrow screens: the first line is avatar · unit · status · edit, each in its
+   own column; Actual and Leased then take a full line each underneath. Without
+   explicit places the status pill and edit button fell into the 54px avatar
+   column and were squashed. */
+@media (max-width: 860px) {
+  .cot-row { grid-template-columns: 54px minmax(0, 1fr) auto 32px; gap: 12px 12px; padding: 14px 12px; }
+  .cot-row > .cot-avatar { grid-column: 1; grid-row: 1; }
+  .cot-row > .cot-id { grid-column: 2; grid-row: 1; min-width: 0; }
+  .cot-row > .cot-status { grid-column: 3; grid-row: 1; justify-self: end; }
+  .cot-row > .cot-icon-btn, .cot-row > span:last-child { grid-column: 4; grid-row: 1; }
+  .cot-row > .cot-cell { grid-column: 1 / -1; padding-left: 4px; }
+}
+@media (max-width: 480px) {
+  .cot .cot-avatar { width: 46px; height: 46px; font-size: 14px; }
+  .cot .cot-row { grid-template-columns: 46px minmax(0, 1fr) auto 28px; }
+  .cot .cot-status { height: 32px; padding: 0 12px; font-size: 13px; }
+  .cot .cot-name { font-size: 17px; }
+  .cot .cot-size { display: none; }
+  .cot .cot-id .cot-sub { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cot .cot-tab { padding: 10px 16px; font-size: 14px; }
+  .cot .cot-num { font-size: 48px; }
+  .cot .cot-nums { gap: 18px 36px; }
+  .cot .cot-chip { height: 42px; padding: 0 18px; font-size: 15px; }
+  .cot .cot-card--pad { padding: 18px; }
+}
+.cot-avatar { width: 54px; height: 54px; border-radius: 999px; display: grid; place-items: center; background: #F1E4D3; font-size: 16px; font-weight: 500; }
+.cot-name { font-size: 18px; font-weight: 400; line-height: 1.2; }
+.cot-sub { font-size: 14px; font-weight: 300; color: var(--cot-muted); }
+.cot-row--hot .cot-sub, .cot-row--hot .cot-k { color: rgba(34, 34, 34, 0.7); }
+.cot-status { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 999px; font-size: 14px; font-weight: 400; white-space: nowrap; }
+.cot-status i { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+.cot-status--available { background: #E3EBDD; color: #2F6B3A; }
+.cot-status--occupied { background: var(--cot-ink); color: #fff; }
+.cot-status--reserved { background: #F1E4D3; color: #8A5A12; }
+.cot-status--maintenance { background: transparent; border: 1px solid var(--cot-line); color: var(--cot-muted); }
+.cot-icon-btn { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; background: transparent; border: 0; color: var(--cot-muted); cursor: pointer; }
+.cot-icon-btn:hover { background: rgba(34, 34, 34, 0.08); color: var(--cot-ink); }
+.cot-offer { display: inline-block; padding: 2px 12px; border-radius: 999px; background: var(--cot-yellow); font-weight: 500; }
+
+/* Re-skin the generic pieces the three screens already use. */
+.cot input:not([type="checkbox"]):not([type="radio"]) {
+  border: 1px solid var(--cot-line) !important; border-radius: 999px !important; background: rgba(255, 255, 255, 0.85) !important;
+  padding: 6px 14px !important; font-family: inherit; font-weight: 400; outline: none;
+}
+.cot input:not([type="checkbox"]):not([type="radio"]):focus { border-color: var(--cot-ink) !important; }
+.cot .bg-card { background: var(--cot-card) !important; border-color: rgba(34, 34, 34, 0.07) !important; border-radius: 26px !important; }
+.cot .bg-primary { background: var(--cot-ink) !important; color: #fff !important; border-radius: 999px !important; padding: 8px 18px !important; font-weight: 400 !important; }
+.cot .bg-muted { background: rgba(34, 34, 34, 0.06) !important; }
+.cot .text-muted-foreground { color: var(--cot-muted) !important; }
+.cot .bg-emerald-600 { background: var(--cot-ink) !important; border-radius: 999px !important; padding: 6px !important; }
+.cot h2.uppercase { font-size: 22px; font-weight: 400; text-transform: none; letter-spacing: 0; margin: 22px 6px 10px; }
+
+/* After the generic input re-skin above, so the search icon keeps its room. */
+.cot .cot-search input[type="search"] { padding-left: 48px !important; }

@@ -60,8 +60,9 @@ import whatsappRoutes from './routes/whatsapp.js';
 import aiBotRoutes from './routes/aiBot.js';
 import whatsappFlowTemplateRoutes from './routes/whatsappFlowTemplates.js';
 import campaignRoutes from './routes/campaigns.js';
+import campaignTemplateRoutes, { publicMediaRouter as templateMediaPublic } from './routes/campaignTemplates.js';
+import { refreshTemplateStatuses } from './services/templateManager.js';
 import sentEmailRoutes from './routes/sentEmails.js';
-import walkthroughRoutes from './routes/walkthroughs.js';
 import marketingPublicRoutes from './routes/marketingPublic.js';
 import contractsPublicRoutes from './routes/contractsPublic.js';
 import workerRoutes from './routes/workers.js';
@@ -83,7 +84,8 @@ import agreementTemplateRoutes from './routes/agreementTemplate.js';
 import automationRuleRoutes from './routes/automationRules.js';
 import taskRoutes from './routes/tasks.js';
 import salesGoalRoutes from './routes/salesGoals.js';
-import salesTeamRoutes from './routes/salesTeam.js';
+import agentRoutes from './agents/routes.js';
+import { runAgentTick } from './agents/service.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import myDayRoutes from './routes/myDay.js';
 import leadFollowUpRoutes from './routes/leadFollowUp.js';
@@ -91,10 +93,11 @@ import followUpQueueRoutes from './routes/followUpQueue.js';
 import accountsDashboardRoutes from './routes/accountsDashboard.js';
 import exportRoutes from './routes/exports.js';
 import leadRoutingRoutes from './routes/leadRouting.js';
-import activityRoutes from './routes/activity.js';
 import auditLogRoutes from './routes/auditLog.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
+import customerStorageRoutes from './routes/customerStorage.js';
+import customerBookingRoutes from './routes/customerBooking.js';
 import customerPortalRoutes from './routes/customerPortal.js';
 import crewAuthRoutes from './routes/crewAuth.js';
 import crewPortalRoutes from './routes/crewPortal.js';
@@ -103,14 +106,17 @@ import { startBackupScheduler } from './services/backup.js';
 import { runFollowUps, pushDueFollowUps } from './services/followUps.js';
 import { sweepUnassignedLeads } from './services/leadRouting.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
-import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
+import { getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
 import { runDayBriefs } from './services/dayBrief.js';
+import { runPaymentDueDigest } from './services/paymentDueDigest.js';
 import { runLeadSla } from './services/leadSla.js';
 import { runQuietNudge } from './services/quietNudge.js';
 import { runLeadAssignReminder } from './services/leadAssignReminder.js';
 import { releaseLapsedHolds } from './utils/unitStatus.js';
+import publicBookingRoutes from './routes/publicBooking.js';
+import publicPricingRoutes from './routes/publicPricing.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
@@ -236,12 +242,23 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/customer-auth', customerAuthRoutes);
+app.use('/api/customer-portal/storage', customerStorageRoutes);
+app.use('/api/customer-portal/booking', customerBookingRoutes);
 app.use('/api/customer-portal', customerPortalRoutes);
 app.use('/api/crew-auth', crewAuthRoutes);
 app.use('/api/crew-portal', crewPortalRoutes);
 app.use('/api/moving-jobs/public-upload', movingJobPublicUpload);
 app.use('/api/moving-jobs/share', movingJobPublicShare);
-app.use('/api/moving-leads/public', movingLeadPublic);
+// WordPress's admin-ajax.php posts application/x-www-form-urlencoded, which
+// nothing else in this app sends — scoped here rather than added globally.
+app.use('/api/moving-leads/public', express.urlencoded({ extended: true }), movingLeadPublic);
+// The marketing website's booking API — no login, no auth token, by design.
+// See server/src/routes/publicBooking.js for what keeps it from being abused
+// (a per-IP rate limit and an atomic per-unit claim) despite that.
+app.use('/api/public/bookings', publicBookingRoutes);
+// The website's price list: sizes, prices and discounts, no token. Read-only.
+app.use('/api/public/pricing', publicPricingRoutes);
+app.use('/api/public/template-media', templateMediaPublic);
 app.use('/api/warehouse-jobs/public', warehouseJobPublicRoutes);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
@@ -318,7 +335,7 @@ app.use('/api/sites', requireAuth, siteRoutes);
 app.use(
   '/api/integrations',
   (req, res, next) =>
-    req.path.startsWith('/whatsapp/webhook') || req.path.startsWith('/drive/callback') || req.path.startsWith('/drive/connect') || req.path.startsWith('/gmail/callback')
+    req.path.startsWith('/whatsapp/webhook') || req.path.startsWith('/drive/callback') || req.path.startsWith('/drive/connect') || req.path.startsWith('/gmail/callback') || req.path.startsWith('/analytics/callback')
       ? next()
       : requireAuth(req, res, next),
   integrationRoutes
@@ -337,8 +354,8 @@ app.use('/api/ai-bot', requireAuth, aiBotRoutes);
 app.use('/api/whatsapp-flow-templates', requireAuth, whatsappFlowTemplateRoutes);
 app.use('/api/marketing', marketingPublicRoutes);
 app.use('/api/campaigns', requireAuth, campaignRoutes);
+app.use('/api/campaign-templates', requireAuth, campaignTemplateRoutes);
 app.use('/api/sent-emails', requireAuth, sentEmailRoutes);
-app.use('/api/walkthroughs', requireAuth, walkthroughRoutes);
 app.use('/api/reminder-config', requireAuth, reminderConfigRoutes);
 app.use('/api/message-templates', requireAuth, messageTemplateRoutes);
 app.use('/api/push', requireAuth, pushRoutes);
@@ -346,7 +363,9 @@ app.use('/api/agreement-template', requireAuth, agreementTemplateRoutes);
 app.use('/api/automation-rules', requireAuth, automationRuleRoutes);
 app.use('/api/tasks', requireAuth, taskRoutes);
 app.use('/api/sales-goals', requireAuth, salesGoalRoutes);
-app.use('/api/sales-team', requireAuth, salesTeamRoutes);
+// The AI sales agents: profiles, lead files, buckets, the action log. A
+// separate module; shadow mode only in this prototype, nothing sends.
+app.use('/api/agents', requireAuth, agentRoutes);
 // Signed in is enough: a board only the manager can see recognises nobody.
 app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
 app.use('/api/my-day', requireAuth, myDayRoutes);
@@ -360,7 +379,6 @@ app.use('/api/accounts-dashboard', requireAuth, accountsDashboardRoutes);
 app.use('/api/exports', requireAuth, exportRoutes);
 // Who gets the next WhatsApp lead. Admin only, inside the router.
 app.use('/api/lead-routing', requireAuth, leadRoutingRoutes);
-app.use('/api/activity', requireAuth, activityRoutes);
 app.use('/api/audit-log', requireAuth, auditLogRoutes);
 
 // Central error handler
@@ -407,6 +425,19 @@ async function start() {
     console.log('Background jobs disabled for this session.');
     return;
   }
+
+  // Assigned leads still named "WhatsApp Contact …" take their WhatsApp profile
+  // name. Idempotent, so running on every start is fine.
+  import('./services/leadNames.js')
+    .then((m) => m.backfillPlaceholderNames())
+    .then((n) => console.log(`[Leads] gave ${n} assigned WhatsApp lead(s) their profile name`))
+    .catch((e) => console.error('[Leads] name backfill failed:', e.message));
+
+  // Leads that are really signed customers leave the "New" stage. Idempotent.
+  import('./services/customerLeads.js')
+    .then((m) => m.markCustomerLeads())
+    .then((n) => console.log(`[Leads] moved ${n} existing-customer lead(s) out of New`))
+    .catch((e) => console.error('[Leads] customer-lead backfill failed:', e.message));
 
   // Reconcile WhatsApp label-driven lead state every 15 minutes.
   const WHATSAPP_RECONCILE_INTERVAL = 15 * 60 * 1000;
@@ -467,10 +498,28 @@ async function start() {
     runCampaignTick().catch((e) => console.error('[Campaign]', e.message));
   }, 15 * 1000), 25_000);
 
-  const AI_BOT_INTERVAL = 10 * 1000;
+  // Meta's verdict on submitted templates normally arrives by webhook; this
+  // is the net underneath it for when the webhook field isn't subscribed.
   setTimeout(() => setInterval(() => {
-    runAiBotTick().catch((e) => console.error('[AI bot]', e.message));
-  }, AI_BOT_INTERVAL), 20_000);
+    refreshTemplateStatuses().catch((e) => console.error('[Templates]', e.message));
+  }, 10 * 60 * 1000), 60_000);
+
+  // The original assistant's own drafting is retired: the Agents system
+  // (below) now drafts and escalates for every inbound message, and its
+  // per-lead status/draft is what the WhatsApp inbox reads (routes/whatsapp.js's
+  // agentStatusForLeads). runAiBotTick is no longer scheduled, but stays
+  // importable — routes/aiBot.js's manual "run a tick now" endpoint and its
+  // settings/preview endpoints are unaffected, and getAiBotConfig still
+  // gates the unrelated auto-summarise and first-contact-video features.
+
+  // The sales agents' clock: due follow-up touches, silence into Quiet,
+  // exhausted cadences falling through. A minute is plenty — the shortest
+  // cadence is a day. Does nothing until an agent exists in shadow mode.
+  setTimeout(() => setInterval(() => {
+    runAgentTick().then((out) => {
+      if (out.proposed || out.silenced || out.exhausted) console.log(`[Agents] ${out.proposed} touch(es) proposed, ${out.silenced} went quiet, ${out.exhausted} exhausted`);
+    }).catch((e) => console.error('[Agents]', e.message));
+  }, 60_000), 30_000);
 
   // Keep the inbox summaries current, so "hot leads" answers about today
   // rather than about whichever chats somebody happened to open. Only
@@ -534,6 +583,21 @@ async function start() {
       if (out.sent) console.log(`[DayBrief] sent ${out.sent} brief(s)`);
     } catch (e) {
       console.error('[DayBrief]', e.message);
+    }
+  }, 60_000);
+
+  /* Accounts' payment-due-soon digest: one email a day listing every tenant
+     whose payment is due in 7 days. Same minute tick and fixed local hour as
+     the digest/day-brief jobs; idempotent through each Payment's
+     accountsDueSoonNotifiedAt rather than a stored row. */
+  const PAYMENT_DUE_DIGEST_HOUR = Number(process.env.PAYMENT_DUE_DIGEST_HOUR ?? 8);
+  setInterval(async () => {
+    try {
+      if (localHour() !== PAYMENT_DUE_DIGEST_HOUR) return;
+      const out = await runPaymentDueDigest();
+      if (out.sent) console.log(`[PaymentDueDigest] sent, ${out.count} payment(s)`);
+    } catch (e) {
+      console.error('[PaymentDueDigest]', e.message);
     }
   }, 60_000);
 
@@ -636,6 +700,19 @@ async function start() {
       console.error('[Shopify]', e.message);
     }
   }, 10 * 60 * 1000), 120_000);
+
+  /* The same release, every 5 minutes rather than hourly.
+     The public booking API's hold is only 15 minutes — the website should
+     not still be showing a unit as taken 45 minutes after a visitor
+     abandoned the booking because the hourly sweep above hadn't run yet. */
+  setTimeout(() => setInterval(async () => {
+    try {
+      const freed = await releaseLapsedHolds();
+      if (freed.length) console.log(`[Units] released ${freed.length} unit(s): ${freed.join(', ')}`);
+    } catch (e) {
+      console.error('[Units]', e.message);
+    }
+  }, 5 * 60 * 1000), 45_000);
 
   const SWEEP_INTERVAL = 2 * 60 * 1000;
   setTimeout(() => setInterval(async () => {

@@ -5,7 +5,7 @@ import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { PageHeader, Card, CardBody, Button, Field, Input, Select, Textarea, SlideOver, Spinner } from '../components/ui'
 import { RenewalsCard } from './SalesBoard'
-import { formatDate } from '../lib/utils'
+import { formatDate, formatDateTime } from '../lib/utils'
 import {
   type TaskItem, type AssignableUser,
   KANBAN_COLUMNS, KanbanBoard, KanbanCard, KanbanColumn, TaskDetailModal, TypePill,
@@ -200,13 +200,14 @@ function CreateTaskPanel({ onClose, assignableUsers, defaultStatus }: { onClose:
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [dueDate, setDueDate] = useState('')
+  const [dueTime, setDueTime] = useState('')
   const [priority, setPriority] = useState('medium')
   const [assignedTo, setAssignedTo] = useState('')
   const [leadName, setLeadName] = useState('')
 
   const createTask = useMutation({
     mutationFn: () => api.post('/tasks', {
-      title, description, dueDate: dueDate || undefined, priority,
+      title, description, dueDate: dueDate ? (dueTime ? new Date(`${dueDate}T${dueTime}:00+04:00`).toISOString() : dueDate) : undefined, priority,
       assignedTo: assignedTo || undefined, leadName: leadName.trim() || undefined,
       status: defaultStatus || undefined,
     }),
@@ -247,7 +248,10 @@ function CreateTaskPanel({ onClose, assignableUsers, defaultStatus }: { onClose:
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Due date">
-            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            <div className="flex gap-2">
+              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <Input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} disabled={!dueDate} />
+            </div>
           </Field>
           <Field label="Reference (unit, contract…)">
             <Input value={leadName} onChange={(e) => setLeadName(e.target.value)} placeholder="e.g. F2-09 · PB-2026-0031" />
@@ -426,7 +430,7 @@ export default function Tasks({ embedded = false }: { embedded?: boolean } = {})
                         </span>
                       </td>
                       <td style={{ padding: '13px 16px', fontSize: 12.5, whiteSpace: 'nowrap', fontWeight: tone !== 'normal' ? 700 : 500, color: tone === 'overdue' ? '#991B1B' : tone === 'today' ? '#B45309' : MUTED }}>
-                        {t.dueDate ? formatDate(t.dueDate) : '—'}
+                        {t.dueDate ? (/T00:00:00(\.000)?Z$/.test(t.dueDate) ? formatDate(t.dueDate) : formatDateTime(t.dueDate)) : '—'}
                       </td>
                     </tr>
                   )

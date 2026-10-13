@@ -81,6 +81,7 @@ router.put('/config', async (req, res) => {
          if (req.body[key] !== undefined) config[key] = req.body[key] || (key === 'enabled' ? false : null);
       }
       if (req.body.enabled !== undefined) config.enabled = Boolean(req.body.enabled);
+      if (req.body.randomize !== undefined) config.randomize = Boolean(req.body.randomize);
       if (req.body.timeZone) config.timeZone = String(req.body.timeZone);
       /* The two marks on the unanswered-lead clock, in minutes. Clamped rather
          than rejected: a typo should not be able to set a reminder to fire in
@@ -127,9 +128,13 @@ router.put('/rules/:userId', async (req, res) => {
          return res.status(400).json({ error: 'Somebody cannot be their own stand-in' });
       }
 
+      // A rep removed earlier keeps a soft-deleted row. The default query
+      // hides it, so a plain upsert inserted a second row and collided with
+      // the unique index on `user` (E11000). includeDeleted finds that row and
+      // the deletedAt reset brings it back instead.
       const rule = await LeadRoutingRule.findOneAndUpdate(
-         { user: user._id }, { $set: update, $setOnInsert: { user: user._id } },
-         { new: true, upsert: true, runValidators: true },
+         { user: user._id }, { $set: { ...update, deletedAt: null, deletedBy: null }, $setOnInsert: { user: user._id } },
+         { new: true, upsert: true, runValidators: true, includeDeleted: true },
       ).populate('user', 'name email role').populate('fallbackUser', 'name');
       res.json(rule);
    } catch (e) {
@@ -255,6 +260,41 @@ router.post('/customer-chats/assign', async (req, res) => {
          { $set: { owner: owner._id, assignedAt: now, ownerSeenAt: null, firstResponseAt: null, assignedBy: req.user?.id ?? null, autoAssigned: false } },
       );
       res.json({ moved: toMove.length, alreadyTheirs: leads.length - toMove.length, owner: owner.name });
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
+/**
+ * Take back what the rules gave somebody and they never touched.
+ *
+ * Only leads the system assigned (not a person), still at "new", with no
+ * reply, no attempt logged and not opened by the owner. Anything the rep has
+ * worked stays hers. `confirm: true` does it; without it this only counts.
+ */
+router.post('/take-back', async (req, res) => {
+   try {
+      const user = await User.findById(req.body?.userId).select('_id name');
+      if (!user) return res.status(400).json({ error: 'Choose a person' });
+
+      const auto = { owner: user._id, autoAssigned: true, assignedBy: null };
+      const untouched = {
+         ...auto,
+         status: 'new',
+         firstResponseAt: null,
+         ownerSeenAt: null,
+         'attempts.0': { $exists: false },
+      };
+      const [autoTotal, takeable] = await Promise.all([Lead.countDocuments(auto), Lead.countDocuments(untouched)]);
+      if (req.body?.confirm !== true) {
+         return res.json({ owner: user.name, autoAssigned: autoTotal, wouldTakeBack: takeable, keptBecauseWorked: autoTotal - takeable });
+      }
+
+      const r = await Lead.updateMany(untouched, {
+         $set: { owner: null, assignedAt: null, autoAssigned: false, ownerSeenAt: null, followUpAt: null },
+         $push: { timeline: { type: 'note', text: `Taken back from ${user.name} — assigned by the distribution rules and never worked`, user: req.user?.id } },
+      });
+      res.json({ owner: user.name, takenBack: r.modifiedCount ?? takeable, keptBecauseWorked: autoTotal - takeable });
    } catch (e) {
       res.status(500).json({ error: e.message });
    }

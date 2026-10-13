@@ -1,13 +1,12 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Lock, Unlock, Check, Pencil, Plus } from 'lucide-react'
+import { Lock, Unlock, Check, Pencil, Plus, Search, Package, KeyRound, Tag } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Site } from '../lib/site'
 import type { Unit } from '../lib/types'
 import { Button, Field, Input, Modal, PageHeader, Select, Spinner, Textarea, statusLabel } from '../components/ui'
-import { StatCard } from './reports/shared'
 
 export interface MatrixContract {
   _id: string
@@ -26,13 +25,6 @@ export interface MatrixUnit {
   status: string
   price: number | null
   contract: MatrixContract | null
-}
-
-const statusDot: Record<string, string> = {
-  available: '#10B981',
-  occupied: '#8B5CF6',
-  reserved: '#F59E0B',
-  maintenance: '#94A3B8',
 }
 
 export const money = (n: number) => `AED ${n.toLocaleString(undefined, { minimumFractionDigits: 0 })}`
@@ -288,6 +280,8 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [floorFilter, setFloorFilter] = useState('all')
+  const [query, setQuery] = useState('')
 
   const closeForms = () => { setAdding(false); setEditingId(null); setError(''); setConfirmDelete(false) }
 
@@ -362,90 +356,162 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
 
   if (isLoading) return <Spinner />
 
+  // Which units the chips and the search box leave showing.
+  const needle = query.trim().toLowerCase().replace(/\s+/g, '')
+  const shown = grouped
+    .filter(([floor]) => floorFilter === 'all' || floor === floorFilter)
+    .map(([floor, list]) => [floor, needle ? list.filter((u) => u.unitNumber.toLowerCase().replace(/\s+/g, '').includes(needle)) : list] as [string, MatrixUnit[]])
+    .filter(([, list]) => list.length > 0)
+
+  const byStatus = (st: string) => units.filter((u) => u.status === st).length
+  const pct = (n: number) => (units.length ? Math.round((n / units.length) * 100) : 0)
+  const bars: { label: string; n: number; tone: string }[] = [
+    { label: 'Available', n: byStatus('available'), tone: 'dark' },
+    { label: 'Occupied', n: byStatus('occupied'), tone: 'yellow' },
+    { label: 'Reserved', n: byStatus('reserved'), tone: 'hatch' },
+    { label: 'Maintenance', n: byStatus('maintenance'), tone: 'outline' },
+  ]
+
   return (
-    <div className="space-y-6">
+    <div>
       {!embedded && (
         <PageHeader
           title="Unit Pricing"
           subtitle="The actual price of every unit — set once, locked after. Leased shows what each tenant actually pays." />
       )}
 
-      {canEditUnits && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">
-            Units are created and edited here. <span className="whitespace-nowrap">/units</span> is a read-only availability lookup.
-          </p>
-          <Button type="button" onClick={() => { setError(''); setAdding(true) }} className="gap-1.5">
-            <Plus size={15} /> Add unit
-          </Button>
-        </div>
-      )}
-
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
-        <StatCard label="Units" value={String(units.length)} sub={unpriced > 0 ? `${unpriced} without a price` : 'all priced'} tone={unpriced > 0 ? 'amber' : 'default'} />
-        <StatCard label="Leased units" value={String(leased.length)} />
-        <StatCard label="Actual (leased units)" value={money(totalActualLeased)} />
-        <StatCard label="Leased total" value={money(totalLeased)} />
-        <StatCard label="Difference" value={`${diff >= 0 ? '+' : ''}${money(diff)}`} tone={diff >= 0 ? 'green' : 'red'} sub={diff >= 0 ? 'leasing above actual' : 'leasing below actual'} />
+      {/* Where the units sit, as a share of everything. */}
+      <div className="cot-bars">
+        {bars.map((b) => (
+          <div key={b.label}>
+            <div className="cot-bar-lab">{b.label}</div>
+            <div className={`cot-bar cot-bar--${b.tone}`}>
+              <i style={{ width: `${pct(b.n)}%` }} />
+              <span>{pct(b.n)}% · {b.n}</span>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {grouped.map(([floor, list]) => {
+      <div className="cot-nums">
+        <div>
+          <div className="cot-num">{units.length}</div>
+          <div className="cot-num-lab"><Package size={17} /> Units</div>
+        </div>
+        <div>
+          <div className="cot-num">{leased.length}</div>
+          <div className="cot-num-lab"><KeyRound size={17} /> Leased</div>
+        </div>
+        <div>
+          <div className="cot-num" style={unpriced > 0 ? { color: '#B45309' } : undefined}>{unpriced}</div>
+          <div className="cot-num-lab"><Tag size={17} /> Without a price</div>
+        </div>
+      </div>
+
+      <div className="cot-card cot-card--pad" style={{ marginTop: 22 }}>
+        <div className="cot-money">
+          <div><div className="cot-k">Actual (leased units)</div><div className="cot-money-v">{money(totalActualLeased)}</div></div>
+          <div><div className="cot-k">Leased total</div><div className="cot-money-v">{money(totalLeased)}</div></div>
+          <div>
+            <div className="cot-k">Difference</div>
+            <div className="cot-money-v" style={{ color: diff >= 0 ? '#2F6B3A' : '#B91C1C' }}>{diff >= 0 ? '+' : ''}{money(diff)}</div>
+            <div className="cot-sub">{diff >= 0 ? 'leasing above actual' : 'leasing below actual'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="cot-tools">
+        <label className="cot-search">
+          <Search size={18} />
+          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by unit number" />
+        </label>
+        {canEditUnits && (
+          <button type="button" className="cot-btn" onClick={() => { setError(''); setAdding(true) }}>
+            <Plus size={17} /> Add unit
+          </button>
+        )}
+      </div>
+
+      <div className="cot-chips">
+        {[['all', 'All', units.length] as const, ...grouped.map(([f, l]) => [f, f, l.length] as const)].map(([key, label, n]) => (
+          <button key={key} type="button" onClick={() => setFloorFilter(key)} className={`cot-chip ${floorFilter === key ? 'cot-chip--on' : ''}`}>
+            {label} <small>{n}</small>
+          </button>
+        ))}
+      </div>
+
+      {canEditUnits && (
+        <p className="cot-sub" style={{ margin: '0 6px 4px' }}>
+          Units are created and edited here. <span className="whitespace-nowrap">/units</span> is a read-only availability lookup.
+        </p>
+      )}
+
+      {shown.length === 0 && <p className="cot-lede" style={{ margin: '24px 6px' }}>No units match.</p>}
+
+      {shown.map(([floor, list]) => {
         const t = floorTotals(list)
         return (
           <div key={floor}>
-            <div className="flex items-baseline justify-between flex-wrap gap-x-4 gap-y-1 mb-2">
-              <h2 className="text-sm font-bold uppercase tracking-wide">{floor} <span className="text-muted-foreground font-medium">({list.length} units)</span></h2>
+            <div className="cot-floor">
+              <h2>{floor} <span className="cot-sub">· {list.length} units</span></h2>
               {t.occ > 0 && (
-                <p className="text-xs text-muted-foreground">
+                <p>
                   {t.occ} leased · actual {money(t.actual)} · leased {money(t.leasedSum)} ·{' '}
-                  <span className={t.diff >= 0 ? 'text-emerald-600 font-semibold' : 'text-destructive font-semibold'}>
+                  <span style={{ color: t.diff >= 0 ? '#2F6B3A' : '#B91C1C', fontWeight: 500 }}>
                     {t.diff >= 0 ? '+' : ''}{money(t.diff)}
                   </span>
                 </p>
               )}
             </div>
-            <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))' }}>
+            <div className="cot-card">
               {list.map((u) => {
                 const dl = u.contract ? derivedLeased(u.contract) : null
                 const variance = u.contract && u.price != null && dl != null ? dl - u.price : null
                 return (
-                  <div key={u._id} className="rounded-xl border bg-card p-2.5 min-w-0">
-                    <div className="flex items-center justify-between gap-1 mb-1.5">
-                      <span className="text-[13px] font-bold truncate">{u.unitNumber}</span>
-                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
-                        {u.sizeSqf != null && `${u.sizeSqf} sqf`}
-                        <span className="inline-block h-2 w-2 rounded-full" style={{ background: statusDot[u.status] ?? '#94A3B8' }} title={u.status} />
-                        {canEditUnits && (
-                          <button
-                            type="button"
-                            title={`Edit unit ${u.unitNumber}`}
-                            onClick={() => { setError(''); setConfirmDelete(false); setEditingId(u._id) }}
-                            className="p-0.5 rounded hover:bg-black/5 cursor-pointer text-muted-foreground hover:text-foreground">
-                            <Pencil size={11} />
-                          </button>
-                        )}
-                      </span>
+                  <div key={u._id} className={`cot-row ${editingId === u._id ? 'cot-row--hot' : ''}`}>
+                    <div className="cot-avatar" title={u.sizeSqf != null ? `${u.sizeSqf} sq ft` : ''}>{u.sizeSqf ?? '–'}</div>
+                    <div className="cot-id">
+                      <div className="cot-name">{u.unitNumber}</div>
+                      <div className="cot-sub"><span className="cot-size">{u.sizeSqf != null ? `${u.sizeSqf} sq ft` : 'No size'}{u.floor ? ' · ' : ''}</span>{u.floor}</div>
                     </div>
 
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Actual</div>
-                    <PriceCell unit={u} onSaved={invalidate} />
+                    <div className="cot-cell">
+                      <div className="cot-k">Actual</div>
+                      <PriceCell unit={u} onSaved={invalidate} />
+                    </div>
 
-                    {u.contract && (
-                      <div className="mt-1.5 pt-1.5 border-t">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Leased</span>
-                          {variance != null && variance !== 0 && (
-                            <span className={`text-[10px] font-bold ${variance > 0 ? 'text-emerald-600' : 'text-destructive'}`}>
-                              {variance > 0 ? '+' : ''}{variance.toLocaleString()}
-                            </span>
-                          )}
-                        </div>
-                        <LeasedCell unit={u} onSaved={invalidate} />
-                        <Link to={`/contracts/${u.contract._id}`} className="block text-[10px] text-primary hover:underline truncate mt-0.5">
-                          {u.contract.contractNo} · {u.contract.customerName}
-                        </Link>
-                      </div>
-                    )}
+                    <div className="cot-cell">
+                      {u.contract ? (
+                        <>
+                          <div className="cot-k">
+                            Leased
+                            {variance != null && variance !== 0 && (
+                              <span style={{ marginLeft: 8, color: variance > 0 ? '#2F6B3A' : '#B91C1C', fontWeight: 600 }}>
+                                {variance > 0 ? '+' : ''}{variance.toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                          <LeasedCell unit={u} onSaved={invalidate} />
+                          <Link to={`/contracts/${u.contract._id}`} className="cot-sub hover:underline" style={{ display: 'block' }}>
+                            {u.contract.contractNo} · {u.contract.customerName}
+                          </Link>
+                        </>
+                      ) : (
+                        <div className="cot-sub">Not leased</div>
+                      )}
+                    </div>
+
+                    <span className={`cot-status cot-status--${u.status}`}><i />{statusLabel(u.status)}</span>
+
+                    {canEditUnits ? (
+                      <button
+                        type="button"
+                        title={`Edit unit ${u.unitNumber}`}
+                        onClick={() => { setError(''); setConfirmDelete(false); setEditingId(u._id) }}
+                        className="cot-icon-btn">
+                        <Pencil size={15} />
+                      </button>
+                    ) : <span />}
                   </div>
                 )
               })}

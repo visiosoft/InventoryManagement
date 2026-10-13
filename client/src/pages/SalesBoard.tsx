@@ -21,7 +21,7 @@ const MUTED = '#756E80'
 const PURPLE = '#5B2BC9'
 
 const SIZE_OPTIONS = [10, 25, 35, 50, 75, 100, 150, 200]
-const LEAD_SOURCE_OPTIONS = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
+const LEAD_SOURCE_OPTIONS = ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']
 const labelize = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 
 interface ExpiringContract {
@@ -650,7 +650,12 @@ export default function SalesBoard() {
 
   const { data: storagePage, isLoading: storageLoading } = useQuery({
     queryKey: ['my-leads-storage'],
-    queryFn: () => leadApi.list({ owner: user?.id, limit: 500 }),
+    // No pagination UI on this page — it fetches everything once and
+    // filters/searches client-side (see `filtered` below), so this needs
+    // to actually be "all of them", not a page. Matches the server's own
+    // cap (routes/leads.js), which is what a rep's list silently
+    // truncated against for a while at the old, lower limit.
+    queryFn: () => leadApi.list({ owner: user?.id, limit: 30000 }),
     enabled: !!user?.id,
   })
 
@@ -801,9 +806,21 @@ export default function SalesBoard() {
           <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>
             {isAccounts ? 'My Work' : 'My Leads'}
           </div>
-          {!isAccounts && (
-            <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>{rows.length} lead{rows.length !== 1 ? 's' : ''} assigned to you</div>
-          )}
+          {!isAccounts && (() => {
+            // rows.length is the size of what was actually fetched, which
+            // used to silently equal the old server cap (500) once a rep
+            // crossed it — total is the real count regardless of any cap,
+            // so the label can never again claim fewer leads than really
+            // exist.
+            const total = (storagePage?.total ?? 0) + movingLeads.length
+            const truncated = Boolean(storagePage && storagePage.total > storagePage.data.length)
+            return (
+              <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>
+                {total} lead{total !== 1 ? 's' : ''} assigned to you
+                {truncated && <span style={{ color: '#B45309' }}> — showing the first {storagePage!.data.length}, the rest are still there</span>}
+              </div>
+            )
+          })()}
         </div>
       </div>
 

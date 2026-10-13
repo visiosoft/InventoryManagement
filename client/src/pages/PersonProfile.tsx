@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Calendar, Clock, FileText, MessageCircle, MessageSquare,
-  ClipboardList, ExternalLink, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
+  ClipboardList, PackageCheck, Pencil, Phone, Trash2, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
@@ -18,7 +18,7 @@ import {
   type Attempt, type AttemptChannel, type AttemptOutcome, type FollowUpPlan,
 } from '../lib/attempts'
 
-const LEAD_SOURCES = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
+const LEAD_SOURCES = ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']
 
 const INK = '#14081F'
 const INK_2 = '#4A4357'
@@ -34,7 +34,6 @@ const LINE = 'rgba(20,8,31,0.10)'
 const LINE_STRONG = 'rgba(20,8,31,0.16)'
 const WARM = '#D97706'
 const SHADOW_SM = '0 1px 2px rgba(20,8,31,.06), 0 2px 8px rgba(20,8,31,.04)'
-const SHADOW_MD = '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)'
 const DISPLAY = { fontFamily: "'Bricolage Grotesque', serif", letterSpacing: '-0.02em' } as const
 
 /* The gaps people actually reach for. A follow-up is an instant now rather
@@ -79,6 +78,7 @@ type Lead = {
   _id: string; fullName: string; email: string; phone: string; whatsappNo: string
   phoneNormalized: string; status: string; owner: Owner | null; notes: string
   leadDateTime: string; source: string
+  autoAssigned?: boolean; assignedAt?: string | null; assignedBy?: { _id: string; name: string } | null
   temperature?: '' | 'hot' | 'warm' | 'cold'
   tags?: string[]
   followUpAt?: string | null
@@ -86,6 +86,7 @@ type Lead = {
   followUpNotifiedAt?: string | null
   followUpNote?: string
   siteVisitAt?: string | null
+  storageStartAt?: string | null
   attempts?: Attempt[]
   sequenceExhaustedAt?: string | null
   storageSizeValue?: number
@@ -139,15 +140,6 @@ function Card({ title, action, children }: { title: string; action?: React.React
   )
 }
 
-function Detail({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div className="flex justify-between items-center gap-3">
-      <span style={{ fontSize: 13, color: FAINT }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: 600, color: value ? INK : FAINT, textAlign: 'right' }}>{value || '—'}</span>
-    </div>
-  )
-}
-
 function Field({ label, value, onChange, type = 'text' }: {
   label: string; value: string; onChange: (v: string) => void; type?: string
 }) {
@@ -169,6 +161,50 @@ function eventMeta(t: TimelineEntry): string {
   const d = new Date(t.at)
   const time = Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   return [formatDate(t.at), time, t.user?.name].filter(Boolean).join(' · ')
+}
+
+
+type ReminderTask = {
+  _id: string; title: string; description?: string; dueDate?: string | null; status: string
+  priority?: string; taskNo?: string; createdByName?: string
+  assignedTo?: { name: string } | null
+}
+
+/** One reminder: the title up front, the date and owner under it, everything else on hover. */
+function ReminderItem({ t, now, countdown, onDelete, deleting }: { t: ReminderTask; now: number; countdown: (iso: string) => string; onDelete: (t: ReminderTask) => void; deleting: boolean }) {
+  const overdue = t.dueDate ? new Date(t.dueDate).getTime() < now : false
+  return (
+    <div className="group relative" style={{ borderRadius: 12, border: `1px solid ${overdue ? 'rgba(220,38,38,.25)' : LINE}`, background: overdue ? 'rgba(220,38,38,.05)' : '#fff', padding: '8px 10px' }} tabIndex={0}>
+      <button
+        type="button"
+        onClick={() => onDelete(t)}
+        disabled={deleting}
+        aria-label={`Delete reminder: ${t.title}`}
+        title="Delete this reminder"
+        className="absolute cursor-pointer disabled:opacity-40"
+        style={{ top: 6, right: 6, background: 'none', border: 'none', color: FAINT, padding: 2, lineHeight: 1 }}
+      >
+        <Trash2 size={13} />
+      </button>
+      <div className="line-clamp-2" style={{ fontSize: 13, fontWeight: 700, color: INK, paddingRight: 20 }}>{t.title}</div>
+      <div style={{ fontSize: 11.5, color: overdue ? '#B91C1C' : FAINT, marginTop: 2 }}>
+        {t.dueDate ? `${formatDateTime(t.dueDate)} · ${countdown(t.dueDate)}` : 'No date'}
+        {t.assignedTo?.name ? ` · ${t.assignedTo.name}` : ''}
+      </div>
+      <div className="hidden group-hover:block group-focus:block absolute z-30" style={{ left: 0, top: '100%', marginTop: 6, width: 280, background: '#fff', border: `1px solid ${LINE_STRONG}`, borderRadius: 14, boxShadow: '0 12px 32px rgba(20,8,31,.16)', padding: 12, fontSize: 12.5, color: INK_2 }}>
+        <div style={{ fontWeight: 700, color: INK, fontSize: 13.5 }}>{t.title}</div>
+        {t.description && <p className="line-clamp-6" style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>{t.description}</p>}
+        <dl style={{ margin: '8px 0 0', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 10px' }}>
+          <dt style={{ color: FAINT }}>Due</dt><dd style={{ margin: 0 }}>{t.dueDate ? formatDateTime(t.dueDate) : '—'}</dd>
+          <dt style={{ color: FAINT }}>For</dt><dd style={{ margin: 0 }}>{t.assignedTo?.name || '—'}</dd>
+          {t.priority && <><dt style={{ color: FAINT }}>Priority</dt><dd style={{ margin: 0, textTransform: 'capitalize' }}>{t.priority}</dd></>}
+          <dt style={{ color: FAINT }}>Status</dt><dd style={{ margin: 0 }}>{t.status === 'in_progress' ? 'In progress' : 'To do'}</dd>
+          {t.createdByName && <><dt style={{ color: FAINT }}>Set by</dt><dd style={{ margin: 0 }}>{t.createdByName}</dd></>}
+          {t.taskNo && <><dt style={{ color: FAINT }}>Task</dt><dd style={{ margin: 0 }}>{t.taskNo}</dd></>}
+        </dl>
+      </div>
+    </div>
+  )
 }
 
 export default function PersonProfile() {
@@ -214,16 +250,24 @@ export default function PersonProfile() {
   const isAdmin = user?.role === 'admin'
   const [err, setErr] = useState('')
   const [taskOpen, setTaskOpen] = useState(false)
+  // The reminders raised against this lead, with a live countdown, so the
+  // page says when the owner will next be nudged.
+  const [nowTick, setNowTick] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 60_000)
+    return () => clearInterval(t)
+  }, [])
+  const [chatPanelOpen, setChatPanelOpen] = useState(false)
   const [note, setNote] = useState('')
   // A stage picked but not yet committed, and the note going with it.
   const [pendingStage, setPendingStage] = useState('')
   // The follow-up being set: which preset, at what time, and what it is for.
   const [presetDays, setPresetDays] = useState(0)
+  const [attemptTime, setAttemptTime] = useState('09:00')
   const [followUpTime, setFollowUpTime] = useState('09:00')
   const [followUpNote, setFollowUpNote] = useState('')
   // The standing note on the lead — what this person is about, not a dated
   // entry in the timeline below.
-  const [notes, setNotes] = useState('')
   const [stageNote, setStageNote] = useState('')
   // The attempt being logged, if one is.
   const [logging, setLogging] = useState(false)
@@ -266,7 +310,6 @@ export default function PersonProfile() {
     if (!l || hydrated.current === l._id) return
     hydrated.current = l._id
     setFollowUpNote(l.followUpNote || '')
-    setNotes(l.notes || '')
     if (l.followUpAt) setFollowUpTime(String(l.followUpAt).slice(11, 16) || '09:00')
   }, [data?.lead])
 
@@ -277,6 +320,28 @@ export default function PersonProfile() {
     staleTime: 5 * 60_000,
   })
 
+  const { data: leadTasks } = useQuery<ReminderTask[]>({
+    queryKey: ['person-tasks', data?.lead?._id],
+    queryFn: () => api.get('/tasks', { params: { leadId: data!.lead!._id, status: 'todo,in_progress' } }).then((r) => r.data ?? []),
+    enabled: Boolean(data?.lead?._id),
+  })
+  const deleteReminder = useMutation({
+    mutationFn: (taskId: string) => api.delete(`/tasks/${taskId}`),
+    onSuccess: () => {
+      setErr('')
+      qc.invalidateQueries({ queryKey: ['person-tasks'] })
+      qc.invalidateQueries({ queryKey: ['person', id] })
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+  const countdown = (iso: string) => {
+    const ms = new Date(iso).getTime() - nowTick
+    const over = ms < 0
+    const mins = Math.floor(Math.abs(ms) / 60000)
+    const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60
+    const txt = d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`
+    return over ? `${txt} overdue` : `in ${txt}`
+  }
   const refresh = () => qc.invalidateQueries({ queryKey: ['person', id] })
 
   /**
@@ -335,7 +400,7 @@ export default function PersonProfile() {
       channel: attempt.channel,
       outcome: attempt.outcome,
       note: attempt.note.trim(),
-      nextAt: attempt.nextAt || undefined,
+      nextAt: attempt.nextAt ? (attemptTime ? `${attempt.nextAt}T${attemptTime}` : attempt.nextAt) : undefined,
     }),
     onSuccess: (res) => {
       setErr('')
@@ -348,6 +413,20 @@ export default function PersonProfile() {
       refresh()
     },
     onError: (e) => setErr(apiError(e)),
+  })
+
+  // Removes the record this page is showing: the customer when it is one
+  // (the server refuses if it still has live contracts), otherwise the lead.
+  const deleteContact = useMutation({
+    mutationFn: () => {
+      const label = customer ? 'customer' : 'lead'
+      if (!window.confirm(`Delete this ${label}${name ? ` (${name})` : ''}? ${customer ? 'Customers with live contracts cannot be deleted.' : 'Its reminders go with it and the chat stays in the inbox.'}`)) {
+        return Promise.reject(new Error('cancelled'))
+      }
+      return customer ? api.delete(`/customers/${customer._id}`) : api.delete(`/leads/${lead!._id}`)
+    },
+    onSuccess: () => { setErr(''); navigate(isCustomer && !lead ? '/customers' : '/leads') },
+    onError: (e) => { if ((e as Error)?.message !== 'cancelled') setErr(apiError(e)) },
   })
 
   const addNote = useMutation({
@@ -463,6 +542,32 @@ export default function PersonProfile() {
           <ArrowLeft size={16} />
         </button>
 
+        {lead && (
+          <nav aria-label="Breadcrumb" className="flex items-center" style={{ gap: 8, color: FAINT, flexGrow: 1, marginLeft: 12, fontSize: 13.5, minWidth: 0 }}>
+            <Link to="/leads" style={{ color: FAINT }}>Leads</Link><span aria-hidden="true">/</span>
+            <span className="truncate" style={{ color: INK, fontWeight: 600 }}>{name}</span>
+          </nav>
+        )}
+        <div className="flex flex-wrap items-center" style={{ gap: 8, marginRight: 12 }}>
+          {phone && (
+            <a href={`tel:${phone}`} className="inline-flex items-center" style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13 }}>
+              <Phone size={13} /> Call
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={() => setTaskOpen(true)}
+            className="inline-flex items-center cursor-pointer"
+            style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
+            title="Create a reminder task about this lead"
+          >
+            <ClipboardList size={13} /> Reminder task
+          </button>
+          <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 6, height: 34, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap' }}>
+            <PackageCheck size={13} /> Book unit
+          </Link>
+        </div>
+
         {/* Working a filtered list one lead at a time used to mean a trip
             back to it for every single one. This follows the order Leads.tsx
             had on screen — see navOrder above — so Next/Previous move
@@ -492,11 +597,15 @@ export default function PersonProfile() {
         )}
       </div>
 
+      {/* ── Body: details and ownership beside the running account ────────── */}
+      <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
+
+        <div className="flex flex-col" style={{ flex: '1 1 320px', maxWidth: 380, gap: 16, order: 1, display: pane === 'chat' && chatPanelOpen ? 'none' : undefined }}>
       {/* ── Header card ───────────────────────────────────────────────────── */}
-      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '26px 28px', marginBottom: 20 }}>
+      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '18px 20px' }}>
         <div className="flex items-start justify-between flex-wrap" style={{ gap: 20 }}>
           <div className="flex items-start" style={{ gap: 16, flex: '1 1 420px', minWidth: 0 }}>
-            <div style={{ width: 56, height: 56, borderRadius: 999, background: PURPLE_100, color: DEEP, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 18, flex: '0 0 auto' }}>
+            <div style={{ width: 48, height: 48, borderRadius: 999, background: PURPLE_100, color: DEEP, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 16, flex: '0 0 auto' }}>
               {initials}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -525,23 +634,35 @@ export default function PersonProfile() {
                   live on the customer record, and editing the lead behind
                   them would change nothing anybody can see. */}
               {!editing ? (
-                <div style={{ marginTop: 10 }}>
-                  {/* A single narrow column left a header card mostly empty
-                      on anything wider than a phone — this fills the row
-                      the name already claims, wrapping to more columns as
-                      the window grows rather than fixed at one width. */}
-                  <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', columnGap: 28, rowGap: 6, maxWidth: 760 }}>
-                    <Detail label="Phone" value={phone} />
-                    <Detail label="WhatsApp" value={lead?.whatsappNo || phone} />
-                    {customer && <>
-                      <Detail label="Company" value={customer.company} />
-                      <Detail label="Nationality" value={customer.nationality} />
-                      <Detail label="Emergency contact" value={customer.emergencyNumber} />
-                      <Detail label="Emirates ID" value={customer.emiratesId} />
-                      <Detail label="ID expiry" value={customer.eidExpiry ? formatDate(customer.eidExpiry) : ''} />
-                      <Detail label="Address" value={customer.address} />
-                    </>}
+                <div style={{ marginTop: 12 }}>
+                  {/* Less is more: two numbers are a line, not a table. The
+                      fuller grid is for customers, who actually have more. */}
+                  <div className="flex items-center flex-wrap" style={{ gap: '4px 18px', fontSize: 14, color: INK_2 }}>
+                    <span className="inline-flex items-center" style={{ gap: 6 }}><Phone size={13} style={{ color: FAINT }} /> {phone || '—'}</span>
+                    {waNumber && waNumber !== (phone || '').replace(/\D/g, '') && (
+                      <span className="inline-flex items-center" style={{ gap: 6 }}><MessageCircle size={13} style={{ color: FAINT }} /> {lead?.whatsappNo}</span>
+                    )}
+                    {email && <span>{email}</span>}
                   </div>
+                  {/* Only what is actually on file: a row of dashes says
+                      nothing. Small label over value, wrapping as needed. */}
+                  {customer && (
+                    <div className="flex flex-wrap" style={{ gap: '12px 32px', marginTop: 14 }}>
+                      {([
+                        ['Company', customer.company],
+                        ['Nationality', customer.nationality],
+                        ['Emergency contact', customer.emergencyNumber],
+                        ['Emirates ID', customer.emiratesId],
+                        ['ID expiry', customer.eidExpiry ? formatDate(customer.eidExpiry) : ''],
+                        ['Address', customer.address],
+                      ] as const).filter(([, v]) => v).map(([label, v]) => (
+                        <div key={label} style={{ maxWidth: 280 }}>
+                          <div style={{ fontSize: 11.5, color: FAINT, marginBottom: 2 }}>{label}</div>
+                          <div style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {(lead || customer) && (
                     <button
                       type="button"
@@ -565,6 +686,17 @@ export default function PersonProfile() {
                       style={{ background: 'none', border: 'none', color: PURPLE, fontSize: 12.5, fontWeight: 700, marginTop: 10, padding: 0 }}
                     >
                       <Pencil size={12} /> Edit contact details
+                    </button>
+                  )}
+                  {isAdmin && (lead || customer) && (
+                    <button
+                      type="button"
+                      onClick={() => deleteContact.mutate()}
+                      disabled={deleteContact.isPending}
+                      className="inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      style={{ background: 'none', border: 'none', color: '#B91C1C', fontSize: 12.5, fontWeight: 700, marginTop: 8, padding: 0, display: 'flex' }}
+                    >
+                      <Trash2 size={12} /> {deleteContact.isPending ? 'Deleting…' : 'Delete contact'}
                     </button>
                   )}
                 </div>
@@ -628,57 +760,59 @@ export default function PersonProfile() {
             </div>
           </div>
 
-          <div className="flex flex-wrap" style={{ gap: 8 }}>
-            {phone && (
-              <a href={`tel:${phone}`} className="inline-flex items-center" style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13 }}>
-                <Phone size={13} /> Call
-              </a>
-            )}
-            {/* Two different places, so both are offered rather than one
-                standing in for the other: our inbox has the history and is
-                where a reply gets recorded; wa.me is their actual WhatsApp,
-                which is what you want for a voice note or an attachment. */}
-            {waNumber && (
-              <Link
-                to={`/whatsapp?phone=${waNumber}`}
-                title="Open the conversation in PurpleBox"
-                className="inline-flex items-center cursor-pointer"
-                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, color: DEEP, fontWeight: 600, fontSize: 13 }}
-              >
-                <MessageCircle size={13} /> Chat
-              </Link>
-            )}
-            {waNumber && (
-              <a
-                href={`https://wa.me/${waNumber}`}
-                target="_blank"
-                rel="noreferrer"
-                title="Open WhatsApp in a new tab"
-                className="inline-flex items-center"
-                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(22,163,74,.28)', background: 'rgba(22,163,74,.09)', color: '#047857', fontWeight: 600, fontSize: 13 }}
-              >
-                <MessageCircle size={13} /> WhatsApp <ExternalLink size={11} style={{ opacity: 0.7 }} />
-              </a>
-            )}
-            {/* Raising a task about somebody was only possible from their chat,
-                which is the wrong place to be when you are reading their
-                profile — and impossible for a lead who has never messaged. */}
-            <button
-              type="button"
-              onClick={() => setTaskOpen(true)}
-              className="inline-flex items-center cursor-pointer"
-              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid #F5DFB8', background: '#FFF7E6', color: '#B45309', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
-              title="Create a task about this lead"
-            >
-              <ClipboardList size={13} /> Create a task
-            </button>
-            {/* Available at both stages: the wizard creates the customer when a
-                lead is booked, which is the point at which they become one. */}
-            <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 6, height: 34, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 13, boxShadow: SHADOW_MD, whiteSpace: 'nowrap' }}>
-              <PackageCheck size={13} /> Book unit
-            </Link>
-          </div>
         </div>
+
+        {lead && (
+          <div className="flex flex-col" style={{ gap: 14, marginTop: 16 }}>
+            <dl style={{ margin: 0 }}>
+              <div className="flex items-center" style={{ gap: 8, padding: '9px 0', borderTop: `1px solid ${LINE}` }}>
+                <dt style={{ color: FAINT, flexGrow: 1, fontSize: 13 }}>Owner</dt>
+                <dd style={{ margin: 0, textAlign: 'right' }}>
+                  {isAdmin ? (
+                    <select
+                      value={lead.owner?._id ?? ''}
+                      onChange={(e) => assign.mutate(e.target.value)}
+                      className="cursor-pointer"
+                      aria-label="Assigned to"
+                      style={{ height: 32, maxWidth: 180, padding: '0 8px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 13, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+                    >
+                      <option value="">Nobody</option>
+                      {assignable.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
+                    </select>
+                  ) : (
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{lead.owner?.name || 'Nobody'}</span>
+                  )}
+                  {lead.owner && (lead.autoAssigned || lead.assignedBy?.name) && (
+                    <span style={{ display: 'block', fontSize: 11, color: FAINT, marginTop: 3 }}>
+                      Assigned {lead.autoAssigned ? 'by the rota' : `by ${lead.assignedBy?.name}`}
+                      {lead.assignedAt ? ` · ${formatDateTime(lead.assignedAt)}` : ''}
+                    </span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex items-center" style={{ gap: 8, padding: '9px 0', borderTop: `1px solid ${LINE}` }}>
+                <dt style={{ color: FAINT, flexGrow: 1, fontSize: 13 }}>Came in</dt>
+                <dd style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{lead.leadDateTime ? formatDateTime(lead.leadDateTime) : '—'}</dd>
+              </div>
+            </dl>
+
+            {/* The reminders raised for this lead: what to do, when, and who
+                it will nudge. Hover for the details. */}
+            {(leadTasks ?? []).length > 0 && (
+              <div className="flex flex-col" style={{ gap: 6 }}>
+                <span style={{ color: FAINT, fontSize: 12, fontWeight: 600 }}>Reminders</span>
+                {[...(leadTasks ?? [])]
+                  .sort((a, b) => (a.dueDate ? new Date(a.dueDate).getTime() : Infinity) - (b.dueDate ? new Date(b.dueDate).getTime() : Infinity))
+                  .slice(0, 5)
+                  .map((t) => (
+                    <ReminderItem key={t._id} t={t} now={nowTick} countdown={countdown} onDelete={(x) => { if (window.confirm(`Delete the reminder "${x.title}"?`)) deleteReminder.mutate(x._id) }} deleting={deleteReminder.isPending} />
+                  ))}
+              </div>
+            )}
+
+
+          </div>
+        )}
 
         {/* The one time-critical fact, said in words rather than left as a date
             for the reader to work out. */}
@@ -692,10 +826,6 @@ export default function PersonProfile() {
         {err && <p style={{ fontSize: 12.5, color: '#C0392B', marginTop: 12 }}>{err}</p>}
       </div>
 
-      {/* ── Body: details and ownership beside the running account ────────── */}
-      <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
-
-        <div className="flex flex-col" style={{ flex: '1 1 340px', maxWidth: 380, gap: 20 }}>
           {/* When we next deal with this person, kept beside who they are
               rather than buried among the pipeline controls. Only ever shows
               the date the stage in play is actually about. */}
@@ -835,12 +965,20 @@ export default function PersonProfile() {
                     {!outcomeOf(attempt.outcome).ends && (
                       <div style={{ marginTop: 10 }}>
                         <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Next attempt on</span>
+                        <div className="flex" style={{ gap: 8 }}>
                         <input
                           type="date"
                           value={attempt.nextAt}
                           onChange={(e) => setAttempt((a) => ({ ...a, nextAt: e.target.value }))}
-                          style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                          style={{ flex: 1, minWidth: 0, height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
                         />
+                        <input
+                          type="time"
+                          value={attemptTime}
+                          onChange={(e) => setAttemptTime(e.target.value)}
+                          style={{ width: 118, height: 40, padding: '0 10px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                        />
+                        </div>
                         {!attempt.nextAt && (
                           <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
                             Leave it blank and the chase ends here, for somebody to decide on.
@@ -1075,45 +1213,10 @@ export default function PersonProfile() {
             </Card>
           )}
 
-          {/* Admins write this one; everybody else reads it.
-              The server refuses the change either way — hiding a text box is
-              not a permission — but showing a rep a field they cannot save
-              would only waste their typing. Reps have the timeline below for
-              their own running commentary.
-
-              Shown to an admin even when empty, since a card that appears only
-              once a note exists leaves no way to write the first one. Hidden
-              from everyone else when empty, because an empty box they cannot
-              fill in is just clutter. */}
-          {lead && (isAdmin || lead.notes) && (
-            <Card title="Notes">
-              {isAdmin ? (
-                <>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    onBlur={() => { if (notes !== (lead.notes || '')) patchLead.mutate({ notes }) }}
-                    rows={4}
-                    placeholder="Anything worth knowing about this person — what they are storing, what was agreed, who referred them."
-                    style={{
-                      width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff',
-                      padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', color: INK,
-                      resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5,
-                    }}
-                  />
-                  <p style={{ fontSize: 12, color: FAINT, marginTop: 6 }}>
-                    Saved when you click away. Clearing the box removes the note.
-                  </p>
-                </>
-              ) : (
-                <p style={{ fontSize: 14, color: INK_2, whiteSpace: 'pre-wrap' }}>{lead.notes}</p>
-              )}
-            </Card>
-          )}
         </div>
 
         {/* ── The running account ─────────────────────────────────────────── */}
-        <div className="flex flex-col" style={{ flex: '2 1 480px', gap: 20 }}>
+        <div className="flex flex-col" style={{ flex: '999 1 480px', gap: 20, order: 2, minWidth: 0 }}>
           {/* The conversation, on the page about the person.
               Rendered by the console itself rather than a copy of it, so the
               history, the live updates, quick replies, voice notes,
@@ -1147,144 +1250,148 @@ export default function PersonProfile() {
             </div>
           )}
 
-          {pane === 'chat' && waNumber && <WhatsAppConsole embeddedPhone={waNumber} />}
+          {pane === 'chat' && waNumber && <WhatsAppConsole embeddedPhone={waNumber} onPanelOpenChange={setChatPanelOpen} />}
 
           {pane === 'details' && (<>
           {lead && (
-            <Card title="Ownership & status">
-              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16, alignItems: 'start' }}>
-                <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Assigned to</span>
-                  {isAdmin ? (
-                    <select
-                      value={lead.owner?._id ?? ''}
-                      onChange={(e) => assign.mutate(e.target.value)}
-                      className="cursor-pointer"
-                      style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
-                    >
-                      <option value="">Nobody</option>
-                      {assignable.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
-                    </select>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: 14, fontWeight: 700 }}>{lead.owner?.name || 'Nobody'}</div>
-                      {/* Reps work their own leads and do not hand them on, so
-                          say who can rather than leaving a name that looks
-                          editable and is not. */}
-                      <p style={{ fontSize: 12.5, color: FAINT, marginTop: 4 }}>An admin can move this to somebody else.</p>
-                    </>
-                  )}
-                </div>
-
-                <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Stage</span>
-                  <select
-                    value={pendingStage || lead.status}
-                    onChange={(e) => {
-                      const next = e.target.value
-                      // Same stage again is not a change worth recording.
-                      if (next === lead.status) { setPendingStage(''); setStageNote(''); return }
-                      setPendingStage(next)
-                    }}
-                    className="cursor-pointer"
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
-                  >
-                    {LEAD_STATUS_FLOW.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                  </select>
-
-                  {/* What the stage means somebody should do next, so the
-                      status is an instruction rather than a label. */}
-                  <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
-                    {pendingStage
-                      ? 'Unsaved — see below.'
-                      : LEAD_STATUS_FLOW.find((s) => s.value === lead.status)?.next}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
+              <div className="flex flex-col" style={{ gap: 16 }}>
+              <Card title="Stage">
+            {/* The stage as steps, so what comes next is visible. Choosing one
+                still asks what happened before it is saved. */}
+            <div className="flex flex-col" style={{ gap: 6 }}>
+              <select
+                aria-label="Stage"
+                value={pendingStage || lead.status}
+                onChange={(e) => {
+                  const next = e.target.value
+                  if (next === lead.status) { setPendingStage(''); setStageNote(''); return }
+                  setPendingStage(next)
+                }}
+                className="cursor-pointer"
+                style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+              >
+                {LEAD_STATUS_FLOW.map((st, i) => <option key={st.value} value={st.value}>{i + 1}. {st.label}</option>)}
+              </select>
+              <p style={{ fontSize: 12.5, color: FAINT }}>
+                {pendingStage ? 'Unsaved — say what happened below.' : LEAD_STATUS_FLOW.find((x) => x.value === lead.status)?.next}
+              </p>
+              {pendingStage && (
+                <div style={{ borderRadius: 12, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, padding: 12 }}>
+                  <p style={{ fontSize: 13, color: INK_2, marginBottom: 8 }}>
+                    Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((x) => x.value === pendingStage)?.label}</b> — what happened?
                   </p>
+                  <textarea
+                    value={stageNote}
+                    onChange={(e) => setStageNote(e.target.value)}
+                    rows={2}
+                    autoFocus
+                    placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
+                    style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                  />
+                  <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
+                    <button
+                      type="button"
+                      disabled={setStatus.isPending}
+                      onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
+                      className="cursor-pointer disabled:opacity-50"
+                      style={{ height: 36, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
+                    >
+                      {setStatus.isPending ? 'Saving…' : 'Save stage'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={setStatus.isPending}
+                      onClick={() => { setPendingStage(''); setStageNote('') }}
+                      className="cursor-pointer disabled:opacity-50"
+                      style={{ height: 36, padding: '0 16px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-
-                {/* A standing fact about the lead, not only something asked
-                    once on the way to Contacted. Sizes come from the units
-                    themselves, so every size that exists can be picked and
-                    each says how many are free. */}
-                <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Size they need</span>
-                  <select
-                    value={lead.storageSizeValue ? String(lead.storageSizeValue) : ''}
-                    onChange={(e) => patchLead.mutate({
-                      storageSizeValue: e.target.value ? Number(e.target.value) : 0,
-                      storageSizeUnit: 'sqft',
-                    })}
-                    className="cursor-pointer"
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
-                  >
-                    <option value="">Not asked yet</option>
-                    {/* Asked, and they genuinely do not know — which is a
-                        different thing from nobody having asked, and the one
-                        that tells the next person not to ask again. */}
-                    <option value="-1">Not decided yet</option>
-                    {sizes.map((b) => (
-                      <option key={b.sizeSqf} value={String(b.sizeSqf)}>
-                        {b.sizeSqf} sqft — {b.available} free of {b.total}
-                      </option>
-                    ))}
-                    {/* A size somebody recorded before it existed as a unit
-                        still has to be selectable, or opening the lead would
-                        silently change it. */}
-                    {(lead.storageSizeValue ?? 0) > 0 && !sizes.some((b) => b.sizeSqf === lead.storageSizeValue) && (
-                      <option value={String(lead.storageSizeValue)}>{lead.storageSizeValue} sqft</option>
-                    )}
-                  </select>
-                  {(lead.unitsNeeded ?? 1) > 1 && (
-                    <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>{lead.unitsNeeded} units</p>
+              )}
+            </div>
+              </Card>
+              <Card title="Unit size">
+              <select
+                aria-label="Size needed"
+                value={lead.storageSizeValue ? String(lead.storageSizeValue) : ''}
+                onChange={(e) => patchLead.mutate({
+                  storageSizeValue: e.target.value ? Number(e.target.value) : 0,
+                  storageSizeUnit: 'sqft',
+                })}
+                className="cursor-pointer"
+                style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
+              >
+                <option value="">Not asked yet</option>
+                <option value="-1">Not decided yet</option>
+                {sizes.map((b) => (
+                  <option key={b.sizeSqf} value={String(b.sizeSqf)} disabled={b.available === 0 && lead.storageSizeValue !== b.sizeSqf}>
+                    {b.sizeSqf} sqft — {b.available === 0 ? `full (0 of ${b.total})` : `${b.available} free of ${b.total}`}
+                  </option>
+                ))}
+                {(lead.storageSizeValue ?? 0) > 0 && !sizes.some((b) => b.sizeSqf === lead.storageSizeValue) && (
+                  <option value={String(lead.storageSizeValue)}>{lead.storageSizeValue} sqft</option>
+                )}
+              </select>
+              {(lead.unitsNeeded ?? 1) > 1 && (
+                <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>{lead.unitsNeeded} units</p>
+              )}
+            </Card>
+              </div>
+              <Card title="Needs storage from">
+              <div className="flex flex-col" style={{ gap: 12 }}>
+                <span style={{ color: FAINT, fontSize: 13 }}>
+                  {lead.storageStartAt ? `Move-in ${formatDate(String(lead.storageStartAt).slice(0, 10))}` : 'Not asked yet'}
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+                  {([['ASAP', 0], ['1 week', 7], ['2 weeks', 14], ['1 month', 30], ['2 months', 60], ['3 months', 90]] as const).map(([label, days]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => patchLead.mutate({ storageStartAt: inDays(days, '00:00') })}
+                      className="cursor-pointer"
+                      style={{ height: 36, padding: '0 6px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center" style={{ gap: 8 }}>
+                  <input
+                    type="date"
+                    aria-label="Or pick a date"
+                    value={lead.storageStartAt ? String(lead.storageStartAt).slice(0, 10) : ''}
+                    onChange={(e) => patchLead.mutate({ storageStartAt: e.target.value ? `${e.target.value}T00:00:00.000Z` : null })}
+                    style={{ flex: 1, height: 40, padding: '0 12px', borderRadius: 12, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                  />
+                  {lead.storageStartAt && (
+                    <button
+                      type="button"
+                      onClick={() => patchLead.mutate({ storageStartAt: null })}
+                      className="cursor-pointer"
+                      style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}
+                    >
+                      Clear
+                    </button>
                   )}
                 </div>
-
-                {/* Moving a stage is the moment somebody knows why. Asking
-                    here — rather than leaving them to write it separately — is
-                    the difference between a timeline that reads as an account
-                    and one that reads as a list of state changes. The note
-                    goes with the change in one request, so a stage cannot land
-                    without it.
-
-                    Full width rather than inside the Stage cell: squeezed into
-                    a quarter of the card it was a textarea three words wide. */}
-                {pendingStage && (
-                  <div style={{ gridColumn: '1 / -1', borderRadius: 12, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, padding: 14 }}>
-                    <p style={{ fontSize: 13, color: INK_2, marginBottom: 8 }}>
-                      Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((s) => s.value === pendingStage)?.label}</b> — what happened?
-                    </p>
-                    <textarea
-                      value={stageNote}
-                      onChange={(e) => setStageNote(e.target.value)}
-                      rows={2}
-                      autoFocus
-                      placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
-                      style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
-                    />
-                    <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
-                      <button
-                        type="button"
-                        disabled={setStatus.isPending}
-                        onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
-                        className="cursor-pointer disabled:opacity-50"
-                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
-                      >
-                        {setStatus.isPending ? 'Saving…' : 'Save stage'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={setStatus.isPending}
-                        onClick={() => { setPendingStage(''); setStageNote('') }}
-                        className="cursor-pointer disabled:opacity-50"
-                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
-                      >
-                        Cancel
-                      </button>
+                {lead.storageStartAt && (() => {
+                  const day = String(lead.storageStartAt).slice(0, 10)
+                  const { days } = followUpState(day)
+                  return (
+                    <div className="flex items-start" style={{ gap: 8, background: PURPLE_50, borderRadius: 14, padding: '10px 12px', fontSize: 13, color: days < 0 ? '#DC2626' : INK_2 }}>
+                      <ClipboardList size={15} style={{ flexShrink: 0, marginTop: 2, color: PURPLE }} />
+                      <span>
+                        <b>Reminder task set</b> for {lead.owner?.name || 'the owner'} · {days < 0 ? `${-days} day${days === -1 ? '' : 's'} ago` : days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}
+                      </span>
                     </div>
-                  </div>
-                )}
-
+                  )
+                })()}
               </div>
             </Card>
+            </div>
           )}
 
           {lead && (
@@ -1295,7 +1402,7 @@ export default function PersonProfile() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="What was said, what was promised, why they have gone quiet"
-                style={{ width: '100%', minHeight: 76, padding: '12px 14px', borderRadius: 16, border: `1px solid ${LINE_STRONG}`, fontFamily: 'inherit', fontSize: 14, color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                style={{ width: '100%', minHeight: 60, padding: '10px 14px', borderRadius: 14, border: `1px solid ${LINE_STRONG}`, fontFamily: 'inherit', fontSize: 14, color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
               />
               <div className="flex justify-end" style={{ marginTop: 10 }}>
                 <button
@@ -1304,7 +1411,7 @@ export default function PersonProfile() {
                   disabled={!note.trim() || addNote.isPending}
                   className="cursor-pointer disabled:cursor-default"
                   style={{
-                    height: 40, padding: '0 20px', borderRadius: 999, border: 'none', fontWeight: 700, fontSize: 14,
+                    height: 36, padding: '0 18px', borderRadius: 999, border: 'none', fontWeight: 700, fontSize: 13,
                     fontFamily: 'inherit', color: '#fff',
                     background: !note.trim() || addNote.isPending ? PURPLE_200 : PURPLE,
                   }}
@@ -1312,8 +1419,9 @@ export default function PersonProfile() {
                   {addNote.isPending ? 'Saving…' : 'Add note'}
                 </button>
               </div>
+              {addNote.isError && <p style={{ fontSize: 12.5, color: '#C0392B', marginTop: 8, textAlign: 'right' }}>{apiError(addNote.error)}</p>}
 
-              <div style={{ height: 1, background: LINE, margin: '22px 0' }} />
+              <div style={{ height: 1, background: LINE, margin: '18px 0 6px' }} />
 
               {timeline.length === 0 ? (
                 <p style={{ fontSize: 14, color: FAINT }}>Nothing recorded yet.</p>
@@ -1404,7 +1512,7 @@ export default function PersonProfile() {
           the chat are the same thing. */}
       <TaskComposer
         open={taskOpen}
-        onOpenChange={setTaskOpen}
+        onOpenChange={(v) => { setTaskOpen(v); if (!v) { qc.invalidateQueries({ queryKey: ['person-tasks'] }); qc.invalidateQueries({ queryKey: ['person', id] }) } }}
         subjectName={name}
         leadId={lead?._id ?? null}
         subtitle={`About ${name}`}

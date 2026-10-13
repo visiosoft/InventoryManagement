@@ -18,6 +18,12 @@ function PermGuard({ module, orSalesRep, children }: { module: string | string[]
   return allowed ? <>{children}</> : <Navigate to="/" replace />
 }
 
+/** Campaign Studio: admins, or anyone granted it in Settings → Users. */
+function CampaignGuard({ children }: { children: React.ReactNode }) {
+  const { user, hasPermission } = useAuth()
+  return user?.role === 'admin' || hasPermission('campaign_studio') ? <>{children}</> : <Navigate to="/" replace />
+}
+
 /** Admin-only guard */
 function AdminGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -97,10 +103,16 @@ import AiAssistant from './pages/AiAssistant'
 import WhatsAppFlowTemplates from './pages/WhatsAppFlowTemplates'
 import AssistantSettings from './pages/AssistantSettings'
 import Marketing from './pages/Marketing'
+import CampaignStudio from './pages/CampaignStudio'
 import SentEmails from './pages/SentEmails'
-import Walkthroughs from './pages/Walkthroughs'
-import ZohoComparison from './pages/ZohoComparison'
 import Backup from './pages/Backup'
+import AgentInbox from './pages/agents/AgentInbox'
+import AgentPipeline from './pages/agents/AgentPipeline'
+import AgentLead from './pages/agents/AgentLead'
+import AgentTeam from './pages/agents/AgentTeam'
+import AgentOnboarding from './pages/agents/AgentOnboarding'
+import AgentPage from './pages/agents/AgentPage'
+import AgentGuide from './pages/agents/AgentGuide'
 import AuditLogReport from './pages/AuditLogReport'
 import Leads from './pages/Leads'
 import SalesBoard from './pages/SalesBoard'
@@ -122,9 +134,7 @@ import PurchaseDetail from './pages/PurchaseDetail'
 import Expenses from './pages/Expenses'
 import MovingInventory from './pages/MovingInventory'
 import UserManagement from './pages/UserManagement'
-import SalesTeam from './pages/SalesTeam'
 import Tasks from './pages/Tasks'
-import Diary from './pages/Diary'
 import WhatsApp from './pages/WhatsApp'
 import WhatsAppSetup from './pages/WhatsAppSetup'
 import MovingDashboard from './pages/moving/MovingDashboard'
@@ -239,7 +249,7 @@ export default function App() {
         <Route path="/shopify/fulfillment" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><ShopifyFulfillmentQueue /></PermGuard>} />
         <Route path="/floor-map" element={<PermGuard module="units"><FloorMap /></PermGuard>} />
         <Route path="/sites" element={<PermGuard module="units"><Sites /></PermGuard>} />
-        <Route path="/customers" element={<Customers />} />
+        <Route path="/customers" element={<PermGuard module="customers"><Customers /></PermGuard>} />
         <Route path="/customers/:id" element={<PersonProfile />} />
         <Route path="/people/:id" element={<PersonProfile />} />
         {/* Accounts do not work leads, so the page is not theirs — hiding the
@@ -283,24 +293,28 @@ export default function App() {
         <Route path="/reports/rates" element={<PermGuard module="reports_units"><RatesReport /></PermGuard>} />
         <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
-        <Route path="/sales-team" element={<AdminGuard><SalesTeam /></AdminGuard>} />
         <Route path="/tasks" element={<TasksGuard><Tasks /></TasksGuard>} />
-        <Route path="/diary" element={<Diary />} />
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />
+        <Route path="/agents" element={<AdminGuard><AgentInbox /></AdminGuard>} />
+        <Route path="/agents/pipeline" element={<AdminGuard><AgentPipeline /></AdminGuard>} />
+        <Route path="/agents/team" element={<AdminGuard><AgentTeam /></AdminGuard>} />
+        <Route path="/agents/guide" element={<AdminGuard><AgentGuide /></AdminGuard>} />
+        <Route path="/agents/leads/:leadId" element={<AdminGuard><AgentLead /></AdminGuard>} />
+        <Route path="/agents/profiles/:id" element={<AdminGuard><AgentOnboarding /></AdminGuard>} />
+        <Route path="/agents/:agentId" element={<AdminGuard><AgentPage /></AdminGuard>} />
         <Route path="/audit-log" element={<AdminGuard><AuditLogReport /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/templates" element={<AdminGuard><MessageTemplates /></AdminGuard>} />
         <Route path="/settings/whatsapp-debug" element={<AdminGuard><WhatsAppDebug /></AdminGuard>} />
-        <Route path="/settings/agreement" element={<AdminGuard><AgreementTemplate /></AdminGuard>} />
-        <Route path="/zoho-comparison" element={<AdminGuard><ZohoComparison /></AdminGuard>} />
+        <Route path="/settings/agreement" element={<PermGuard module={['settings', 'agreement_templates']}><AgreementTemplate /></PermGuard>} />
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
         <Route path="/settings/automation" element={<AdminGuard><AutomationRules /></AdminGuard>} />
         <Route path="/settings/ai" element={<AdminGuard><AiAssistant /></AdminGuard>} />
         <Route path="/settings/flow-templates" element={<AdminGuard><WhatsAppFlowTemplates /></AdminGuard>} />
         <Route path="/settings/assistant" element={<AdminGuard><AssistantSettings /></AdminGuard>} />
         <Route path="/marketing" element={<AdminGuard><Marketing /></AdminGuard>} />
+        <Route path="/campaign-studio" element={<CampaignGuard><CampaignStudio /></CampaignGuard>} />
         <Route path="/settings/sent-emails" element={<AdminGuard><SentEmails /></AdminGuard>} />
-        <Route path="/walkthroughs" element={<Walkthroughs />} />
         <Route path="/whatsapp" element={<WhatsApp />} />
         <Route path="/whatsapp/setup" element={<AdminGuard><WhatsAppSetup /></AdminGuard>} />
 

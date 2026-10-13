@@ -5,11 +5,12 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2, Ban,
+  Bot, Tag, Check, ClipboardList, Sparkles, Shuffle, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2, Ban,
   Video as VideoIcon, Play,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel, type LeadScore } from '../lib/api'
+import { agentsApi } from '../lib/agentsApi'
 import { isSalesRepRole } from '../lib/roles'
 import { useAuth } from '../lib/auth'
 import { TaskComposer } from '../components/TaskComposer'
@@ -268,7 +269,12 @@ const CSS = `
 
 /* ── formatting ───────────────────────────────────────────────────────── */
 function formatClock(iso: string) {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const d = new Date(iso)
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  // The date too, so a message read a week later still says when it was sent.
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  const day = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })
+  return `${day}, ${time}`
 }
 
 /* ── attachment blobs ─────────────────────────────────────────────────────
@@ -1711,17 +1717,21 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
       setErr('')
       setOpen(false)
       const ownerName = result.ownerName || choices.find((p) => p._id === result.ownerId)?.name || ''
-      qc.setQueriesData<{ list: WhatsAppConversation[] } | undefined>({ queryKey: ['wa-conversations'] }, (old) => {
-        if (!old) return old
-        return {
-          ...old,
-          list: old.list.map((c) => (c.phoneNormalized !== convo.phoneNormalized ? c : {
-            ...c,
-            lead: result.createdLead
-              ? { _id: result.createdLead._id, fullName: result.createdLead.fullName, status: result.createdLead.status, ownerId: result.ownerId, ownerName, assigned: true }
-              : c.lead ? { ...c.lead, ownerId: result.ownerId, ownerName, assigned: true, autoAssigned: false } : c.lead,
-          })),
-        }
+      const assigned = (c: WhatsAppConversation) => (c.phoneNormalized !== convo.phoneNormalized ? c : {
+        ...c,
+        lead: result.createdLead
+          ? { _id: result.createdLead._id, fullName: result.createdLead.fullName, status: result.createdLead.status, ownerId: result.ownerId, ownerName, assigned: true }
+          : c.lead ? { ...c.lead, ownerId: result.ownerId, ownerName, assigned: true, autoAssigned: false } : c.lead,
+      })
+      // Two shapes live under this prefix: the inbox keeps a paged
+      // { list, total, matched } and the bell keeps a bare array under its
+      // own ['wa-conversations','bell'] key, still prefix-matched here —
+      // patch whichever shape this entry actually is.
+      qc.setQueriesData({ queryKey: ['wa-conversations'] }, (old: unknown) => {
+        if (Array.isArray(old)) return old.map(assigned)
+        const paged = old as { list?: WhatsAppConversation[] } | undefined
+        if (paged && Array.isArray(paged.list)) return { ...paged, list: paged.list.map(assigned) }
+        return old
       })
       onChanged()
     },
@@ -2213,14 +2223,14 @@ function ChatDangerActions({ convo, onDeleted, onChanged }: { convo: WhatsAppCon
   const [err, setErr] = useState('')
 
   const del = useMutation({
-    mutationFn: () => whatsappApi.deleteConversation(convo.phoneNormalized),
+    mutationFn: () => whatsappApi.deleteConversation(convo.phoneNormalized, true),
     onSuccess: () => { setConfirming(null); setErr(''); onDeleted() },
     onError: (e) => setErr(apiError(e)),
   })
 
   const deleteAndBlock = useMutation({
     mutationFn: async () => {
-      await whatsappApi.deleteConversation(convo.phoneNormalized)
+      await whatsappApi.deleteConversation(convo.phoneNormalized, true)
       await whatsappApi.blockNumber(convo.phoneNormalized)
     },
     onSuccess: () => { setConfirming(null); setErr(''); onDeleted() },
@@ -2253,7 +2263,7 @@ function ChatDangerActions({ convo, onDeleted, onChanged }: { convo: WhatsAppCon
     <>
       <button type="button" onClick={() => { setErr(''); setConfirming('delete') }} className={MENU_ROW} style={{ color: '#B91C1C' }}>
         <Trash2 size={15} />
-        <span className="flex-1">Delete chat</span>
+        <span className="flex-1">Delete contact</span>
       </button>
 
       {convo.blocked ? (
@@ -2268,17 +2278,17 @@ function ChatDangerActions({ convo, onDeleted, onChanged }: { convo: WhatsAppCon
         </button>
       )}
 
-      <Modal open={confirming === 'delete'} onClose={() => setConfirming(null)} title="Delete this chat?">
+      <Modal open={confirming === 'delete'} onClose={() => setConfirming(null)} title="Delete this contact?">
         <div className="space-y-3 text-sm">
-          <p>Every message in this conversation is permanently removed from the console. The lead or customer record itself is not affected, and this number can still write in again.</p>
+          <p>Every message in this conversation is removed, and so is the <strong>lead</strong> for this number, with its open reminders. If this number is a <strong>customer</strong>, their record, contracts, invoices and documents are deleted too — refused while any contract is still active. If this number writes in again it starts as a new contact.</p>
           {err && <p className="text-xs text-red-600">{err}</p>}
-          {dialogButtons(del.isPending, () => del.mutate(), 'Delete chat')}
+          {dialogButtons(del.isPending, () => del.mutate(), 'Delete contact')}
         </div>
       </Modal>
 
       <Modal open={confirming === 'block'} onClose={() => setConfirming(null)} title="Delete and block this number?">
         <div className="space-y-3 text-sm">
-          <p>Deletes every message in this conversation, then blocks <strong>{convo.phone || `+${convo.phoneNormalized}`}</strong> — future messages from this number will be silently dropped, with no reply and no new lead created. Undo any time from this same menu.</p>
+          <p>Deletes the lead and every message in this conversation, then blocks <strong>{convo.phone || `+${convo.phoneNormalized}`}</strong> — future messages from this number will be silently dropped, with no reply and no new lead created. Undo any time from this same menu.</p>
           {err && <p className="text-xs text-red-600">{err}</p>}
           {dialogButtons(deleteAndBlock.isPending, () => deleteAndBlock.mutate(), 'Delete and block')}
         </div>
@@ -2296,7 +2306,7 @@ function ChatDangerActions({ convo, onDeleted, onChanged }: { convo: WhatsAppCon
  * replies, voice notes, attachments, editing, assigning and the rest are the
  * same code in both places, so the tab cannot quietly fall behind the console.
  */
-export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } = {}) {
+export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embeddedPhone?: string; onPanelOpenChange?: (open: boolean) => void } = {}) {
   const embedded = Boolean(embeddedPhone)
   const qc = useQueryClient()
 
@@ -2464,6 +2474,12 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     return () => document.removeEventListener('mousedown', away)
   }, [notifOpen])
   const [qrOpen, setQrOpen] = useState(false)
+  // Embedded on a lead page, the parent gives the side cards up while the
+  // quick-replies panel is open so the chat keeps its width.
+  useEffect(() => {
+    onPanelOpenChange?.(qrOpen)
+    return () => onPanelOpenChange?.(false)
+  }, [qrOpen, onPanelOpenChange])
   // The score rail's own open state — now consulted at every width (see
   // the .wa-score CSS). Starts open on a wide screen and closed on a
   // narrow one, matching what was previously true unconditionally on each
@@ -2762,7 +2778,10 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     queryKey: ['whatsapp-templates'],
     queryFn: () => api.get('/whatsapp/templates').then((r) => r.data),
     enabled: qrOpen && panelTab === 'templates',
-    staleTime: 10 * 60_000,
+    // Read again each time the tab is opened, so a template deleted in Meta
+    // drops out here instead of staying until someone presses Refresh.
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
   // Bypasses the server's own 10-minute cache — a template just approved
   // in Meta Business Manager would otherwise sit invisible here for up to
@@ -3039,6 +3058,16 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
   const [pointerInList, setPointerInList] = useState(false)
   const heldOrder = useRef<{ key: string; index: Map<string, number> } | null>(null)
   const orderKey = `${debouncedSearch}|${ownerFilter}|${labelFilter}`
+  /* Keep the reader's place in the chat list.
+     Assigning a lead refreshes the list, and the rows under the reader's
+     finger were replaced — the list snapped back to the top and they had to
+     scroll down to where they were again. The scroll position is remembered
+     as it changes; if the list comes back reset to the top while it was
+     scrolled down, it is put back before it is painted. Changing the filter
+     or the search is a different list, and does start at the top. */
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const listTop = useRef(0)
+  useLayoutEffect(() => { listTop.current = 0 }, [ownerFilter, debouncedSearch])
   const displayConvos = useMemo(() => {
     if (!pointerInList) { heldOrder.current = null; return filteredConvos }
     if (!heldOrder.current || heldOrder.current.key !== orderKey) {
@@ -3051,6 +3080,11 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
       (a, b) => (index.get(a.phoneNormalized) ?? unseen) - (index.get(b.phoneNormalized) ?? unseen),
     )
   }, [filteredConvos, pointerInList, orderKey])
+
+  useLayoutEffect(() => {
+    const el = listRef.current
+    if (el && el.scrollTop < 5 && listTop.current > 50) el.scrollTop = listTop.current
+  }, [displayConvos, loadingConvos])
 
   /* The open conversation, from the list where the filter kept it and from the
      server's `pinned` where it did not. It used to be pushed into the list
@@ -3199,6 +3233,15 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     const msLeft = new Date(last).getTime() + 24 * 3600_000 - Date.now()
     return { open: msLeft > 0, known: true, hoursLeft: Math.max(0, Math.floor(msLeft / 3600_000)) }
   }, [selectedConvo?.lastInboundAt])
+  const windowClosed = replyWindow.known && !replyWindow.open
+
+  /* Opening a cold chat lands the panel on the list that can still reach them.
+     Keyed on the chat, so a rep who switches back to quick replies by hand
+     is left there. */
+  useEffect(() => {
+    if (windowClosed) setPanelTab((tab) => (tab === 'quick' ? 'templates' : tab))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPhone, windowClosed])
 
   async function stopRecording() {
     const file = await voice.stop()
@@ -3279,32 +3322,42 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     onError: (e) => setSendErr(apiError(e)),
   })
 
-  // The draft lives on the thread, not just in this component, so dismissing
-  // it needs a server round-trip. But waiting for onSent's invalidateQueries
-  // to refetch before the card disappears reads as the button not working —
-  // patched into every cached wa-conversations query immediately instead
-  // (same reasoning as the owner-assign patch above), and invalidated after
-  // for consistency with the poll.
+  // The draft is an AgentAction, not just state in this component, so
+  // resolving it needs a server round-trip (POST /agents/actions/:id/resolve).
+  // But waiting for onSent's invalidateQueries to refetch before the card
+  // disappears reads as the button not working — patched into every cached
+  // wa-conversations query immediately instead (same reasoning as the
+  // owner-assign patch above), and invalidated after for consistency with
+  // the poll.
+  const clearDraftInCache = (phone: string) => {
+    const cleared = (c: WhatsAppConversation) => (c.phoneNormalized !== phone ? c : { ...c, botDraft: '', botActionId: '' })
+    // Two shapes live under this prefix: the inbox keeps a paged
+    // { list, total, matched } and the bell (WhatsAppBell.tsx) keeps a bare
+    // array under its own ['wa-conversations','bell'] key, still prefix-matched
+    // by this query filter — patch whichever shape this entry actually is.
+    qc.setQueriesData({ queryKey: ['wa-conversations'] }, (old: unknown) => {
+      if (Array.isArray(old)) return old.map(cleared)
+      const paged = old as { list?: WhatsAppConversation[] } | undefined
+      if (paged && Array.isArray(paged.list)) return { ...paged, list: paged.list.map(cleared) }
+      return old
+    })
+  }
+  const resolveDraft = useMutation({
+    mutationFn: (payload: { phone: string; actionId: string; resolution: 'approved' | 'edited' | 'dismissed'; text?: string; alreadySent?: boolean }) =>
+      agentsApi.resolve(payload.actionId, payload.resolution, payload.text).then((r) => ({ ...r, phone: payload.phone })),
+    onSuccess: (_data, v) => { setSendErr(''); clearDraftInCache(v.phone); onSent() },
+    onError: (e) => setSendErr(apiError(e)),
+  })
   const dismissDraft = useMutation({
-    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/dismiss-draft`).then((r) => r.data),
-    onSuccess: (_data, phone) => {
-      setSendErr('')
-      qc.setQueriesData<{ list: WhatsAppConversation[] } | undefined>({ queryKey: ['wa-conversations'] }, (old) => {
-        if (!old) return old
-        return {
-          ...old,
-          list: old.list.map((c) => (c.phoneNormalized !== phone ? c : { ...c, botDraft: '' })),
-        }
-      })
-      onSent()
-    },
+    mutationFn: (v: { phone: string; actionId: string }) => agentsApi.resolve(v.actionId, 'dismissed'),
+    onSuccess: (_data, v) => { setSendErr(''); clearDraftInCache(v.phone); onSent() },
     onError: (e) => setSendErr(apiError(e)),
   })
 
-  // Handing a thread over mutes the assistant on it. Without a way back the
-  // mute is permanent, and that customer never gets an automatic reply again.
+  // Handing a thread over mutes the agent on it. Without a way back the mute
+  // is permanent, and that customer never gets an automatic reply again.
   const resumeBot = useMutation({
-    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/resume`).then((r) => r.data),
+    mutationFn: (leadId: string) => agentsApi.handBack(leadId),
     onSuccess: () => { setSendErr(''); onSent() },
     onError: (e) => setSendErr(apiError(e)),
   })
@@ -3358,8 +3411,13 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
      for another against the same conversation, for one dismissed by accident
      or a wording worth a second try. */
   const suggestAgain = useMutation({
-    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/suggest`),
-    onSuccess: () => { setSendErr(''); refetchConvos() },
+    mutationFn: (leadId: string) => agentsApi.suggestAgain(leadId),
+    onSuccess: (r) => {
+      // Our team may already have answered everything: then there is nothing
+      // to suggest, and saying so beats a card that silently never appears.
+      setSendErr(r.empty ? 'Nothing new to reply to — the conversation is up to date.' : '')
+      refetchConvos()
+    },
     onError: (e) => setSendErr(apiError(e)),
   })
 
@@ -3372,6 +3430,14 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
   /* Notices somebody has read and put away, by chat. Kept for the session
      only: a thread that escalates again tomorrow should say so again. */
   const [escalationHidden, setEscalationHidden] = useState<Set<string>>(new Set())
+  // Editing a suggested reply in place, rather than the composer — so
+  // "Send edited" resolves the same AgentAction instead of leaving it
+  // pending while a different message went out through the composer.
+  const [editingDraft, setEditingDraft] = useState(false)
+  const [draftMore, setDraftMore] = useState(false)
+  const [draftExpanded, setDraftExpanded] = useState(false)
+  const [draftEditText, setDraftEditText] = useState('')
+  useEffect(() => setEditingDraft(false), [selectedPhone])
   const [remindOpen, setRemindOpen] = useState(false)
   const [remindDate, setRemindDate] = useState('')
   const remind = useMutation({
@@ -3381,10 +3447,16 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     onError: (e) => setSendErr(apiError(e)),
   })
 
+  // Voice-sends through its own channel (text-to-speech + WhatsApp media),
+  // so the matching agent draft is marked resolved with alreadySent rather
+  // than sent again through resolveDraft's own text-send path.
   const sendVoiceDraft = useMutation({
-    mutationFn: ({ phone, text }: { phone: string; text: string }) =>
-      api.post('/ai-bot/speak-and-send', { phone, text }),
-    onSuccess: () => { setSendErr(''); stickToBottom.current = true; onSent() },
+    mutationFn: async ({ phone, actionId, text }: { phone: string; actionId: string; text: string }) => {
+      const r = await api.post('/ai-bot/speak-and-send', { phone, text })
+      if (actionId) await agentsApi.resolve(actionId, 'approved', '', true).catch(() => null)
+      return r
+    },
+    onSuccess: (_data, v) => { setSendErr(''); stickToBottom.current = true; clearDraftInCache(v.phone); onSent() },
     onError: (e) => setSendErr(apiError(e)),
   })
 
@@ -3409,7 +3481,14 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
       stickToBottom.current = true
       onSent()
     },
-    onError: (e) => setSendErr(apiError(e)),
+    onError: (e) => {
+      setSendErr(apiError(e))
+      // Deleted or no longer approved in Meta: take it off the list now.
+      if ((e as { response?: { data?: { templateGone?: boolean } } })?.response?.data?.templateGone) {
+        setOpenTemplate('')
+        qc.invalidateQueries({ queryKey: ['whatsapp-templates'] })
+      }
+    },
   })
 
   /* What to put in {{1}} before anybody types.
@@ -3480,7 +3559,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     <div
       className={cn(
         'wa-shell flex flex-col rounded-2xl overflow-hidden min-h-[520px]',
-        embedded ? 'h-[70vh]' : 'h-[calc(100vh-5rem)] md:h-[calc(100vh-5.5rem)]',
+        embedded ? 'h-[calc(100vh-7rem)] min-h-[680px]' : 'h-[calc(100vh-5rem)] md:h-[calc(100vh-5.5rem)]',
       )}
       style={{ border: `1px solid ${LINE}`, background: '#fff', boxShadow: embedded ? 'none' : '0 6px 28px rgba(20,8,31,.07)' }}
     >
@@ -3733,6 +3812,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
           </div>
 
           <div
+            ref={listRef}
+            onScroll={(e) => { listTop.current = e.currentTarget.scrollTop }}
             className="wa-scroll flex-1 min-h-0"
             onPointerEnter={() => setPointerInList(true)}
             onPointerLeave={() => setPointerInList(false)}
@@ -3839,9 +3920,15 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                             {/* How it came to be theirs. The rota hands out
                                 most of these now, and "why is this mine?" is a
                                 fair question to answer from the row. */}
-                            {c.lead.autoAssigned && (
-                              <Sparkles size={9} style={{ display: 'inline', marginLeft: 3, verticalAlign: 'middle' }} />
-                            )}
+                          </span>
+                        )}
+                        {!c.customer && c.lead?.autoAssigned && c.lead.ownerName && (
+                          <span
+                            className="shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5"
+                            title={`Given to ${c.lead.ownerName} by the distribution rules`}
+                            style={{ fontSize: 9.5, fontWeight: 700, background: '#EEF2FF', color: '#3730A3' }}
+                          >
+                            <Shuffle size={9} /> Auto
                           </span>
                         )}
 
@@ -3885,9 +3972,17 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                           <span
                             className="shrink-0 rounded-full px-1.5 py-0.5"
                             style={{ fontSize: 10, fontWeight: 700, background: '#FFF1CC', color: '#8A5A00' }}
-                            title={c.botEscalationReason || 'The assistant handed this over'}
+                            title={`${c.botEscalationReason || 'Handed this over'}${c.botAgentName ? ` — from ${c.botAgentName}` : ''}`}
                           >
                             Needs you
+                          </span>
+                        ) : c.botStatus === 'bot' && c.botAgentName ? (
+                          <span
+                            className="shrink-0 rounded-full px-1.5 py-0.5"
+                            style={{ fontSize: 10, fontWeight: 700, background: '#F3EEFF', color: c.botAgentColor || '#4A1FA0' }}
+                            title={`${c.botAgentName} has a reply ready for you to review`}
+                          >
+                            {c.botAgentName}
                           </span>
                         ) : null}
 
@@ -4061,6 +4156,15 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                         </span>
                       </span>
                     ) : null}
+                    {!selectedConvo.customer && selectedConvo.lead?.autoAssigned && selectedConvo.lead.ownerName && (
+                      <span
+                        className="shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5"
+                        title={`Given to ${selectedConvo.lead.ownerName} by the distribution rules`}
+                        style={{ fontSize: 10, fontWeight: 700, background: '#EEF2FF', color: '#3730A3' }}
+                      >
+                        <Shuffle size={10} /> Auto-assigned
+                      </span>
+                    )}
                   </div>
                   <div className="truncate" style={{ fontSize: 12, color: FAINT_INK }}>
                     +{selectedConvo.phoneNormalized}
@@ -4240,47 +4344,36 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
           {/* The assistant handed this thread over. Shown rather than silently
               going quiet, so nobody wonders why it stopped replying. */}
           {selectedConvo?.botStatus === 'escalated' && !escalationHidden.has(selectedConvo.phoneNormalized) && (
-            <div className="shrink-0 mx-6 mb-2 rounded-xl px-3.5 py-2.5"
+            <div className={cn('shrink-0 rounded-xl px-3 py-1.5 flex items-center gap-2', embedded ? 'mx-3 mb-1' : 'mx-6 mb-1.5')}
               style={{ background: '#FFF7E6', border: '1px solid #F5D9A0' }}>
-              {/* The message and the actions are two rows, not one — on a
-                  narrow screen "Hand back to AI" alongside the icon and the
-                  dismiss X left no room for the text at all: min-w-0/flex-1
-                  let it shrink, so it did, down to one word per line instead
-                  of overflowing. Its own row below never has to compete with
-                  the message's width for space. */}
-              <div className="flex items-start gap-2">
-                <UserCheck size={15} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 1 }} />
-                <div className="min-w-0 flex-1" style={{ fontSize: 12.5, color: '#6B4500' }}>
-                  <span style={{ fontWeight: 700 }}>Waiting for a person.</span>{' '}
-                  {selectedConvo.botEscalationReason || 'The assistant could not answer this one.'}
-                </div>
-                {/* Out of the way without handing the thread back: reading the
-                    reason is usually all somebody needs, and after that the
-                    notice is just taking up the composer's space. It returns
-                    if the assistant escalates again. */}
-                <button
-                  type="button"
-                  onClick={() => setEscalationHidden((h) => new Set(h).add(selectedConvo.phoneNormalized))}
-                  className="shrink-0 cursor-pointer"
-                  style={{ background: 'none', border: 'none', color: '#8A5A00', lineHeight: 1, padding: 2 }}
-                  title="Hide this notice"
-                  aria-label="Hide this notice"
-                >
-                  <X size={14} />
-                </button>
+              <UserCheck size={14} style={{ color: '#8A5A00', flex: '0 0 auto' }} />
+              {/* One line: the reason is in the tooltip. Reading it once is
+                  usually enough, so it should not take two rows of the chat. */}
+              <div className="min-w-0 flex-1 truncate" style={{ fontSize: 12.5, color: '#6B4500' }}
+                title={selectedConvo.botEscalationReason || 'The agent could not answer this one.'}>
+                <span style={{ fontWeight: 700 }}>Waiting for a person{selectedConvo.botAgentName ? ` — ${selectedConvo.botAgentName}` : ''}.</span>{' '}
+                {selectedConvo.botEscalationReason || 'The agent could not answer this one.'}
               </div>
-              <div className="flex justify-end mt-2">
-                <button
-                  type="button"
-                  onClick={() => resumeBot.mutate(selectedConvo.phoneNormalized)}
-                  disabled={resumeBot.isPending}
-                  className="shrink-0 rounded-full px-3 py-1 cursor-pointer disabled:opacity-50"
-                  style={{ background: '#8A5A00', color: '#fff', fontSize: 11.5, fontWeight: 700 }}
-                  title="The assistant will answer this conversation again"
-                >
-                  {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => selectedConvo.lead && resumeBot.mutate(selectedConvo.lead._id)}
+                disabled={resumeBot.isPending || !selectedConvo.lead}
+                className="shrink-0 rounded-full px-2.5 py-0.5 cursor-pointer disabled:opacity-50"
+                style={{ background: '#8A5A00', color: '#fff', fontSize: 11, fontWeight: 700 }}
+                title="The agent will answer this conversation again"
+              >
+                {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEscalationHidden((h) => new Set(h).add(selectedConvo.phoneNormalized))}
+                className="shrink-0 cursor-pointer"
+                style={{ background: 'none', border: 'none', color: '#8A5A00', lineHeight: 1, padding: 2 }}
+                title="Hide this notice"
+                aria-label="Hide this notice"
+              >
+                <X size={14} />
+              </button>
             </div>
           )}
 
@@ -4289,7 +4382,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               assistant has anything to say — a reminder is about the chat, not
               about the reply. */}
           {selectedConvo?.lead && (
-            <div className="shrink-0 mx-6 mb-2 flex flex-wrap items-center gap-2">
+            <div className={cn('shrink-0 flex flex-wrap items-center gap-2', embedded ? 'mx-3 mb-1' : 'mx-6 mb-1.5')}>
               {selectedConvo.lead.followUpAt && new Date(selectedConvo.lead.followUpAt) > new Date() ? (
                 <>
                   <span
@@ -4366,15 +4459,15 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               Dismissing removes a suggestion for good, which is what it should
               do — but there was then no way to ask for another until the
               customer wrote again. */}
-          {selectedConvo && !selectedConvo.botDraft && selectedConvo.botStatus !== 'escalated' && (
+          {selectedConvo && selectedConvo.lead && !selectedConvo.botDraft && selectedConvo.botStatus !== 'escalated' && selectedConvo.botStatus !== 'paused' && (
             <div className="shrink-0 mx-6 mb-2">
               <button
                 type="button"
-                onClick={() => suggestAgain.mutate(selectedConvo.phoneNormalized)}
+                onClick={() => suggestAgain.mutate(selectedConvo.lead!._id)}
                 disabled={suggestAgain.isPending}
                 className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
                 style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: '#4A1FA0' }}
-                title="Ask the assistant for a reply to their last message"
+                title="Ask the agent for a reply to their last message"
               >
                 {suggestAgain.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                 {suggestAgain.isPending ? 'Thinking…' : 'Suggest a reply'}
@@ -4383,58 +4476,119 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
           )}
 
           {/* A suggested reply. It is never sent on its own — someone reads it
-              and presses Send, or edits it in the composer first. */}
-          {selectedConvo?.botDraft && (
-            <div className="shrink-0 mx-6 mb-2 rounded-xl px-3.5 py-3"
+              and presses Send, or edits it first. */}
+          {selectedConvo?.botDraft && selectedConvo.botActionId && (
+            <div className={cn('shrink-0 rounded-xl', embedded ? 'mx-3 mb-1.5 px-3 py-2' : 'mx-6 mb-2 px-3.5 py-3')}
               style={{ background: '#F3EEFF', border: '1px solid #D9CBFA' }}>
-              <div className="flex items-center gap-1.5 mb-1.5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#4A1FA0' }}>
-                <Bot size={13} /> Suggested reply
+              <div className="flex items-center gap-1.5 mb-1.5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: selectedConvo.botAgentColor || '#4A1FA0' }}>
+                <Bot size={13} /> {selectedConvo.botAgentName ? `${selectedConvo.botAgentName} suggests` : 'Suggested reply'}
+                {/* The conversation can move on after a suggestion is written —
+                    a colleague answers from another device, or the customer
+                    writes again. Refresh re-reads the whole chat, ours
+                    included, and says so when the suggestion is out of date. */}
+                {(() => {
+                  const stale = Boolean(selectedConvo.botDraftAt) && new Date(selectedConvo.lastAt).getTime() > new Date(selectedConvo.botDraftAt!).getTime() + 5000
+                  return (
+                    <span className="ml-auto inline-flex items-center gap-2" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                      {stale && <span style={{ fontSize: 11, fontWeight: 600, color: '#B45309' }}>New messages since this</span>}
+                      {selectedConvo.lead && (
+                        <button type="button"
+                          onClick={() => suggestAgain.mutate(selectedConvo.lead!._id)}
+                          disabled={suggestAgain.isPending}
+                          className="h-6 px-2.5 rounded-full cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                          style={{ border: `1px solid ${stale ? '#F5DFB8' : '#D9CBFA'}`, background: stale ? '#FFF7E6' : '#fff', fontSize: 11.5, fontWeight: 700, color: stale ? '#B45309' : '#4A1FA0' }}
+                          title="Read the whole conversation again and write a new suggestion">
+                          {suggestAgain.isPending ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                          {suggestAgain.isPending ? 'Reading…' : 'Refresh'}
+                        </button>
+                      )}
+                    </span>
+                  )
+                })()}
               </div>
-              <div className="whitespace-pre-wrap" style={{ fontSize: 13, color: MUTED_INK }}>
-                {selectedConvo.botDraft}
-              </div>
+              {editingDraft ? (
+                <Textarea rows={3} value={draftEditText} onChange={(e) => setDraftEditText(e.target.value)} />
+              ) : (
+                <div
+                  className={cn('whitespace-pre-wrap', draftExpanded ? 'overflow-y-auto' : 'line-clamp-2')}
+                  style={{ fontSize: 13, color: MUTED_INK, maxHeight: draftExpanded ? (embedded ? '16vh' : '28vh') : undefined, cursor: (selectedConvo.botDraft || '').length > 120 ? 'pointer' : undefined }}
+                  onClick={() => (selectedConvo.botDraft || '').length > 120 && setDraftExpanded((v) => !v)}
+                  title={(selectedConvo.botDraft || '').length > 120 ? (draftExpanded ? 'Show less' : 'Show the whole suggestion') : undefined}
+                >
+                  {selectedConvo.botDraft}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 mt-2.5">
-                <button type="button"
-                  onClick={() => sendText(selectedConvo.botDraft!)}
-                  disabled={send.isPending}
-                  className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
-                  style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
-                  Send
-                </button>
-                {/* Hear it, and send the voice — so what the customer gets is
-                    what was approved, and a spoken reply can be judged before
-                    anybody turns automatic replies on. */}
-                <button type="button"
-                  onClick={() => hearDraft(selectedConvo.botDraft!)}
-                  className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5"
-                  style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}
-                  title={hearing === 'playing' ? 'Stop' : 'Hear this read aloud. Nothing is sent.'}>
-                  {hearing === 'loading' ? <Loader2 size={12} className="animate-spin" />
-                    : hearing === 'playing' ? <Square size={11} />
-                      : <Mic size={12} />}
-                  {hearing === 'loading' ? 'Speaking…' : hearing === 'playing' ? 'Stop' : 'Hear it'}
-                </button>
-                <button type="button"
-                  onClick={() => sendVoiceDraft.mutate({ phone: selectedConvo.phoneNormalized, text: selectedConvo.botDraft! })}
-                  disabled={sendVoiceDraft.isPending}
-                  className="h-7 px-3 rounded-full cursor-pointer disabled:opacity-50"
-                  style={{ border: '1px solid #D9CBFA', background: '#fff', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}
-                  title="Send this as a voice note">
-                  {sendVoiceDraft.isPending ? 'Sending…' : 'Send as voice'}
-                </button>
-                <button type="button"
-                  onClick={() => { insertText(selectedConvo.botDraft!); dismissDraft.mutate(selectedConvo.phoneNormalized) }}
-                  className="h-7 px-3 rounded-full cursor-pointer"
-                  style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}>
-                  Edit
-                </button>
-                <button type="button"
-                  onClick={() => dismissDraft.mutate(selectedConvo.phoneNormalized)}
-                  disabled={dismissDraft.isPending}
-                  className="h-7 px-2.5 rounded-full cursor-pointer disabled:opacity-50"
-                  style={{ fontSize: 12, fontWeight: 600, color: FAINT_INK }}>
-                  {dismissDraft.isPending ? 'Dismissing…' : 'Dismiss'}
-                </button>
+                {editingDraft ? (
+                  <>
+                    <button type="button"
+                      onClick={() => { resolveDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, resolution: 'edited', text: draftEditText }); setEditingDraft(false) }}
+                      disabled={resolveDraft.isPending || !draftEditText.trim()}
+                      className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
+                      style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
+                      Send edited
+                    </button>
+                    <button type="button"
+                      onClick={() => setEditingDraft(false)}
+                      className="h-7 px-3 rounded-full cursor-pointer"
+                      style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button"
+                      onClick={() => resolveDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, resolution: 'approved' })}
+                      disabled={resolveDraft.isPending}
+                      className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
+                      style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
+                      Send
+                    </button>
+                    {draftMore && (<>
+                    {/* Hear it, and send the voice — so what the customer gets is
+                        what was approved, and a spoken reply can be judged before
+                        anybody turns automatic replies on. */}
+                    <button type="button"
+                      onClick={() => hearDraft(selectedConvo.botDraft!)}
+                      className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5"
+                      style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}
+                      title={hearing === 'playing' ? 'Stop' : 'Hear this read aloud. Nothing is sent.'}>
+                      {hearing === 'loading' ? <Loader2 size={12} className="animate-spin" />
+                        : hearing === 'playing' ? <Square size={11} />
+                          : <Mic size={12} />}
+                      {hearing === 'loading' ? 'Speaking…' : hearing === 'playing' ? 'Stop' : 'Hear it'}
+                    </button>
+                    <button type="button"
+                      onClick={() => sendVoiceDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, text: selectedConvo.botDraft! })}
+                      disabled={sendVoiceDraft.isPending}
+                      className="h-7 px-3 rounded-full cursor-pointer disabled:opacity-50"
+                      style={{ border: '1px solid #D9CBFA', background: '#fff', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}
+                      title="Send this as a voice note">
+                      {sendVoiceDraft.isPending ? 'Sending…' : 'Send as voice'}
+                    </button>
+                    </>)}
+                    <button type="button"
+                      onClick={() => { setDraftEditText(selectedConvo.botDraft!); setEditingDraft(true) }}
+                      className="h-7 px-3 rounded-full cursor-pointer"
+                      style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}>
+                      Edit
+                    </button>
+                    <button type="button"
+                      onClick={() => dismissDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId! })}
+                      disabled={dismissDraft.isPending}
+                      className="h-7 px-2.5 rounded-full cursor-pointer disabled:opacity-50"
+                      style={{ fontSize: 12, fontWeight: 600, color: FAINT_INK }}>
+                      {dismissDraft.isPending ? 'Dismissing…' : 'Dismiss'}
+                    </button>
+                    <button type="button"
+                      onClick={() => setDraftMore((v) => !v)}
+                      className="h-7 px-2 rounded-full cursor-pointer ml-auto"
+                      style={{ fontSize: 12, fontWeight: 600, color: FAINT_INK }}
+                      title="Hear it, or send it as a voice note">
+                      {draftMore ? 'Less' : '⋯ Voice'}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -4861,7 +5015,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                               <button
                                 type="button"
                                 onClick={() => sendQuickReply.mutate(t._id)}
-                                disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
+                                disabled={!selectedPhone || windowClosed || send.isPending || sendQuickReply.isPending}
                                 className="text-left w-full cursor-pointer hover:opacity-75 disabled:opacity-40"
                                 style={{ fontSize: 12.5, color: MUTED_INK, whiteSpace: 'pre-wrap' }}
                                 title={t.mediaKind ? `Send this, with the ${t.mediaKind}` : 'Send this now'}
@@ -4872,7 +5026,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                             <button
                               type="button"
                               onClick={() => sendQuickReply.mutate(t._id)}
-                              disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
+                              disabled={!selectedPhone || windowClosed || send.isPending || sendQuickReply.isPending}
                               className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer active:scale-90 transition-transform duration-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
                               style={{ width: 26, height: 26, background: '#5B2BC9', color: '#fff' }}
                               title="Send now"
@@ -4961,7 +5115,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                       key={t._id}
                       type="button"
                       onClick={() => sendQuickReply.mutate(t._id)}
-                      disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
+                      disabled={!selectedPhone || windowClosed || send.isPending || sendQuickReply.isPending}
                       className="text-left cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden"
                       style={{ border: `1px solid ${LINE}`, borderRadius: 12, background: '#fff' }}
                       title="Send this video — its snapshot, with a watch link"

@@ -6,6 +6,7 @@ const { Schema, model } = mongoose;
 const ALL_MODULES = [
   'warehouse', 'warehouse_supervisor',
   'dashboard', 'units', 'moving_inventory', 'contracts', 'documents',
+  'agreement_templates',
   'customers', 'quotes', 'invoices', 'vendors', 'expenses',
   'leads', 'purchases', 'payments',
   // The WhatsApp console. Historically reached through 'leads', which is why
@@ -25,6 +26,8 @@ const ALL_MODULES = [
   'moving_claims',
   // Sales reps' personal "My Leads" board — leads/moving_leads scoped to the logged-in rep.
   'sales_board',
+  // WhatsApp Campaign Studio for non-admins; granted per person in Settings → Users.
+  'campaign_studio',
 ];
 
 const userSchema = new Schema(
@@ -34,7 +37,7 @@ const userSchema = new Schema(
     passwordHash: { type: String, required: true },
     // 'accounts' is a second sales-rep-equivalent role: identical access and
     // data scope, kept separate only so the two teams can be told apart.
-    role: { type: String, enum: ['admin', 'staff', 'sales_rep', 'accounts'], default: 'staff' },
+    role: { type: String, enum: ['admin', 'staff', 'sales_rep', 'accounts', 'accounts_admin'], default: 'staff' },
     // Modules this user can access. Admins bypass this check entirely.
     permissions: { type: [String], default: [] },
     isActive: { type: Boolean, default: true },
@@ -44,13 +47,6 @@ const userSchema = new Schema(
        assumed: it is what stops a restart at 07:30 sending a second one — see
        services/dayBrief.js. */
     dayBriefSentAt: { type: Date, default: null },
-    // Guided walkthroughs. `enabled` defaults true so a new user gets them
-    // without anything being written for them first, which is what "on for any
-    // new user" has to mean. An id absent from `completed` means not yet seen.
-    walkthroughs: {
-      enabled: { type: Boolean, default: true },
-      completed: { type: [String], default: [] },
-    },
     /* Expo push tokens for the mobile app — one per device this person is
        logged into, since a rep can carry both a work and a personal phone.
        services/expoPush.js is the only writer: it adds a token on
@@ -174,6 +170,9 @@ const customerSchema = new Schema(
     source: { type: String, enum: ['manual', 'import_csv', 'google'], default: 'manual' },
     importBatch: { type: String, default: null },
     googleId: { type: String, default: '' },
+    // Set when the customer typed this email in the app (unproven), so it is
+    // not trusted to match their records in Zoho Books.
+    emailFromApp: { type: Boolean, default: false },
     // Excluded from marketing campaigns. Never consulted for transactional mail
     // — an invoice or a contract still has to reach them.
     unsubscribed: { type: Boolean, default: false },
@@ -299,6 +298,15 @@ const leadSchema = new Schema(
        would lose whichever was set second. Always an exact day — nobody
        arranges a viewing for "some time in March". */
     siteVisitAt: { type: Date, default: null },
+    /* When they want the storage to start.
+
+       "Next month", "after Eid", "on the 15th": a customer often enquires well
+       before they need the unit. Its own date, because it answers a different
+       question from the other two — followUpAt is when we next chase them,
+       siteVisitAt is when they come to look, and this is when they are ready
+       to take the unit. A day, not an instant: nobody needs storage "at 4pm". */
+    storageStartAt: { type: Date, default: null },
+    storageStartTaskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
     siteVisitTaskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
 
     /* Every attempt made to reach them, oldest first. "Attempt 2 of 3" is this
@@ -326,7 +334,7 @@ const leadSchema = new Schema(
     leadScoreOverrideForLeadType: { type: String, default: '' },
     source: {
       type: String,
-      enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'other'],
+      enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other'],
       default: 'manual',
     },
     leadDateTime: { type: Date, default: Date.now },
@@ -649,6 +657,11 @@ const contractSchema = new Schema(
     // Reminders are opt-in: new contracts start muted, enable per contract
     // from its Reminders tab
     remindersMuted: { type: Boolean, default: true },
+    // Which computed nextPaymentDueDate() this contract was last mentioned
+    // in the accounts payment-due digest for — compared against the current
+    // computed date so a cycle is only mentioned once, without needing a
+    // per-cycle Payment record. See services/paymentDueDigest.js.
+    lastDueSoonNotifiedFor: { type: Date, default: null },
     reminderOverrides: [
       {
         rule: { type: Schema.Types.ObjectId, ref: 'AutomationRule' },
@@ -797,6 +810,32 @@ const quoteSchema = new Schema(
     notes: { type: String, default: '' },
     status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },
     shareToken: { type: String, default: null },
+    /* A booking made through the public, no-login API for the marketing
+     * website (server/src/routes/publicBooking.js) — the other system's
+     * Stripe checkout is what actually charges the card; this only records
+     * that it told us payment succeeded. `token` is a one-time value scoped
+     * to this single quote, handed back when the hold was created, and is
+     * how confirm-payment proves it is the same caller — not a login. */
+    publicBooking: {
+      token: { type: String, default: null },
+      confirmedAt: { type: Date, default: null },
+      externalReference: { type: String, default: '' },
+    },
+    /* A booking made by a signed-in customer in the mobile app. Unlike a staff
+     * quote, paying it converts it to a contract with no one in between (see
+     * services/quoteConversion.js). `needsReview` is set instead when payment
+     * arrives but the contract cannot be made, so staff are told rather than the
+     * customer being left with a payment and nothing. */
+    appBooking: {
+      active: { type: Boolean, default: false },
+      checkoutStartedAt: { type: Date, default: null },
+      // Set atomically by whichever of the webhook or the app's status check
+      // gets to a paid booking first, so only one of them makes the contract.
+      convertingAt: { type: Date, default: null },
+      convertedAt: { type: Date, default: null },
+      needsReview: { type: Boolean, default: false },
+      reviewReason: { type: String, default: '' },
+    },
     // A Stripe Checkout session for paying this quote online, and when it
     // actually cleared — the webhook sets stripePaidAt, nothing else does.
     stripeCheckoutSessionId: { type: String, default: null },
@@ -1124,6 +1163,10 @@ const paymentSchema = new Schema(
     status: { type: String, enum: ['pending', 'paid', 'overdue'], default: 'pending' },
     notes: { type: String, default: '' },
     recordedBy: { type: String, default: '' },
+    // Set once the accounts payment-due digest has told the team this
+    // payment is coming up, so a daily job cannot email the same due date
+    // twice. See services/paymentDueDigest.js.
+    accountsDueSoonNotifiedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
@@ -1645,6 +1688,13 @@ const auditLogSchema = new Schema(
     path: { type: String, default: '' },
     ipAddress: { type: String, default: '' },
     detail: { type: String, default: '' },
+    // For watched accounts (Accounts + Admin): the role label, the browser, why
+    // it was done, what was sent, and the record as it stood before the change.
+    userRole: { type: String, default: '' },
+    userAgent: { type: String, default: '' },
+    reason: { type: String, default: '' },
+    changes: { type: String, default: '' },
+    before: { type: String, default: '' },
   },
   { timestamps: true }
 );
@@ -1760,6 +1810,7 @@ reminderLogSchema.index({ contract: 1, sentAt: -1 });
 // "did we email them?" had no single answer.
 const sentEmailSchema = new Schema({
   to: { type: String, default: '' },
+  cc: { type: String, default: '' },
   // Bulk sends put the list here and the sender in `to`; the count is what
   // matters on a list page, the addresses are for opening one row.
   bcc: { type: String, default: '' },
@@ -1809,6 +1860,12 @@ const campaignSchema = new Schema({
     // Skip anyone who already had a campaign on this channel within N days, so
     // two campaigns in a week do not both land on the same person.
     minDaysBetween: { type: Number, default: 7 },
+    // Leads only: when they came in, and whether to leave out signed customers.
+    leadFrom: { type: String, default: '' },
+    leadTo: { type: String, default: '' },
+    excludeCustomers: { type: Boolean, default: true },
+    // People picked by hand in Campaign Studio. When present, only these leads.
+    leadIds: [{ type: Schema.Types.ObjectId, ref: 'Lead' }],
   },
 
   emailSubject: { type: String, default: '' },
@@ -1820,6 +1877,8 @@ const campaignSchema = new Schema({
     templateName: { type: String, default: '' },
     language: { type: String, default: 'en' },
     variables: { type: [String], default: [] },
+    // Public https link to the image shown above the text, for templates with an image header.
+    headerImageUrl: { type: String, default: '' },
   },
 
   status: {
@@ -1856,8 +1915,16 @@ const campaignRecipientSchema = new Schema({
   status: { type: String, enum: ['pending', 'sent', 'failed', 'skipped'], default: 'pending' },
   reason: { type: String, default: '' },
   sentAt: { type: Date, default: null },
+  // From Meta's delivery receipts and the chat itself: what happened after it left.
+  messageId: { type: String, default: '' },
+  deliveredAt: { type: Date, default: null },
+  readAt: { type: Date, default: null },
+  repliedAt: { type: Date, default: null },
+  errorDetail: { type: String, default: '' },
 }, { timestamps: true });
 campaignRecipientSchema.index({ campaign: 1, status: 1 });
+campaignRecipientSchema.index({ messageId: 1 });
+campaignRecipientSchema.index({ phoneNormalized: 1, sentAt: -1 });
 // The same person must not appear twice on one campaign and one channel, even
 // if they arrived from both the tenant list and the lead list.
 campaignRecipientSchema.index(
@@ -1866,6 +1933,41 @@ campaignRecipientSchema.index(
 );
 campaignSchema.plugin(softDeletePlugin);
 campaignRecipientSchema.plugin(softDeletePlugin);
+
+// ── Campaign templates: written here, submitted to Meta, tracked until approved ─
+const templateImageSchema = new Schema({
+  key: { type: String, required: true, unique: true },
+  data: { type: Buffer, required: true },
+  contentType: { type: String, default: 'image/jpeg' },
+  fileName: { type: String, default: '' },
+  size: { type: Number, default: 0 },
+}, { timestamps: true });
+
+const campaignTemplateSchema = new Schema({
+  name: { type: String, required: true },
+  language: { type: String, default: 'en' },
+  category: { type: String, enum: ['MARKETING', 'UTILITY'], default: 'MARKETING' },
+  headerType: { type: String, enum: ['none', 'image'], default: 'none' },
+  imageKey: { type: String, default: '' },
+  bodyText: { type: String, required: true },
+  bodyExamples: { type: [String], default: [] },
+  footerText: { type: String, default: '' },
+  buttons: [{ type: { type: String, enum: ['QUICK_REPLY', 'URL'] }, text: String, url: String }],
+  // draft = not sent to Meta yet; the rest are Meta's own words.
+  status: { type: String, default: 'draft' },
+  metaId: { type: String, default: '' },
+  rejectedReason: { type: String, default: '' },
+  lastError: { type: String, default: '' },
+  submittedAt: { type: Date, default: null },
+  statusChangedAt: { type: Date, default: null },
+  statusCheckedAt: { type: Date, default: null },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  createdByName: { type: String, default: '' },
+}, { timestamps: true });
+campaignTemplateSchema.index({ name: 1, language: 1 });
+campaignTemplateSchema.plugin(softDeletePlugin);
+export const TemplateImage = model('TemplateImage', templateImageSchema);
+export const CampaignTemplate = model('CampaignTemplate', campaignTemplateSchema);
 
 export const Campaign = model('Campaign', campaignSchema);
 export const CampaignRecipient = model('CampaignRecipient', campaignRecipientSchema);
@@ -2039,15 +2141,19 @@ const assistantConfigSchema = new Schema({
   model: { type: String, default: '' },
   // How many tool rounds one question may take before it has to answer.
   maxToolRounds: { type: Number, default: 4 },
-  // Who may use it. Reports are admin and accounts; this sees the same data.
-  roles: { type: [String], default: ['admin', 'accounts'] },
+  // Who may use it. Reports are admin and accounts, and BayOps (the mobile
+  // command bar) is a rep tool first, so sales_rep is in the default too —
+  // this is only what a brand-new config document gets; an already-existing
+  // one keeps whatever an admin set, same as any other field here.
+  roles: { type: [String], default: ['admin', 'accounts', 'sales_rep'] },
   /* Whether it may do things — create a quotation, send it — as well as
    * answer. Every action is proposed first and runs only when a person
    * confirms it in the widget; this switch decides whether it may even
-   * propose. Admin only by default: an action here reserves a unit and
-   * messages a customer. */
+   * propose. Admin and sales_rep by default — a rep proposing their own
+   * quotation or lead is exactly BayOps' job, still gated by a person
+   * pressing Confirm either way. */
   actionsEnabled: { type: Boolean, default: true },
-  actionRoles: { type: [String], default: ['admin'] },
+  actionRoles: { type: [String], default: ['admin', 'sales_rep'] },
 }, { timestamps: true });
 export const AssistantConfig = model('AssistantConfig', assistantConfigSchema);
 
@@ -2285,6 +2391,8 @@ leadRoutingRuleSchema.plugin(softDeletePlugin);
 /** The settings that are not about one person. A single document. */
 const leadRoutingConfigSchema = new Schema({
   enabled: { type: Boolean, default: false },
+  // Each new lead is a weighted random draw by share, not strict turn-taking.
+  randomize: { type: Boolean, default: true },
   timeZone: { type: String, default: 'Asia/Dubai' },
   /* Nobody on shift. 'ai' leaves the chat to the assistant and the lead
      unassigned, so it is picked up in the morning by whoever is due it rather
@@ -2396,6 +2504,30 @@ const contractRenewalSchema = new Schema({
 contractRenewalSchema.index({ contract: 1, createdAt: -1 });
 contractRenewalSchema.index({ stripeCheckoutSessionId: 1 });
 export const ContractRenewal = model('ContractRenewal', contractRenewalSchema);
+
+// One live login code per phone. The code is stored hashed, and Mongo's TTL
+// index removes the row, so a restart or a second server instance can't lose or
+// split a code the way an in-memory Map did.
+const customerOtpSchema = new mongoose.Schema({
+  phone: { type: String, required: true, unique: true },
+  codeHash: { type: String, required: true },
+  attempts: { type: Number, default: 0 },
+  expiresAt: { type: Date, required: true, index: { expireAfterSeconds: 0 } },
+}, { timestamps: true });
+export const CustomerOtp = model('CustomerOtp', customerOtpSchema);
+
+// Something a tenant asks for from the app that staff must action — a check-out
+// change today. Kept as its own record so it can be listed and answered, and
+// mirrored onto the contract timeline so it is seen where staff already look.
+const customerRequestSchema = new mongoose.Schema({
+  customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
+  contract: { type: mongoose.Schema.Types.ObjectId, ref: 'Contract', required: true },
+  type: { type: String, enum: ['checkout_change'], required: true },
+  payload: { type: mongoose.Schema.Types.Mixed, default: {} },
+  status: { type: String, enum: ['pending', 'approved', 'declined'], default: 'pending' },
+  staffNote: { type: String, default: '' },
+}, { timestamps: true });
+export const CustomerRequest = model('CustomerRequest', customerRequestSchema);
 
 export const LeadRoutingRule = model('LeadRoutingRule', leadRoutingRuleSchema);
 export const LeadRoutingConfig = model('LeadRoutingConfig', leadRoutingConfigSchema);
@@ -2563,6 +2695,11 @@ const messageTemplateSchema = new Schema({
   label: { type: String, required: true },
   subject: { type: String, default: '' },
   emailBody: { type: String, default: '' },
+  // Extra recipients for this specific automated email, comma-separated —
+  // e.g. copying a manager on the accounts payment-due digest. Empty for
+  // every tenant-facing template; nothing reads this unless the sending
+  // service (like paymentDueDigest.js) explicitly looks for it.
+  cc: { type: String, default: '' },
   // The designed version. When present it is what actually goes out, with
   // emailBody kept as the plain-text part for clients that will not render
   // HTML — a reminder should not arrive blank because someone reads mail in a

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
-import { contractLeased } from '../services/rateRealisation.js';
+import { contractLeased, unitRow } from '../services/rateRealisation.js';
 import { Unit, Contract, Site } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
 import { syncAllUnitStatuses, statusForUnit } from '../utils/unitStatus.js';
@@ -118,20 +118,30 @@ router.get('/sizes', async (req, res) => {
 
 router.get('/active-contracts', async (_req, res) => {
   const contracts = await Contract.find({ status: 'active', archived: { $ne: true } })
-    .select('contractNo customer unit units endDate')
+    // The money fields and each unit's asking price, so the leased amount can
+    // be worked out the way the pricing screen and the rates report do it —
+    // one contract over several units is shared out in proportion to what
+    // each unit asks, not repeated in full on every one.
+    .select('contractNo customer unit units endDate rate leasedPrice firstMonthDiscountPct billingPeriod')
     .populate('customer', 'fullName')
+    .populate('unit', 'price')
+    .populate('units', 'price')
     .sort({ endDate: 1 })
     .lean();
 
   const byUnit = {};
   for (const c of contracts) {
-    const unitIds = [c.unit, ...(c.units || [])].filter(Boolean).map(String);
-    for (const uid of new Set(unitIds)) {
+    const docs = new Map();
+    for (const u of [c.unit, ...(c.units || [])].filter(Boolean)) docs.set(String(u._id ?? u), u);
+    for (const [uid, doc] of docs) {
+      const row = unitRow(typeof doc === 'object' ? doc : { _id: uid }, c);
       (byUnit[uid] ||= []).push({
         contractId: String(c._id),
         contractNo: c.contractNo || '',
         customerName: c.customer?.fullName || '',
         endDate: c.endDate || null,
+        // What this tenant actually pays for this unit, per 4 weeks.
+        leased: row.leased > 0 ? row.leased : null,
       });
     }
   }
@@ -207,6 +217,51 @@ router.put('/bulk-price', async (req, res) => {
   }
 
   res.json({ matched: units.length, updated, skipped });
+});
+
+// Set the price and/or the discount for every unit of one size, on every
+// floor — what the website's price list is made of, so it is set per size.
+//
+//  - discountPct (admin only) is applied to every unit of the size. It is the
+//    percentage off the first 4 weeks, and is not locked the way a price is.
+//  - price follows the same rule as /bulk-price: units with no price are
+//    filled in; a unit that already has a different price only changes when an
+//    admin passes `override`.
+router.put('/size-pricing', async (req, res) => {
+  const { sizeSqf, price, discountPct, override } = req.body;
+  const size = Number(sizeSqf);
+  if (!(size > 0)) return res.status(400).json({ error: 'sizeSqf is required' });
+  const hasPrice = price !== undefined && price !== null && price !== '';
+  const hasDiscount = discountPct !== undefined && discountPct !== null && discountPct !== '';
+  if (!hasPrice && !hasDiscount) return res.status(400).json({ error: 'Give a price, a discount, or both' });
+
+  const isAdmin = req.user?.role === 'admin';
+  if (hasDiscount) {
+    if (!isAdmin) return res.status(403).json({ error: 'Only an admin can change discounts' });
+    const d = Number(discountPct);
+    if (!(d >= 0 && d <= 100)) return res.status(400).json({ error: 'Discount must be between 0 and 100' });
+  }
+  if (hasPrice && !(Number(price) > 0)) return res.status(400).json({ error: 'Price must be more than 0' });
+
+  const units = await Unit.find({ sizeSqf: size });
+  let priceUpdated = 0;
+  let priceSkipped = 0;
+  let discountUpdated = 0;
+  for (const unit of units) {
+    let dirty = false;
+    if (hasPrice) {
+      if (unit.price == null) { unit.price = Number(price); dirty = true; priceUpdated++; }
+      else if (Number(unit.price) !== Number(price)) {
+        if (isAdmin && override === true) { unit.price = Number(price); dirty = true; priceUpdated++; }
+        else priceSkipped++;
+      }
+    }
+    if (hasDiscount && Number(unit.discountPct || 0) !== Number(discountPct)) {
+      unit.discountPct = Number(discountPct); dirty = true; discountUpdated++;
+    }
+    if (dirty) await unit.save();
+  }
+  res.json({ matched: units.length, priceUpdated, priceSkipped, discountUpdated });
 });
 
 router.put('/:id', async (req, res) => {

@@ -47,6 +47,7 @@ type Data = {
     timeZone: string
     outOfHoursMode: 'ai' | 'unassigned' | 'user'
     outOfHoursUser?: string | null
+    randomize?: boolean
     existingCustomerUser?: string | null
     /* The clock on a lead nobody has answered, in minutes. 0 turns either
        half off. */
@@ -124,6 +125,27 @@ export default function LeadDistribution() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  /* Leads the rules gave somebody that they never touched, handed back to
+     unassigned. Counts first; nothing changes until it is confirmed. */
+  const [takeFrom, setTakeFrom] = useState('')
+  const [takeInfo, setTakeInfo] = useState<{ owner: string; autoAssigned: number; wouldTakeBack: number; keptBecauseWorked: number } | null>(null)
+  const [takeDone, setTakeDone] = useState('')
+  const takeBack = useMutation({
+    mutationFn: (v: { userId: string; confirm: boolean }) => api.post('/lead-routing/take-back', v).then((r) => r.data),
+    onSuccess: (d, v) => {
+      setErr('')
+      if (v.confirm) {
+        setTakeInfo(null)
+        setTakeDone(`${d.takenBack} lead${d.takenBack === 1 ? '' : 's'} taken back from ${d.owner}. ${d.keptBecauseWorked} the ones already worked stayed with them.`)
+        qc.invalidateQueries({ queryKey: ['leads'] })
+      } else {
+        setTakeDone('')
+        setTakeInfo(d)
+      }
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   const { data: preview } = useQuery<{ order: { name: string | null; reason: string }[]; tallyAfter: { name: string; count: number }[] }>({
     queryKey: ['lead-routing-preview'],
     queryFn: () => api.get('/lead-routing/preview?n=20').then((r) => r.data),
@@ -160,6 +182,15 @@ export default function LeadDistribution() {
                       : 'Off. Every new chat goes to the first user on the system, as it always has.'}
                   </div>
                 </div>
+                <label className="inline-flex items-center gap-2 cursor-pointer" style={{ fontSize: 12.5, color: MUTED }}>
+                  <input
+                    type="checkbox"
+                    checked={config.randomize !== false}
+                    onChange={(e) => saveConfig.mutate({ randomize: e.target.checked })}
+                    disabled={saveConfig.isPending}
+                  />
+                  Pick at random among reps on shift
+                </label>
                 <Button
                   variant={config.enabled ? 'outline' : 'default'}
                   onClick={() => saveConfig.mutate({ enabled: !config.enabled })}
@@ -256,21 +287,17 @@ export default function LeadDistribution() {
                       {[5, 10, 15, 20, 30, 45, 60].map((m) => <option key={m} value={m}>{m} minutes</option>)}
                     </Select>
                   </Field>
-                  <Field label="Give it to somebody else after">
-                    <Select
-                      value={String(config.slaReassignMinutes ?? 30)}
-                      onChange={(e) => saveConfig.mutate({ slaReassignMinutes: Number(e.target.value) })}
-                    >
-                      <option value="0">Never — leave it with them</option>
-                      {[15, 30, 45, 60, 90, 120].map((m) => <option key={m} value={m}>{m} minutes</option>)}
-                    </Select>
+                  <Field label="If still unanswered">
+                    <div style={{ height: 40, display: 'flex', alignItems: 'center', fontSize: 13, color: MUTED }}>
+                      Stays with its owner
+                    </div>
                   </Field>
                 </div>
                 <p className="flex items-start gap-2" style={{ fontSize: 12, color: MUTED }}>
                   <Clock size={14} style={{ marginTop: 1, flexShrink: 0 }} />
                   The clock stops when the rep logs an attempt or moves the stage — opening the lead does
-                  not count. A lead is only ever moved once, and never moved at all when there is nobody
-                  else on shift to take it; in that case the owner is reminded instead.
+                  not count. A lead that already has an owner is never moved to somebody else automatically — the
+                  owner is reminded, and an admin can reassign it by hand.
                 </p>
               </CardBody>
             </Card>
@@ -362,6 +389,43 @@ export default function LeadDistribution() {
               </CardBody>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader
+              title="Take back leads the system assigned"
+              subtitle="Only leads the rules gave somebody that are still new, unopened and never replied to. Anything they have worked stays theirs."
+            />
+            <CardBody className="space-y-3">
+              <div className="flex flex-wrap items-end gap-2">
+                <Select value={takeFrom} onChange={(e) => { setTakeFrom(e.target.value); setTakeInfo(null); setTakeDone('') }} style={{ minWidth: 220 }}>
+                  <option value="">Take back from…</option>
+                  {data.people.map((p) => <option key={p._id} value={p._id}>{p.name} ({p.role})</option>)}
+                </Select>
+                <Button disabled={!takeFrom || takeBack.isPending} onClick={() => takeBack.mutate({ userId: takeFrom, confirm: false })}>
+                  Check
+                </Button>
+              </div>
+              {takeInfo && (
+                <div className="rounded-lg p-3 space-y-2" style={{ background: '#FBF8F3', border: `1px solid ${LINE}`, fontSize: 13 }}>
+                  <div>
+                    {takeInfo.owner} has <strong>{takeInfo.autoAssigned}</strong> system-assigned leads;{' '}
+                    <strong>{takeInfo.wouldTakeBack}</strong> are untouched and would go back to unassigned.
+                  </div>
+                  <Button
+                    disabled={!takeInfo.wouldTakeBack || takeBack.isPending}
+                    onClick={() => {
+                      if (confirm(`Take ${takeInfo.wouldTakeBack} untouched leads back from ${takeInfo.owner}? They become unassigned.`)) {
+                        takeBack.mutate({ userId: takeFrom, confirm: true })
+                      }
+                    }}
+                  >
+                    {takeBack.isPending ? 'Working…' : `Take back ${takeInfo.wouldTakeBack}`}
+                  </Button>
+                </div>
+              )}
+              {takeDone && <div style={{ fontSize: 12.5, color: '#047857', fontWeight: 600 }}>{takeDone}</div>}
+            </CardBody>
+          </Card>
 
           {/* Proof */}
           {preview && (

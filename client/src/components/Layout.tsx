@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import {
-  Shuffle, Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck } from 'lucide-react'
+  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -11,7 +11,6 @@ import { SiteGate } from './SiteGate'
 import AppFooter from './AppFooter'
 import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
-import { WalkthroughProvider } from '../walkthroughs/WalkthroughProvider'
 
 const navTop = [
   { to: '/warehouse', label: 'Stored Inventory', icon: Package, perm: ['warehouse', 'warehouse_supervisor'] },
@@ -84,18 +83,16 @@ const profileMenuGroups = [
       { to: '/settings/assistant', label: 'Ask the system', icon: Sparkles, perm: 'settings', adminOnly: true },
       { to: '/settings/lead-distribution', label: 'Lead Distribution', icon: Shuffle, perm: 'settings', adminOnly: true },
       { to: '/settings/sent-emails', label: 'Sent Emails', icon: Mail, perm: 'settings', adminOnly: true },
+      { to: '/campaign-studio', label: 'Campaign Studio', icon: Send, perm: 'campaign_studio', adminOnly: false, adminAlways: true },
       { to: '/marketing', label: 'Marketing', icon: Megaphone, perm: 'settings', adminOnly: true },
-      { to: '/zoho-comparison', label: 'Zoho Comparison', icon: RefreshCw, perm: 'settings', adminOnly: false },
+      { to: '/agents', label: 'AI Agents', icon: Bot, perm: 'settings', adminOnly: true },
     ],
   },
   {
     label: 'Workspace',
     items: [
       { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: undefined, adminOnly: true },
-      { to: '/diary', label: 'Daily Diary', icon: NotebookPen, perm: undefined, adminOnly: false },
-      { to: '/walkthroughs', label: 'Walkthroughs', icon: Compass, perm: undefined, adminOnly: false },
       { to: '/users', label: 'Users', icon: UserCog, perm: undefined, adminOnly: true },
-      { to: '/sales-team', label: 'Sales Team', icon: Target, perm: undefined, adminOnly: true },
       { to: '/backup', label: 'Backup', icon: DatabaseBackup, perm: undefined, adminOnly: true },
       { to: '/audit-log', label: 'Audit Log', icon: ShieldCheck, perm: undefined, adminOnly: true },
     ],
@@ -148,6 +145,7 @@ const salesRepNavGroups = [
       { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board', notFor: 'accounts' },
       { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
       { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },
+      { key: 'campaign-studio', to: '/campaign-studio', label: 'Campaign Studio', icon: Send, perm: 'campaign_studio' },
     ],
   },
   {
@@ -163,7 +161,11 @@ const salesRepNavGroups = [
          against what was agreed, so what is on it is worth reading. The server
          refuses the write either way. */
       { key: 'book-unit', to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'sales_board' },
-      { key: 'customers', to: '/contracts', label: 'Customers', icon: Users, perm: 'contracts' },
+      { key: 'customers', to: '/contracts', label: 'Tenants', icon: Users, perm: 'contracts' },
+      // Only shows up once an admin grants it (Settings → Users) — not part
+      // of a rep's default toolkit, unlike everything else in this group.
+      { key: 'tenants', to: '/customers', label: 'Tenants', icon: Users, perm: 'customers' },
+      { key: 'agreement-templates', to: '/settings/agreement', label: 'Agreement Templates', icon: FileText, perm: 'agreement_templates' },
     ],
   },
   {
@@ -283,12 +285,9 @@ const PAGE_TITLES: Record<string, string> = {
   '/settings': 'Settings',
   '/settings/lead-distribution': 'Lead Distribution',
   '/settings/agreement': 'Agreement Template',
-  '/zoho-comparison': 'Zoho Comparison',
   '/approvals': 'Approvals',
   '/users': 'User Management',
-  '/sales-team': 'Sales Team',
   '/tasks': 'Tasks',
-  '/diary': 'Daily Diary',
   '/backup': 'Backup',
   '/moving': 'Moving Dashboard',
   '/moving/schedule': 'Schedule Jobs',
@@ -679,7 +678,7 @@ export default function Layout() {
         {/* Settings & admin — mobile only; desktop reaches these via the profile dropdown */}
         {!isSalesRepUser && (() => {
           const visibleProfile = profileMenuItems.filter(
-            ({ perm, adminOnly }) => (!perm || hasPermission(perm)) && (!adminOnly || isAdmin)
+            (item) => { const { perm, adminOnly } = item as { perm?: string | string[]; adminOnly?: boolean; adminAlways?: boolean }; return ((item as { adminAlways?: boolean }).adminAlways && isAdmin) || ((!perm || hasPermission(perm)) && (!adminOnly || isAdmin)) }
           )
           if (visibleProfile.length === 0 && !isAdmin) return null
           return (
@@ -741,15 +740,6 @@ export default function Layout() {
   )
 
   return (
-    // Only the signed-in app reads walkthrough progress — moved here from
-    // wrapping every <Routes> in App.tsx, where it also sat around the public
-    // share-link pages (renewal, contract signing, moving job sharing) that
-    // never mount Layout. `useQuery` fired GET /walkthroughs/me the instant
-    // any of those pages mounted with a stale token still in localStorage —
-    // which a signed-in admin's own browser is exactly the case for — and the
-    // 401 interceptor wiped the session and bounced a tenant clicking their
-    // renewal link straight to the login screen, no login needed or wanted.
-    <WalkthroughProvider>
     <div className="flex min-h-screen bg-background">
 
       {/* ── Desktop sidebar ─────────────────────────────────────── */}
@@ -886,7 +876,7 @@ export default function Layout() {
                 <div className="grid grid-cols-2 overflow-y-auto" style={{ columnGap: 28, rowGap: 22, padding: '20px 24px', minHeight: 0, flex: '1 1 auto' }}>
                   {profileMenuGroups.map((group) => {
                     const items = group.items.filter(
-                      (i) => (!i.perm || hasPermission(i.perm)) && (!i.adminOnly || isAdmin)
+                      (i) => ((i as { adminAlways?: boolean }).adminAlways && isAdmin) || ((!i.perm || hasPermission(i.perm)) && (!i.adminOnly || isAdmin))
                     )
                     if (items.length === 0) return null
                     return (
@@ -999,6 +989,5 @@ export default function Layout() {
           they happen to be on. */}
       <LeadAlerts />
     </div>
-    </WalkthroughProvider>
   )
 }

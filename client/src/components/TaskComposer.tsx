@@ -40,6 +40,7 @@ export function TaskComposer({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [dueDate, setDueDate] = useState('')
+  const [dueTime, setDueTime] = useState('')
   const [priority, setPriority] = useState('medium')
   const [assignedTo, setAssignedTo] = useState('')
   const [err, setErr] = useState('')
@@ -57,6 +58,7 @@ export function TaskComposer({
     setTitle('')
     setDescription(prefillDescription)
     setDueDate('')
+    setDueTime('')
     setPriority('medium')
     setAssignedTo('')
     setErr('')
@@ -67,7 +69,7 @@ export function TaskComposer({
     mutationFn: () => api.post('/tasks', {
       title: title.trim(),
       description: description.trim(),
-      dueDate: dueDate || undefined,
+      dueDate: dueDate ? (dueTime ? new Date(`${dueDate}T${dueTime}:00+04:00`).toISOString() : dueDate) : undefined,
       priority,
       assignedTo: assignedTo || undefined,
       ...(leadId ? { leadId, leadType } : {}),
@@ -143,9 +145,14 @@ export function TaskComposer({
               </Select>
             </Field>
           </div>
-          <Field label="Due date">
-            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Due date">
+              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </Field>
+            <Field label="Time (optional)">
+              <Input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} disabled={!dueDate} />
+            </Field>
+          </div>
 
           <p style={{ fontSize: 11.5, color: 'rgba(20,8,31,.55)' }}>
             {leadId

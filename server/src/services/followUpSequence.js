@@ -119,7 +119,12 @@ export function applyOutcome(lead, plan, { channel, outcome, note = '', nextAt, 
   const chosen = String(nextAt || '').slice(0, 10) || planned;
 
   if (chosen) {
-    lead.followUpAt = new Date(`${chosen}T00:00:00.000Z`);
+    // A time typed with the date is Dubai wall-clock; without one the
+    // follow-up stays a whole day, as before.
+    const time = String(nextAt || '').match(/T(\d{2}:\d{2})/)?.[1];
+    lead.followUpAt = time && String(nextAt).slice(0, 10) === chosen
+      ? new Date(`${chosen}T${time}:00+04:00`)
+      : new Date(`${chosen}T00:00:00.000Z`);
     lead.followUpKind = 'date';
     // A moved date is a new reminder, so let it fire again.
     lead.followUpNotifiedAt = null;

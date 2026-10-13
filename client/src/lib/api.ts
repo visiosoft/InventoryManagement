@@ -42,6 +42,18 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem('pb_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
 
+  // Accounts + Admin leaves a reason for every deletion, kept in the audit log.
+  if ((config.method || '').toLowerCase() === 'delete') {
+    try {
+      const me = JSON.parse(localStorage.getItem('pb_user') || 'null')
+      if (me?.accountsAdmin) {
+        const reason = (window.prompt('Why are you deleting this? (kept in the audit log)') || '').trim()
+        if (!reason) return Promise.reject(new Error('Deletion cancelled — a reason is required.'))
+        config.headers['X-Audit-Reason'] = encodeURIComponent(reason)
+      }
+    } catch { /* not signed in as that role */ }
+  }
+
   const siteId = localStorage.getItem('pb_site_id')
   if (siteId && isSiteScoped(config.url) && config.params?.site === undefined) {
     config.params = { ...(config.params ?? {}), site: siteId }
@@ -73,6 +85,9 @@ export type LeadQuery = {
   owner?: string
   from?: string
   to?: string
+  // 'needFrom' = whoever wants storage soonest; 'followUp' = whoever is to be
+  // chased soonest; omitted = newest first.
+  sort?: string
   page?: number
   limit?: number
 }
@@ -115,10 +130,24 @@ export const leadApi = {
       .post<{ ok: true; created: boolean; customer: Customer; lead: Lead }>(`/leads/${id}/convert`)
       .then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/leads/${id}`).then((r) => r.data),
+  /** Move every lead currently owned by `fromOwner` to `toOwner` (or to
+   *  nobody, if `toOwner` is omitted) in one action — for a rep who's been
+   *  terminated/removed, or just a rebalance. Admin-only server-side.
+   *  Optional `status` narrows it to one pipeline stage instead of the
+   *  rep's whole book. */
+  reassign: (body: { fromOwner: string; toOwner?: string; status?: string }) =>
+    api.post<{ reassigned: number }>('/leads/reassign', body).then((r) => r.data),
   /** The pipeline as a funnel: how many leads sit at each stage right now,
    *  and how long they've been there. Server: routes/leads.js's GET /funnel,
    *  logic in services/leadFunnel.js. */
   funnel: () => api.get<LeadFunnel>('/leads/funnel').then((r) => r.data),
+  /** This Dubai month's leads by where they are now, plus overdue
+   *  follow-ups. Server: routes/leads.js's GET /month-funnel. */
+  monthFunnel: () => api.get<MonthFunnel>('/leads/month-funnel').then((r) => r.data),
+  /** The leads behind one funnel row (`stage` is a MonthFunnelStage, or
+   *  'overdue'). Server: routes/leads.js's GET /month-funnel/leads. */
+  monthFunnelLeads: (stage: MonthFunnelStage) =>
+    api.get<MonthFunnelLeads>('/leads/month-funnel/leads', { params: { stage } }).then((r) => r.data),
   /** How good a lead this is — see services/leadScore.js. Read-only. */
   score: (id: string) => api.get<LeadScore>(`/leads/${id}/score`).then((r) => r.data),
   /** A rep's own confirmation or correction of the score. `decision: ''`
@@ -157,6 +186,10 @@ export const leadApi = {
    *  everyone's. */
   highIntentToday: (opts?: { mine?: boolean }) =>
     api.get<{ items: HighIntentLead[] }>('/leads/high-intent', { params: opts?.mine ? { mine: '1' } : undefined }).then((r) => r.data),
+  /** Today's leads from the purplebox.ae landing pages — source: 'website',
+   *  written by routes/movingLeads.js's public form handler. */
+  newFromWebsiteToday: () =>
+    api.get<{ items: WebsiteLead[] }>('/leads/new-from-website').then((r) => r.data),
 }
 
 export interface HighIntentLead {
@@ -169,6 +202,28 @@ export interface HighIntentLead {
   score: number
   reason: string
   nextAction: string | null
+}
+
+export interface WebsiteLead {
+  leadId: string
+  name: string
+  phone: string
+  email: string
+  status: string
+  notes: string
+  at: string
+  ownerName: string
+}
+
+export interface WebsiteAnalytics {
+  configured: boolean
+  missing?: string[]
+  today?: { sessions: number; users: number; newUsers: number; newVisitorPct: number; vsYesterdayPct: number | null }
+  byCountry?: { country: string; sessions: number }[]
+  totalSessionsInRange?: number
+  topPages?: { path: string; views: number; users: number }[]
+  trend?: { date: string; sessions: number }[]
+  days?: number
 }
 
 export type LeadScoreBand = 'high' | 'medium' | 'low'
@@ -232,12 +287,47 @@ export interface LeadFunnel {
   stages: LeadFunnelStage[]
 }
 
+export interface MonthFunnel {
+  monthLabel: string
+  total: number
+  untouched: number
+  inProgress: number
+  quotationSent: number
+  won: number
+  lost: number
+  alreadyCustomer: number
+  winRatePct: number
+  overdueFollowUps: number
+}
+
+export type MonthFunnelStage = 'total' | 'untouched' | 'inProgress' | 'quotationSent' | 'won' | 'lost' | 'alreadyCustomer' | 'overdue'
+
+export interface MonthFunnelLead {
+  _id: string
+  name: string
+  phone: string
+  status: string
+  source: string
+  temperature: string
+  at: string | null
+  followUpAt: string | null
+  owner: string
+}
+
+export interface MonthFunnelLeads {
+  stage: MonthFunnelStage
+  total: number
+  items: MonthFunnelLead[]
+}
+
 export const integrationApi = {
   status: () => api.get<IntegrationStatus>('/integrations/status').then((r) => r.data),
   connectDrive: () =>
     api.get<{ url: string }>('/integrations/drive/connect').then((r) => r.data),
   connectGmail: () =>
     api.get<{ url: string }>('/integrations/gmail/connect').then((r) => r.data),
+  connectAnalytics: () =>
+    api.get<{ url: string }>('/integrations/analytics/connect').then((r) => r.data),
   connectStripe: (body: { secretKey?: string; webhookSecret?: string; publishableKey?: string }) =>
     api.post<{ ok: true; configured: boolean; webhookConfigured: boolean; embeddedConfigured: boolean }>('/integrations/stripe/connect', body).then((r) => r.data),
   disconnectStripe: () =>
@@ -501,10 +591,19 @@ export type WhatsAppConversation = {
   // Whether this number is on the block list — see routes/whatsapp.js's
   // block/unblock endpoints and whatsappLeadSync.js's persistMessages.
   blocked?: boolean
-  // AI assistant state for this thread: '' when it has never looked at it.
+  // AI agent state for this lead: '' when no agent has a file on it yet.
+  // Sourced from the Agents system (server/src/agents/service.js's
+  // agentStatusForLeads) — botDraft resolves via POST
+  // /agents/actions/:id/resolve using botActionId, not a phone-keyed route.
   botStatus?: '' | 'bot' | 'escalated' | 'paused'
   botDraft?: string
+  botActionId?: string
+  // When the pending suggestion was written, so the inbox can tell it is out of
+  // date once newer messages exist.
+  botDraftAt?: string | null
   botEscalationReason?: string
+  botAgentName?: string
+  botAgentColor?: string
 }
 
 export type WhatsAppCredentials = {
@@ -624,8 +723,8 @@ export const whatsappApi = {
     api.post<{ action: 'created' | 'updated' | 'exists'; lead: WhatsAppLeadRef }>(
       `/whatsapp/conversations/${phoneNormalized}/lead`, body,
     ).then((r) => r.data),
-  deleteConversation: (phoneNormalized: string) =>
-    api.delete<{ ok: boolean; deletedMessages: number }>(`/whatsapp/conversations/${phoneNormalized}`).then((r) => r.data),
+  deleteConversation: (phoneNormalized: string, contact = false) =>
+    api.delete<{ ok: boolean; deletedMessages: number; deletedLeads?: number }>(`/whatsapp/conversations/${phoneNormalized}${contact ? '?contact=1' : ''}`).then((r) => r.data),
   blockNumber: (phoneNormalized: string, reason?: string) =>
     api.post<{ ok: boolean; blocked: boolean }>(`/whatsapp/conversations/${phoneNormalized}/block`, { reason }).then((r) => r.data),
   unblockNumber: (phoneNormalized: string) =>

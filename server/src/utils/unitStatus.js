@@ -118,8 +118,15 @@ export async function statusForUnit(unitId) {
 
   const onUnit = { $or: [{ unit: unitId }, { units: unitId }], archived: { $ne: true } };
 
-  const active = await Contract.findOne({ ...onUnit, status: 'active' }).select('_id').lean();
-  if (active) return 'occupied';
+  /* An active contract only makes the unit Occupied once it has started. One
+     signed for 1 Nov is a promise, not a tenant: until the day arrives the
+     unit is Reserved (and the 5-minute sweep flips it to Occupied then). */
+  const actives = await Contract.find({ ...onUnit, status: 'active' }).select('startDate').lean();
+  if (actives.length) {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai' }).format(new Date());
+    const started = actives.some((c) => !c.startDate || new Date(c.startDate).toISOString().slice(0, 10) <= today);
+    return started ? 'occupied' : 'reserved';
+  }
 
   const upcoming = await Contract.findOne({ ...onUnit, status: { $in: ['draft', 'pending_signature'] } })
     .sort({ startDate: 1 })
@@ -154,6 +161,13 @@ export async function syncUnitStatus(unitId) {
  * @returns the units that were freed
  */
 export async function releaseLapsedHolds() {
+   // Signed contracts that start in the future hold their unit as Reserved,
+   // not Occupied. Units already stored as Occupied for one are corrected here.
+   const future = await Contract.find({ status: 'active', archived: { $ne: true }, startDate: { $gt: new Date() } })
+      .select('unit units').lean();
+   const futureUnits = new Set(future.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String));
+   for (const id of futureUnits) await syncUnitStatus(id);
+
    const held = await Unit.find({ status: 'reserved' }).select('unitNumber').lean();
    const freed = [];
    for (const u of held) {

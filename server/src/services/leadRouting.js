@@ -168,7 +168,7 @@ export function targetShares({ rules = [], available = [] }) {
  * first lead of the day everyone is at zero, so the biggest share goes first —
  * which is what somebody expects from "Ahmed takes half of them".
  */
-export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone = 'Asia/Dubai', exclude = [] } = {}) {
+export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone = 'Asia/Dubai', exclude = [], random = null } = {}) {
    const { available, excluded } = availability({ rules, counts, at, timeZone, exclude });
    if (!available.length) {
       return { ownerId: null, reason: excluded.length ? 'nobody is available' : 'no distribution rules are set', excluded };
@@ -177,6 +177,17 @@ export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone =
    const shares = targetShares({ rules, available });
    const totalShare = [...shares.values()].reduce((s, v) => s + v, 0);
    const handedOutToday = available.reduce((s, a) => s + a.taken, 0);
+
+   /* Random: a weighted draw by share, so each lead is a fresh roll — 50/50
+      reps get about half each, but nobody can predict who is next. The
+      availability rules above (shifts, caps, absence) still decide who is in
+      the draw. */
+   if (typeof random === 'function') {
+      // Plain random among whoever is available right now — shares do not
+      // weight it. Shifts, absence and daily caps above still decide who is in.
+      const a = available[Math.min(available.length - 1, Math.floor(random() * available.length))];
+      return { ownerId: a.id, reason: `random pick of ${available.length} available`, share: 1 / available.length, excluded };
+   }
 
    let best = null;
    for (const a of available) {
@@ -206,7 +217,7 @@ export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone =
  * who owns this chat?
  */
 
-import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule } from '../models/index.js';
+import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, User } from '../models/index.js';
 import { notifyLeadAssigned } from './leadNotify.js';
 
 /** The last nine digits of a number, however it was written down. */
@@ -303,9 +314,13 @@ export async function routeInboundLead({ phoneNormalized, at = new Date() } = {}
       }
    }
 
-   const rules = await LeadRoutingRule.find({}).lean();
+   /* Only people who can actually take a lead: a deactivated or deleted user
+      left on the list must not be handed anything. */
+   const allRules = await LeadRoutingRule.find({}).lean();
+   const liveUsers = new Set((await User.find({ _id: { $in: allRules.map((r) => r.user) }, isActive: { $ne: false } }).select('_id').lean()).map((u) => String(u._id)));
+   const rules = allRules.filter((r) => liveUsers.has(String(r.user)));
    const counts = await countsForToday({ at, timeZone });
-   const decision = pickOwner({ rules, counts, at, timeZone });
+   const decision = pickOwner({ rules, counts, at, timeZone, random: config.randomize === false ? null : Math.random });
    if (decision.ownerId) return decision;
 
    // Nobody on shift.
@@ -342,7 +357,9 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
    const config = await LeadRoutingConfig.findOne().lean();
    if (!config?.enabled) return { assigned: 0, reason: 'distribution is off' };
 
-   const since = new Date(at.getTime() - 3 * 86400000);
+   // A day, not three: after distribution had been off or broken, three days
+   // of old chats (including bookkeeping contacts) were all handed out at once.
+   const since = new Date(at.getTime() - 86400000);
    const waiting = await Lead.find({
       source: 'whatsapp',
       owner: null,
@@ -358,7 +375,9 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
       const decision = await routeInboundLead({ phoneNormalized: lead.phoneNormalized, at });
       if (!decision.ownerId) break;   // still nobody on shift; try again later
 
-      await Lead.updateOne({ _id: lead._id }, {
+      // owner: null in the filter too — a lead somebody was given in the meantime
+      // is never overwritten, even in a race with this sweep.
+      const claimed = await Lead.updateOne({ _id: lead._id, owner: null }, {
          $set: {
             owner: decision.ownerId,
             assignedAt: at,
@@ -369,6 +388,7 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
          },
          $push: { timeline: { type: 'note', text: `Assigned by distribution rules — ${decision.reason}` } },
       });
+      if (!claimed.modifiedCount) continue;   // somebody got it first; leave it
       assigned += 1;
 
       notifyLeadAssigned({ lead, ownerId: decision.ownerId, reason: decision.reason })

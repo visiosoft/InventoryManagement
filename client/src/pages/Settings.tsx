@@ -9,6 +9,7 @@ import { formatMoney } from '../lib/utils'
 import { useAuth } from '../lib/auth'
 import UnitPricing from './UnitPricing'
 import BulkUnitPricing from './BulkUnitPricing'
+import WebsitePricing from './WebsitePricing'
 
 
 // ---- Products / Services Card ----
@@ -153,9 +154,10 @@ export default function Settings() {
   const isAdmin = user?.role === 'admin'
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
-  const activeTab = isAdmin && (requestedTab === 'pricing' || requestedTab === 'bulk-pricing') ? requestedTab : 'general'
+  const activeTab = isAdmin && (requestedTab === 'pricing' || requestedTab === 'bulk-pricing' || requestedTab === 'website-pricing') ? requestedTab : 'general'
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [gmailMsg, setGmailMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [analyticsMsg, setAnalyticsMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [stripeMsg, setStripeMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [stripeSecretKey, setStripeSecretKey] = useState('')
   const [stripeWebhookSecret, setStripeWebhookSecret] = useState('')
@@ -210,6 +212,14 @@ export default function Settings() {
       setGmailMsg({ ok: false, text: `Gmail connection failed: ${params.get('gmailError')}` })
       window.history.replaceState({}, '', '/settings')
     }
+    if (params.get('analyticsConnected')) {
+      setAnalyticsMsg({ ok: true, text: "Google Analytics connected! Make sure this account has Viewer access on the GA4 property under Analytics Admin > Property Access Management, or the dashboard widget will stay empty." })
+      window.history.replaceState({}, '', '/settings')
+      qc.invalidateQueries({ queryKey: ['integrations-status'] })
+    } else if (params.get('analyticsError')) {
+      setAnalyticsMsg({ ok: false, text: `Google Analytics connection failed: ${params.get('analyticsError')}` })
+      window.history.replaceState({}, '', '/settings')
+    }
   }, [location.search, qc])
 
   const { data: integrations } = useQuery<IntegrationStatus>({
@@ -218,40 +228,62 @@ export default function Settings() {
   })
 
 
+  // The pricing tabs share one look (see `.cot` in index.css); General keeps
+  // the app's own. The tab bar changes style with it so switching feels like
+  // moving between two rooms, not one page with two designs.
+  const cot = activeTab !== 'general'
+  const tabs: { key: string; label: string }[] = [
+    { key: 'general', label: 'General' },
+    { key: 'pricing', label: 'Unit Pricing' },
+    { key: 'bulk-pricing', label: 'Bulk Pricing' },
+    { key: 'website-pricing', label: 'Website Prices' },
+  ]
+  const goTab = (key: string) => setSearchParams((p) => { if (key === 'general') p.delete('tab'); else p.set('tab', key); return p })
+  const cotTitle: Record<string, { title: string; lede: string }> = {
+    pricing: { title: 'Unit pricing', lede: 'The actual price of every unit — set once, locked after. Leased shows what each tenant actually pays.' },
+    'bulk-pricing': { title: 'Bulk pricing', lede: 'Set one price for every unit of a given floor and size at once, instead of editing units one by one.' },
+    'website-pricing': { title: 'Website prices', lede: 'The price and discount shown for each size on the website. The old price is struck through beside the discounted one.' },
+  }
+
   return (
-    <div className={activeTab !== 'general' ? 'max-w-6xl space-y-4' : 'max-w-3xl space-y-4'}>
-      <PageHeader title="Settings" subtitle="Products, pricing and integrations" />
+    <div className={cot ? 'cot max-w-6xl' : 'max-w-3xl space-y-4'}>
+      {!cot && <PageHeader title="Settings" subtitle="Products, pricing and integrations" />}
 
       {isAdmin && (
-        <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
-          <button
-            type="button"
-            onClick={() => setSearchParams((p) => { p.delete('tab'); return p })}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === 'general' ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            General
-          </button>
-          <button
-            type="button"
-            onClick={() => setSearchParams((p) => { p.set('tab', 'pricing'); return p })}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === 'pricing' ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            Unit Pricing
-          </button>
-          <button
-            type="button"
-            onClick={() => setSearchParams((p) => { p.set('tab', 'bulk-pricing'); return p })}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === 'bulk-pricing' ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            Bulk Pricing
-          </button>
-        </div>
+        cot ? (
+          <div className="cot-tabs" role="tablist">
+            {tabs.map((t) => (
+              <button key={t.key} type="button" role="tab" aria-selected={activeTab === t.key}
+                onClick={() => goTab(t.key)} className={`cot-tab ${activeTab === t.key ? 'cot-tab--on' : ''}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
+            {tabs.map((t) => (
+              <button key={t.key} type="button" onClick={() => goTab(t.key)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === t.key ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )
+      )}
+
+      {cot && (
+        <>
+          <h1 className="cot-h1">{cotTitle[activeTab].title}</h1>
+          <p className="cot-lede" style={{ marginBottom: 26 }}>{cotTitle[activeTab].lede}</p>
+        </>
       )}
 
       {activeTab === 'pricing' ? (
         <UnitPricing embedded />
       ) : activeTab === 'bulk-pricing' ? (
         <BulkUnitPricing embedded />
+      ) : activeTab === 'website-pricing' ? (
+        <WebsitePricing embedded />
       ) : (
     <>
       <ProductsCard />
@@ -313,7 +345,7 @@ export default function Settings() {
               </p>
             )}
           </div>
-          <div className="rounded-lg border px-4 py-3 space-y-2" data-tour="settings-integrations-email">
+          <div className="rounded-lg border px-4 py-3 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="font-medium">Gmail (Send Emails)</div>
@@ -349,6 +381,51 @@ export default function Settings() {
             {!integrations?.gmail?.configured && (
               <p className="text-xs text-muted-foreground">
                 Add <code className="bg-muted px-1 rounded">{window.location.origin.replace(/:\d+$/, ':5010')}/api/integrations/gmail/callback</code> to your OAuth client's authorized redirect URIs in Google Cloud Console.
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border px-4 py-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Google Analytics (Website visits)</div>
+                <div className="text-xs text-muted-foreground">
+                  Shows today's website visits, top countries and a 30-day trend on the Dashboard
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={integrations?.analytics?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+                  {integrations?.analytics?.configured ? 'Connected' : 'Not connected'}
+                </span>
+                <Button
+                  size="sm"
+                  variant={integrations?.analytics?.configured ? 'outline' : 'default'}
+                  onClick={async () => {
+                    try {
+                      const { url } = await integrationApi.connectAnalytics()
+                      window.location.href = url
+                    } catch (e) {
+                      setAnalyticsMsg({ ok: false, text: apiError(e) })
+                    }
+                  }}
+                >
+                  {integrations?.analytics?.configured ? 'Reconnect Analytics' : 'Connect Google Analytics'}
+                </Button>
+              </div>
+            </div>
+            {integrations?.analytics?.configured && integrations.analytics.propertyId && (
+              <div className="text-xs text-muted-foreground border-t pt-2">
+                Property ID: <code className="bg-muted px-1 rounded">{integrations.analytics.propertyId}</code>
+                {integrations.analytics.method && <span className="ml-2">· Auth: {integrations.analytics.method === 'service_account' ? 'Service Account' : 'OAuth'}</span>}
+              </div>
+            )}
+            {analyticsMsg && (
+              <p className={`text-xs ${analyticsMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                {analyticsMsg.text}
+              </p>
+            )}
+            {!integrations?.analytics?.configured && (
+              <p className="text-xs text-muted-foreground">
+                Set <code className="bg-muted px-1 rounded">GA4_PROPERTY_ID</code> in .env first (Analytics Admin &gt; Property details), then Connect — the account you sign in with also needs Viewer access added directly on that property under Property Access Management.
               </p>
             )}
           </div>
@@ -526,6 +603,9 @@ export default function Settings() {
                   <option value="gpt-4.1-mini">gpt-4.1-mini</option>
                   <option value="gpt-4.1">gpt-4.1</option>
                   <option value="gpt-4o">gpt-4o</option>
+                  <option value="gpt-6-luna">gpt-6-luna — cheaper than gpt-4o-mini, untested here</option>
+                  <option value="gpt-6-sol">gpt-6-sol — newer, untested here</option>
+                  <option value="gpt-6-astra">gpt-6-astra — untested here</option>
                 </Select>
               </Field>
             </div>

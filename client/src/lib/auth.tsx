@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api } from './api'
 
 export interface AuthUser {
@@ -8,6 +8,8 @@ export interface AuthUser {
   role: string          // 'admin' | 'staff'
   permissions: string[] // module keys; admins with empty list get all access
   isActive: boolean
+  /** Stored as the 'accounts_admin' role: full admin access, accounts home page. */
+  accountsAdmin?: boolean
 }
 
 interface AuthContextValue {
@@ -27,7 +29,7 @@ interface AuthContextValue {
  * Search Units is not a privilege to grant.
  */
 const ROLE_FLOOR: Record<string, string[]> = {
-  sales_rep: ['sales_board', 'units'],
+  sales_rep: ['sales_board', 'units', 'contracts'],
   /* Accounts raise the invoices, so they need to see what they are invoicing:
      which units are free, who the tenant is, and the contract behind the
      charge. Antony had sales_board, moving_jobs and moving_invoices, so the
@@ -43,6 +45,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const raw = localStorage.getItem('pb_user')
     return raw ? JSON.parse(raw) : null
   })
+
+  // Pick up changes an admin made since this person logged in (a module
+  // granted in Settings → Users, a role change) on every page load.
+  useEffect(() => {
+    if (!localStorage.getItem('pb_token')) return
+    api.get('/auth/me').then(({ data }) => {
+      const fresh = data?.user
+      if (!fresh?.id) return
+      const raw = localStorage.getItem('pb_user')
+      const prev = raw ? JSON.parse(raw) : null
+      const next = { ...prev, ...fresh }
+      if (JSON.stringify(next) === JSON.stringify(prev)) return
+      localStorage.setItem('pb_user', JSON.stringify(next))
+      setUser(next)
+    }).catch(() => {})
+  }, [])
 
   async function login(email: string, password: string) {
     const { data } = await api.post('/auth/login', { email, password })
@@ -69,6 +87,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // An admin with no explicit list gets everything; an admin with a list is
     // held to it, which is why a 17-module admin can be missing a screen.
     if (user.role === 'admin' && !user.permissions?.length) return true
+    // Accounts + Admin: full access whatever an earlier role left in the list.
+    if (user.accountsAdmin) return true
     const wanted = Array.isArray(module) ? module : [module]
     if (wanted.some((m) => user.permissions.includes(m))) return true
     // Some things a role cannot work without, whatever its stored list says.

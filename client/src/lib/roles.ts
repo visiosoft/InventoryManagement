@@ -16,5 +16,6 @@ export function roleLabel(role?: string): string {
   if (role === 'admin') return 'Admin'
   if (role === 'sales_rep') return 'Sales Rep'
   if (role === 'accounts') return 'Accounts'
+  if (role === 'accounts_admin') return 'Accounts + Admin'
   return 'Staff'
 }

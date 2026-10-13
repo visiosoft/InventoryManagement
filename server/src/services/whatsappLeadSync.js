@@ -1,8 +1,12 @@
 import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage, WhatsAppBlockedNumber } from '../models/index.js';
+import { applyTemplateStatusEvent } from './templateManager.js';
 import { routeInboundLead } from './leadRouting.js';
+import { PLACEHOLDER_NAME } from './leadNames.js';
+import { isExistingCustomerPhone } from './customerLeads.js';
+import { applyCampaignStatus, markCampaignReply } from './campaignStats.js';
 import { notifyLeadAssigned, notifyInboundWhatsAppMessage } from './leadNotify.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
-import { getAiBotConfig, noteInboundForBot, pauseBotForHuman } from './aiBot.js';
+import { getAiBotConfig, noteInboundForBot, pauseBotForHuman, markFirstResponse } from './aiBot.js';
 import { sendFirstContactVideo } from './firstContact.js';
 import { mediaFromRaw } from '../routes/whatsappMedia.js';
 import { cancelFollowUpOnReply } from './chatFollowUp.js';
@@ -292,21 +296,22 @@ export function extractMessagesFromPayload(payload) {
     return out;
 }
 
-async function getDefaultOwnerId() {
-    const admin = await User.findOne({ isActive: { $ne: false } }).select('_id').sort({ createdAt: 1 });
-    return admin?._id || null;
-}
+/* There is no "default owner" any more. A new lead goes to somebody only through
+   the distribution list; otherwise it stays unassigned for an admin to place.
+   Falling back to the first user on the system put leads on admins who were
+   never in the rotation. */
 
-export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status = 'new', timelineText, fullName, ownerId: ownerOverride, profileName = '' }) {
+export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status: statusIn = 'new', timelineText, fullName, ownerId: ownerOverride, profileName = '' }) {
     /* Who this belongs to.
      *
      * An explicit owner wins — somebody saving a chat as a lead has already
      * chosen. Otherwise the distribution rules decide: by share, by who is on
      * shift, and by what has gone out today. See services/leadRouting.js.
      *
-     * With distribution switched off this is exactly what it always was, the
-     * first user on the system, so turning it on is a decision somebody makes
-     * rather than something that happens to them. */
+     * Only the distribution list ever hands out a lead. With distribution off,
+     * or nobody available, the lead is created unassigned — never given to the
+     * first user on the system, who is usually an admin outside the rotation. */
+    let status = statusIn;
     let ownerId = ownerOverride || null;
     let routingNote = '';
     if (!ownerId) {
@@ -317,15 +322,24 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
                 ? `Assigned by distribution rules — ${decision.reason}`
                 : `Left unassigned — ${decision.reason}`;
         } else {
-            ownerId = await getDefaultOwnerId();
+            ownerId = null;
+            routingNote = decision?.off ? 'Left unassigned — distribution is off' : 'Left unassigned — could not route';
         }
     }
     // An unowned lead is a real outcome out of hours; only a lead with nobody
     // to give it to and no rules at all is a failure.
     if (!ownerId && !routingNote) return null;
 
+    // Somebody who already has a signed contract with us is not a new lead.
+    if (status === 'new' && await isExistingCustomerPhone(phoneNormalized).catch(() => false)) status = 'already_customer';
+
     const lead = await Lead.create({
-        fullName: String(fullName || '').trim() || `WhatsApp Contact ${phoneNormalized.slice(-4)}`,
+        // Routed to somebody at creation = a real lead, so it gets the
+        // WhatsApp profile name; unassigned bookkeeping contacts keep the
+        // placeholder (the Leads list hides those).
+        fullName: String(fullName || '').trim()
+            || (routingNote && ownerId && String(profileName || '').trim())
+            || `WhatsApp Contact ${phoneNormalized.slice(-4)}`,
         whatsappProfileName: String(profileName || '').trim(),
         email: '',
         phone: phone || phoneNormalized,
@@ -397,6 +411,8 @@ async function persistMessages(messages) {
                     console.error(`[WhatsApp] send failed (${msg.errorCode}) ${msg.errorTitle}: ${msg.errorDetail}`);
                 }
                 await WhatsAppMessage.updateOne({ messageId: msg.messageId }, { $set: set });
+                // Campaign messages: delivered / read / failed feed the campaign report.
+                try { await applyCampaignStatus(msg); } catch { /* reporting must never break delivery */ }
             }
             continue;
         }
@@ -422,6 +438,11 @@ async function persistMessages(messages) {
             : null;
         if (existing) continue;
 
+        // A reply to a campaign message counts for that campaign's report.
+        if (msg.direction === 'inbound') {
+            try { await markCampaignReply(msg.phoneNormalized, msg.occurredAt); } catch { /* never break delivery */ }
+        }
+
         let lead = await Lead.findOne({ phoneNormalized: msg.phoneNormalized });
         // Whether this message is the one that creates the lead — if so it
         // already gets the "you were given a lead" push below, and the
@@ -438,7 +459,12 @@ async function persistMessages(messages) {
         } else if (lead && msg.profileName && lead.whatsappProfileName !== msg.profileName) {
             // People rename themselves. Kept current, and never allowed to
             // overwrite a name somebody here typed.
-            await Lead.updateOne({ _id: lead._id }, { $set: { whatsappProfileName: msg.profileName } });
+            const set = { whatsappProfileName: msg.profileName };
+            // Already assigned but still carrying the placeholder: heal it now.
+            if (lead.assignedAt && !PLACEHOLDER_NAME.test(msg.profileName) && PLACEHOLDER_NAME.test(String(lead.fullName || ''))) {
+                set.fullName = msg.profileName;
+            }
+            await Lead.updateOne({ _id: lead._id }, { $set: set });
         }
 
         await WhatsAppMessage.create({
@@ -557,6 +583,14 @@ async function persistMessages(messages) {
                         mediaId: mediaFromRaw(msg.raw)?.id || '',
                     });
                 } catch { /* the assistant must never break message delivery */ }
+                // The sales agent's file on this lead: any reply comes back
+                // to Engaged and cancels scheduled touches; a draft reply is
+                // logged. Shadow mode only — nothing is sent from here. Same
+                // rule as above: it must never break message delivery.
+                try {
+                    const { onInbound } = await import('../agents/service.js');
+                    await onInbound({ phoneNormalized: msg.phoneNormalized, text: msg.text, occurredAt: msg.occurredAt });
+                } catch (e) { console.error('[Agents] inbound:', e?.message || e); }
             }
         } else {
             // A new outbound message we did not send ourselves is a colleague
@@ -568,6 +602,13 @@ async function persistMessages(messages) {
             try {
                 await pauseBotForHuman(msg.phoneNormalized);
             } catch { /* the assistant must never break message delivery */ }
+            // That reply is also the answer the response clock is waiting
+            // for. Without this, a rep who worked a lead from the WhatsApp
+            // app (or the wa.me button) never stopped the clock, and the lead
+            // was taken from them as "unanswered" after half an hour.
+            try {
+                await markFirstResponse(msg.phoneNormalized);
+            } catch { /* never break message delivery */ }
         }
     }
 
@@ -583,6 +624,14 @@ function pushTimeline(lead, type, text) {
 }
 
 export async function processWhatsAppWebhookPayload(payload) {
+    // Meta's verdict on a template we submitted (approved / rejected / paused).
+    for (const entry of Array.isArray(payload?.entry) ? payload.entry : []) {
+        for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+            if (change?.field === 'message_template_status_update') {
+                await applyTemplateStatusEvent(change.value).catch((e) => console.error('[Templates]', e.message));
+            }
+        }
+    }
     const extractedMessages = extractMessagesFromPayload(payload);
     if (extractedMessages.length > 0) {
         await persistMessages(extractedMessages);
@@ -665,16 +714,7 @@ export async function processWhatsAppWebhookPayload(payload) {
             return { ok: true, skipped: true, reason: eventDoc.detail, eventKey };
         }
 
-        const ownerId = await getDefaultOwnerId();
-        if (!ownerId) {
-            eventDoc.status = 'failed';
-            eventDoc.detail = 'No active owner found to create lead';
-            await eventDoc.save();
-            whatsappLabelSyncState.errors += 1;
-            whatsappLabelSyncState.lastError = eventDoc.detail;
-            whatsappLabelSyncState.at = new Date().toISOString();
-            return { ok: false, eventKey, error: eventDoc.detail };
-        }
+        const ownerId = null;   // unassigned: only the distribution list hands leads out
 
         lead = await Lead.create({
             fullName: `WhatsApp Contact ${parsed.phoneNormalized.slice(-4)}`,
@@ -769,11 +809,7 @@ export async function runWhatsAppLabelReconciliation() {
             const lead = await Lead.findOne({ phoneNormalized: state.phoneNormalized });
             if (!lead) {
                 if (state.labels.includes('lead')) {
-                    const ownerId = await getDefaultOwnerId();
-                    if (!ownerId) {
-                        errors += 1;
-                        continue;
-                    }
+                    const ownerId = null;   // unassigned: only the distribution list hands leads out
                     await Lead.create({
                         fullName: `WhatsApp Contact ${state.phoneNormalized.slice(-4)}`,
                         email: '',
