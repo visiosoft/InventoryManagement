@@ -170,6 +170,12 @@ const customerSchema = new Schema(
     source: { type: String, enum: ['manual', 'import_csv', 'google'], default: 'manual' },
     importBatch: { type: String, default: null },
     googleId: { type: String, default: '' },
+    // Addresses the customer saved in the app for valet pickups and drop-offs.
+    // Typed by the customer, so they are where to drive, not proof of anything.
+    savedAddresses: [{
+      label: { type: String, maxlength: 40, required: true },
+      line: { type: String, maxlength: 300, required: true },
+    }],
     // Set when the customer typed this email in the app (unproven), so it is
     // not trusted to match their records in Zoho Books.
     emailFromApp: { type: Boolean, default: false },
@@ -2517,12 +2523,13 @@ const customerOtpSchema = new mongoose.Schema({
 export const CustomerOtp = model('CustomerOtp', customerOtpSchema);
 
 // Something a tenant asks for from the app that staff must action — a check-out
-// change today. Kept as its own record so it can be listed and answered, and
-// mirrored onto the contract timeline so it is seen where staff already look.
+// change or a deposit refund. Kept as its own record so it can be listed and
+// answered, and mirrored onto the contract timeline so it is seen where staff
+// already look. Valet pickups and drop-offs are ServiceRequests, not these.
 const customerRequestSchema = new mongoose.Schema({
   customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
   contract: { type: mongoose.Schema.Types.ObjectId, ref: 'Contract', required: true },
-  type: { type: String, enum: ['checkout_change'], required: true },
+  type: { type: String, enum: ['checkout_change', 'refund'], required: true },
   payload: { type: mongoose.Schema.Types.Mixed, default: {} },
   status: { type: String, enum: ['pending', 'approved', 'declined'], default: 'pending' },
   staffNote: { type: String, default: '' },

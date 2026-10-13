@@ -31,7 +31,8 @@ export function customerPayload(customer) {
 // A browser tab or the in-app browser can't send our Bearer header, so to open
 // a PDF the app swaps its login for a document link: good for one path, for a
 // few minutes, and for nothing else. The login token itself never goes in a URL.
-const DOCUMENT_PATH = /^\/customer-portal\/(storage\/(contracts|invoices)\/[a-f\d]{24}\/pdf|storage\/payments\/[a-f\d]{24}\/receipt|booking\/[a-f\d]{24}\/contract\.pdf)$/;
+// An item photo counts too: an <Image> can't send a header either. Item ids are UUIDs.
+const DOCUMENT_PATH = /^\/customer-portal\/(storage\/(contracts|invoices)\/[a-f\d]{24}\/pdf|storage\/payments\/[a-f\d]{24}\/receipt|storage\/items\/[a-f\d-]{36}\/photo|booking\/[a-f\d]{24}\/contract\.pdf)$/;
 
 function documentLinkCustomer(req) {
   if (req.method !== 'GET' || typeof req.query.dt !== 'string') return null;

@@ -29,6 +29,7 @@ import { UPLOADS_DIR } from './services/drive.js';
 import authRoutes from './routes/auth.js';
 import unitRoutes from './routes/units.js';
 import warehouseRoutes from './routes/warehouse.js';
+import serviceRequestRoutes from './routes/serviceRequests.js';
 import shopifyMerchantRoutes from './routes/shopifyMerchants.js';
 import shopifyWebhookRoutes from './routes/shopifyWebhook.js';
 import { retryFailedFulfillmentPushes, runInventorySync, runOrderPull } from './services/shopifyFulfillment.js';
@@ -266,6 +267,7 @@ app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 app.use('/api/integrations/whatsapp/webhook', (req, _res, next) => next());
 app.use('/api/units', requireAuth, unitRoutes);
 app.use('/api/warehouse', requireAuth, warehouseRoutes);
+app.use('/api/service-requests', requireAuth, serviceRequestRoutes);
 // Merchants, SKUs, stock and fulfillment jobs. The order webhook is mounted
 // separately above, before the JSON parser.
 app.use('/api/shopify', requireAuth, shopifyMerchantRoutes);

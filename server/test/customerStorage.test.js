@@ -289,6 +289,28 @@ test('check-out change: validates, records a pending request and blocks duplicat
   assert.equal(dup.status, 409);
 });
 
+test('refund request: only after check-out, recorded once, and only for your own contract', async () => {
+  const t = await seedTenant('+971505551111', 'C-R1');
+  const other = await seedTenant('+971505552222', 'C-R2');
+  const { token } = await login('+971505551111');
+  const auth = { Authorization: `Bearer ${token}` };
+  const url = (id) => `/api/customer-portal/storage/contracts/${id}/refund-request`;
+
+  assert.equal((await request(app).post(url(t.contract._id)).set(auth).send({})).status, 400, 'still active');
+  await Contract.updateOne({ _id: t.contract._id }, { status: 'ended', deposit: 750 });
+  await Contract.updateOne({ _id: other.contract._id }, { status: 'ended' });
+  assert.equal((await request(app).post(url(other.contract._id)).set(auth).send({})).status, 404);
+
+  const ok = await request(app).post(url(t.contract._id)).set(auth).send({ note: '  IBAN   AE07 0331 ' });
+  assert.equal(ok.status, 201);
+  const saved = await CustomerRequest.findOne({ type: 'refund' });
+  assert.deepEqual(saved.payload, { deposit: 750, note: 'IBAN AE07 0331' });
+  const refreshed = await Contract.findById(t.contract._id);
+  assert.ok(refreshed.timeline.some((e) => e.text.includes('deposit refund (AED 750)')));
+
+  assert.equal((await request(app).post(url(t.contract._id)).set(auth).send({})).status, 409);
+});
+
 test('billing: says so when Zoho Books is not set up, instead of showing empty accounts', async () => {
   const saved = process.env.ZOHO_BOOKS_ORG_ID;
   delete process.env.ZOHO_BOOKS_ORG_ID;

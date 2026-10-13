@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { Contract, Customer, CustomerRequest, Invoice, Payment } from '../models/index.js';
 import { requireCustomer, otpLimiter, signCustomerToken, customerPayload } from './customerAuth.js';
+import customerValetRouter from './customerValet.js';
 import { nextPaymentDueDate } from '../services/billingCycle.js';
 import { buildContractPdf } from '../services/contractDocument.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
@@ -165,13 +166,34 @@ router.post('/contracts/:id/checkout-change', wrap(async (req, res) => {
     throw badRequest('Unknown action');
   }
 
-  const dup = await CustomerRequest.findOne({ contract: contract._id, type: 'checkout_change', status: 'pending' });
-  if (dup) throw Object.assign(new Error('You already have a change request waiting for approval'), { status: 409 });
+  const request = await fileRequest(req, contract, 'checkout_change', payload, summary, 'You already have a change request waiting for approval');
+  res.status(201).json({ id: request._id, status: request.status, payload });
+}));
 
-  const request = await CustomerRequest.create({ customer: req.customer.customerId, contract: contract._id, type: 'checkout_change', payload });
+const cleanText = (v, max) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, max);
+
+// Records a request and puts it on the contract timeline. One pending request
+// of a kind per contract: a second tap is a duplicate, not a second job.
+async function fileRequest(req, contract, type, payload, summary, pendingMsg) {
+  const dup = await CustomerRequest.findOne({ contract: contract._id, type, status: 'pending' });
+  if (dup) throw Object.assign(new Error(pendingMsg), { status: 409 });
+  const request = await CustomerRequest.create({ customer: req.customer.customerId, contract: contract._id, type, payload });
   contract.timeline.push({ text: `Tenant requested via app: ${summary}`, author: 'customer app' });
   await contract.save();
-  res.status(201).json({ id: request._id, status: request.status, payload });
+  return request;
+}
+
+// The deposit comes back once the unit is handed back, so only an ended
+// agreement can ask. Staff check the unit and pay it out.
+router.post('/contracts/:id/refund-request', wrap(async (req, res) => {
+  const contract = await ownedContract(req, req.params.id);
+  if (contract.status !== 'ended') throw badRequest('A refund can be requested once you have checked out');
+  const note = cleanText(req.body?.note, 1000);
+  const payload = { deposit: money(contract.deposit), ...(note ? { note } : {}) };
+  const request = await fileRequest(req, contract, 'refund', payload,
+    `deposit refund (AED ${payload.deposit})${note ? ` — "${note}"` : ''}`,
+    'You already have a refund request waiting — we will be in touch');
+  res.status(201).json({ ok: true, id: request._id, status: request.status });
 }));
 
 // ── Link a unit ─────────────────────────────────────────────────────────────
@@ -402,5 +424,8 @@ router.get('/documents', wrap(async (req, res) => {
     })),
   });
 }));
+
+// ── Valet storage: items we hold, and pickups / drop-offs / workers ─────────
+router.use(customerValetRouter);
 
 export default router;
