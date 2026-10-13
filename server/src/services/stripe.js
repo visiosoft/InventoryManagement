@@ -76,7 +76,7 @@ export function computeFeeFils(amountFils, feePct) {
  * send them. Without a returnUrl the form never redirects; the page hosting it
  * hears of completion from Stripe.js instead (the customer app does this).
  */
-export async function createCheckoutSession({ amountAed, description, productName, metadata = {}, customerEmail, successUrl, cancelUrl, feePct = 0, embedded = false, returnUrl, expiresInMinutes }) {
+export async function createCheckoutSession({ amountAed, description, productName, metadata = {}, customerEmail, successUrl, cancelUrl, feePct = 0, embedded = false, returnUrl, expiresInMinutes, stripeCustomerId, saveCard = false }) {
   const client = getClient();
   const amountFils = Math.round(Number(amountAed) * 100);
   if (!Number.isFinite(amountFils) || amountFils <= 0) {
@@ -110,7 +110,10 @@ export async function createCheckoutSession({ amountAed, description, productNam
   const session = await client.checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
-    customer_email: customerEmail || undefined,
+    // A saved-card payment is made as a Stripe customer, so the card can be used again later. Stripe shows the
+    // customer its own wording that the card will be kept for future payments. (customer and customer_email are exclusive.)
+    ...(stripeCustomerId ? { customer: stripeCustomerId } : { customer_email: customerEmail || undefined }),
+    ...(stripeCustomerId && saveCard ? { payment_intent_data: { setup_future_usage: 'off_session' } } : {}),
     line_items: lineItems,
     metadata: {
       ...metadata,
@@ -171,4 +174,107 @@ export async function retrieveCheckoutSession(id) {
 export function constructWebhookEvent(rawBody, signature) {
   const client = getClient();
   return client.webhooks.constructEvent(rawBody, signature, process.env.STRIPE_WEBHOOK_SECRET);
+}
+
+// ── Saved cards and automatic payments ──────────────────────────────────────
+
+/** The Stripe customer for one of ours, creating it the first time. `customer` is a Mongoose Customer document. */
+export async function ensureStripeCustomer(customer) {
+  if (customer.stripeCustomerId) return customer.stripeCustomerId;
+  const created = await getClient().customers.create({
+    name: customer.fullName || undefined,
+    email: customer.email || undefined,
+    phone: customer.phone || undefined,
+    metadata: { purpleboxCustomerId: String(customer._id) },
+  });
+  customer.stripeCustomerId = created.id;
+  await customer.save();
+  return created.id;
+}
+
+/**
+ * A Checkout Session that only saves a card (no charge). Same embedded/hosted choice as createCheckoutSession.
+ * metadata.purpleboxCustomerId + metadata.saveCardFor tell the webhook what to do with the card it gets back.
+ */
+export async function createSetupCheckoutSession({ stripeCustomerId, metadata = {}, embedded = false, successUrl, cancelUrl, returnUrl }) {
+  const session = await getClient().checkout.sessions.create({
+    mode: 'setup',
+    currency: 'aed',
+    payment_method_types: ['card'],
+    customer: stripeCustomerId,
+    metadata,
+    ...(embedded
+      ? { ui_mode: 'embedded', ...(returnUrl ? { return_url: returnUrl } : { redirect_on_completion: 'never' }) }
+      : { success_url: successUrl, cancel_url: cancelUrl }),
+  });
+  return { id: session.id, url: session.url, clientSecret: session.client_secret || '' };
+}
+
+/**
+ * The native payment sheet needs an ephemeral key made with the API version the app's Stripe SDK uses; that is not
+ * something the server can discover, so it is set deliberately (STRIPE_MOBILE_API_VERSION). Until it is, the app's
+ * request for the sheet is answered "not available" and the app uses Stripe's embedded card form instead.
+ */
+export function stripeSheetEnabled() {
+  return stripeEmbeddedConfigured() && Boolean(process.env.STRIPE_MOBILE_API_VERSION);
+}
+
+/**
+ * A PaymentIntent plus ephemeral key for the app's native payment sheet (cards, Apple Pay, Google Pay).
+ * Paying is confirmed by the payment_intent.succeeded webhook, never by the app saying so.
+ */
+export async function createSheetPayment({ amountAed, feePct = 0, stripeCustomerId, saveCard = false, description, metadata = {} }) {
+  const client = getClient();
+  const amountFils = Math.round(Number(amountAed) * 100);
+  if (!Number.isFinite(amountFils) || amountFils <= 0) throw new Error('Nothing outstanding to charge');
+  const feeFils = computeFeeFils(amountFils, feePct);
+  const intent = await client.paymentIntents.create({
+    amount: amountFils + feeFils,
+    currency: 'aed',
+    customer: stripeCustomerId,
+    automatic_payment_methods: { enabled: true },
+    ...(saveCard ? { setup_future_usage: 'off_session' } : {}),
+    description,
+    metadata: { ...metadata, amountFils: String(amountFils), feeFils: String(feeFils), feePct: String(Number(feePct) || 0) },
+  });
+  const key = await client.ephemeralKeys.create({ customer: stripeCustomerId }, { apiVersion: process.env.STRIPE_MOBILE_API_VERSION });
+  return { clientSecret: intent.client_secret, id: intent.id, customerEphemeralKeySecret: key.secret, feeAmount: feeFils / 100 };
+}
+
+/** Charge a saved card without the customer present. Throws a Stripe error on decline or when authentication is needed. */
+export async function chargeSavedCard({ stripeCustomerId, paymentMethodId, amountFils, description, metadata = {}, idempotencyKey }) {
+  return getClient().paymentIntents.create({
+    amount: amountFils,
+    currency: 'aed',
+    customer: stripeCustomerId,
+    payment_method: paymentMethodId,
+    off_session: true,
+    confirm: true,
+    description,
+    metadata,
+  }, idempotencyKey ? { idempotencyKey } : undefined);
+}
+
+/** Brand / last four / expiry of a payment method, for showing "Visa •• 4242". Never returns the number. */
+export async function paymentMethodSummary(paymentMethodId) {
+  const pm = await getClient().paymentMethods.retrieve(paymentMethodId);
+  return { id: pm.id, brand: pm.card?.brand || '', last4: pm.card?.last4 || '', expMonth: pm.card?.exp_month ?? null, expYear: pm.card?.exp_year ?? null };
+}
+
+export async function detachPaymentMethod(paymentMethodId) {
+  try { await getClient().paymentMethods.detach(paymentMethodId); } catch (e) { console.error('[stripe] could not detach', paymentMethodId, e.message); }
+}
+
+/** The payment method a completed Checkout Session or PaymentIntent used, or null. */
+export async function paymentMethodOfSession(session) {
+  const client = getClient();
+  if (session.mode === 'setup' && session.setup_intent) {
+    const si = typeof session.setup_intent === 'string' ? await client.setupIntents.retrieve(session.setup_intent) : session.setup_intent;
+    return si.payment_method || null;
+  }
+  if (session.payment_intent) {
+    const pi = typeof session.payment_intent === 'string' ? await client.paymentIntents.retrieve(session.payment_intent) : session.payment_intent;
+    return pi.payment_method || null;
+  }
+  return null;
 }

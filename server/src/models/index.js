@@ -187,7 +187,33 @@ const customerSchema = new Schema(
     // channel is not agreeing to the other.
     whatsappOptIn: {
       at: { type: Date, default: null },
-      source: { type: String, default: '' },   // form | inbound_message | manual
+      source: { type: String, default: '' },   // form | inbound_message | manual | app
+    },
+    // "Complete your profile" in the customer app. All optional.
+    // Which number WhatsApp messages go to: the login phone, or another one that was proven with a code.
+    whatsappSameAsPhone: { type: Boolean, default: true },
+    whatsappPhone: { type: String, default: '' },
+    // When a code sent to the phone / email was last entered correctly.
+    phoneVerifiedAt: { type: Date, default: null },
+    emailVerifiedAt: { type: Date, default: null },
+    // Stripe: the customer record cards are saved against, and the auto-pay setup.
+    // Only the Stripe ids and the card's display details are kept here, never card numbers.
+    stripeCustomerId: { type: String, default: '' },
+    autopay: {
+      enabled: { type: Boolean, default: false },
+      paymentMethodId: { type: String, default: '' },
+      brand: { type: String, default: '' },
+      last4: { type: String, default: '' },
+      expMonth: { type: Number, default: null },
+      expYear: { type: Number, default: null },
+      savedAt: { type: Date, default: null },
+      // The customer's consent to automatic charges: when, which wording, and where from.
+      consentAt: { type: Date, default: null },
+      consentVersion: { type: String, default: '' },
+      consentSource: { type: String, default: '' },
+      failureCount: { type: Number, default: 0 },
+      lastFailureAt: { type: Date, default: null },
+      lastFailureReason: { type: String, default: '' },
     },
   },
   { timestamps: true }
@@ -951,6 +977,13 @@ const invoiceSchema = new Schema(
     zohoBooksSyncId: { type: String, default: null },
     zohoBooksSyncedAt: { type: Date, default: null },
     zohoBooksSyncError: { type: String, default: null },
+    // The last automatic (saved-card) charge attempt on this invoice. See services/autopay.js.
+    autopay: {
+      lastAttemptAt: { type: Date, default: null },
+      lastStatus: { type: String, enum: ['', 'processing', 'succeeded', 'failed'], default: '' },
+      paymentIntentId: { type: String, default: '' },
+      lastError: { type: String, default: '' },
+    },
   },
   { timestamps: true }
 );
@@ -1673,6 +1706,11 @@ const documentSchema = new Schema(
     customer: { type: Schema.Types.ObjectId, ref: 'Customer' },
     name: { type: String, required: true },
     type: { type: String, enum: ['contract', 'id_proof', 'emirates_id', 'passport', 'visa', 'trade_license', 'other'], default: 'other' },
+    // Which side of an Emirates ID ('front' | 'back'), or 'page' for a passport. Empty for everything else.
+    side: { type: String, default: '' },
+    // Who put it there: staff in the office, or the customer from the app.
+    source: { type: String, enum: ['staff', 'customer_app'], default: 'staff' },
+    mime: { type: String, default: '' },
     storage: { type: String, enum: ['drive', 'local'], default: 'local' },
     driveFileId: { type: String, default: '' },
     url: { type: String, default: '' },

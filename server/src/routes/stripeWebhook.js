@@ -7,6 +7,7 @@ import { applyMovingInvoicePayment } from '../services/movingInvoicePayments.js'
 import { applyInvoicePayment, syncLinkedPayment } from '../services/invoicePayments.js';
 import { notifyPaymentReceived } from '../services/movingNotifications.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
+import { recordOnlinePaymentInZoho, saveCardFromSession, settleInvoiceFromIntent } from '../services/cardPayments.js';
 
 const router = Router();
 
@@ -96,8 +97,15 @@ router.post('/', aw(async (req, res) => {
         });
         await invoice.save();
         await syncLinkedPayment(invoice);
+        await recordOnlinePaymentInZoho(invoice, Math.min(amount, balanceDue));
         thankYouEmail({ to: invoice.customer?.email, name: invoice.customer?.fullName || 'there', docNo: `Invoice ${invoice.invoiceNo}`, amount });
       }
+    }
+
+    // A card saved for later: a card-only "setup" session, or a payment made with "save my card". Switching auto-pay on
+    // additionally needs metadata.autopayConsent (the customer's explicit choice in the app).
+    if (meta.purpleboxCustomerId && (session.mode === 'setup' || meta.saveCard === '1')) {
+      await saveCardFromSession(session).catch((e) => console.error('[StripeWebhook] could not save card:', e.message));
     }
 
     // Storage quote — paying it is treated as acceptance, on the same
@@ -156,6 +164,23 @@ router.post('/', aw(async (req, res) => {
         thankYouEmail({ to: quote.customer?.email, name: quote.customer?.fullName || 'there', docNo: `Quotation ${quote.quoteNo}`, amount, businessName: 'PurpleBox Moving' });
       }
     }
+  }
+
+  // Payments made without Checkout: the app's native payment sheet, and automatic charges to a saved card.
+  // Idempotent, so it does not matter that the auto-pay job also credits its own successes.
+  if (event.type === 'payment_intent.succeeded') {
+    const intent = event.data.object;
+    if (intent.metadata?.storageInvoiceId) {
+      await settleInvoiceFromIntent(intent).catch((e) => console.error('[StripeWebhook] could not settle invoice:', e.message));
+    }
+    if (intent.metadata?.saveCard === '1' && intent.metadata?.purpleboxCustomerId) {
+      await saveCardFromSession({ mode: 'payment', payment_intent: intent, customer: intent.customer, metadata: intent.metadata })
+        .catch((e) => console.error('[StripeWebhook] could not save card:', e.message));
+    }
+  }
+  if (event.type === 'payment_intent.payment_failed' && event.data.object.metadata?.autopay === '1') {
+    // The auto-pay job records the failure itself when Stripe answers its request; this is only for the log.
+    console.warn('[StripeWebhook] auto-pay failed for', event.data.object.metadata.invoiceNo, event.data.object.last_payment_error?.message);
   }
 
   res.json({ received: true });

@@ -1,4 +1,5 @@
 import { Contract, Customer, Quote, Unit, nextQuoteNo } from '../models/index.js';
+import { linkIdentityToContract } from './customerIdentity.js';
 import { computeUnitAvailability } from './unitAvailability.js';
 import { buildFirstInvoice, normalizeBody } from './quotePricing.js';
 import { convertQuoteToContract } from './quoteConversion.js';
@@ -197,6 +198,9 @@ export async function finalizePaidBooking(paidQuote, { sessionId, amount }) {
 
   try {
     const { contract, invoice } = await convertQuoteToContract(quote, { actor: { name: 'customer app', userId: null }, paymentMethod: 'card' });
+    // The ID the customer already uploaded in the app goes on this new contract too.
+    await linkIdentityToContract(contract.customer?._id ?? contract.customer, contract._id)
+      .catch((e) => console.error('[appBooking] could not attach ID to the new contract:', e.message));
     applyInvoicePayment(invoice, { amount, method: 'card', notes: `Paid in the customer app via Stripe Checkout (${sessionId}) incl. ${CARD_FEE_PCT}% card fee paid separately` });
     if (invoice.status === 'draft') invoice.status = invoice.paymentMade >= invoice.total ? 'paid' : 'sent';
     await invoice.save();
