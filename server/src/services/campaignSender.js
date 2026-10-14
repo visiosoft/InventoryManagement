@@ -1,6 +1,7 @@
 import { Campaign, CampaignRecipient } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
+import { usableFirstName } from './leadNames.js';
 import { unsubscribeFooterHtml, unsubscribeFooterText } from './marketingConsent.js';
 
 /**
