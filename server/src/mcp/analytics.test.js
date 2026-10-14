@@ -36,3 +36,15 @@ test('trend: occupancy at month end comes from contract dates', async () => {
   assert.equal(t.months[0].occupiedUnits, 1);
   assert.equal(t.months[2].occupiedUnits, 2);
 });
+
+test('data health warns when payments stopped being recorded and when rows look duplicated', async () => {
+  const { dataHealth } = await import('./analytics.js');
+  Invoice.aggregate = async () => [{ _id: null, at: new Date(Date.now() - 40 * D) }];
+  Payment.findOne = () => ({ sort: () => ({ select: () => ({ lean: async () => ({ paidDate: new Date(Date.now() - 50 * D) }) }) }) });
+  let n = 0;
+  Payment.aggregate = async () => (++n === 1 ? [{ _id: null, extraRows: 3, extraAed: 900 }] : [{ _id: null, n: 10, aed: 5000 }]);
+  const w = await dataHealth();
+  assert.match(w[0], /No payment has been recorded in the CRM since/);
+  assert.ok(w.some((x) => /3 pending payment rows look duplicated.*AED 900/.test(x)));
+  assert.ok(w.some((x) => /10 unpaid rows.*120 days/.test(x)));
+});

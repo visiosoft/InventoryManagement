@@ -10,6 +10,7 @@ import { describeData, queryData, apiGet, connectorStatus } from './dataTools.js
 import { leadFollowUpFile, followUpBriefing, followUpAdherence } from './followUps.js';
 import { zohoOutstanding, zohoCustomerLedger, zohoExpenses } from './zohoTools.js';
 import { whatsappReplyTimeReport, whatsappVolumeReport, whatsappTopicsReport, whatsappInboundSample } from './whatsappAnalysis.js';
+import { dataHealth } from './analytics.js';
 import { occupancyAndRevenueTrend, conversionReport, forecast, cashForecast, businessSnapshot } from './analytics.js';
 import { takeProposal } from '../services/assistant/actions.js';
 import { runAction } from '../services/assistant/actions.js';
@@ -62,6 +63,18 @@ const NEW_TOOLS = [
 ];
 
 const STARTED = new Date().toISOString();
+const MONEY_TOOLS = /^(business_snapshot|occupancy_revenue_trend|pending_payments|cash_forecast|forecast|payments_received|list_invoices|zoho_outstanding|crm_report_revenue_collected|crm_report_revenue_outstanding)$/;
+const INSTRUCTIONS = [
+  'You are reading the live PurpleBox Storage CRM (Dubai). Accuracy matters more than a complete-looking answer.',
+  '1. Every number, name and date you state must come from a tool result in this conversation. Never estimate, round up or fill gaps from memory. If the tools do not give it, say so.',
+  '2. Name the tool and the period behind each figure. If a result has dataWarnings, truncated, "not reviewed" or a note field, tell the user what it says before giving conclusions that depend on it.',
+  '3. An empty or zero result is not proof that nothing happened: check the warnings, and cross-check a second tool (for example WhatsApp activity against lead reports) before saying "no activity".',
+  '4. Do not infer who someone is or what they did from a name. A contact\'s role is known only if a tool states it.',
+  '5. Judgements about customers (hot, lost, interested, agreed to visit) need the customer\'s latest messages read first, through the lead and WhatsApp tools. The latest message wins; "all good for now", "not interested" or "found another place" ends a follow-up. If you did not read the messages, label the list as unreviewed.',
+  '6. Dates are Dubai time. A single day means that whole day.',
+  '7. Anything that creates, sends or changes something: state exactly what will happen and wait for the user to agree. Quotes, contracts and emails are prepared first, then confirmed.',
+  '8. Prefer the ready-made tools over query_data; use query_data when none fits, and say which fields you filtered on.',
+].join('\n');
 const DO = ' This takes effect immediately.';
 const WRITE_TOOLS = [
   { name: 'confirm_action', description: 'Carry out a prepared action. crm_propose_quotation, crm_propose_contract and crm_propose_email only PREPARE something and return a proposalId and a summary. Show the person that summary, and call this with the proposalId only after they agree. It then creates the quotation / contract (with its first draft invoice) / sends the email through the CRM.', inputSchema: OBJ({ proposalId: { type: 'string' } }, ['proposalId']), run: async (a) => { const p = takeProposal(a.proposalId, 'mcp'); if (!p) return { error: 'That proposal does not exist or has expired (they last 15 minutes). Prepare it again.' }; return runAction(p, { authHeader: await serviceAuthHeader() }); } },
@@ -88,14 +101,17 @@ function allTools() {
 }
 
 export function buildMcpServer(ctx) {
-  const server = new Server({ name: 'purplebox-crm', version: '1.0.0' }, { capabilities: { tools: {} } });
+  const server = new Server({ name: 'purplebox-crm', version: '1.0.0' }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
   const tools = allTools();
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) }));
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const t = tools.find((x) => x.name === req.params.name);
     if (!t) return { isError: true, content: [{ type: 'text', text: `Unknown tool ${req.params.name}` }] };
     try {
-      const out = await t.run(req.params.arguments || {}, ctx);
+      let out = await t.run(req.params.arguments || {}, ctx);
+      // Money figures carry the warnings a reader needs before trusting them.
+      if (out && typeof out === 'object' && !Array.isArray(out) && MONEY_TOOLS.test(t.name)) out = { ...out, dataWarnings: await dataHealth().catch(() => []) };
+      if (out && typeof out === 'object' && !Array.isArray(out)) out = { ...out, _source: t.name, _asOf: new Date().toISOString() };
       return { content: [{ type: 'text', text: JSON.stringify(out, null, 1).slice(0, 120_000) }] };
     } catch (e) {
       return { isError: true, content: [{ type: 'text', text: `Could not run ${t.name}: ${e.message}` }] };
