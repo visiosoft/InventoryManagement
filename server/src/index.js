@@ -70,6 +70,8 @@ import workerRoutes from './routes/workers.js';
 import truckRoutes from './routes/trucks.js';
 import movingJobRoutes, { publicUploadRouter as movingJobPublicUpload, publicShareRouter as movingJobPublicShare } from './routes/movingJobs.js';
 import { verifyPendingPayments } from './services/contractPayment.js';
+import { mcpHandler } from './mcp/server.js';
+import { buildFocusWorkbook, verifyExport } from './mcp/focusExport.js';
 import publicMetaLeadRoutes from './routes/publicMetaLead.js';
 import movingLeadRoutes, { publicLeadRouter as movingLeadPublic } from './routes/movingLeads.js';
 import movingQuoteRoutes from './routes/movingQuotes.js';
@@ -260,6 +262,23 @@ app.use('/api/moving-leads/public', express.urlencoded({ extended: true }), movi
 // The marketing website's booking API — no login, no auth token, by design.
 // See server/src/routes/publicBooking.js for what keeps it from being abused
 // (a per-IP rate limit and an atomic per-unit claim) despite that.
+/* Claude connector (MCP), read-only. Off unless MCP_ACCESS_TOKEN is set. Token in
+   a header, or as the last part of the path for connectors that cannot send one. */
+app.all('/api/mcp', mcpHandler);
+app.all('/api/mcp/:token', mcpHandler);
+app.get('/api/mcp-export/focus/:exp/:days/:sig.xlsx', async (req, res) => {
+  try {
+    const { exp, days, sig } = req.params;
+    if (!verifyExport(exp, days, sig)) return res.status(403).send('This link has expired or is not valid.');
+    const wb = await buildFocusWorkbook({ days: Math.min(365, Math.max(1, Number(days) || 30)) });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="purplebox-sales-focus.xlsx"');
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    res.status(500).send('Could not build the workbook.');
+  }
+});
 // Leads from Meta (Facebook / Instagram) ads — no login. See routes/publicMetaLead.js.
 app.use('/api/public/meta-lead', express.urlencoded({ extended: true }), publicMetaLeadRoutes);
 app.use('/api/public/bookings', publicBookingRoutes);

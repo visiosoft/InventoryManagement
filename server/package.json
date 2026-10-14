@@ -19,6 +19,7 @@
     "test:shopify": "node --test test/shopifyFulfillment.test.js test/shopifyIntegration.test.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
     "bwip-js": "^4.11.4",
