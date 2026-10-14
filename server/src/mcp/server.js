@@ -6,9 +6,11 @@ import { validAccessToken, baseUrl } from './oauth.js';
 import { toolByName, toolNames } from '../services/assistant/tools.js';
 import { responseTimeReport, slowFirstReplies, customersWaitingForReply, followUpList, FOLLOW_UP_LISTS, listInvoices, pendingPayments, paymentsReceived, listQuotes, contractDetail } from './crmTools.js';
 import { signedExportUrl } from './focusExport.js';
+import { describeData, queryData, apiGet, connectorStatus } from './dataTools.js';
 import { leadFollowUpFile, followUpBriefing, followUpAdherence } from './followUps.js';
 import { zohoOutstanding, zohoCustomerLedger, zohoExpenses } from './zohoTools.js';
 import { whatsappReplyTimeReport, whatsappVolumeReport, whatsappTopicsReport, whatsappInboundSample } from './whatsappAnalysis.js';
+import { dataHealth } from './analytics.js';
 import { occupancyAndRevenueTrend, conversionReport, forecast, cashForecast, businessSnapshot } from './analytics.js';
 import { takeProposal } from '../services/assistant/actions.js';
 import { runAction } from '../services/assistant/actions.js';
@@ -49,6 +51,10 @@ const NEW_TOOLS = [
   { name: 'lead_followup_file', description: 'Everything about ONE lead\'s follow-up, with the conversation: status, owner, follow-up date and whether it is overdue, what the rep did (attempts), the timeline, tasks, AI proposals waiting for approval, the recent WhatsApp messages (customer vs us), and whose turn it is. Use it to answer "what happened with X?", "was the follow-up done?", "what should we say to X?".', inputSchema: OBJ({ phone: { type: 'string' }, leadId: { type: 'string' }, messages: { type: 'number', description: 'How many recent messages (default 20)' } }), run: (a) => leadFollowUpFile(a) },
   { name: 'followup_briefing', description: `A batch of leads that need following up, EACH WITH ITS LATEST WHATSAPP MESSAGES, so you can read the conversations and judge what to say and how urgent it is. Choose a list (${Object.keys(FOLLOW_UP_LISTS).join(', ')}), optionally one rep.`, inputSchema: OBJ({ list: { type: 'string', enum: Object.keys(FOLLOW_UP_LISTS) }, rep: { type: 'string', description: 'Part of a rep name' }, limit: { type: 'number', description: 'Leads to include, max 25 (default 12)' }, messagesPer: { type: 'number' } }), run: (a) => followUpBriefing(a) },
   { name: 'followup_adherence', description: 'Were follow-ups done? For follow-ups that fell due in the last N days: per rep how many were done on time, late, or missed, and the list of missed ones.', inputSchema: OBJ({ days }), run: (a) => followUpAdherence(a) },
+  { name: 'describe_data', description: 'List the collections you can query directly (leads, customers, contracts, invoices, payments, quotes, units, whatsapp_messages, tasks, …), or pass a collection to see its fields and a sample record. Use this before query_data when a ready-made tool does not answer the question.', inputSchema: OBJ({ collection: { type: 'string' } }), run: (a) => describeData(a) },
+  { name: 'query_data', description: 'Read-only query of any allowed collection (see describe_data). Give a MongoDB-style filter, optional fields, sort and limit (max 200), or count:true, or an aggregation pipeline (stages: $match, $group, $sort, $limit, $project, $unwind, $addFields, …; no $lookup). Dates in filters can be "YYYY-MM-DD" (a Dubai day) or ISO strings. Secrets are removed from results. Prefer the ready-made tools when one fits.', inputSchema: OBJ({ collection: { type: 'string' }, filter: { type: 'object' }, fields: { type: 'array', items: { type: 'string' } }, sort: { type: 'object' }, limit: { type: 'number' }, count: { type: 'boolean' }, pipeline: { type: 'array', items: { type: 'object' } } }, ['collection']), run: (a) => queryData(a) },
+  { name: 'api_get', description: 'Read-only GET of the CRM\'s own API (the same data the app screens use), e.g. /leads?status=new, /contracts/expiring-soon?days=14, /reports/summary. Sign-in, users, backup, settings and connector routes are refused. Responses are capped and secrets removed.', inputSchema: OBJ({ path: { type: 'string', description: 'API path starting with /, e.g. /contracts/renewal-requests' } }, ['path']), run: (a) => apiGet(a) },
+  { name: 'connector_status', description: 'What this connector is running: build, start time, and the full list of tools. Use it to check whether a tool exists.', inputSchema: OBJ(), run: () => connectorStatus(allTools().map((t) => t.name), STARTED) },
   { name: 'list_invoices', description: 'Invoices, newest first. Filter by status (draft, sent, paid, partial, overdue, cancelled), customer name, date range, or overdueOnly.', inputSchema: OBJ({ status: { type: 'string' }, customer: { type: 'string' }, overdueOnly: { type: 'boolean' }, from: { type: 'string', description: 'YYYY-MM-DD' }, to: { type: 'string', description: 'YYYY-MM-DD' }, limit }), run: (a) => listInvoices(a) },
   { name: 'pending_payments', description: 'Payments still due from tenants, oldest first, with the total owed and days overdue.', inputSchema: OBJ({ overdueOnly: { type: 'boolean' }, limit }), run: (a) => pendingPayments(a) },
   { name: 'payments_received', description: 'Payments received in a period (default last 30 days) with the total.', inputSchema: OBJ({ from: { type: 'string', description: 'YYYY-MM-DD' }, to: { type: 'string', description: 'YYYY-MM-DD' }, limit }), run: (a) => paymentsReceived(a) },
@@ -56,6 +62,19 @@ const NEW_TOOLS = [
   { name: 'contract_detail', description: 'One contract by number (e.g. PB-2026-0116): tenant, unit, dates, rate, renewal intent, whether payment is verified, and its invoices and payments.', inputSchema: OBJ({ contractNo: { type: 'string' } }, ['contractNo']), run: (a) => contractDetail(a) },
 ];
 
+const STARTED = new Date().toISOString();
+const MONEY_TOOLS = /^(business_snapshot|occupancy_revenue_trend|pending_payments|cash_forecast|forecast|payments_received|list_invoices|zoho_outstanding|crm_report_revenue_collected|crm_report_revenue_outstanding)$/;
+const INSTRUCTIONS = [
+  'You are reading the live PurpleBox Storage CRM (Dubai). Accuracy matters more than a complete-looking answer.',
+  '1. Every number, name and date you state must come from a tool result in this conversation. Never estimate, round up or fill gaps from memory. If the tools do not give it, say so.',
+  '2. Name the tool and the period behind each figure. If a result has dataWarnings, truncated, "not reviewed" or a note field, tell the user what it says before giving conclusions that depend on it.',
+  '3. An empty or zero result is not proof that nothing happened: check the warnings, and cross-check a second tool (for example WhatsApp activity against lead reports) before saying "no activity".',
+  '4. Do not infer who someone is or what they did from a name. A contact\'s role is known only if a tool states it.',
+  '5. Judgements about customers (hot, lost, interested, agreed to visit) need the customer\'s latest messages read first, through the lead and WhatsApp tools. The latest message wins; "all good for now", "not interested" or "found another place" ends a follow-up. If you did not read the messages, label the list as unreviewed.',
+  '6. Dates are Dubai time. A single day means that whole day.',
+  '7. Anything that creates, sends or changes something: state exactly what will happen and wait for the user to agree. Quotes, contracts and emails are prepared first, then confirmed.',
+  '8. Prefer the ready-made tools over query_data; use query_data when none fits, and say which fields you filtered on.',
+].join('\n');
 const DO = ' This takes effect immediately.';
 const WRITE_TOOLS = [
   { name: 'confirm_action', description: 'Carry out a prepared action. crm_propose_quotation, crm_propose_contract and crm_propose_email only PREPARE something and return a proposalId and a summary. Show the person that summary, and call this with the proposalId only after they agree. It then creates the quotation / contract (with its first draft invoice) / sends the email through the CRM.', inputSchema: OBJ({ proposalId: { type: 'string' } }, ['proposalId']), run: async (a) => { const p = takeProposal(a.proposalId, 'mcp'); if (!p) return { error: 'That proposal does not exist or has expired (they last 15 minutes). Prepare it again.' }; return runAction(p, { authHeader: await serviceAuthHeader() }); } },
@@ -82,14 +101,17 @@ function allTools() {
 }
 
 export function buildMcpServer(ctx) {
-  const server = new Server({ name: 'purplebox-crm', version: '1.0.0' }, { capabilities: { tools: {} } });
+  const server = new Server({ name: 'purplebox-crm', version: '1.0.0' }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
   const tools = allTools();
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) }));
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const t = tools.find((x) => x.name === req.params.name);
     if (!t) return { isError: true, content: [{ type: 'text', text: `Unknown tool ${req.params.name}` }] };
     try {
-      const out = await t.run(req.params.arguments || {}, ctx);
+      let out = await t.run(req.params.arguments || {}, ctx);
+      // Money figures carry the warnings a reader needs before trusting them.
+      if (out && typeof out === 'object' && !Array.isArray(out) && MONEY_TOOLS.test(t.name)) out = { ...out, dataWarnings: await dataHealth().catch(() => []) };
+      if (out && typeof out === 'object' && !Array.isArray(out)) out = { ...out, _source: t.name, _asOf: new Date().toISOString() };
       return { content: [{ type: 'text', text: JSON.stringify(out, null, 1).slice(0, 120_000) }] };
     } catch (e) {
       return { isError: true, content: [{ type: 'text', text: `Could not run ${t.name}: ${e.message}` }] };

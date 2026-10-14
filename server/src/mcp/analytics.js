@@ -196,3 +196,27 @@ export async function businessSnapshot() {
   const o = Object.fromEntries(owed.map((x) => [x._id, { aed: money(x.total), count: x.n }]));
   return { occupancy: { occupiedUnits: f.now.occupiedUnits, totalUnits: f.totalUnits, pct: f.totalUnits ? Math.round((f.now.occupiedUnits / f.totalUnits) * 1000) / 10 : null }, revenuePer4WeeksAed: f.now.revenuePer4WeeksAed, owed: { overdue: o.overdue || { aed: 0, count: 0 }, upcoming: o.upcoming || { aed: 0, count: 0 } }, salesLast30Days: { leads: conv.totalLeads, won: conv.overall?.won || 0, winRatePct: conv.overall?.winRatePct, averageResponse: rt.team.averageReadable, medianResponse: rt.team.medianReadable, neverAnswered: rt.team.leadsNeverAnswered }, nextFourWeeks: f.weeks.map((w) => ({ weekEnding: w.weekEnding, occupiedUnits: w.occupiedUnits.base, revenuePer4WeeksAed: w.revenuePer4WeeksAed.base })), lastThreeMonths: trend.months };
 }
+
+/**
+ * Things a reader must know before trusting the money figures. Computed from
+ * the data each time, so a warning appears only while it is true.
+ */
+export async function dataHealth() {
+  const now = new Date();
+  const warnings = [];
+  const [lastInv, lastPay, dups, stale] = await Promise.all([
+    Invoice.aggregate([{ $match: { deletedAt: null } }, { $unwind: '$paymentHistory' }, { $group: { _id: null, at: { $max: '$paymentHistory.date' } } }]),
+    Payment.findOne({ status: 'paid', deletedAt: null, paidDate: { $ne: null } }).sort({ paidDate: -1 }).select('paidDate').lean(),
+    Payment.aggregate([{ $match: { deletedAt: null, status: { $in: ['pending', 'overdue'] } } }, { $group: { _id: { c: '$contract', a: '$amount', d: '$dueDate' }, n: { $sum: 1 }, amount: { $first: '$amount' } } }, { $match: { n: { $gt: 1 } } }, { $group: { _id: null, extraRows: { $sum: { $subtract: ['$n', 1] } }, extraAed: { $sum: { $multiply: ['$amount', { $subtract: ['$n', 1] }] } } } }]),
+    Payment.aggregate([{ $match: { deletedAt: null, status: { $in: ['pending', 'overdue'] }, dueDate: { $lt: new Date(now.getTime() - 120 * DAY) } } }, { $group: { _id: null, n: { $sum: 1 }, aed: { $sum: '$amount' } } }]),
+  ]);
+  const last = [lastInv[0]?.at, lastPay?.paidDate].filter(Boolean).map((d) => new Date(d).getTime());
+  if (last.length) {
+    const at = new Date(Math.max(...last));
+    const days = Math.floor((now - at) / DAY);
+    if (days > 14) warnings.push(`No payment has been recorded in the CRM since ${day(at)} (${days} days ago). Collection figures after that date show 0 because payments are not being recorded here, not necessarily because nothing was collected. Check Zoho Books (the zoho_* tools) for what was actually received.`);
+  } else warnings.push('No payments are recorded in the CRM at all.');
+  if (dups[0]?.extraRows) warnings.push(`${dups[0].extraRows} pending payment rows look duplicated (same contract, amount and due date), worth AED ${money(dups[0].extraAed)}. Owed and overdue totals may be overstated by up to that amount.`);
+  if (stale[0]?.n) warnings.push(`${stale[0].n} unpaid rows (AED ${money(stale[0].aed)}) are more than 120 days overdue. Some may have been paid outside the CRM or never cleared, so treat the overdue total as an upper bound.`);
+  return warnings;
+}
