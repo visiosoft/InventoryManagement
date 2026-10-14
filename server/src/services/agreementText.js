@@ -44,6 +44,24 @@ export function agreementPlaceholders(contract) {
   };
 }
 
+/**
+ * A contract's saved agreement wording is merged once, so the dates in it stop
+ * following the contract. When a date moves, swap the old date for the new one
+ * in that text (the same long format the placeholders use). A contract with no
+ * saved wording renders from the template every time and needs nothing.
+ */
+export function refreshAgreementDates(text, before = {}, after = {}) {
+  const fmt = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
+  let out = String(text || '');
+  if (!out) return out;
+  for (const key of ['endDate', 'startDate']) {
+    const from = fmt(before[key]);
+    const to = fmt(after[key]);
+    if (from && to && from !== to) out = out.split(from).join(to);
+  }
+  return out;
+}
+
 /** Replaces {{name}} tokens; unknown tokens are left visible so gaps show. */
 export function mergeAgreementText(template, contract, buildValues = agreementPlaceholders) {
   const values = buildValues(contract);

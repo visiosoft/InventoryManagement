@@ -17,7 +17,7 @@ import { notifyResignNeeded } from '../services/contractResign.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
-import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, looksLikeHtml } from '../services/agreementText.js';
+import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, looksLikeHtml, refreshAgreementDates } from '../services/agreementText.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
 import { AutomationLog } from '../models/index.js';
 import { buildContractPdf } from '../services/contractDocument.js';
@@ -1341,6 +1341,11 @@ router.put('/:id', async (req, res) => {
        case that puts the unit under the first-payment check; a check-out
        extension never touches the unit status or Zoho. */
     const holdsUnit = startMoved && contract.status === 'active' && day($set.startDate) >= day(new Date());
+    // Wording saved on this contract carries the old dates: bring them up to date,
+    // unless the same request is saving new wording itself.
+    if ((startMoved || endMoved) && String(contract.agreementText || '').trim() && req.body.agreementText === undefined) {
+      await Contract.updateOne({ _id: contract._id }, { $set: { agreementText: refreshAgreementDates(contract.agreementText, contract, { startDate: $set.startDate || contract.startDate, endDate: $set.endDate || contract.endDate }) } });
+    }
     if ((startMoved || endMoved) && contract.status === 'active') {
       const by = req.user?.name || req.user?.email || 'user';
       await Contract.updateOne({ _id: contract._id }, {
@@ -1414,6 +1419,9 @@ router.post('/:id/extend', async (req, res) => {
       return res.status(400).json({ error: 'New end date must be after the current end date' });
     }
 
+    if (String(contract.agreementText || '').trim()) {
+      contract.agreementText = refreshAgreementDates(contract.agreementText, { endDate: contract.endDate }, { endDate: newEnd });
+    }
     contract.endDate = newEnd;
 
     let signingUrl = null;
