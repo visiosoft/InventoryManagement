@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Phone } from 'lucide-react'
-import { api } from '../lib/api'
+import { useState } from 'react'
+import { MessageCircle, Phone } from 'lucide-react'
+import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Card, CardBody, CardHeader } from '../components/ui'
 
@@ -10,6 +11,48 @@ type Item = {
   customer?: { fullName: string; phone?: string; email?: string }; unit?: { unitNumber: string }
 }
 type Data = { moveOut: Item[]; renewing: Item[]; silent: Item[] }
+
+type Tpl = { _id: string; label: string; whatsappTemplate?: string }
+
+/** Send an approved WhatsApp template to this tenant, filled from their contract (renewal and move-out links included). */
+function WhatsAppSend({ contractId, name, phone }: { contractId: string; name: string; phone: string }) {
+  const [open, setOpen] = useState(false)
+  const [tplId, setTplId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const { data: all = [] } = useQuery<Tpl[]>({
+    queryKey: ['message-templates'],
+    queryFn: () => api.get('/message-templates').then((r) => r.data ?? []),
+    enabled: open, staleTime: 5 * 60_000,
+  })
+  const templates = all.filter((t) => (t.whatsappTemplate || '').trim())
+  async function send() {
+    const chosen = templates.find((t) => t._id === tplId)
+    if (!chosen || !confirm(`Send "${chosen.label}" to ${name} on ${phone}?`)) return
+    setBusy(true); setMsg('')
+    try {
+      await api.post(`/contracts/${contractId}/whatsapp-template`, { templateId: tplId })
+      setMsg(`Sent to ${phone}`)
+    } catch (e) { setMsg(apiError(e)) } finally { setBusy(false) }
+  }
+  return (
+    <>
+      <button type="button" onClick={() => setOpen((o) => !o)} className="inline-flex items-center gap-1 text-xs font-semibold border rounded-full px-3 py-1.5 cursor-pointer" style={{ color: '#047857', borderColor: '#047857' }}>
+        <MessageCircle size={12} /> WhatsApp
+      </button>
+      {open && (
+        <div className="basis-full flex flex-wrap items-center gap-2 pt-2 border-t">
+          <select value={tplId} onChange={(e) => { setTplId(e.target.value); setMsg('') }} className="flex-1 min-w-[200px] h-9 rounded-md border bg-background px-2 text-sm">
+            <option value="">{all.length && !templates.length ? 'No approved WhatsApp templates yet' : 'Choose a template…'}</option>
+            {templates.map((t) => <option key={t._id} value={t._id}>{t.label}</option>)}
+          </select>
+          <button type="button" disabled={!tplId || busy} onClick={send} className="h-9 px-4 rounded-md text-sm font-bold text-white disabled:opacity-40 cursor-pointer" style={{ background: '#047857' }}>{busy ? 'Sending…' : 'Send now'}</button>
+          {msg && <span className="text-xs text-muted-foreground">{msg}</span>}
+        </div>
+      )}
+    </>
+  )
+}
 
 function Group({ title, hint, items, tone }: { title: string; hint: string; items: Item[]; tone: string }) {
   return (
@@ -29,6 +72,7 @@ function Group({ title, hint, items, tone }: { title: string; hint: string; item
             <span className="text-xs font-semibold rounded-full px-2.5 py-1" style={{ background: tone, color: '#14081F' }}>
               {i.daysLeft == null ? '—' : i.daysLeft < 0 ? `${-i.daysLeft}d overdue` : `${i.daysLeft}d left`}
             </span>
+            {i.customer?.phone && <WhatsAppSend contractId={i._id} name={i.customer.fullName || 'the tenant'} phone={i.customer.phone} />}
             {i.customer?.phone && (
               <a href={`tel:${i.customer.phone}`} className="inline-flex items-center gap-1 text-xs font-semibold border rounded-full px-3 py-1.5"><Phone size={12} /> Call</a>
             )}
