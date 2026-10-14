@@ -64,6 +64,7 @@ router.post('/:id/share', async (req, res) => {
     });
     await quote.save();
     await resyncQuoteUnits(quote.units.map((u) => u.unit));
+    await advanceLeadOnQuote(quote);
 
     const proto = req.headers['x-forwarded-proto'] || req.protocol;
     const host = req.headers['x-forwarded-host'] || req.get('host');
@@ -280,6 +281,7 @@ router.post('/', async (req, res) => {
     });
     // A quote created as sent holds its units from that moment.
     await resyncQuoteUnits(quote.units.map((u) => u.unit));
+    await advanceLeadOnQuote(quote);
     res.status(201).json(await quote.populate('customer', 'fullName email phone'));
 });
 
@@ -317,6 +319,22 @@ router.put('/:id', async (req, res) => {
     res.json(await quote.populate('customer', 'fullName email phone'));
 });
 
+/* A quote that has gone to the customer moves its lead to Quotation Sent, so
+ * the board reflects what actually happened without anyone updating it by
+ * hand. Only forward from the early stages: never pulls back a lead that is
+ * already won, lost or a customer. */
+const EARLY_STAGES = ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled'];
+async function advanceLeadOnQuote(quote) {
+    try {
+        if (!quote?.lead || quote.status !== 'sent') return;
+        const lead = await Lead.findById(quote.lead);
+        if (!lead || !EARLY_STAGES.includes(lead.status)) return;
+        lead.status = 'quotation_sent';
+        lead.timeline.push({ type: 'status_changed', text: `Status changed to quotation_sent — quote ${quote.quoteNo} sent` });
+        await lead.save();
+    } catch (e) { console.error('[Quotes] advanceLeadOnQuote:', e.message); }
+}
+
 /* A quote's units, whichever of them it had before and after a change.
  *
  * Both sides matter: taking a unit off a quote has to release it just as
@@ -343,6 +361,7 @@ router.patch('/:id/status', async (req, res) => {
        directions run through the same recompute, which reads the world rather
        than trying to work out what this particular change implies. */
     await resyncQuoteUnits(quote.units.map((u) => u.unit));
+    await advanceLeadOnQuote(quote);
 
     res.json(await quote.populate('customer', 'fullName email phone'));
 });

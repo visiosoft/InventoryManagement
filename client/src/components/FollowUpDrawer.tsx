@@ -5,6 +5,7 @@ import { ArrowRight, Check, ChevronDown, ChevronUp, MessageCircle, Phone } from 
 import { api, apiError, followUpQueueApi, whatsappApi, type FollowUpTimelineEntry } from '../lib/api'
 import { SlideOver, Skeleton } from './ui'
 import { AgentDraftCard } from './AgentDraftCard'
+import { LOST_REASONS } from '../lib/types'
 import {
   INK, MUTED, PURPLE, PURPLE_DEEP, PURPLE_TINT, HAIRLINE, CREAM, DISPLAY,
   REASON_UI, PRIORITY_UI, TEMP_UI, whyFor, agoText, firstNameOf, initialsOf, defaultTemplate, rememberTemplate, customerBadge,
@@ -48,6 +49,7 @@ export default function FollowUpDrawer({ leadId, nextLeadId, position, snapshotA
   const [showTemplate, setShowTemplate] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [error, setError] = useState('')
+  const [lostOpen, setLostOpen] = useState(false)
   const [sentTo, setSentTo] = useState('')
 
   useEffect(() => { setError(''); setSentTo(''); setConfirmResend(false); setAllowCustomers(false); setShowTemplate(false); setPickerOpen(false); setHistoryOpen(false) }, [leadId])
@@ -154,7 +156,7 @@ export default function FollowUpDrawer({ leadId, nextLeadId, position, snapshotA
 
 
   const markLost = useMutation({
-    mutationFn: () => api.patch(`/leads/${leadId}/status`, { status: 'lost' }),
+    mutationFn: (lostReason: string) => api.patch(`/leads/${leadId}/status`, { status: 'lost', lostReason }),
     onSuccess: () => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() },
     onError: (e) => setError(apiError(e)),
   })
@@ -376,8 +378,20 @@ export default function FollowUpDrawer({ leadId, nextLeadId, position, snapshotA
               <button type="button" onClick={() => setLogOpen((o) => !o)}
                 className="ml-auto cursor-pointer font-semibold px-3 py-1.5 rounded-full border" style={{ borderColor: HAIRLINE, color: PURPLE_DEEP }}>Log a call (c)</button>
               <a href={`tel:${lead.phone}`} className="inline-flex items-center gap-1 font-semibold px-3 py-1.5 rounded-full border" style={{ borderColor: HAIRLINE, color: INK }}><Phone size={12} /> Call</a>
-              <button type="button" disabled={markLost.isPending} onClick={() => { if (confirm(`Mark ${lead.name} as lost? Pending follow-ups stop.`)) markLost.mutate() }}
+              <button type="button" disabled={markLost.isPending} onClick={() => setLostOpen((o) => !o)}
                 className="cursor-pointer font-semibold px-3 py-1.5 rounded-full" style={{ background: '#FEE2E2', color: '#B91C1C' }}>Mark lost</button>
+            </div>
+          )}
+
+          {item && !sentTo && lostOpen && lead && (
+            <div className="rounded-xl border p-3 space-y-2" style={{ borderColor: HAIRLINE, background: CREAM }}>
+              <div className="text-[11px] font-semibold uppercase" style={{ letterSpacing: '.08em', color: '#B91C1C' }}>Why was it lost? Pending follow-ups stop.</div>
+              <div className="flex flex-wrap gap-1.5">
+                {LOST_REASONS.map(([v, lbl]) => (
+                  <button key={v} type="button" disabled={markLost.isPending} onClick={() => markLost.mutate(v)}
+                    className="cursor-pointer text-xs font-semibold px-3 py-1.5 rounded-full border" style={{ borderColor: HAIRLINE, color: INK, background: '#fff' }}>{lbl}</button>
+                ))}
+              </div>
             </div>
           )}
 

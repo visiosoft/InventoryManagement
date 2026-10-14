@@ -19,6 +19,7 @@
  * last nine digits are the only part all three agree on.
  */
 
+import { promoteToCustomer } from './customerStage.js';
 import { snapshotIntentAtClose } from './leadScore.js';
 import { Lead } from '../models/index.js';
 
@@ -123,5 +124,25 @@ export async function markLeadWon({ leadId, contractNo, userId }) {
       return { changed: true };
    } catch (e) {
       return { changed: false, reason: e.message };
+   }
+}
+
+
+/**
+ * A contract has been signed: only now is the lead won and the customer a
+ * tenant. Both used to happen the moment a DRAFT contract was created, so a
+ * lead counted as won (and a rep as having closed) before anyone had signed
+ * anything. Call this wherever a contract becomes active by signature or
+ * approval. Idempotent — a lead already won, or a customer already promoted,
+ * is left alone — and it never throws.
+ */
+export async function onContractSigned(contract, { userId } = {}) {
+   try {
+      if (!contract) return;
+      const customerId = contract.customer?._id || contract.customer;
+      await markLeadWon({ leadId: contract.lead, contractNo: contract.contractNo, userId });
+      await promoteToCustomer(customerId, { contractNo: contract.contractNo });
+   } catch (e) {
+      console.error('[DealCredit] onContractSigned:', e.message);
    }
 }

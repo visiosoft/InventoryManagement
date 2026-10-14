@@ -6,7 +6,7 @@ import { displayNameFor, promotePlaceholderName, resolvePlaceholderNames } from 
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask, syncStorageStartTask } from '../services/followUps.js';
 import { applyOutcome, followUpDateFrom, getFollowUpPlan, hasFutureFollowUp, nextDateFor, sequenceState } from '../services/followUpSequence.js';
 import { summarise } from '../services/speedToLead.js';
-import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
+import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES, LOST_REASONS } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { QUEUE_SINCE } from '../services/followUpQueue.js';
 import { customerContactKeys } from '../services/customerLeads.js';
@@ -738,6 +738,53 @@ router.get('/intent-report', async (req, res) => {
         for (const r of rows) if (out[r._id.band]) out[r._id.band][r._id.status] = r.n;
         const bands = Object.entries(out).map(([band, v]) => ({ band, ...v, total: v.won + v.lost, winRate: v.won + v.lost ? Math.round((v.won / (v.won + v.lost)) * 100) : null }));
         res.json({ days, bands, enough: bands.reduce((a, b) => a + b.total, 0) >= 30 });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Where leads come from and what becomes of them: per source, how many came
+ * in, how many were reached, quoted and won, and the win rate. Admin only.
+ */
+router.get('/source-report', async (req, res) => {
+    try {
+        if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+        const days = Math.min(730, Math.max(7, Number(req.query.days) || 90));
+        const since = new Date(Date.now() - days * 864e5);
+        const rows = await Lead.aggregate([
+            { $match: { deletedAt: null, createdAt: { $gte: since } } },
+            { $group: {
+                _id: '$source',
+                leads: { $sum: 1 },
+                reached: { $sum: { $cond: [{ $in: ['$status', ['contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won']] }, 1, 0] } },
+                quoted: { $sum: { $cond: [{ $in: ['$status', ['quotation_sent', 'won']] }, 1, 0] } },
+                won: { $sum: { $cond: [{ $eq: ['$status', 'won'] }, 1, 0] } },
+                lost: { $sum: { $cond: [{ $eq: ['$status', 'lost'] }, 1, 0] } },
+            } },
+            { $sort: { leads: -1 } },
+        ]);
+        res.json({
+            days,
+            sources: rows.map((r) => ({ source: r._id || 'manual', leads: r.leads, reached: r.reached, quoted: r.quoted, won: r.won, lost: r.lost, winRate: r.leads ? Math.round((r.won / r.leads) * 100) : 0 })),
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/** Why leads are lost, most common first. Admin only. */
+router.get('/lost-reasons', async (req, res) => {
+    try {
+        if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+        const days = Math.min(730, Math.max(7, Number(req.query.days) || 90));
+        const since = new Date(Date.now() - days * 864e5);
+        const rows = await Lead.aggregate([
+            { $match: { deletedAt: null, status: 'lost', updatedAt: { $gte: since } } },
+            { $group: { _id: { $ifNull: ['$lostReason', ''] }, n: { $sum: 1 } } },
+            { $sort: { n: -1 } },
+        ]);
+        res.json({ days, total: rows.reduce((a, r) => a + r.n, 0), reasons: rows.map((r) => ({ reason: r._id || 'not_recorded', count: r.n })) });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1610,6 +1657,13 @@ router.patch('/:id/status', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
+    // Closing a lead as lost needs a reason from the list: without one there is
+    // no way to tell price from timing from "went quiet" when the deals add up.
+    const lostReason = String(req.body?.lostReason || '').trim();
+    if (status === 'lost' && lead.status !== 'lost' && !LOST_REASONS.includes(lostReason)) {
+        return res.status(400).json({ error: 'Say why it was lost — pick a reason.', reasons: LOST_REASONS });
+    }
+
     // "Follow-Up Scheduled" with nothing scheduled is the commonest way a lead
     // is forgotten: the stage says somebody will chase it and nothing will.
     if (status === 'follow_up_scheduled' && !hasFutureFollowUp(lead)) {
@@ -1622,6 +1676,8 @@ router.patch('/:id/status', async (req, res) => {
         await snapshotIntentAtClose(lead);
     }
     lead.status = status;
+    if (status === 'lost') { if (LOST_REASONS.includes(lostReason)) lead.lostReason = lostReason; }
+    else lead.lostReason = '';
 
     // The note belongs to the change, not beside it. Two timeline rows for one
     // action read as two things happening, and their order was decided by
@@ -1634,9 +1690,9 @@ router.patch('/:id/status', async (req, res) => {
     const comment = String(req.body?.comment || '').trim();
     lead.timeline.push({
         type: 'status_changed',
-        text: comment
+        text: (comment
             ? `Status changed to ${status} — ${comment.slice(0, 2000)}`
-            : `Status changed to ${status}`,
+            : `Status changed to ${status}`) + (status === 'lost' && lostReason ? ` (reason: ${lostReason.replace(/_/g, ' ')})` : ''),
         user: req.user.id,
     });
 

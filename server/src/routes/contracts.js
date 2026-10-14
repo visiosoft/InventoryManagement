@@ -4,7 +4,7 @@ import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate, ContractRenewal, AuditLog } from '../models/index.js';
 import { applyRenewal } from '../services/renewalApply.js';
-import { creditFor, markLeadWon } from '../services/dealCredit.js';
+import { creditFor, onContractSigned } from '../services/dealCredit.js';
 import { contractExportRows } from '../services/contractExportRows.js';
 import { promoteToCustomer } from '../services/customerStage.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
@@ -367,6 +367,45 @@ router.get('/expiring-soon', async (req, res) => {
   })));
 });
 
+/**
+ * Everything a tenant has told us about leaving or staying, plus the
+ * contracts ending soon that nobody has heard from. One list so staff chase
+ * the ones that need a call instead of discovering them at expiry.
+ */
+router.get('/renewal-requests', async (req, res) => {
+  try {
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 60 * 86400000);
+    const rows = await Contract.find({
+      status: 'active',
+      $or: [{ renewalIntent: { $in: ['renewing', 'not_renewing'] } }, { endDate: { $lte: horizon } }],
+    })
+      .populate('customer', 'fullName phone email')
+      .populate('unit', 'unitNumber floor')
+      .sort({ endDate: 1 })
+      .limit(300)
+      .lean();
+    const items = rows.map((c) => ({
+      _id: c._id,
+      contractNo: c.contractNo,
+      customer: c.customer,
+      unit: c.unit,
+      endDate: c.endDate,
+      rate: c.rate,
+      renewalIntent: c.renewalIntent || 'undecided',
+      daysLeft: c.endDate ? Math.ceil((new Date(c.endDate) - now) / 86400000) : null,
+      lastNote: (c.timeline || []).slice(-1)[0]?.text || '',
+    }));
+    res.json({
+      moveOut: items.filter((i) => i.renewalIntent === 'not_renewing'),
+      renewing: items.filter((i) => i.renewalIntent === 'renewing'),
+      silent: items.filter((i) => i.renewalIntent === 'undecided'),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // List contracts pending admin approval.
 // Typeahead for the global search box: match a contract number, tenant name or
 // unit number and return just enough to render a result row. Declared before
@@ -658,10 +697,8 @@ router.post('/', async (req, res) => {
     status: 'draft',
   });
 
-  // A lead that has signed is won, whoever ends up credited for it.
-  await markLeadWon({ leadId: credit.leadId, contractNo: contract.contractNo, userId: req.user.id });
-  // A signed contract is the only thing that makes somebody a tenant.
-  await promoteToCustomer(contract.customer, { contractNo: contract.contractNo });
+  // The lead is won, and the customer a tenant, when the contract is SIGNED
+  // (see onContractSigned) — not when a draft is written.
 
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 
@@ -843,6 +880,7 @@ async function markSigned(contractId, recordedBy = '') {
     author: recordedBy || 'system',
   });
   await contract.save();
+  await onContractSigned(contract, { userId: req.user?.id });
   try {
     await AuditLog.create({
       action: 'document_signed',
@@ -921,6 +959,7 @@ router.post('/:id/approve', async (req, res) => {
   contract.status = 'active';
   contract.timeline.push({ at: new Date(), text: `Contract approved and activated by ${actor}${req.body?.note ? `: ${req.body.note}` : ''}`, author: actor });
   await contract.save();
+  await onContractSigned(contract, { userId: req.user?.id });
 
   const activateUnitIds = contract.units?.length ? contract.units : [contract.unit];
   await Promise.all(activateUnitIds.map((uid) => syncUnitStatus(uid)));
@@ -960,6 +999,7 @@ router.post('/:id/activate', async (req, res) => {
 
   contract.status = 'active';
   await contract.save();
+  await onContractSigned(contract, { userId: req.user?.id });
 
   const activateUnitIds = contract.units?.length ? contract.units : [contract.unit];
   await Promise.all(activateUnitIds.map((uid) => syncUnitStatus(uid)));
@@ -1078,6 +1118,7 @@ router.post('/:id/sign-inperson', async (req, res) => {
     contract.status = 'active';
     contract.signedDocUrl = stored.url;
     await contract.save();
+    await onContractSigned(contract, { userId: req.user?.id });
 
     const signedUnitIds = contract.units?.length
       ? contract.units.map((u) => u._id ?? u)

@@ -126,7 +126,7 @@ export const leadApi = {
     api.get<{ ids: string[] }>('/leads/nav-order', { params }).then((r) => r.data.ids),
   create: (body: Partial<Lead>) => api.post<Lead>('/leads', body).then((r) => r.data),
   update: (id: string, body: Partial<Lead>) => api.put<Lead>(`/leads/${id}`, body).then((r) => r.data),
-  updateStatus: (id: string, status: string, comment?: string) => api.patch<Lead>(`/leads/${id}/status`, { status, comment }).then((r) => r.data),
+  updateStatus: (id: string, status: string, comment?: string, lostReason?: string) => api.patch<Lead>(`/leads/${id}/status`, { status, comment, lostReason }).then((r) => r.data),
   convertToCustomer: (id: string) =>
     api
       .post<{ ok: true; created: boolean; customer: Customer; lead: Lead }>(`/leads/${id}/convert`)
