@@ -1115,6 +1115,17 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+  const verifyPayment = useMutation({
+    mutationFn: () => api.post(`/contracts/${id}/verify-payment`),
+    onSuccess: () => invalidate(),
+    onError: (e) => setError(apiError(e)),
+  })
+  const markPaid = useMutation({
+    mutationFn: (verified: boolean) => api.post(`/contracts/${id}/payment-verified`, { verified, note: verified ? window.prompt('Note (optional) — e.g. paid in cash') || '' : '' }),
+    onSuccess: () => invalidate(),
+    onError: (e) => setError(apiError(e)),
+  })
+
   const createSigningLink = useMutation({
     mutationFn: () => api.post(`/contracts/${id}/create-signing-link`),
     onSuccess: (res) => {
@@ -1331,6 +1342,38 @@ export default function ContractDetail() {
           and so do the modals, which are fixed overlays. */}
       <div className="bg-white dark:bg-gray-900 rounded-3xl p-5 sm:p-7 shadow-sm"
         style={{ border: '1px solid rgba(20,8,31,.06)' }}>
+
+      {/* Check-in moved after signing: the customer must sign again. */}
+      {c.resignNeeded && c.status === 'active' && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" style={{ background: '#FFF7E6', borderColor: '#F5D08A' }}>
+          <div className="min-w-0 flex-1 text-sm" style={{ color: '#7A4B00' }}>
+            <strong>Needs to be signed again.</strong> Check-in changed from {formatDate(c.resignNeeded.previousStart)} to {formatDate(c.resignNeeded.newStart)} after the customer signed.
+          </div>
+          {!readOnly && (
+            <Button size="sm" onClick={() => createSigningLink.mutate()} disabled={createSigningLink.isPending}>
+              <PenLine size={14} /> {createSigningLink.isPending ? 'Generating…' : 'Send re-sign link'}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Payment check: the unit only turns Occupied once the first payment is verified. */}
+      {c.paymentGate?.required && c.status === 'active' && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" style={c.paymentGate.verified ? { background: '#F3FBF6', borderColor: 'rgba(21,128,61,.35)' } : { background: '#FFF8F7', borderColor: 'rgba(185,28,28,.30)' }}>
+          <div className="min-w-0 flex-1 text-sm">
+            <strong>{c.paymentGate.verified ? 'Payment verified' : 'Payment not verified'}</strong>
+            <span className="text-muted-foreground"> — {c.paymentGate.detail || 'not checked yet'}. {c.paymentGate.verified ? '' : 'The unit stays Reserved until it is paid.'}</span>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => verifyPayment.mutate()} disabled={verifyPayment.isPending}>
+            {verifyPayment.isPending ? 'Checking…' : 'Re-check Zoho'}
+          </Button>
+          {(user?.role === 'admin' || user?.role === 'accounts') && (
+            <Button size="sm" variant="outline" onClick={() => markPaid.mutate(!c.paymentGate!.verified)} disabled={markPaid.isPending}>
+              {c.paymentGate.verified ? 'Mark not paid' : 'Mark as paid'}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Title + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">

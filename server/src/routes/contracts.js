@@ -12,6 +12,8 @@ import { nextPaymentDueDate } from '../services/billingCycle.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { renewLink, moveOutLink } from '../services/renewalLink.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
+import { recheckAndSync } from '../services/contractPayment.js';
+import { notifyResignNeeded } from '../services/contractResign.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
@@ -1214,17 +1216,9 @@ router.put('/:id', async (req, res) => {
       $set.units = after;
       $set.unit = after[0];
 
-      if (contract.status === 'active') {
-        for (const unitId of released) {
-          const stillHeld = await Contract.countDocuments({
-            _id: { $ne: contract._id }, status: 'active', units: unitId,
-          });
-          if (!stillHeld) await Unit.updateOne({ _id: unitId }, { $set: { status: 'available' } });
-        }
-        if (claimed.length) {
-          await Unit.updateMany({ _id: { $in: claimed } }, { $set: { status: 'occupied' } });
-        }
-      }
+      // Unit statuses are recomputed from the contracts after the save below,
+      // so Reserved / Occupied follow the check-in date and the payment check
+      // instead of being forced to Occupied here.
     }
 
     if (req.body.unitSizes && typeof req.body.unitSizes === 'object') {
@@ -1317,8 +1311,61 @@ router.put('/:id', async (req, res) => {
     } else {
       await Contract.findByIdAndUpdate(contract._id, { $set });
     }
+    /* Moving the check-in of a contract the customer has already signed makes
+       the signed paper wrong: flag it for re-signing, tell the rep, and hold the
+       unit as Reserved until the new day arrives and the payment is verified. */
+    const startMoved = $set.startDate && contract.startDate
+      && $set.startDate.toISOString().slice(0, 10) !== new Date(contract.startDate).toISOString().slice(0, 10);
+    if (startMoved && contract.status === 'active') {
+      const by = req.user?.name || req.user?.email || 'user';
+      await Contract.updateOne({ _id: contract._id }, {
+        $set: {
+          resignNeeded: { at: new Date(), reason: 'Check-in date changed after signing', previousStart: contract.startDate, newStart: $set.startDate, by },
+          'paymentGate.required': true,
+        },
+        $push: { timeline: { text: `Check-in moved ${new Date(contract.startDate).toISOString().slice(0, 10)} → ${$set.startDate.toISOString().slice(0, 10)} — contract needs to be signed again`, author: by, at: new Date() } },
+      });
+      const full = await populateAll(Contract.findById(contract._id));
+      await notifyResignNeeded({ contract: full, previousStart: contract.startDate, newStart: $set.startDate, byName: by });
+    }
+    const affected = new Set([contract.unit, ...(contract.units || []), ...($set.units || []), $set.unit].filter(Boolean).map(String));
+    if (startMoved && contract.status === 'active') await recheckAndSync(contract._id);
+    for (const uid of affected) await syncUnitStatus(uid);
+
     const populated = await populateAll(Contract.findById(contract._id));
     res.json(populated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Re-read the payment from Zoho now, and bring the unit status in line.
+router.post('/:id/verify-payment', async (req, res) => {
+  try {
+    const verdict = await recheckAndSync(req.params.id);
+    res.json({ verdict, contract: await populateAll(Contract.findById(req.params.id)) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark the payment verified (or not) by hand: cash, or a transfer Zoho has not
+// caught up with. Admin and accounts only. Kept until changed.
+router.post('/:id/payment-verified', async (req, res) => {
+  try {
+    if (!['admin', 'accounts'].includes(req.user?.role)) return res.status(403).json({ error: 'Only admin or accounts can do this' });
+    const verified = req.body?.verified !== false;
+    const by = req.user?.name || req.user?.email || 'user';
+    const note = String(req.body?.note || '').trim().slice(0, 300);
+    const contract = await Contract.findById(req.params.id).select('_id unit units');
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    await Contract.updateOne({ _id: contract._id }, {
+      $set: { 'paymentGate.required': true, 'paymentGate.verified': verified, 'paymentGate.manual': true, 'paymentGate.manualBy': by,
+        'paymentGate.source': 'manual', 'paymentGate.detail': `Marked ${verified ? 'paid' : 'unpaid'} by ${by}${note ? ` — ${note}` : ''}`, 'paymentGate.checkedAt': new Date() },
+      $push: { timeline: { text: `Payment marked ${verified ? 'verified' : 'not verified'} by ${by}${note ? ` — ${note}` : ''}`, author: by, at: new Date() } },
+    });
+    for (const u of new Set([contract.unit, ...(contract.units || [])].filter(Boolean).map(String))) await syncUnitStatus(u);
+    res.json(await populateAll(Contract.findById(contract._id)));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

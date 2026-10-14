@@ -63,6 +63,7 @@ import contractsPublicRoutes from './routes/contractsPublic.js';
 import workerRoutes from './routes/workers.js';
 import truckRoutes from './routes/trucks.js';
 import movingJobRoutes, { publicUploadRouter as movingJobPublicUpload, publicShareRouter as movingJobPublicShare } from './routes/movingJobs.js';
+import { verifyPendingPayments } from './services/contractPayment.js';
 import publicMetaLeadRoutes from './routes/publicMetaLead.js';
 import movingLeadRoutes, { publicLeadRouter as movingLeadPublic } from './routes/movingLeads.js';
 import movingQuoteRoutes from './routes/movingQuotes.js';
@@ -669,6 +670,8 @@ async function start() {
      abandoned the booking because the hourly sweep above hadn't run yet. */
   setTimeout(() => setInterval(async () => {
     try {
+      // First the payments (Zoho), so a unit turns Occupied as soon as it is paid.
+      await verifyPendingPayments();
       const freed = await releaseLapsedHolds();
       if (freed.length) console.log(`[Units] released ${freed.length} unit(s): ${freed.join(', ')}`);
     } catch (e) {

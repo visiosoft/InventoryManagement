@@ -710,6 +710,24 @@ const contractSchema = new Schema(
     // Whether the tenant intends to renew when this term ends — set from
     // the contract sidebar, drives whether staff chase renewal vs. move-out.
     renewalIntent: { type: String, enum: ['undecided', 'renewing', 'not_renewing'], default: 'undecided' },
+    // Set when the check-in date of a signed contract is moved: the customer
+    // signed the old date, so the paper is out of date until they sign again.
+    // Cleared when the contract is signed again.
+    resignNeeded: {
+      type: new Schema({ at: Date, reason: String, previousStart: Date, newStart: Date, by: String }, { _id: false }),
+      default: null,
+    },
+    // Whether the unit may turn Occupied: signed + check-in reached + first
+    // payment verified (Zoho Books, or marked by hand). See services/contractPayment.js.
+    paymentGate: {
+      required: { type: Boolean, default: false },
+      verified: { type: Boolean, default: false },
+      manual: { type: Boolean, default: false },
+      manualBy: { type: String, default: '' },
+      source: { type: String, default: '' },
+      detail: { type: String, default: '' },
+      checkedAt: { type: Date, default: null },
+    },
     // One entry per Check Out change on an already-existing contract — a
     // dedicated, filterable record of every renewal/extension, separate
     // from the general edit timeline below.
