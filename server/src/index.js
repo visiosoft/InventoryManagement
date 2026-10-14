@@ -71,6 +71,7 @@ import truckRoutes from './routes/trucks.js';
 import movingJobRoutes, { publicUploadRouter as movingJobPublicUpload, publicShareRouter as movingJobPublicShare } from './routes/movingJobs.js';
 import { verifyPendingPayments } from './services/contractPayment.js';
 import { mcpHandler } from './mcp/server.js';
+import { oauthRouter, wellKnown } from './mcp/oauth.js';
 import { buildFocusWorkbook, verifyExport } from './mcp/focusExport.js';
 import publicMetaLeadRoutes from './routes/publicMetaLead.js';
 import movingLeadRoutes, { publicLeadRouter as movingLeadPublic } from './routes/movingLeads.js';
@@ -264,6 +265,8 @@ app.use('/api/moving-leads/public', express.urlencoded({ extended: true }), movi
 // (a per-IP rate limit and an atomic per-unit claim) despite that.
 /* Claude connector (MCP), read-only. Off unless MCP_ACCESS_TOKEN is set. Token in
    a header, or as the last part of the path for connectors that cannot send one. */
+wellKnown(app);
+app.use('/api/mcp-oauth', oauthRouter);
 app.all('/api/mcp', mcpHandler);
 app.all('/api/mcp/:token', mcpHandler);
 app.get('/api/mcp-export/focus/:exp/:days/:sig.xlsx', async (req, res) => {
