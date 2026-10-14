@@ -99,7 +99,7 @@ const LEADS_CSS = `
 `
 
 const LEAD_STATUSES: LeadStatus[] = ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']
-const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']
+const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'meta_ads', 'other']
 
 type WorkloadRow = { _id: string; name: string; count: number }
 type LeadStats = {

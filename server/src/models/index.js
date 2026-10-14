@@ -364,7 +364,7 @@ const leadSchema = new Schema(
     ],
     source: {
       type: String,
-      enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other'],
+      enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'meta_ads', 'other'],
       default: 'manual',
     },
     leadDateTime: { type: Date, default: Date.now },
