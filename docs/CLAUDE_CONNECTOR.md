@@ -28,6 +28,9 @@ signed in (30 days, renewed automatically). Changing the key signs everyone out.
 - **Analysis and forecasting:** `business_snapshot` (the whole picture), `occupancy_revenue_trend`,
   `conversion_report` (by source and rep, lost reasons), `forecast` (occupancy and revenue,
   low/base/high, with its assumptions; accepts your own renewal rate / new-tenant pace), `cash_forecast`
+- **Follow-ups, with the messages:** `lead_followup_file` (one lead: plan, what the rep did, conversation, whose turn),
+  `followup_briefing` (a batch of leads each with its latest messages, for Claude to read and prioritise),
+  `followup_adherence` (on time / late / missed per rep)
 - **Zoho Books** (through the connection the CRM already has): `zoho_outstanding`,
   `zoho_customer_ledger`, `zoho_expenses`
 - **WhatsApp analysis:** `whatsapp_reply_time_report` (from real messages: person vs AI, working
