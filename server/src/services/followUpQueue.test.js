@@ -286,3 +286,12 @@ test('a closed lead never shows as having no next step', () => {
     const old = new Date(NOW.getTime() - 9 * 864e5);
     assert.equal(classify({ leadStatus: 'lost', leadCreatedAt: old }, { now: NOW }), null);
 });
+
+test('re-scoring a row that carries its own signals keeps an exhausted chase at its higher base', () => {
+    const signals = { lastOutboundAt: daysAgo(10), leadStatus: 'contacted', sequenceExhaustedAt: daysAgo(2) };
+    const first = classify(signals, { now: NOW });
+    assert.equal(first.reasonDetail, 'exhausted');
+    // The second pass is fed the row the first pass produced, merged with its signals.
+    const again = classify({ ...signals, ...first }, { now: NOW });
+    assert.equal(again.priorityScore, first.priorityScore);
+});

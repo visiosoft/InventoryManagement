@@ -553,6 +553,11 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
             lastSentAt: h.lastSentAt,
             sentSinceReply: h.sentSinceReply,
             followUpAt: lead.followUpAt || null,
+            // Carried on the row so the second scoring pass (after the AI read
+            // is attached) sees the same signals as the first. Without them an
+            // exhausted lead was re-scored as a plain quiet one.
+            sequenceExhaustedAt: lead.sequenceExhaustedAt || null,
+            leadCreatedAt: lead.createdAt,
             sequence: (lead.attempts || []).length && plan ? sequenceState(lead, plan) : null,
             quietStage: stageFor(h.sentSinceReply, stages),
             ...verdict,

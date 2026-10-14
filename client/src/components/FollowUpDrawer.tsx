@@ -319,7 +319,12 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
             <div className="flex items-center gap-2 flex-wrap text-xs">
               <span style={{ color: MUTED }}>Snooze:</span>
               {SNOOZES.map(([when, label]) => (
-                <button key={when} type="button" disabled={snooze.isPending} onClick={() => snooze.mutate(when)}
+                <button key={when} type="button" disabled={snooze.isPending} onClick={() => {
+                  // A snooze replaces the date somebody already chose; say so first.
+                  const existing = item.followUpAt && new Date(item.followUpAt) > new Date() ? new Date(item.followUpAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : ''
+                  if (existing && !confirm(`This lead already has a follow-up on ${existing}. Replace it? (The old date stays in the lead's history.)`)) return
+                  snooze.mutate(when)
+                }}
                   className="cursor-pointer font-semibold px-3 py-1.5 rounded-full" style={{ background: PURPLE_TINT, color: PURPLE_DEEP }}>{label}</button>
               ))}
               <a href={`tel:${lead.phone}`} className="ml-auto inline-flex items-center gap-1 font-semibold px-3 py-1.5 rounded-full border" style={{ borderColor: HAIRLINE, color: INK }}><Phone size={12} /> Call</a>

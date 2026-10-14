@@ -1060,7 +1060,7 @@ router.post('/:id/follow-up-reminder', async (req, res) => {
         }
         const note = String(req.body?.followUpNote || '').slice(0, 500);
 
-        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        const lead = await Lead.findById(req.params.id).select(`${SCORE_LEAD_FIELDS} followUpTaskId sequenceExhaustedAt phone followUpKind temperature`);
         if (!lead) return res.status(404).json({ error: 'Lead not found' });
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
@@ -1071,6 +1071,7 @@ router.post('/:id/follow-up-reminder', async (req, res) => {
         if (at && ['new', 'contacted', 'contact_attempted'].includes(lead.status)) {
             lead.status = 'follow_up_scheduled';
         }
+        await syncFollowUpTask(lead);
         const userName = req.user.name || req.user.email || 'a colleague';
         lead.timeline.push({
             type: 'note',

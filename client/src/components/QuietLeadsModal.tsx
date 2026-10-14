@@ -4,6 +4,7 @@ import { Check, MessageCircle } from 'lucide-react'
 import { apiError, leadFollowUpApi, whatsappApi, type QuietLead } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Modal, Spinner } from '../components/ui'
+import { defaultTemplate } from '../lib/followUpUi'
 
 const INK = '#14081F'
 const MUTED = '#756E80'
@@ -101,7 +102,7 @@ export default function QuietLeadsModal({
     staleTime: 10 * 60_000,
   })
   const waTemplates = waData?.templates ?? []
-  useEffect(() => { if (!templateName && waTemplates.length) setTemplateName(waTemplates[0].name) }, [waTemplates, templateName])
+  useEffect(() => { if (!templateName && waTemplates.length) setTemplateName((defaultTemplate(waTemplates.map((t) => ({ ...t, label: t.name }))) ?? waTemplates[0]).name) }, [waTemplates, templateName])
   const selectedTemplate = waTemplates.find((t) => t.name === templateName)
   const extraCount = Math.max(0, (selectedTemplate?.variableCount ?? 1) - 1)
   useEffect(() => { setExtraVars(Array(extraCount).fill('')) }, [templateName, extraCount])
