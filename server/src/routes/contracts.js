@@ -367,6 +367,45 @@ router.get('/expiring-soon', async (req, res) => {
   })));
 });
 
+/**
+ * Everything a tenant has told us about leaving or staying, plus the
+ * contracts ending soon that nobody has heard from. One list so staff chase
+ * the ones that need a call instead of discovering them at expiry.
+ */
+router.get('/renewal-requests', async (req, res) => {
+  try {
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 60 * 86400000);
+    const rows = await Contract.find({
+      status: 'active',
+      $or: [{ renewalIntent: { $in: ['renewing', 'not_renewing'] } }, { endDate: { $lte: horizon } }],
+    })
+      .populate('customer', 'fullName phone email')
+      .populate('unit', 'unitNumber floor')
+      .sort({ endDate: 1 })
+      .limit(300)
+      .lean();
+    const items = rows.map((c) => ({
+      _id: c._id,
+      contractNo: c.contractNo,
+      customer: c.customer,
+      unit: c.unit,
+      endDate: c.endDate,
+      rate: c.rate,
+      renewalIntent: c.renewalIntent || 'undecided',
+      daysLeft: c.endDate ? Math.ceil((new Date(c.endDate) - now) / 86400000) : null,
+      lastNote: (c.timeline || []).slice(-1)[0]?.text || '',
+    }));
+    res.json({
+      moveOut: items.filter((i) => i.renewalIntent === 'not_renewing'),
+      renewing: items.filter((i) => i.renewalIntent === 'renewing'),
+      silent: items.filter((i) => i.renewalIntent === 'undecided'),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // List contracts pending admin approval.
 // Typeahead for the global search box: match a contract number, tenant name or
 // unit number and return just enough to render a result row. Declared before

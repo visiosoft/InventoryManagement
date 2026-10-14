@@ -743,6 +743,23 @@ router.get('/intent-report', async (req, res) => {
     }
 });
 
+/** Why leads are lost, most common first. Admin only. */
+router.get('/lost-reasons', async (req, res) => {
+    try {
+        if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+        const days = Math.min(730, Math.max(7, Number(req.query.days) || 90));
+        const since = new Date(Date.now() - days * 864e5);
+        const rows = await Lead.aggregate([
+            { $match: { deletedAt: null, status: 'lost', updatedAt: { $gte: since } } },
+            { $group: { _id: { $ifNull: ['$lostReason', ''] }, n: { $sum: 1 } } },
+            { $sort: { n: -1 } },
+        ]);
+        res.json({ days, total: rows.reduce((a, r) => a + r.n, 0), reasons: rows.map((r) => ({ reason: r._id || 'not_recorded', count: r.n })) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 /**
  * High-scoring leads from today or yesterday — the dashboard's "these are
  * the ones to work" list. See services/leadScore.js's highIntentToday()
