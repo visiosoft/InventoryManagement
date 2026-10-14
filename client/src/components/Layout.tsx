@@ -11,6 +11,7 @@ import { SiteGate } from './SiteGate'
 import AppFooter from './AppFooter'
 import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
+import { ViewAsSwitcher, ViewAsBanner } from './ViewAsSwitcher'
 
 const navTop = [
   { to: '/warehouse', label: 'Stored Inventory', icon: Package, perm: ['warehouse', 'warehouse_supervisor'] },
@@ -34,6 +35,7 @@ const navGroups = [
       { to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'quotes' },
       { to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
       { to: '/contracts', label: 'Tenants', icon: Briefcase, perm: 'contracts' },
+      { to: '/renewals', label: 'Renewals & Move-outs', icon: CalendarCheck, perm: 'contracts' },
     ],
   },
   {
@@ -164,6 +166,7 @@ const salesRepNavGroups = [
          refuses the write either way. */
       { key: 'book-unit', to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'sales_board' },
       { key: 'customers', to: '/contracts', label: 'Tenants', icon: Users, perm: 'contracts' },
+      { key: 'renewals', to: '/renewals', label: 'Renewals & Move-outs', icon: CalendarCheck, perm: 'contracts' },
       // Only shows up once an admin grants it (Settings → Users) — not part
       // of a rep's default toolkit, unlike everything else in this group.
       { key: 'tenants', to: '/customers', label: 'Tenants', icon: Users, perm: 'customers' },
@@ -815,12 +818,14 @@ export default function Layout() {
 
       {/* ── Main content ────────────────────────────────────────── */}
       <main className={cn("flex-1 pt-14 md:pt-0 min-w-0 transition-all duration-200", collapsed ? 'md:ml-[60px]' : 'md:ml-56')} style={{ background: '#FBF8F2' }}>
+        <ViewAsBanner />
         {/* Desktop top bar with profile dropdown */}
         <div className="hidden md:flex items-center justify-between h-14 px-6 border-b border-border/40">
           <h1 className="text-lg font-semibold shrink-0" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
           <div className="flex items-center gap-3">
           {/* Which facility you are working in. Hides itself when there
               is only one, so nothing changes for a single-site company. */}
+          <ViewAsSwitcher />
           {!isMovingOnly && <SiteSwitcher />}
           {!isMovingOnly && <GlobalSearch />}
           {/* Unread WhatsApp, on every page — the console is not the only place

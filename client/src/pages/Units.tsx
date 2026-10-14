@@ -434,6 +434,17 @@ export default function Units() {
         return { state: 'free', line: 'Free entire window', detail: `${shortDate(winFrom)} – ${shortDate(winTo)}`, freeFrom: null }
       }
 
+      /* What is actually holding it, by name — a contract or quotation number,
+         who it is for and until when — so "occupied" is never a mystery. */
+      const holding = spans
+        .map(({ b }) => [
+          `${b.kind === 'quote' ? 'Quote' : 'Contract'} ${b.ref}`,
+          b.customer,
+          b.endDate ? `until ${shortDate(dayOnly(b.endDate))}` : '',
+          b.kind === 'quote' && b.quotedAt ? `quoted ${agoOrDate(b.quotedAt)}` : '',
+        ].filter(Boolean).join(' · '))
+        .join('  |  ')
+
       const merged: { s: string; e: string }[] = []
       for (const sp of spans) {
         const last = merged[merged.length - 1]
@@ -480,10 +491,10 @@ export default function Units() {
           state: 'taken',
           freeFrom: null,
           line: 'Occupied entire window',
-          detail: who && until ? `${who} · until ${shortDate(until)}`
+          detail: holding || (who && until ? `${who} · until ${shortDate(until)}`
             : who ? who
             : until ? `Until ${shortDate(until)}`
-            : 'Booked for the whole window',
+            : 'Booked for the whole window'),
         }
       }
 
@@ -493,18 +504,18 @@ export default function Units() {
           // Free now, so nothing to wait for.
           freeFrom: null,
           line: `Free until ${shortDate(addDays(merged[0].s, -1))}`,
-          detail: merged.length > 1
+          detail: `${merged.length > 1
             ? `Then occupied across ${merged.length} periods`
-            : 'Then occupied for part of the window',
+            : 'Then occupied for part of the window'} — ${holding}`,
         }
       }
       return {
         state: 'partial',
         freeFrom: addDays(merged[0].e, 1),
         line: `Free from ${shortDate(addDays(merged[0].e, 1))}`,
-        detail: merged.length > 1
+        detail: `${merged.length > 1
           ? 'Occupied at the start, and again later in the window'
-          : 'Occupied at the start of the window',
+          : 'Occupied at the start of the window'} — ${holding}`,
       }
     }
   }, [bookedInWindow, winFrom, winTo, activeByUnit])
@@ -1458,7 +1469,12 @@ function UnitDetail({ unit, siteName, canEdit, bookFrom, bookTo, availability }:
                   <div className="text-xs text-muted-foreground mt-1">{availability.detail}</div>
                 </>
               ) : (
-                <Badge tone={unitStatusTone[unit.status]}>{statusLabel(unit.status)}</Badge>
+                <>
+                  <Badge tone={unitStatusTone[unit.status]}>{statusLabel(unit.status)}</Badge>
+                  {availability && availability.state !== 'free' && availability.state !== 'maintenance' && (
+                    <div className="text-xs text-muted-foreground mt-1">In this window: {availability.line} — {availability.detail}</div>
+                  )}
+                </>
               )}
             </dd>
           </div>

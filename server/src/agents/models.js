@@ -135,6 +135,9 @@ const agentLeadFileSchema = new Schema({
     },
     bucket: { type: String, enum: BUCKET_ORDER, default: 'new', index: true },
     previousBucket: { type: String, default: null },
+    // The follow-up date a draft was already prepared for, so each date is
+    // drafted once and a moved date is drafted again.
+    followUpDraftedFor: { type: Date, default: null },
     touchCount: { type: Number, default: 0 },
     anchorAt: { type: Date, default: Date.now },
     nextTouchAt: { type: Date, default: null, index: true },
@@ -169,6 +172,8 @@ export const ACTION_KINDS = [
     'dismissed',        // a person threw a draft or proposal away
     'report',           // a scheduled run's summary
     'email_drafted',    // shadow: an email reply waiting for a person
+    'followup_proposed',    // a follow-up date read from the chat, waiting for a person
+    'deal_check_suggested', // decision maker / reason read from the chat, waiting for a person
 ];
 
 /** How a person answered a draft or a proposed touch. */

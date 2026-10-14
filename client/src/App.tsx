@@ -77,6 +77,7 @@ import SignMovingJob from './pages/SignMovingJob'
 import Dashboard from './pages/Dashboard'
 import MyDay from './pages/MyDay'
 import FollowUps from './pages/FollowUps'
+import RenewalRequests from './pages/RenewalRequests'
 import Units from './pages/Units'
 import StoredInventory from './pages/warehouse/StoredInventory'
 import ServiceRequests from './pages/warehouse/ServiceRequests'
@@ -287,6 +288,7 @@ export default function App() {
         <Route path="/expenses" element={<Expenses />} />
         <Route path="/moving-inventory" element={<MovingInventory />} />
         <Route path="/contracts" element={<Contracts />} />
+        <Route path="/renewals" element={<PermGuard module="contracts"><RenewalRequests /></PermGuard>} />
         <Route path="/contracts/:id" element={<ContractDetail />} />
         <Route path="/payments" element={<PermGuard module="payments"><Payments /></PermGuard>} />
         <Route path="/documents" element={<PermGuard module="documents"><Documents /></PermGuard>} />

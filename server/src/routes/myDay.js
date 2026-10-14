@@ -195,12 +195,14 @@ router.get('/', async (req, res) => {
 
       const overdue = (d) => new Date(d) < startOfLocalDay(now);
 
-      /* Only reminders whose lead has also actually gone quiet — the same
-       * quiet computed just above, not a second definition of it. A reminder
-       * set from a chat that is still being answered normally is not the
-       * "needs follow-up because they went silent" case this card is for. */
-      const quietPhones = new Set(quiet.map((q) => q.phoneNormalized));
-      const dueReminders = reminders.filter((l) => quietPhones.has(l.phoneNormalized));
+      /* Every follow-up date that has come due, today's included.
+       *
+       * This used to keep only reminders whose chat had also gone quiet, which
+       * hid a follow-up set for later today (a lead with a future date never
+       * reads as quiet) and any reminder on a chat still being answered — the
+       * rep had set the date themselves and then could not see it. A date a
+       * person chose is a promise; it is shown whatever the chat is doing. */
+      const dueReminders = reminders;
 
       /* The pipeline, counted for every temperature at once.
        *

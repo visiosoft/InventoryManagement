@@ -4,15 +4,15 @@ import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from 
 import { notifyLeadAssigned, notifyBulkReassignment, pendingAssignmentBadge } from '../services/leadNotify.js';
 import { displayNameFor, promotePlaceholderName, resolvePlaceholderNames } from '../services/leadNames.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask, syncStorageStartTask } from '../services/followUps.js';
-import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
+import { applyOutcome, followUpDateFrom, getFollowUpPlan, hasFutureFollowUp, nextDateFor, sequenceState } from '../services/followUpSequence.js';
 import { summarise } from '../services/speedToLead.js';
-import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
+import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES, LOST_REASONS } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { QUEUE_SINCE } from '../services/followUpQueue.js';
 import { customerContactKeys } from '../services/customerLeads.js';
 import { digitTail } from '../services/leadRouting.js';
 import { buildFunnel } from '../services/leadFunnel.js';
-import { scoreForLead, highIntentToday, intakeChecklist } from '../services/leadScore.js';
+import { scoreForLead, highIntentToday, intakeChecklist, intentForLeads, snapshotIntentAtClose } from '../services/leadScore.js';
 import { summariseConversation } from '../services/conversationSummary.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { dubaiDayRange } from '../services/automationEngine.js';
@@ -307,6 +307,15 @@ router.get('/', async (req, res) => {
     ]);
 
     await resolvePlaceholderNames(leads);
+
+    // Opt-in, and only for a page-sized list: one read of the cached AI
+    // summaries and one of the messages for the whole batch.
+    if (req.query.intent === '1' && leads.length <= 600) {
+        try {
+            const intents = await intentForLeads(leads);
+            for (const l of leads) l.intent = intents.get(String(l._id)) || null;
+        } catch (e) { console.error('[Leads] intent:', e.message); }
+    }
 
     res.json({ data: leads, total, page, pages: Math.ceil(total / limit), limit });
 });
@@ -712,6 +721,76 @@ router.get('/month-funnel/leads', async (req, res) => {
 });
 
 /**
+ * Does the score mean anything? Closed leads grouped by how promising they
+ * looked when they closed, with the share that were won. Admin only: it reads
+ * across every rep's leads.
+ */
+router.get('/intent-report', async (req, res) => {
+    try {
+        if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+        const days = Math.min(730, Math.max(7, Number(req.query.days) || 180));
+        const since = new Date(Date.now() - days * 864e5);
+        const rows = await Lead.aggregate([
+            { $match: { deletedAt: null, status: { $in: ['won', 'lost'] }, 'intentAtClose.at': { $gte: since }, 'intentAtClose.score': { $ne: null } } },
+            { $group: { _id: { band: '$intentAtClose.band', status: '$status' }, n: { $sum: 1 } } },
+        ]);
+        const out = { high: { won: 0, lost: 0 }, medium: { won: 0, lost: 0 }, low: { won: 0, lost: 0 } };
+        for (const r of rows) if (out[r._id.band]) out[r._id.band][r._id.status] = r.n;
+        const bands = Object.entries(out).map(([band, v]) => ({ band, ...v, total: v.won + v.lost, winRate: v.won + v.lost ? Math.round((v.won / (v.won + v.lost)) * 100) : null }));
+        res.json({ days, bands, enough: bands.reduce((a, b) => a + b.total, 0) >= 30 });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Where leads come from and what becomes of them: per source, how many came
+ * in, how many were reached, quoted and won, and the win rate. Admin only.
+ */
+router.get('/source-report', async (req, res) => {
+    try {
+        if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+        const days = Math.min(730, Math.max(7, Number(req.query.days) || 90));
+        const since = new Date(Date.now() - days * 864e5);
+        const rows = await Lead.aggregate([
+            { $match: { deletedAt: null, createdAt: { $gte: since } } },
+            { $group: {
+                _id: '$source',
+                leads: { $sum: 1 },
+                reached: { $sum: { $cond: [{ $in: ['$status', ['contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won']] }, 1, 0] } },
+                quoted: { $sum: { $cond: [{ $in: ['$status', ['quotation_sent', 'won']] }, 1, 0] } },
+                won: { $sum: { $cond: [{ $eq: ['$status', 'won'] }, 1, 0] } },
+                lost: { $sum: { $cond: [{ $eq: ['$status', 'lost'] }, 1, 0] } },
+            } },
+            { $sort: { leads: -1 } },
+        ]);
+        res.json({
+            days,
+            sources: rows.map((r) => ({ source: r._id || 'manual', leads: r.leads, reached: r.reached, quoted: r.quoted, won: r.won, lost: r.lost, winRate: r.leads ? Math.round((r.won / r.leads) * 100) : 0 })),
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/** Why leads are lost, most common first. Admin only. */
+router.get('/lost-reasons', async (req, res) => {
+    try {
+        if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+        const days = Math.min(730, Math.max(7, Number(req.query.days) || 90));
+        const since = new Date(Date.now() - days * 864e5);
+        const rows = await Lead.aggregate([
+            { $match: { deletedAt: null, status: 'lost', updatedAt: { $gte: since } } },
+            { $group: { _id: { $ifNull: ['$lostReason', ''] }, n: { $sum: 1 } } },
+            { $sort: { n: -1 } },
+        ]);
+        res.json({ days, total: rows.reduce((a, r) => a + r.n, 0), reasons: rows.map((r) => ({ reason: r._id || 'not_recorded', count: r.n })) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
  * High-scoring leads from today or yesterday — the dashboard's "these are
  * the ones to work" list. See services/leadScore.js's highIntentToday()
  * for how it's built; the usual rep/admin scope applies.
@@ -760,7 +839,7 @@ router.get('/new-from-website', async (req, res) => {
 });
 
 const SCORE_LEAD_FIELDS = 'phoneNormalized owner firstName fullName intendedStartDate leadScoreOverride leadScoreOverrideBy leadScoreOverrideAt leadScoreOverrideForLeadType '
-  + 'leadDateTime durationValue durationUnit lengthOfStayConfirmedAt storageSizeValue storageSizeUnit financiallyQualified locationPreference followUpAt followUpNote followUpNotifiedAt followUpPushedAt status';
+  + 'leadDateTime durationValue durationUnit lengthOfStayConfirmedAt storageSizeValue storageSizeUnit financiallyQualified locationPreference followUpAt followUpNote followUpNotifiedAt followUpPushedAt status siteVisitAt storageStartAt';
 
 /**
  * A score, plus who confirmed or corrected it and when — the same shape
@@ -788,6 +867,83 @@ async function withOverrideInfo(lead) {
  * One lead's score — see services/leadScore.js for how it's worked out.
  * Read-only; nothing here writes anything.
  */
+/**
+ * "Ready to close?" — the four questions a deal should be able to answer.
+ *
+ *   1. Next step, with a date          follow-up date, site visit, or an open task
+ *   2. Who decides, and spoken to?     stored on the lead
+ *   3. Why do they want it?            stored on the lead, in their words
+ *   4. Last follow-up, and what said   latest logged attempt or outbound chat
+ *
+ * The first and fourth are read, never typed, so they cannot go stale.
+ */
+const CLOSED_STATUS = new Set(['won', 'lost', 'already_customer']);
+
+router.get('/:id/deal-check', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const lead = await Lead.findById(req.params.id)
+            .select('status owner followUpAt followUpNote siteVisitAt attempts phoneNormalized decisionMaker decisionMakerSpoken whyTheyWant')
+            .lean();
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        const now = new Date();
+        const task = await Task.findOne({ leadId: lead._id, status: { $ne: 'done' }, dueDate: { $gte: now } })
+            .sort({ dueDate: 1 }).select('title dueDate').lean();
+        const steps = [
+            lead.siteVisitAt && new Date(lead.siteVisitAt) >= now ? { at: lead.siteVisitAt, label: 'Site visit', note: '' } : null,
+            lead.followUpAt && new Date(lead.followUpAt) >= now ? { at: lead.followUpAt, label: 'Follow-up', note: lead.followUpNote || '' } : null,
+            task ? { at: task.dueDate, label: 'Task', note: task.title } : null,
+        ].filter(Boolean).sort((a, b) => new Date(a.at) - new Date(b.at));
+        const nextStep = steps[0] || null;
+
+        const att = (lead.attempts || []).slice(-1)[0] || null;
+        const chat = lead.phoneNormalized
+            ? await WhatsAppMessage.findOne({ phoneNormalized: lead.phoneNormalized, direction: 'outbound' })
+                .sort({ createdAt: -1 }).select('text type createdAt').lean()
+            : null;
+        const candidates = [
+            att && { at: att.at, channel: att.channel, note: att.note || att.outcome },
+            chat && { at: chat.createdAt, channel: 'whatsapp', note: chat.text || `(${chat.type})` },
+        ].filter(Boolean).sort((a, b) => new Date(b.at) - new Date(a.at));
+        const lastFollowUp = candidates[0] || null;
+
+        const missing = [];
+        if (!nextStep) missing.push('next step with a date');
+        if (!lastFollowUp) missing.push('a first follow-up');
+
+        res.json({
+            open: !CLOSED_STATUS.has(lead.status),
+            decisionMaker: lead.decisionMaker || '',
+            decisionMakerSpoken: Boolean(lead.decisionMakerSpoken),
+            whyTheyWant: lead.whyTheyWant || '',
+            nextStep, lastFollowUp,
+            attempts: (lead.attempts || []).length,
+            missing,
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.put('/:id/deal-check', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const lead = await Lead.findById(req.params.id).select('owner');
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+        const set = {};
+        if (req.body.decisionMaker !== undefined) set.decisionMaker = String(req.body.decisionMaker).trim().slice(0, 200);
+        if (req.body.decisionMakerSpoken !== undefined) set.decisionMakerSpoken = Boolean(req.body.decisionMakerSpoken);
+        if (req.body.whyTheyWant !== undefined) set.whyTheyWant = String(req.body.whyTheyWant).trim().slice(0, 1000);
+        await Lead.updateOne({ _id: lead._id }, { $set: set });
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/:id/score', async (req, res) => {
     try {
         if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
@@ -822,10 +978,23 @@ router.post('/:id/score-confirm', async (req, res) => {
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
         const summary = await summariseConversation(lead.phoneNormalized).catch(() => null);
+        const reason = String(req.body?.reason || '').trim().slice(0, 200);
+        const previous = lead.leadScoreOverride || '';
         lead.leadScoreOverride = decision;
         lead.leadScoreOverrideBy = decision ? req.user.id : null;
         lead.leadScoreOverrideAt = decision ? new Date() : null;
         lead.leadScoreOverrideForLeadType = decision ? (summary?.leadType || '') : '';
+        lead.leadScoreOverrideReason = decision ? reason : '';
+        // A change of mind about a lead is part of its history, with who made
+        // it and why — until now it left no trace, and clearing erased even
+        // the last override.
+        const who = req.user.name || req.user.email || 'a colleague';
+        const label = (d) => (d === 'qualifying' ? 'qualifying' : d === 'not_interested' ? 'not interested' : 'no override');
+        lead.timeline.push({
+            type: 'note',
+            text: `Score ${label(decision)} — set by ${who}${previous && previous !== decision ? ` (was ${label(previous)})` : ''}${reason ? `: ${reason}` : ''}`,
+            user: req.user.id,
+        });
         await lead.save();
 
         res.json(await withOverrideInfo(lead));
@@ -980,7 +1149,7 @@ router.post('/:id/follow-up-reminder', async (req, res) => {
         }
         const note = String(req.body?.followUpNote || '').slice(0, 500);
 
-        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        const lead = await Lead.findById(req.params.id).select(`${SCORE_LEAD_FIELDS} followUpTaskId sequenceExhaustedAt phone followUpKind temperature`);
         if (!lead) return res.status(404).json({ error: 'Lead not found' });
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
@@ -991,6 +1160,7 @@ router.post('/:id/follow-up-reminder', async (req, res) => {
         if (at && ['new', 'contacted', 'contact_attempted'].includes(lead.status)) {
             lead.status = 'follow_up_scheduled';
         }
+        await syncFollowUpTask(lead);
         const userName = req.user.name || req.user.email || 'a colleague';
         lead.timeline.push({
             type: 'note',
@@ -1484,7 +1654,27 @@ router.patch('/:id/status', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
+    // Closing a lead as lost needs a reason from the list: without one there is
+    // no way to tell price from timing from "went quiet" when the deals add up.
+    const lostReason = String(req.body?.lostReason || '').trim();
+    if (status === 'lost' && lead.status !== 'lost' && !LOST_REASONS.includes(lostReason)) {
+        return res.status(400).json({ error: 'Say why it was lost — pick a reason.', reasons: LOST_REASONS });
+    }
+
+    // "Follow-Up Scheduled" with nothing scheduled is the commonest way a lead
+    // is forgotten: the stage says somebody will chase it and nothing will.
+    if (status === 'follow_up_scheduled' && !hasFutureFollowUp(lead)) {
+        return res.status(400).json({ error: 'Pick the follow-up date first — a lead cannot be Follow-Up Scheduled without one.' });
+    }
+
+    // Before the status moves: a closed lead scores zero, so this is the only
+    // moment the number can be read.
+    if (['won', 'lost'].includes(status) && !['won', 'lost', 'already_customer'].includes(lead.status)) {
+        await snapshotIntentAtClose(lead);
+    }
     lead.status = status;
+    if (status === 'lost') { if (LOST_REASONS.includes(lostReason)) lead.lostReason = lostReason; }
+    else lead.lostReason = '';
 
     // The note belongs to the change, not beside it. Two timeline rows for one
     // action read as two things happening, and their order was decided by
@@ -1497,9 +1687,9 @@ router.patch('/:id/status', async (req, res) => {
     const comment = String(req.body?.comment || '').trim();
     lead.timeline.push({
         type: 'status_changed',
-        text: comment
+        text: (comment
             ? `Status changed to ${status} — ${comment.slice(0, 2000)}`
-            : `Status changed to ${status}`,
+            : `Status changed to ${status}`) + (status === 'lost' && lostReason ? ` (reason: ${lostReason.replace(/_/g, ' ')})` : ''),
         user: req.user.id,
     });
 
@@ -1576,6 +1766,17 @@ router.post('/:id/attempts', async (req, res) => {
         const lead = await Lead.findById(req.params.id);
         if (!lead) return res.status(404).json({ error: 'Lead not found' });
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        // Having spoken to them is not the end of a deal. Unless they have
+        // said no (or the lead is already closed), a next date is required —
+        // theirs, if they gave one, otherwise one the rep sets now. "Decide in
+        // two weeks" must not turn into a lead with nothing on its calendar.
+        if (outcome === 'reached' && !CLOSED_STATUS.has(lead.status)
+            && !followUpDateFrom(req.body?.nextAt)
+            && !hasFutureFollowUp(lead)
+            && req.body?.noFollowUpNeeded !== true) {
+            return res.status(400).json({ error: 'Set the next follow-up date — when did they say they would decide? Choose "No follow-up needed" only if the deal is done.' });
+        }
 
         const plan = await getFollowUpPlan();
         const { attempt, exhausted, suggestStatus } = applyOutcome(lead, plan, {

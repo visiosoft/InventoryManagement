@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  applyOutcome, nextStep, nextDateFor, sequenceState, stepCount, DEFAULT_STEPS,
+  applyOutcome, followUpDateFrom, hasFutureFollowUp, nextStep, nextDateFor, sequenceState, stepCount, DEFAULT_STEPS,
 } from './followUpSequence.js';
 
 const PLAN = { steps: DEFAULT_STEPS };
@@ -87,12 +87,33 @@ test('moving the date re-arms the reminder', () => {
   assert.equal(l.followUpNotifiedAt, null);
 });
 
-test('reaching them ends the chase and suggests Contacted', () => {
-  const l = lead({ attempts: [{ no: 1, outcome: 'no_answer' }], followUpAt: new Date('2026-09-01') });
+test('reaching them ends the plan and suggests Contacted, keeping a future date', () => {
+  const future = new Date('2026-12-01T00:00:00.000Z');
+  const l = lead({ attempts: [{ no: 1, outcome: 'no_answer' }], followUpAt: future });
   const out = applyOutcome(l, PLAN, { outcome: 'reached', now: NOW });
   assert.equal(out.suggestStatus, 'contacted');
-  assert.equal(l.followUpAt, null);
+  assert.equal(l.followUpAt, future, 'a conversation does not wipe the date the customer gave');
   assert.equal(out.exhausted, false);
+});
+
+test('reaching them with a new date moves the follow-up to it', () => {
+  const l = lead({ followUpAt: new Date('2026-09-01T00:00:00.000Z') });
+  applyOutcome(l, PLAN, { outcome: 'reached', nextAt: '2026-10-20T10:00', now: NOW });
+  assert.equal(l.followUpAt.toISOString(), '2026-10-20T06:00:00.000Z');
+  assert.equal(l.followUpNotifiedAt, null);
+});
+
+test('followUpDateFrom reads a Dubai wall-clock time and whole days', () => {
+  assert.equal(followUpDateFrom('2026-10-20T10:00').toISOString(), '2026-10-20T06:00:00.000Z');
+  assert.equal(followUpDateFrom('2026-10-20').toISOString(), '2026-10-20T00:00:00.000Z');
+  assert.equal(followUpDateFrom(''), null);
+  assert.equal(followUpDateFrom('soon'), null);
+});
+
+test('hasFutureFollowUp is true only for a date still to come', () => {
+  assert.equal(hasFutureFollowUp({ followUpAt: new Date('2026-12-01') }, NOW), true);
+  assert.equal(hasFutureFollowUp({ followUpAt: new Date('2026-01-01') }, NOW), false);
+  assert.equal(hasFutureFollowUp({ followUpAt: null }, NOW), false);
 });
 
 test('not interested ends it and suggests Lost', () => {

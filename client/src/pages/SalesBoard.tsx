@@ -571,6 +571,8 @@ type Row = {
   addedAt?: string
   // Storage leads carry these; a moving lead has neither.
   temperature?: '' | 'hot' | 'warm' | 'cold'
+  // The one intent score and why, when the chat has been read.
+  intent?: { score: number; band: 'high' | 'medium' | 'low'; reason: string } | null
   // How many attempts have been made to reach them.
   attempts?: number
   followUpAt?: string | null
@@ -655,7 +657,7 @@ export default function SalesBoard() {
     // to actually be "all of them", not a page. Matches the server's own
     // cap (routes/leads.js), which is what a rep's list silently
     // truncated against for a while at the old, lower limit.
-    queryFn: () => leadApi.list({ owner: user?.id, limit: 30000 }),
+    queryFn: () => leadApi.list({ owner: user?.id, limit: 30000, intent: '1' }),
     enabled: !!user?.id,
   })
 
@@ -696,6 +698,7 @@ export default function SalesBoard() {
       phone: l.phone,
       digits: String(l.phoneNormalized || l.phone || '').replace(/\D/g, ''),
       temperature: l.temperature,
+      intent: l.intent,
       attempts: (l.attempts || []).length,
       followUpAt: l.followUpAt,
       followUpKind: l.followUpKind,
@@ -913,7 +916,11 @@ export default function SalesBoard() {
 
               {visible.map((r) => {
                 const follow = followUpLabel(r)
-                const temp = r.temperature ? TEMP_TONE[r.temperature] : null
+                // The intent score when there is one: it sees the stage, the
+                // move-in date and the silence, where the typed label sees
+                // only what a rep once chose to write.
+                const shownTemp = r.intent ? (r.intent.band === 'high' ? 'hot' : r.intent.band === 'low' ? 'cold' : 'warm') : r.temperature
+                const temp = shownTemp ? TEMP_TONE[shownTemp] : null
                 return (
                   <div
                     key={r.key}
@@ -964,8 +971,8 @@ export default function SalesBoard() {
                         columns after it do not move. */}
                     <div style={{ minWidth: 0 }}>
                       {temp && (
-                        <span className="inline-flex whitespace-nowrap" style={{ padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: temp.bg, color: temp.fg }}>
-                          {String(r.temperature).charAt(0).toUpperCase() + String(r.temperature).slice(1)}
+                        <span title={r.intent ? `${r.intent.reason} (score ${r.intent.score}/100)` : undefined} className="inline-flex whitespace-nowrap" style={{ padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: temp.bg, color: temp.fg }}>
+                          {String(shownTemp).charAt(0).toUpperCase() + String(shownTemp).slice(1)}
                         </span>
                       )}
                     </div>

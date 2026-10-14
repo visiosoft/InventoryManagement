@@ -233,6 +233,10 @@ export const ATTEMPT_OUTCOMES = ['no_answer', 'no_reply', 'reached', 'call_back'
  * one day cannot renumber everything after it. Attempts are a record of what
  * happened — they are appended and not edited.
  */
+/** Why a lead was lost — a short fixed list, so the reasons can be counted.
+ *  Free text hides patterns; a long list gets "close enough" picks. */
+export const LOST_REASONS = ['price', 'timing', 'wrong_size', 'went_elsewhere', 'no_response', 'not_interested', 'wrong_number', 'other'];
+
 const leadAttemptSchema = new Schema({
   no: { type: Number, required: true },
   at: { type: Date, default: Date.now },
@@ -332,6 +336,13 @@ const leadSchema = new Schema(
        length against the plan's step count — counted, never marked, so it
        cannot disagree with what actually happened. */
     attempts: { type: [leadAttemptSchema], default: [] },
+    /* The "ready to close?" answers nothing else in the record holds: who
+       makes the decision (and whether anyone has spoken to them), and why the
+       customer wants this, in their own words. Next step and last follow-up
+       are read from the follow-up date, tasks, attempts and chat. */
+    decisionMaker: { type: String, default: '' },
+    decisionMakerSpoken: { type: Boolean, default: false },
+    whyTheyWant: { type: String, default: '' },
     /* Stamped when the last step of the plan was used and they still had not
        answered. What the "close this or give it one more" prompt reads off;
        cleared when somebody decides either way. */
@@ -351,6 +362,26 @@ const leadSchema = new Schema(
     // override above was set against — how the "cleared when it changes"
     // rule above knows whether the conversation has actually moved since.
     leadScoreOverrideForLeadType: { type: String, default: '' },
+    // Why a rep overrode the score — the raw material for judging whether the
+    // score is right. Written with the override and logged on the timeline.
+    leadScoreOverrideReason: { type: String, default: '' },
+    // Why it was lost, from LOST_REASONS. Required when a rep closes a lead as lost.
+    lostReason: { type: String, default: '' },
+    // The intent score the moment this lead was won or lost, before the status
+    // change zeroed it. It is what lets us ask whether hot leads really do
+    // close more often than cold ones.
+    intentAtClose: {
+      score: { type: Number, default: null },
+      band: { type: String, default: '' },
+      reason: { type: String, default: '' },
+      at: { type: Date, default: null },
+    },
+    // Every stage the lead has been in, with when it moved. Written by the
+    // save hook below so no route has to remember to; it is what lets a
+    // report say how long leads sit in a stage and where they drop out.
+    stageHistory: [
+      { from: { type: String, default: '' }, to: { type: String, default: '' }, at: { type: Date, default: Date.now }, _id: false },
+    ],
     source: {
       type: String,
       enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other'],
@@ -481,6 +512,14 @@ const leadSchema = new Schema(
   { timestamps: true }
 );
 
+leadSchema.pre('save', function recordStage(next) {
+  if (this.isNew) this.stageHistory.push({ from: '', to: this.status, at: new Date() });
+  else if (this.isModified('status')) {
+    const last = this.stageHistory[this.stageHistory.length - 1];
+    this.stageHistory.push({ from: last?.to || '', to: this.status, at: new Date() });
+  }
+  next();
+});
 leadSchema.index({ leadDateTime: -1, createdAt: -1 });
 leadSchema.index({ status: 1, owner: 1, leadDateTime: -1 });
 leadSchema.index({ source: 1, createdAt: -1 });

@@ -79,6 +79,8 @@ export function apiError(err: unknown): string {
 }
 
 export type LeadQuery = {
+  /** '1' asks for each lead's intent score (the server skips it for very long lists). */
+  intent?: '1'
   search?: string
   status?: string
   source?: string
@@ -124,7 +126,7 @@ export const leadApi = {
     api.get<{ ids: string[] }>('/leads/nav-order', { params }).then((r) => r.data.ids),
   create: (body: Partial<Lead>) => api.post<Lead>('/leads', body).then((r) => r.data),
   update: (id: string, body: Partial<Lead>) => api.put<Lead>(`/leads/${id}`, body).then((r) => r.data),
-  updateStatus: (id: string, status: string, comment?: string) => api.patch<Lead>(`/leads/${id}/status`, { status, comment }).then((r) => r.data),
+  updateStatus: (id: string, status: string, comment?: string, lostReason?: string) => api.patch<Lead>(`/leads/${id}/status`, { status, comment, lostReason }).then((r) => r.data),
   convertToCustomer: (id: string) =>
     api
       .post<{ ok: true; created: boolean; customer: Customer; lead: Lead }>(`/leads/${id}/convert`)
@@ -152,8 +154,8 @@ export const leadApi = {
   score: (id: string) => api.get<LeadScore>(`/leads/${id}/score`).then((r) => r.data),
   /** A rep's own confirmation or correction of the score. `decision: ''`
    *  clears it and hands the lead back to the computed score. */
-  scoreConfirm: (id: string, decision: 'qualifying' | 'not_interested' | '') =>
-    api.post<LeadScore>(`/leads/${id}/score-confirm`, { decision }).then((r) => r.data),
+  scoreConfirm: (id: string, decision: 'qualifying' | 'not_interested' | '', reason = '') =>
+    api.post<LeadScore>(`/leads/${id}/score-confirm`, { decision, reason }).then((r) => r.data),
   /** When they actually said they'd need it — a call the AI never heard,
    *  or a correction to what it read from the chat. `date` a plain
    *  'YYYY-MM-DD', or '' to clear it. Not the same thing as when we should
@@ -809,6 +811,8 @@ export interface FollowUpCustomer {
 }
 
 export interface FollowUpQueueItem {
+  /** The one intent score (stage, move-in date, silence, engagement), when the chat has been read. */
+  intent?: { score: number; band: 'high' | 'medium' | 'low'; reason: string }
   leadId: string
   name: string
   phone: string
@@ -825,7 +829,7 @@ export interface FollowUpQueueItem {
   /** The rep's manual chase, when any attempt has been logged. */
   sequence: { made: number; total: number; label: string; exhausted: boolean; nextChannel: string } | null
   reason: FollowUpReason
-  reasonDetail: 'exhausted' | 'overdue_date' | 'scheduled' | null
+  reasonDetail: 'exhausted' | 'no_next_step' | 'overdue_date' | 'scheduled' | null
   /** What the wait is measured from. */
   since: string
   daysWaiting: number
@@ -894,7 +898,7 @@ export interface FollowUpEligibilityRow {
 
 export const followUpQueueApi = {
   list: (params?: { owner?: string }) =>
-    api.get<{ items: FollowUpQueueItem[]; summary: FollowUpQueueSummary; threshold: number; stages: { afterDays: number }[]; snapshotAt: string; aiPending?: number }>(
+    api.get<{ items: FollowUpQueueItem[]; summary: FollowUpQueueSummary; threshold: number; stages: { afterDays: number }[]; snapshotAt: string; aiPending?: number; doneToday?: number }>(
       '/follow-up-queue', { params },
     ).then((r) => r.data),
   detail: (leadId: string) => api.get<FollowUpDetail>(`/follow-up-queue/${leadId}`).then((r) => r.data),

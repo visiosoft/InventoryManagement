@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { summariesPending } from '../services/conversationSummary.js';
-import { isValidObjectId } from 'mongoose';
+import { isValidObjectId, Types } from 'mongoose';
+import { Lead, LeadFollowUp } from '../models/index.js';
+import { AgentAction } from '../agents/models.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { listWhatsAppTemplates } from '../services/whatsapp.js';
 import { quietThreshold, sendQuietFollowUp } from '../services/leadFollowUp.js';
@@ -9,6 +11,30 @@ import {
 } from '../services/followUpQueue.js';
 
 const router = Router();
+
+/**
+ * How many follow-ups this person has actually done today (Dubai day): a
+ * template sent, a call or message logged, an agent draft approved. It is what
+ * the page's progress bar counts against, so a rep sees the list shrinking
+ * rather than just a number that never moves.
+ */
+async function doneToday(userId, now = new Date()) {
+    const start = new Date(now.getTime() + 4 * 3600_000);
+    start.setUTCHours(0, 0, 0, 0);
+    const from = new Date(start.getTime() - 4 * 3600_000);
+    const uid = new Types.ObjectId(String(userId));
+    const [sends, attempts, drafts] = await Promise.all([
+        LeadFollowUp.countDocuments({ sentBy: uid, status: 'sent', createdAt: { $gte: from } }),
+        Lead.aggregate([
+            { $match: { 'attempts.user': uid } },
+            { $unwind: '$attempts' },
+            { $match: { 'attempts.user': uid, 'attempts.at': { $gte: from } } },
+            { $count: 'n' },
+        ]),
+        AgentAction.countDocuments({ resolvedBy: uid, resolution: { $in: ['approved', 'edited'] }, kind: { $in: ['reply_drafted', 'touch_proposed'] }, resolvedAt: { $gte: from } }),
+    ]);
+    return sends + (attempts[0]?.n || 0) + drafts;
+}
 
 // Reps and accounts see their own; admin sees everyone or one rep with
 // ?owner=. Same rule as routes/leadFollowUp.js, enforced here rather than
@@ -70,6 +96,7 @@ router.get('/', async (req, res) => {
             // Sent back on a send, so "they replied after this list was drawn"
             // can be caught server-side.
             snapshotAt: now,
+            doneToday: await doneToday(req.user.id, now).catch(() => 0),
             // Summaries still being written in the background; the page
             // refetches once when this is non-zero.
             aiPending: summariesPending(),

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { syncFollowUpTask } from '../services/followUps.js';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
 import { WhatsAppMessage, Lead, Customer, User, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate, Task, Contract } from '../models/index.js';
@@ -819,6 +820,9 @@ router.post('/:phone/remind', async (req, res) => {
             return res.status(400).json({ error: `Say when: ${PRESETS.join(', ')}, or a date` });
         }
 
+        // What was there before is kept in the record, so a snooze never
+        // erases somebody's earlier plan without a trace. The note stays too.
+        const previous = lead.followUpAt && new Date(lead.followUpAt) > new Date() ? lead.followUpAt : null;
         lead.followUpAt = at;
         lead.followUpKind = 'date';
         /* Cleared, so a reminder moved to a new date is raised again rather
@@ -833,9 +837,10 @@ router.post('/:phone/remind', async (req, res) => {
         const when = at.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' });
         lead.timeline.push({
             type: 'note',
-            text: `Follow-up set for ${when} by ${req.user?.name || 'a colleague'}, from the chat`,
+            text: `Follow-up set for ${when} by ${req.user?.name || 'a colleague'}, from the chat${previous ? ` (moved from ${new Date(previous).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' })}${lead.followUpNote ? `: "${String(lead.followUpNote).slice(0, 80)}"` : ''})` : ''}`,
             user: req.user?.id,
         });
+        await syncFollowUpTask(lead);
         await lead.save();
 
         res.json({ ok: true, followUpAt: lead.followUpAt, status: lead.status });

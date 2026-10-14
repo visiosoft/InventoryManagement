@@ -268,3 +268,41 @@ test('the queue starts at 1 September 2026, Dubai midnight — the day reliable 
     // Dubai is UTC+4, so this is exactly 2026-09-01 00:00 local.
     assert.equal(new Date(QUEUE_SINCE.getTime() + 4 * 3600_000).toISOString().slice(0, 16), '2026-09-01T00:00');
 });
+
+test('an open lead with no date, no chat and no chase is put in front of its owner', () => {
+    const old = new Date(NOW.getTime() - 3 * 864e5);
+    const v = classify({ leadStatus: 'contacted', leadCreatedAt: old }, { now: NOW });
+    assert.equal(v.reason, 'manual_followup_due');
+    assert.equal(v.reasonDetail, 'no_next_step');
+    assert.equal(v.window, 'today');
+});
+
+test('a lead younger than a day is the first-response clock\'s business, not this list\'s', () => {
+    const fresh = new Date(NOW.getTime() - 3600_000);
+    assert.equal(classify({ leadStatus: 'new', leadCreatedAt: fresh }, { now: NOW }), null);
+});
+
+test('a closed lead never shows as having no next step', () => {
+    const old = new Date(NOW.getTime() - 9 * 864e5);
+    assert.equal(classify({ leadStatus: 'lost', leadCreatedAt: old }, { now: NOW }), null);
+});
+
+test('re-scoring a row that carries its own signals keeps an exhausted chase at its higher base', () => {
+    const signals = { lastOutboundAt: daysAgo(10), leadStatus: 'contacted', sequenceExhaustedAt: daysAgo(2) };
+    const first = classify(signals, { now: NOW });
+    assert.equal(first.reasonDetail, 'exhausted');
+    // The second pass is fed the row the first pass produced, merged with its signals.
+    const again = classify({ ...signals, ...first }, { now: NOW });
+    assert.equal(again.priorityScore, first.priorityScore);
+});
+
+test('an intent score replaces the bare temperature in the priority, and a missing one falls back', () => {
+    const base = { lastInboundAt: daysAgo(4), lastOutboundAt: daysAgo(3), leadStatus: 'contacted' };
+    const hotNoIntent = classify({ ...base, temperature: 'hot' }, { now: NOW });
+    const intentHigh = classify({ ...base, temperature: 'hot', intentScore: 90 }, { now: NOW });
+    const intentLow = classify({ ...base, temperature: 'hot', intentScore: 10 }, { now: NOW });
+    assert.ok(intentHigh.priorityScore > intentLow.priorityScore, 'a promising lead outranks an unpromising one');
+    assert.equal(intentHigh.priorityScore - intentLow.priorityScore, Math.round(90 * 0.25) - Math.round(10 * 0.25));
+    const plain = classify(base, { now: NOW });
+    assert.equal(hotNoIntent.priorityScore - plain.priorityScore, 15, 'the temperature fallback still applies');
+});

@@ -18,6 +18,11 @@ interface AuthContextValue {
   logout: () => void
   /** Returns true if the current user can access the given module key. */
   hasPermission: (module: string | string[]) => boolean
+  /** Name of the person being viewed, when an admin is "viewing as" them. */
+  viewingAs: string | null
+  /** Admin only: open the app as another person (view-only, no password). */
+  viewAs: (userId: string) => Promise<void>
+  exitViewAs: () => void
 }
 
 /**
@@ -69,7 +74,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user)
   }
 
+  const viewingAs = localStorage.getItem('pb_admin_token') ? (user?.name ?? null) : null
+
+  async function viewAs(userId: string) {
+    const { data } = await api.post('/auth/view-as', { userId })
+    // Keep the admin's own session so Exit puts it straight back.
+    localStorage.setItem('pb_admin_token', localStorage.getItem('pb_token') || '')
+    localStorage.setItem('pb_admin_user', localStorage.getItem('pb_user') || '')
+    localStorage.setItem('pb_token', data.token)
+    localStorage.setItem('pb_user', JSON.stringify(data.user))
+    window.location.assign('/')
+  }
+
+  function exitViewAs() {
+    const t = localStorage.getItem('pb_admin_token')
+    const u = localStorage.getItem('pb_admin_user')
+    if (t && u) { localStorage.setItem('pb_token', t); localStorage.setItem('pb_user', u) }
+    localStorage.removeItem('pb_admin_token')
+    localStorage.removeItem('pb_admin_user')
+    window.location.assign('/')
+  }
+
   function logout() {
+    localStorage.removeItem('pb_admin_token')
+    localStorage.removeItem('pb_admin_user')
     localStorage.removeItem('pb_token')
     localStorage.removeItem('pb_user')
     setUser(null)
@@ -100,7 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, hasPermission }}>
+    <AuthContext.Provider value={{ user, login, logout, hasPermission, viewingAs, viewAs, exitViewAs }}>
       {children}
     </AuthContext.Provider>
   )

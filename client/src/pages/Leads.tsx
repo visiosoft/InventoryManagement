@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth'
 import { fromDubaiDatetimeLocal, toDubaiDatetimeLocal } from '../lib/timezone'
 import WaitingStrip from '../components/WaitingStrip'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
+import { LOST_REASONS } from '../lib/types'
 import { ExportButtons } from '../components/ExportButtons'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
@@ -778,6 +779,7 @@ export default function Leads() {
     const [importResult, setImportResult] = useState<ImportResult | null>(null)
     const [pendingChange, setPendingChange] = useState<{ lead: Lead; newStatus: LeadStatus } | null>(null)
     const [changeComment, setChangeComment] = useState('')
+    const [changeLostReason, setChangeLostReason] = useState('')
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [waSearch, setWaSearch] = useState('')
     const [waLabel, setWaLabel] = useState('')
@@ -912,6 +914,7 @@ export default function Leads() {
             from: from || undefined,
             to: to || undefined,
             sort: sort === 'newest' ? undefined : sort,
+            intent: '1' as const,
             page,
             limit,
         }),
@@ -1035,13 +1038,14 @@ export default function Leads() {
     })
 
     const updateStatus = useMutation({
-        mutationFn: ({ id, nextStatus, comment }: { id: string; nextStatus: LeadStatus; comment?: string }) =>
-            leadApi.updateStatus(id, nextStatus, comment),
+        mutationFn: ({ id, nextStatus, comment, lostReason }: { id: string; nextStatus: LeadStatus; comment?: string; lostReason?: string }) =>
+            leadApi.updateStatus(id, nextStatus, comment, lostReason),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['leads'] })
             qc.invalidateQueries({ queryKey: ['lead-stats'] })
             setPendingChange(null)
             setChangeComment('')
+            setChangeLostReason('')
         },
     })
 
@@ -1561,6 +1565,15 @@ export default function Leads() {
                                                 {getInitials(lead.fullName)}
                                             </span>
                                             <span style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.fullName}</span>
+                                            {(() => {
+                                                // Red: a follow-up is due or overdue. Amber: nothing is
+                                                // planned. Green: a date is booked. Closed leads show none.
+                                                if (['won', 'lost', 'already_customer'].includes(lead.status)) return null
+                                                const at = lead.followUpAt ? new Date(lead.followUpAt) : null
+                                                const endToday = new Date(); endToday.setHours(23, 59, 59, 999)
+                                                const d = !at ? { c: '#D97706', t: 'No next step booked' } : at <= endToday ? { c: '#DC2626', t: 'Follow-up due or overdue' } : { c: '#16A34A', t: 'Follow-up booked' }
+                                                return <span title={d.t} aria-label={d.t} style={{ width: 8, height: 8, flex: '0 0 auto', borderRadius: 999, background: d.c }} />
+                                            })()}
                                         </Link>
 
                                         <span style={{ fontSize: 13, color: '#4A4357', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>{lead.phone}</span>
@@ -1596,9 +1609,19 @@ export default function Leads() {
                                         {/* Read-only here by request: assignment and stage are
                                             different decisions, and mixing both into one row made
                                             the list harder to scan. Stage is set in the drawer. */}
+                                        <div style={{ minWidth: 0 }}>
                                         <span style={{ display: 'inline-flex', alignItems: 'center', background: sc.bg, color: sc.fg, borderRadius: 999, padding: '6px 12px', fontSize: 12, fontWeight: 600, width: 'fit-content' }}>
                                             {statusLabel(lead.status)}
                                         </span>
+                                            {/* How promising it looks, with the reason on hover: the
+                                                one intent score, not the typed temperature. */}
+                                            {lead.intent && !['won', 'lost', 'already_customer'].includes(lead.status) && (
+                                                <div title={`${lead.intent.reason} (score ${lead.intent.score}/100)`} style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lead.intent.band === 'high' ? '#B91C1C' : lead.intent.band === 'low' ? '#6B7280' : '#B45309' }}>
+                                                    {lead.intent.band === 'high' ? 'Hot' : lead.intent.band === 'low' ? 'Cold' : 'Warm'}
+                                                    <span style={{ fontWeight: 400, color: '#8A8496' }}> · {lead.intent.reason}</span>
+                                                </div>
+                                            )}
+                                        </div>
 
                                         {/* When they want the storage to start. The tone says how
                                             close it is: a date that has passed on a lead still
@@ -1943,6 +1966,19 @@ export default function Leads() {
                             Moving <strong className="text-foreground">{pendingChange.lead.fullName}</strong> to{' '}
                             <Badge tone={leadStatusTone[pendingChange.newStatus]}>{statusLabel(pendingChange.newStatus)}</Badge>
                         </p>
+                        {pendingChange.newStatus === 'lost' && (
+                            <div>
+                                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Why was it lost? (required)</label>
+                                <select
+                                    value={changeLostReason}
+                                    onChange={(e) => setChangeLostReason(e.target.value)}
+                                    className="w-full h-10 rounded-md border bg-background px-3 text-sm"
+                                >
+                                    <option value="">Pick a reason…</option>
+                                    {LOST_REASONS.map(([v, lbl]) => <option key={v} value={v}>{lbl}</option>)}
+                                </select>
+                            </div>
+                        )}
                         <div>
                             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Comment (optional)</label>
                             <Textarea
@@ -1957,11 +1993,12 @@ export default function Leads() {
                                 Cancel
                             </Button>
                             <Button
-                                disabled={updateStatus.isPending}
+                                disabled={updateStatus.isPending || (pendingChange.newStatus === 'lost' && !changeLostReason)}
                                 onClick={() => updateStatus.mutate({
                                     id: pendingChange.lead._id,
                                     nextStatus: pendingChange.newStatus,
                                     comment: changeComment.trim() || undefined,
+                                    lostReason: pendingChange.newStatus === 'lost' ? changeLostReason : undefined,
                                 })}
                             >
                                 {updateStatus.isPending ? 'Saving…' : 'Update status'}

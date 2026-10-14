@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { eligibilityFor } from '../services/followUpQueue.js';
+import { isBlocked } from '../agents/guards.js';
 import { isValidObjectId } from 'mongoose';
 import { Lead, LeadFollowUp } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
@@ -126,11 +128,29 @@ router.post('/send', async (req, res) => {
             if (notOwned.length) return res.status(403).json({ error: 'Some of those leads are not yours' });
         }
 
-        const out = await sendQuietFollowUp({
-            leadIds, template, extraVars, reasons,
-            byUser: { id: req.user.id, name: req.user.name, email: req.user.email },
+        // The same checks the Follow-Ups page runs before it sends: nobody who
+        // is closed, an active tenant, messaged in the last 12 hours, not yet
+        // due, or who has replied since — and nobody on the do-not-message
+        // list. This path used to skip all of them and check ownership only.
+        const rows = await eligibilityFor(leadIds, {
+            template: meta, extraVars,
+            ownerId: isSalesRep(req) ? req.user.id : null,
         });
-        res.json(out);
+        const screened = [];
+        for (const r of rows) {
+            if (r.ok && await isBlocked(r.phone)) screened.push({ leadId: r.leadId, reason: 'On the do-not-message list' });
+            else if (!r.ok) screened.push({ leadId: r.leadId, reason: r.explanation || r.reason || 'Not eligible' });
+        }
+        const refused = new Set(screened.map((f) => String(f.leadId)));
+        const allowed = leadIds.filter((id) => !refused.has(String(id)));
+
+        const out = allowed.length
+            ? await sendQuietFollowUp({
+                leadIds: allowed, template, extraVars, reasons,
+                byUser: { id: req.user.id, name: req.user.name, email: req.user.email },
+            })
+            : { sent: [], failed: [] };
+        res.json({ ...out, failed: [...(out.failed || []), ...screened] });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

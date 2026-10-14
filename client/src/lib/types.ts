@@ -83,6 +83,8 @@ export interface Lead {
   ownerSeenAt?: string | null
   /** How warm they are — kept apart from the status, which says where they are. */
   temperature?: LeadTemperature
+  /** The one intent score, when the list was asked for it and the chat has been read. */
+  intent?: { score: number; band: 'high' | 'medium' | 'low'; reason: string } | null
   tags?: string[]
   followUpAt?: string | null
   followUpKind?: 'date' | 'week' | 'month'
@@ -909,3 +911,9 @@ export interface MovingInvoice {
   zohoBooksSyncError?: string
   createdAt?: string
 }
+
+export const LOST_REASONS: Array<[string, string]> = [
+  ['price', 'Price too high'], ['timing', 'Not the right time'], ['wrong_size', 'Wrong size / no fit'],
+  ['went_elsewhere', 'Went to a competitor'], ['no_response', 'Stopped replying'],
+  ['not_interested', 'Not interested'], ['wrong_number', 'Wrong number / not a real enquiry'], ['other', 'Other'],
+]

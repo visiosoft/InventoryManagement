@@ -1,6 +1,5 @@
 import { Contract, Customer, nextContractNo } from '../models/index.js';
-import { creditFor, markLeadWon } from './dealCredit.js';
-import { promoteToCustomer } from './customerStage.js';
+import { creditFor } from './dealCredit.js';
 import { createFirstInvoiceFromQuote, toNumber } from './quotePricing.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 
@@ -83,9 +82,7 @@ export async function convertQuoteToContract(quote, { actor = SYSTEM, authorized
   });
 
   try {
-    await markLeadWon({ leadId: credit.leadId, contractNo: contract.contractNo, userId: actor.userId });
-    await promoteToCustomer(quote.customer, { contractNo: contract.contractNo });
-
+    // Won and "tenant" wait for the signature — see onContractSigned.
     quote.contract = contract._id;
     quote.timeline.push({ type: 'converted', text: `Converted to contract ${contract.contractNo} by ${actor.name}`, user: actor.userId || undefined });
 
