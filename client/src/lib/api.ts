@@ -829,7 +829,7 @@ export interface FollowUpQueueItem {
   /** The rep's manual chase, when any attempt has been logged. */
   sequence: { made: number; total: number; label: string; exhausted: boolean; nextChannel: string } | null
   reason: FollowUpReason
-  reasonDetail: 'exhausted' | 'overdue_date' | 'scheduled' | null
+  reasonDetail: 'exhausted' | 'no_next_step' | 'overdue_date' | 'scheduled' | null
   /** What the wait is measured from. */
   since: string
   daysWaiting: number
