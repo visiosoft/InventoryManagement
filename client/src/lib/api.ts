@@ -924,7 +924,7 @@ export const followUpQueueApi = {
 }
 
 export interface DistributionToday {
-  distributionOn: boolean; newLeadsToday: number; distributedByRules: number; assignedByHand: number; waitingUnassigned: number
+  distributionOn: boolean; newLeadsToday: number; distributedByRules: number; assignedByHand: number; waitingUnassigned: number; reassignedFromEarlier: number
   contacted: number; waiting: number; waitingOver30Min: number; contactedPct: number | null
   reps: { rep: string; got: number; contacted: number; waiting: number; waitingOver30Min: number; avgMinutesToContact: number | null }[]
 }
