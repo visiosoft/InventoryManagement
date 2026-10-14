@@ -162,7 +162,7 @@ export async function pendingPayments({ overdueOnly = false, limit = 100 } = {})
   if (overdueOnly) f.dueDate = { $lt: new Date() };
   const rows = await Payment.find(f).populate({ path: 'contract', select: 'contractNo customer unit', populate: [{ path: 'customer', select: 'fullName phone' }, { path: 'unit', select: 'unitNumber' }] }).sort({ dueDate: 1 }).limit(cap(limit, 100)).lean();
   const total = rows.reduce((s, p) => s + (p.amount || 0), 0);
-  return { count: rows.length, totalAed: money(total), rows: rows.map((p) => ({ customer: p.contract?.customer?.fullName, phone: p.contract?.customer?.phone, contractNo: p.contract?.contractNo, unit: p.contract?.unit?.unitNumber, amount: money(p.amount), due: day(p.dueDate), daysOverdue: p.dueDate < new Date() ? Math.floor((Date.now() - new Date(p.dueDate)) / DAY) : 0 })) };
+  return { count: rows.length, totalAed: money(total), rows: rows.map((p) => ({ paymentId: String(p._id), customer: p.contract?.customer?.fullName, phone: p.contract?.customer?.phone, contractNo: p.contract?.contractNo, unit: p.contract?.unit?.unitNumber, amount: money(p.amount), due: day(p.dueDate), daysOverdue: p.dueDate < new Date() ? Math.floor((Date.now() - new Date(p.dueDate)) / DAY) : 0 })) };
 }
 
 export async function paymentsReceived({ from, to, limit = 100 } = {}) {
