@@ -1367,7 +1367,7 @@ export default function ContractDetail() {
       )}
 
       {/* Payment check: the unit only turns Occupied once the first payment is verified. */}
-      {c.paymentGate?.required && c.status === 'active' && (
+      {c.paymentGate?.required && c.paymentGate.since && c.status === 'active' && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" style={c.paymentGate.verified ? { background: '#F3FBF6', borderColor: 'rgba(21,128,61,.35)' } : { background: '#FFF8F7', borderColor: 'rgba(185,28,28,.30)' }}>
           <div className="min-w-0 flex-1 text-sm">
             <strong>{c.paymentGate.verified ? 'Payment verified' : 'Payment not verified'}</strong>

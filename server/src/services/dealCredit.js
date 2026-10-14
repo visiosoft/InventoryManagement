@@ -145,7 +145,9 @@ export async function onContractSigned(contract, { userId } = {}) {
       await promoteToCustomer(customerId, { contractNo: contract.contractNo });
     // Signed (or signed again): the paper is current, and from now on the unit
     // only turns Occupied once the first payment is verified.
-    await Contract.updateOne({ _id: contract._id }, { $set: { resignNeeded: null, 'paymentGate.required': true } });
+    await Contract.updateOne({ _id: contract._id }, { $set: { resignNeeded: null } });
+    // New signing: put it under the payment rule (once; a re-signing keeps its original date).
+    await Contract.updateOne({ _id: contract._id, 'paymentGate.since': null }, { $set: { 'paymentGate.required': true, 'paymentGate.since': new Date() } });
     recheckAndSync(contract._id).catch(() => {});
    } catch (e) {
       console.error('[DealCredit] onContractSigned:', e.message);
