@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, AlertTriangle } from 'lucide-react'
-import { api, apiError } from '../lib/api'
+import { api } from '../lib/api'
 import { formatDateTime } from '../lib/utils'
 
 const INK = '#14081F'
@@ -24,24 +23,12 @@ const ago = (iso: string) => {
   return days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`
 }
 
-/** The four questions a deal should be able to answer before it is closed. */
+/** The two things a deal needs before it is closed: a next step, and a recent follow-up. */
 export function DealCheck({ leadId }: { leadId: string }) {
-  const qc = useQueryClient()
   const { data } = useQuery<Check>({
     queryKey: ['deal-check', leadId],
     queryFn: () => api.get(`/leads/${leadId}/deal-check`).then((r) => r.data),
   })
-  const [who, setWho] = useState('')
-  const [why, setWhy] = useState('')
-  const [err, setErr] = useState('')
-  useEffect(() => { if (data) { setWho(data.decisionMaker); setWhy(data.whyTheyWant) } }, [data?.decisionMaker, data?.whyTheyWant]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const save = useMutation({
-    mutationFn: (body: Record<string, unknown>) => api.put(`/leads/${leadId}/deal-check`, body),
-    onSuccess: () => { setErr(''); qc.invalidateQueries({ queryKey: ['deal-check', leadId] }) },
-    onError: (e) => setErr(apiError(e)),
-  })
-
   if (!data || !data.open) return null
   const ready = data.missing.length === 0
 
@@ -55,14 +42,12 @@ export function DealCheck({ leadId }: { leadId: string }) {
     </div>
   )
 
-  const field = { width: '100%', fontSize: 13, border: `1px solid ${LINE}`, borderRadius: 8, padding: '6px 8px', background: '#fff', color: INK } as const
-
   return (
     <div style={{ border: `1px solid ${ready ? 'rgba(21,128,61,.35)' : 'rgba(185,28,28,.30)'}`, borderRadius: 14, padding: '12px 14px', background: ready ? '#F3FBF6' : '#FFF8F7' }}>
       <div className="flex items-center" style={{ gap: 8 }}>
         <span style={{ fontWeight: 700, fontSize: 14, color: INK }}>Ready to close?</span>
         <span style={{ fontSize: 12, fontWeight: 600, color: ready ? GREEN : RED }}>
-          {ready ? 'All four answered' : `Missing: ${data.missing.join(', ')}`}
+          {ready ? 'Both answered' : `Missing: ${data.missing.join(', ')}`}
         </span>
       </div>
 
@@ -71,32 +56,7 @@ export function DealCheck({ leadId }: { leadId: string }) {
           ? <><strong>{data.nextStep.label}</strong> · {formatDateTime(data.nextStep.at)}{data.nextStep.note ? ` · ${data.nextStep.note}` : ''}</>
           : <span style={{ color: RED }}>No next step is booked — this deal is drifting. Set a follow-up date, site visit or task.</span>)}
 
-      {row(2, 'Who makes the decision, and have you spoken to them?', Boolean(data.decisionMaker.trim()) && data.decisionMakerSpoken,
-        <div className="flex flex-col" style={{ gap: 6 }}>
-          <input
-            style={field}
-            value={who}
-            placeholder="e.g. Her husband Ahmed / the company's finance manager"
-            onChange={(e) => setWho(e.target.value)}
-            onBlur={() => { if (who.trim() !== data.decisionMaker) save.mutate({ decisionMaker: who }) }}
-          />
-          <label className="flex items-center" style={{ gap: 6, fontSize: 12.5 }}>
-            <input type="checkbox" checked={data.decisionMakerSpoken} onChange={(e) => save.mutate({ decisionMakerSpoken: e.target.checked })} />
-            I have spoken to them directly
-          </label>
-        </div>)}
-
-      {row(3, 'Why do they want this, in their own words?', Boolean(data.whyTheyWant.trim()),
-        <textarea
-          rows={2}
-          style={{ ...field, resize: 'vertical' }}
-          value={why}
-          placeholder={'"We\'re moving out in two weeks and need somewhere for the furniture."'}
-          onChange={(e) => setWhy(e.target.value)}
-          onBlur={() => { if (why.trim() !== data.whyTheyWant) save.mutate({ whyTheyWant: why }) }}
-        />)}
-
-      {row(4, 'When did you last follow up, and what did you say?', Boolean(data.lastFollowUp),
+      {row(2, 'When did you last follow up, and what did you say?', Boolean(data.lastFollowUp),
         data.lastFollowUp
           ? <>
               {ago(data.lastFollowUp.at)} · {data.lastFollowUp.channel}
@@ -105,7 +65,6 @@ export function DealCheck({ leadId }: { leadId: string }) {
             </>
           : <span style={{ color: RED }}>Nobody has followed up yet.</span>)}
 
-      {err && <p style={{ color: RED, fontSize: 12, marginTop: 6 }}>{err}</p>}
     </div>
   )
 }
