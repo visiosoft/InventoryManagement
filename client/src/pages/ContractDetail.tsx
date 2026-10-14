@@ -529,7 +529,16 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
     <form onSubmit={submit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <Field label="Check In">
-          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+          <Input type="date" value={startDate} required onChange={(e) => {
+            const next = e.target.value
+            // Moving check-in keeps the same stay: check-out moves by the same number of days.
+            if (startDate && next && endDate) {
+              const days = Math.round((new Date(next).getTime() - new Date(startDate).getTime()) / 86400000)
+              const moved = new Date(endDate); moved.setDate(moved.getDate() + days)
+              setEndDate(moved.toISOString().slice(0, 10))
+            }
+            setStartDate(next)
+          }} />
         </Field>
         <Field label="Check Out">
           <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
@@ -1347,7 +1356,7 @@ export default function ContractDetail() {
       {c.resignNeeded && c.status === 'active' && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" style={{ background: '#FFF7E6', borderColor: '#F5D08A' }}>
           <div className="min-w-0 flex-1 text-sm" style={{ color: '#7A4B00' }}>
-            <strong>Needs to be signed again.</strong> Check-in changed from {formatDate(c.resignNeeded.previousStart)} to {formatDate(c.resignNeeded.newStart)} after the customer signed.
+            <strong>Needs to be signed again.</strong> Dates changed after the customer signed: check-in {formatDate(c.resignNeeded.previousStart)} → {formatDate(c.resignNeeded.newStart)}{c.resignNeeded.newEnd ? `, check-out ${formatDate(c.resignNeeded.previousEnd || '')} → ${formatDate(c.resignNeeded.newEnd)}` : ''}.
           </div>
           {!readOnly && (
             <Button size="sm" onClick={() => createSigningLink.mutate()} disabled={createSigningLink.isPending}>

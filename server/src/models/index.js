@@ -714,7 +714,7 @@ const contractSchema = new Schema(
     // signed the old date, so the paper is out of date until they sign again.
     // Cleared when the contract is signed again.
     resignNeeded: {
-      type: new Schema({ at: Date, reason: String, previousStart: Date, newStart: Date, by: String }, { _id: false }),
+      type: new Schema({ at: Date, reason: String, previousStart: Date, newStart: Date, previousEnd: Date, newEnd: Date, by: String }, { _id: false }),
       default: null,
     },
     // Whether the unit may turn Occupied: signed + check-in reached + first

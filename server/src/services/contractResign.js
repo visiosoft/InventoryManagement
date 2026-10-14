@@ -9,7 +9,7 @@ const fmt = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit'
  * to the person who receives hand-overs, then to an admin, so it never lands
  * on nobody.
  */
-export async function notifyResignNeeded({ contract, previousStart, newStart, byName = '' }) {
+export async function notifyResignNeeded({ contract, previousStart, newStart, previousEnd, newEnd, byName = '' }) {
   try {
     let assignee = contract.salesRep ? await User.findById(contract.salesRep).select('_id name email isActive').lean() : null;
     if (!assignee || assignee.isActive === false) {
@@ -27,7 +27,7 @@ export async function notifyResignNeeded({ contract, previousStart, newStart, by
       await Task.create({
         title: `Re-sign needed — ${who}`,
         description: [
-          `The check-in date on ${contract.contractNo} was changed from ${fmt(previousStart)} to ${fmt(newStart)}.`,
+          `The dates on ${contract.contractNo} were changed after signing. Check-in: ${fmt(previousStart)} → ${fmt(newStart)}. Check-out: ${fmt(previousEnd)} → ${fmt(newEnd)}.`,
           'The customer signed the old date, so send them the contract to sign again (Contract → Allow re-sign).',
           'The unit stays Reserved until the check-in date arrives and the payment is verified in Zoho.',
         ].join('\n'),
@@ -42,7 +42,7 @@ export async function notifyResignNeeded({ contract, previousStart, newStart, by
     if (pushConfigured()) {
       await pushToUser(assignee._id, {
         title: 'Contract needs re-signing',
-        body: `${who}: check-in moved to ${fmt(newStart)}. Send the contract to sign again.`,
+        body: `${who}: dates changed (${fmt(newStart)} – ${fmt(newEnd)}). Send the contract to sign again.`,
         url: `/contracts/${contract._id}`,
       });
     }

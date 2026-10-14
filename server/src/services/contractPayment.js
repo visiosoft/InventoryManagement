@@ -69,7 +69,7 @@ export async function checkContractPayment(contractId) {
     }
     const verdict = judgePayment({ opening, zohoConfigured: zohoOn, zohoMatched, zohoById });
     await Contract.updateOne({ _id: contractId }, { $set: {
-      'paymentGate.verified': verdict.verified, 'paymentGate.source': verdict.source,
+      'paymentGate.required': true, 'paymentGate.verified': verdict.verified, 'paymentGate.source': verdict.source,
       'paymentGate.detail': verdict.detail, 'paymentGate.checkedAt': new Date(),
     } });
     return verdict;
@@ -96,9 +96,17 @@ export async function verifyPendingPayments() {
   const soon = new Date(Date.now() + DAY);
   const pending = await Contract.find({
     status: 'active', archived: { $ne: true },
-    'paymentGate.required': true, 'paymentGate.verified': { $ne: true }, 'paymentGate.manual': { $ne: true },
+    'paymentGate.verified': { $ne: true }, 'paymentGate.manual': { $ne: true },
     startDate: { $lte: soon },
-  }).select('_id').limit(60).lean();
+    // Already held to the rule and unpaid, or a contract nobody has checked yet
+    // (every contract that was running before the rule: it gets checked once,
+    // and from then on is held to it like the rest).
+    $or: [
+      { 'paymentGate.required': true, 'paymentGate.checkedAt': { $lt: new Date(Date.now() - 10 * 60_000) } },
+      { 'paymentGate.required': true, 'paymentGate.checkedAt': null },
+      { 'paymentGate.checkedAt': null }, { 'paymentGate.checkedAt': { $exists: false } },
+    ],
+  }).sort({ 'paymentGate.checkedAt': 1 }).select('_id').limit(60).lean();
   for (const c of pending) await recheckAndSync(c._id);
   return pending.length;
 }

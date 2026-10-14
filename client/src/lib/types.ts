@@ -516,7 +516,7 @@ export interface Contract {
   _id: string
   contractNo: string
   /** Set when the check-in of a signed contract was moved and the customer must sign again. */
-  resignNeeded?: { at: string; reason: string; previousStart: string; newStart: string; by: string } | null
+  resignNeeded?: { at: string; reason: string; previousStart: string; newStart: string; previousEnd?: string; newEnd?: string; by: string } | null
   /** Unit only turns Occupied once the first payment is verified (Zoho Books or by hand). */
   paymentGate?: { required: boolean; verified: boolean; manual: boolean; manualBy?: string; source?: string; detail?: string; checkedAt?: string | null }
   customer: Customer

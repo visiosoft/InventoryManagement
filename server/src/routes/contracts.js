@@ -408,6 +408,17 @@ router.get('/renewal-requests', async (req, res) => {
   }
 });
 
+/** Signed contracts whose first payment is not verified, so their unit reads Reserved. */
+router.get('/unverified-payments', async (req, res) => {
+  try {
+    const rows = await Contract.find({ status: 'active', archived: { $ne: true }, 'paymentGate.required': true, 'paymentGate.verified': { $ne: true } })
+      .populate('customer', 'fullName phone email').populate('unit', 'unitNumber').sort({ startDate: 1 }).limit(300).lean();
+    res.json(rows.map((c) => ({ _id: c._id, contractNo: c.contractNo, customer: c.customer, unit: c.unit, startDate: c.startDate, endDate: c.endDate, detail: c.paymentGate?.detail || '', checkedAt: c.paymentGate?.checkedAt || null })));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // List contracts pending admin approval.
 // Typeahead for the global search box: match a contract number, tenant name or
 // unit number and return just enough to render a result row. Declared before
@@ -1171,6 +1182,14 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    /* Moving check-in alone keeps the same stay: check-out moves by the same
+       number of days. Sending an end date as well overrides this. */
+    let endShifted = false;
+    if ($set.startDate && $set.endDate === undefined && contract.startDate && contract.endDate) {
+      const delta = $set.startDate.getTime() - new Date(contract.startDate).getTime();
+      if (delta) { $set.endDate = new Date(new Date(contract.endDate).getTime() + delta); endShifted = true; }
+    }
+
     if ($set.startDate && $set.endDate && $set.endDate <= $set.startDate) {
       return res.status(400).json({ error: 'Check out must be after check in' });
     }
@@ -1304,7 +1323,7 @@ router.put('/:id', async (req, res) => {
       const $push = { timeline: { text: `Updated ${details}`, author: who, at: new Date() } };
       // Every Check Out change on an existing contract is a renewal/extension
       // worth its own trackable record, separate from the general timeline.
-      if ($set.endDate && contract.endDate && $set.endDate.getTime() !== new Date(contract.endDate).getTime()) {
+      if (!endShifted && $set.endDate && contract.endDate && $set.endDate.getTime() !== new Date(contract.endDate).getTime()) {
         $push.renewalHistory = { at: new Date(), previousEndDate: contract.endDate, newEndDate: $set.endDate, author: who };
       }
       await Contract.findByIdAndUpdate(contract._id, { $set, $push });
@@ -1314,22 +1333,23 @@ router.put('/:id', async (req, res) => {
     /* Moving the check-in of a contract the customer has already signed makes
        the signed paper wrong: flag it for re-signing, tell the rep, and hold the
        unit as Reserved until the new day arrives and the payment is verified. */
-    const startMoved = $set.startDate && contract.startDate
-      && $set.startDate.toISOString().slice(0, 10) !== new Date(contract.startDate).toISOString().slice(0, 10);
-    if (startMoved && contract.status === 'active') {
+    const day = (d) => new Date(d).toISOString().slice(0, 10);
+    const startMoved = $set.startDate && contract.startDate && day($set.startDate) !== day(contract.startDate);
+    const endMoved = $set.endDate && contract.endDate && day($set.endDate) !== day(contract.endDate);
+    if ((startMoved || endMoved) && contract.status === 'active') {
       const by = req.user?.name || req.user?.email || 'user';
       await Contract.updateOne({ _id: contract._id }, {
         $set: {
-          resignNeeded: { at: new Date(), reason: 'Check-in date changed after signing', previousStart: contract.startDate, newStart: $set.startDate, by },
+          resignNeeded: { at: new Date(), reason: `${startMoved ? 'Check-in' : 'Check-out'} date changed after signing`, previousStart: contract.startDate, newStart: $set.startDate || contract.startDate, previousEnd: contract.endDate, newEnd: $set.endDate || contract.endDate, by },
           'paymentGate.required': true,
         },
-        $push: { timeline: { text: `Check-in moved ${new Date(contract.startDate).toISOString().slice(0, 10)} → ${$set.startDate.toISOString().slice(0, 10)} — contract needs to be signed again`, author: by, at: new Date() } },
+        $push: { timeline: { text: `${startMoved ? `Check-in moved ${day(contract.startDate)} → ${day($set.startDate)}` : ''}${startMoved && endMoved ? ', ' : ''}${endMoved ? `Check-out moved ${day(contract.endDate)} → ${day($set.endDate)}` : ''} — contract needs to be signed again`, author: by, at: new Date() } },
       });
       const full = await populateAll(Contract.findById(contract._id));
-      await notifyResignNeeded({ contract: full, previousStart: contract.startDate, newStart: $set.startDate, byName: by });
+      await notifyResignNeeded({ contract: full, previousStart: contract.startDate, newStart: $set.startDate || contract.startDate, previousEnd: contract.endDate, newEnd: $set.endDate || contract.endDate, byName: by });
     }
     const affected = new Set([contract.unit, ...(contract.units || []), ...($set.units || []), $set.unit].filter(Boolean).map(String));
-    if (startMoved && contract.status === 'active') await recheckAndSync(contract._id);
+    if ((startMoved || endMoved) && contract.status === 'active') await recheckAndSync(contract._id);
     for (const uid of affected) await syncUnitStatus(uid);
 
     const populated = await populateAll(Contract.findById(contract._id));
