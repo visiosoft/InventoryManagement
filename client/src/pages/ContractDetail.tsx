@@ -1353,10 +1353,12 @@ export default function ContractDetail() {
         style={{ border: '1px solid rgba(20,8,31,.06)' }}>
 
       {/* Check-in moved after signing: the customer must sign again. */}
-      {c.resignNeeded && c.status === 'active' && (c.resignNeeded.previousStart || '').slice(0, 10) !== (c.resignNeeded.newStart || '').slice(0, 10) && (
+      {c.resignNeeded && c.status === 'active' && ((c.resignNeeded.previousStart || '').slice(0, 10) !== (c.resignNeeded.newStart || '').slice(0, 10) || (c.resignNeeded.previousEnd || '').slice(0, 10) !== (c.resignNeeded.newEnd || '').slice(0, 10)) && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" style={{ background: '#FFF7E6', borderColor: '#F5D08A' }}>
           <div className="min-w-0 flex-1 text-sm" style={{ color: '#7A4B00' }}>
-            <strong>Needs to be signed again.</strong> Dates changed after the customer signed: check-in {formatDate(c.resignNeeded.previousStart)} → {formatDate(c.resignNeeded.newStart)}{c.resignNeeded.newEnd ? `, check-out ${formatDate(c.resignNeeded.previousEnd || '')} → ${formatDate(c.resignNeeded.newEnd)}` : ''}.
+            <strong>Needs to be signed again.</strong> Dates changed after the customer signed.
+            {(c.resignNeeded.previousStart || '').slice(0, 10) !== (c.resignNeeded.newStart || '').slice(0, 10) && ` Check-in ${formatDate(c.resignNeeded.previousStart)} → ${formatDate(c.resignNeeded.newStart)}.`}
+            {c.resignNeeded.newEnd && (c.resignNeeded.previousEnd || '').slice(0, 10) !== (c.resignNeeded.newEnd || '').slice(0, 10) && ` Check-out ${formatDate(c.resignNeeded.previousEnd || '')} → ${formatDate(c.resignNeeded.newEnd)}.`}
           </div>
           {!readOnly && (
             <Button size="sm" onClick={() => createSigningLink.mutate()} disabled={createSigningLink.isPending}>

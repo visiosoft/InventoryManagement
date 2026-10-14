@@ -1336,21 +1336,22 @@ router.put('/:id', async (req, res) => {
     const day = (d) => new Date(d).toISOString().slice(0, 10);
     const startMoved = $set.startDate && contract.startDate && day($set.startDate) !== day(contract.startDate);
     const endMoved = $set.endDate && contract.endDate && day($set.endDate) !== day(contract.endDate);
-    /* Only a moved CHECK-IN flags re-signing and puts the unit under the payment
-       check, and only when the new date is today or ahead. Extending or shifting
-       the check-out of a tenant who is already in must not touch either. */
+    /* Any change to the dates of a signed contract means the customer signs
+       again. But only a moved CHECK-IN, to today or later, is the onboarding
+       case that puts the unit under the first-payment check; a check-out
+       extension never touches the unit status or Zoho. */
     const holdsUnit = startMoved && contract.status === 'active' && day($set.startDate) >= day(new Date());
-    if (startMoved && contract.status === 'active') {
+    if ((startMoved || endMoved) && contract.status === 'active') {
       const by = req.user?.name || req.user?.email || 'user';
       await Contract.updateOne({ _id: contract._id }, {
         $set: {
-          resignNeeded: { at: new Date(), reason: 'Check-in date changed after signing', previousStart: contract.startDate, newStart: $set.startDate, previousEnd: contract.endDate, newEnd: $set.endDate || contract.endDate, by },
+          resignNeeded: { at: new Date(), reason: `${startMoved ? 'Check-in' : 'Check-out'} date changed after signing`, previousStart: contract.startDate, newStart: $set.startDate || contract.startDate, previousEnd: contract.endDate, newEnd: $set.endDate || contract.endDate, by },
           ...(holdsUnit ? { 'paymentGate.required': true, 'paymentGate.since': contract.paymentGate?.since || new Date() } : {}),
         },
-        $push: { timeline: { text: `Check-in moved ${day(contract.startDate)} → ${day($set.startDate)}${endMoved ? `, check-out ${day(contract.endDate)} → ${day($set.endDate)}` : ''} — contract needs to be signed again`, author: by, at: new Date() } },
+        $push: { timeline: { text: `${startMoved ? `Check-in moved ${day(contract.startDate)} → ${day($set.startDate)}` : ''}${startMoved && endMoved ? ', ' : ''}${endMoved ? `Check-out moved ${day(contract.endDate)} → ${day($set.endDate)}` : ''} — contract needs to be signed again`, author: by, at: new Date() } },
       });
       const full = await populateAll(Contract.findById(contract._id));
-      await notifyResignNeeded({ contract: full, previousStart: contract.startDate, newStart: $set.startDate, previousEnd: contract.endDate, newEnd: $set.endDate || contract.endDate, byName: by });
+      await notifyResignNeeded({ contract: full, previousStart: contract.startDate, newStart: $set.startDate || contract.startDate, previousEnd: contract.endDate, newEnd: $set.endDate || contract.endDate, byName: by });
     }
     const affected = new Set([contract.unit, ...(contract.units || []), ...($set.units || []), $set.unit].filter(Boolean).map(String));
     if (holdsUnit) await recheckAndSync(contract._id);
