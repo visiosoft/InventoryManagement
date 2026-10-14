@@ -50,7 +50,7 @@ function UnverifiedPayments() {
     mutationFn: (id: string) => api.post(`/contracts/${id}/payment-verified`, { verified: true, note: window.prompt('Note (optional) — e.g. paid in cash') || '' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['unverified-payments'] }),
   })
-  const canMark = user?.role === 'admin' || user?.role === 'accounts'
+  const canMark = user?.role === 'admin' || user?.role === 'accounts' || user?.role === 'sales_rep'
   return (
     <Card>
       <CardHeader title={`Signed, payment not verified (${data?.length ?? 0})`} subtitle="Zoho does not show the opening invoice as paid, so these units read Reserved, not Occupied. Checked every few minutes." />

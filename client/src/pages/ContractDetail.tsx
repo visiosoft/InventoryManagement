@@ -1376,7 +1376,7 @@ export default function ContractDetail() {
           <Button size="sm" variant="outline" onClick={() => verifyPayment.mutate()} disabled={verifyPayment.isPending}>
             {verifyPayment.isPending ? 'Checking…' : 'Re-check Zoho'}
           </Button>
-          {(user?.role === 'admin' || user?.role === 'accounts') && (
+          {(user?.role === 'admin' || user?.role === 'accounts' || user?.role === 'sales_rep') && (
             <Button size="sm" variant="outline" onClick={() => markPaid.mutate(!c.paymentGate!.verified)} disabled={markPaid.isPending}>
               {c.paymentGate.verified ? 'Mark not paid' : 'Mark as paid'}
             </Button>

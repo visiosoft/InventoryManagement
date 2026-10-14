@@ -1370,10 +1370,10 @@ router.post('/:id/verify-payment', async (req, res) => {
 });
 
 // Mark the payment verified (or not) by hand: cash, or a transfer Zoho has not
-// caught up with. Admin and accounts only. Kept until changed.
+// caught up with. Admin, accounts and sales. Kept until changed.
 router.post('/:id/payment-verified', async (req, res) => {
   try {
-    if (!['admin', 'accounts'].includes(req.user?.role)) return res.status(403).json({ error: 'Only admin or accounts can do this' });
+    if (!['admin', 'accounts', 'sales_rep'].includes(req.user?.role)) return res.status(403).json({ error: 'Only admin, accounts or sales can do this' });
     const verified = req.body?.verified !== false;
     const by = req.user?.name || req.user?.email || 'user';
     const note = String(req.body?.note || '').trim().slice(0, 300);
