@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Megaphone, Send, RefreshCw, Repeat, ArrowLeft, ArrowRight, Check, CheckCheck, Eye, MessageCircle, AlertTriangle, Pencil, Trash2 } from 'lucide-react'
+import { Megaphone, Send, RefreshCw, Repeat, ArrowLeft, ArrowRight, Check, CheckCheck, Eye, MessageCircle, Pencil, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, PageHeader, Select, Spinner, Table, Th, Td } from '../components/ui'
 import { statusLabel } from '../components/ui'
@@ -322,7 +322,7 @@ export default function CampaignStudio() {
   const [to, setTo] = useState('')
   const [excludeCustomers, setExcludeCustomers] = useState(true)
   const [hasEmail, setHasEmail] = useState(false)
-  const [optInOnly, setOptInOnly] = useState(false)
+  const optInOnly = false
   const [sort, setSort] = useState('newest')
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
