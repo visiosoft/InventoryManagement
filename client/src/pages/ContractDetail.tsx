@@ -1634,12 +1634,12 @@ export default function ContractDetail() {
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <span className="text-xs font-medium">
                                     {applied
-                                      ? `Renewed online to ${formatDate(r.newEndDate)}`
+                                      ? `Renewed online — check-out extended to ${formatDate(r.newEndDate)}`
                                       : waiting
-                                        ? `Renewing to ${formatDate(r.newEndDate)} — waiting on a bank transfer`
-                                        : `Renewal started to ${formatDate(r.newEndDate)} — not paid yet`}
+                                        ? `Tenant chose to renew until ${formatDate(r.newEndDate)} — waiting for the bank transfer`
+                                        : `Tenant opened card payment to renew until ${formatDate(r.newEndDate)} — not paid, nothing has changed`}
                                     {' · '}AED {Number(r.total).toLocaleString()}
-                                    {r.method === 'card' ? ' by card' : ' by transfer'}
+                                    {r.method === 'card' ? ' (card)' : ' (bank transfer)'}
                                   </span>
                                   <div className="flex items-center gap-3 shrink-0">
                                     {waiting && (
