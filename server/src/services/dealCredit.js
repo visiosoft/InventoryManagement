@@ -21,7 +21,8 @@
 
 import { promoteToCustomer } from './customerStage.js';
 import { snapshotIntentAtClose } from './leadScore.js';
-import { Lead } from '../models/index.js';
+import { Lead, Contract } from '../models/index.js';
+import { recheckAndSync } from './contractPayment.js';
 
 /** The last nine digits of every number we hold for somebody. */
 export function phoneSuffixes(customer) {
@@ -142,6 +143,10 @@ export async function onContractSigned(contract, { userId } = {}) {
       const customerId = contract.customer?._id || contract.customer;
       await markLeadWon({ leadId: contract.lead, contractNo: contract.contractNo, userId });
       await promoteToCustomer(customerId, { contractNo: contract.contractNo });
+    // Signed (or signed again): the paper is current, and from now on the unit
+    // only turns Occupied once the first payment is verified.
+    await Contract.updateOne({ _id: contract._id }, { $set: { resignNeeded: null, 'paymentGate.required': true } });
+    recheckAndSync(contract._id).catch(() => {});
    } catch (e) {
       console.error('[DealCredit] onContractSigned:', e.message);
    }

@@ -12,6 +12,7 @@ import { mediaFromRaw } from '../routes/whatsappMedia.js';
 import { cancelFollowUpOnReply } from './chatFollowUp.js';
 import { markQuietFollowUpReplied } from './leadFollowUp.js';
 import { buttonReplyText, handleRenewalButtonReply } from './renewalReply.js';
+import { parseFormMessage, ingestMetaLead } from './metaLead.js';
 import { handleMovingStorageFlow } from './movingStorageFlow.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
@@ -465,6 +466,18 @@ async function persistMessages(messages) {
                 set.fullName = msg.profileName;
             }
             await Lead.updateOne({ _id: lead._id }, { $set: set });
+        }
+
+        // A Meta lead-form answer arriving as a chat message: capture the name,
+        // email and answers on the lead instead of leaving them in the chat.
+        if (lead && msg.direction === 'inbound' && msg.text) {
+            const form = parseFormMessage(msg.text);
+            if (form) {
+                try {
+                    const out = await ingestMetaLead({ ...form, phone: form.phone || msg.phone || msg.phoneNormalized }, { channel: 'whatsapp', existing: lead });
+                    if (out?.lead) lead = out.lead;
+                } catch (e) { console.error('[WhatsAppLeadSync] Meta form parse failed:', e.message); }
+            }
         }
 
         await WhatsAppMessage.create({

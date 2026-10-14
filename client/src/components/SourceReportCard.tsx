@@ -3,7 +3,7 @@ import { api } from '../lib/api'
 import { INK, MUTED, HAIRLINE } from '../lib/followUpUi'
 
 type Report = { days: number; sources: { source: string; leads: number; reached: number; quoted: number; won: number; lost: number; winRate: number }[] }
-const NAME: Record<string, string> = { manual: 'Added by hand', whatsapp: 'WhatsApp', referral: 'Referral', walk_in: 'Walk-in', website: 'Website', other: 'Other' }
+const NAME: Record<string, string> = { manual: 'Added by hand', whatsapp: 'WhatsApp', referral: 'Referral', walk_in: 'Walk-in', website: 'Website', meta_ads: 'Meta Ads', other: 'Other' }
 
 /** Which sources bring leads that turn into tenants — where to spend, where to stop. Admin only. */
 export function SourceReportCard() {

@@ -21,7 +21,7 @@ import {
   type Attempt, type AttemptChannel, type AttemptOutcome, type FollowUpPlan,
 } from '../lib/attempts'
 
-const LEAD_SOURCES = ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']
+const LEAD_SOURCES = ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'meta_ads', 'other']
 
 const INK = '#14081F'
 const INK_2 = '#4A4357'

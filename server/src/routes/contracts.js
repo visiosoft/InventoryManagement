@@ -12,6 +12,8 @@ import { nextPaymentDueDate } from '../services/billingCycle.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { renewLink, moveOutLink } from '../services/renewalLink.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
+import { recheckAndSync } from '../services/contractPayment.js';
+import { notifyResignNeeded } from '../services/contractResign.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
@@ -401,6 +403,17 @@ router.get('/renewal-requests', async (req, res) => {
       renewing: items.filter((i) => i.renewalIntent === 'renewing'),
       silent: items.filter((i) => i.renewalIntent === 'undecided'),
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Signed contracts whose first payment is not verified, so their unit reads Reserved. */
+router.get('/unverified-payments', async (req, res) => {
+  try {
+    const rows = await Contract.find({ status: 'active', archived: { $ne: true }, 'paymentGate.required': true, 'paymentGate.verified': { $ne: true } })
+      .populate('customer', 'fullName phone email').populate('unit', 'unitNumber').sort({ startDate: 1 }).limit(300).lean();
+    res.json(rows.map((c) => ({ _id: c._id, contractNo: c.contractNo, customer: c.customer, unit: c.unit, startDate: c.startDate, endDate: c.endDate, detail: c.paymentGate?.detail || '', checkedAt: c.paymentGate?.checkedAt || null })));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1169,6 +1182,14 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    /* Moving check-in alone keeps the same stay: check-out moves by the same
+       number of days. Sending an end date as well overrides this. */
+    let endShifted = false;
+    if ($set.startDate && $set.endDate === undefined && contract.startDate && contract.endDate) {
+      const delta = $set.startDate.getTime() - new Date(contract.startDate).getTime();
+      if (delta) { $set.endDate = new Date(new Date(contract.endDate).getTime() + delta); endShifted = true; }
+    }
+
     if ($set.startDate && $set.endDate && $set.endDate <= $set.startDate) {
       return res.status(400).json({ error: 'Check out must be after check in' });
     }
@@ -1214,17 +1235,9 @@ router.put('/:id', async (req, res) => {
       $set.units = after;
       $set.unit = after[0];
 
-      if (contract.status === 'active') {
-        for (const unitId of released) {
-          const stillHeld = await Contract.countDocuments({
-            _id: { $ne: contract._id }, status: 'active', units: unitId,
-          });
-          if (!stillHeld) await Unit.updateOne({ _id: unitId }, { $set: { status: 'available' } });
-        }
-        if (claimed.length) {
-          await Unit.updateMany({ _id: { $in: claimed } }, { $set: { status: 'occupied' } });
-        }
-      }
+      // Unit statuses are recomputed from the contracts after the save below,
+      // so Reserved / Occupied follow the check-in date and the payment check
+      // instead of being forced to Occupied here.
     }
 
     if (req.body.unitSizes && typeof req.body.unitSizes === 'object') {
@@ -1310,15 +1323,69 @@ router.put('/:id', async (req, res) => {
       const $push = { timeline: { text: `Updated ${details}`, author: who, at: new Date() } };
       // Every Check Out change on an existing contract is a renewal/extension
       // worth its own trackable record, separate from the general timeline.
-      if ($set.endDate && contract.endDate && $set.endDate.getTime() !== new Date(contract.endDate).getTime()) {
+      if (!endShifted && $set.endDate && contract.endDate && $set.endDate.getTime() !== new Date(contract.endDate).getTime()) {
         $push.renewalHistory = { at: new Date(), previousEndDate: contract.endDate, newEndDate: $set.endDate, author: who };
       }
       await Contract.findByIdAndUpdate(contract._id, { $set, $push });
     } else {
       await Contract.findByIdAndUpdate(contract._id, { $set });
     }
+    /* Moving the check-in of a contract the customer has already signed makes
+       the signed paper wrong: flag it for re-signing, tell the rep, and hold the
+       unit as Reserved until the new day arrives and the payment is verified. */
+    const day = (d) => new Date(d).toISOString().slice(0, 10);
+    const startMoved = $set.startDate && contract.startDate && day($set.startDate) !== day(contract.startDate);
+    const endMoved = $set.endDate && contract.endDate && day($set.endDate) !== day(contract.endDate);
+    if ((startMoved || endMoved) && contract.status === 'active') {
+      const by = req.user?.name || req.user?.email || 'user';
+      await Contract.updateOne({ _id: contract._id }, {
+        $set: {
+          resignNeeded: { at: new Date(), reason: `${startMoved ? 'Check-in' : 'Check-out'} date changed after signing`, previousStart: contract.startDate, newStart: $set.startDate || contract.startDate, previousEnd: contract.endDate, newEnd: $set.endDate || contract.endDate, by },
+          'paymentGate.required': true,
+        },
+        $push: { timeline: { text: `${startMoved ? `Check-in moved ${day(contract.startDate)} → ${day($set.startDate)}` : ''}${startMoved && endMoved ? ', ' : ''}${endMoved ? `Check-out moved ${day(contract.endDate)} → ${day($set.endDate)}` : ''} — contract needs to be signed again`, author: by, at: new Date() } },
+      });
+      const full = await populateAll(Contract.findById(contract._id));
+      await notifyResignNeeded({ contract: full, previousStart: contract.startDate, newStart: $set.startDate || contract.startDate, previousEnd: contract.endDate, newEnd: $set.endDate || contract.endDate, byName: by });
+    }
+    const affected = new Set([contract.unit, ...(contract.units || []), ...($set.units || []), $set.unit].filter(Boolean).map(String));
+    if ((startMoved || endMoved) && contract.status === 'active') await recheckAndSync(contract._id);
+    for (const uid of affected) await syncUnitStatus(uid);
+
     const populated = await populateAll(Contract.findById(contract._id));
     res.json(populated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Re-read the payment from Zoho now, and bring the unit status in line.
+router.post('/:id/verify-payment', async (req, res) => {
+  try {
+    const verdict = await recheckAndSync(req.params.id);
+    res.json({ verdict, contract: await populateAll(Contract.findById(req.params.id)) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark the payment verified (or not) by hand: cash, or a transfer Zoho has not
+// caught up with. Admin, accounts and sales. Kept until changed.
+router.post('/:id/payment-verified', async (req, res) => {
+  try {
+    if (!['admin', 'accounts', 'sales_rep'].includes(req.user?.role)) return res.status(403).json({ error: 'Only admin, accounts or sales can do this' });
+    const verified = req.body?.verified !== false;
+    const by = req.user?.name || req.user?.email || 'user';
+    const note = String(req.body?.note || '').trim().slice(0, 300);
+    const contract = await Contract.findById(req.params.id).select('_id unit units');
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    await Contract.updateOne({ _id: contract._id }, {
+      $set: { 'paymentGate.required': true, 'paymentGate.verified': verified, 'paymentGate.manual': true, 'paymentGate.manualBy': by,
+        'paymentGate.source': 'manual', 'paymentGate.detail': `Marked ${verified ? 'paid' : 'unpaid'} by ${by}${note ? ` — ${note}` : ''}`, 'paymentGate.checkedAt': new Date() },
+      $push: { timeline: { text: `Payment marked ${verified ? 'verified' : 'not verified'} by ${by}${note ? ` — ${note}` : ''}`, author: by, at: new Date() } },
+    });
+    for (const u of new Set([contract.unit, ...(contract.units || [])].filter(Boolean).map(String))) await syncUnitStatus(u);
+    res.json(await populateAll(Contract.findById(contract._id)));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -121,10 +121,13 @@ export async function statusForUnit(unitId) {
   /* An active contract only makes the unit Occupied once it has started. One
      signed for 1 Nov is a promise, not a tenant: until the day arrives the
      unit is Reserved (and the 5-minute sweep flips it to Occupied then). */
-  const actives = await Contract.find({ ...onUnit, status: 'active' }).select('startDate').lean();
+  const actives = await Contract.find({ ...onUnit, status: 'active' }).select('startDate paymentGate').lean();
   if (actives.length) {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai' }).format(new Date());
-    const started = actives.some((c) => !c.startDate || new Date(c.startDate).toISOString().slice(0, 10) <= today);
+    /* Started AND, for contracts held to the payment rule, paid. A tenant who
+       has signed but whose first invoice is unpaid in Zoho is still Reserved. */
+    const started = actives.some((c) => (!c.startDate || new Date(c.startDate).toISOString().slice(0, 10) <= today)
+      && (!c.paymentGate?.required || c.paymentGate.verified));
     return started ? 'occupied' : 'reserved';
   }
 
@@ -167,6 +170,12 @@ export async function releaseLapsedHolds() {
       .select('unit units').lean();
    const futureUnits = new Set(future.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String));
    for (const id of futureUnits) await syncUnitStatus(id);
+
+   // Units on signed contracts that have started but are not verified as paid
+   // must read Reserved, not Occupied.
+   const unpaid = await Contract.find({ status: 'active', archived: { $ne: true }, 'paymentGate.required': true, 'paymentGate.verified': { $ne: true }, startDate: { $lte: new Date() } })
+      .select('unit units').lean();
+   for (const id of new Set(unpaid.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String))) await syncUnitStatus(id);
 
    const held = await Unit.find({ status: 'reserved' }).select('unitNumber').lean();
    const freed = [];

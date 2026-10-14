@@ -69,6 +69,8 @@ import contractsPublicRoutes from './routes/contractsPublic.js';
 import workerRoutes from './routes/workers.js';
 import truckRoutes from './routes/trucks.js';
 import movingJobRoutes, { publicUploadRouter as movingJobPublicUpload, publicShareRouter as movingJobPublicShare } from './routes/movingJobs.js';
+import { verifyPendingPayments } from './services/contractPayment.js';
+import publicMetaLeadRoutes from './routes/publicMetaLead.js';
 import movingLeadRoutes, { publicLeadRouter as movingLeadPublic } from './routes/movingLeads.js';
 import movingQuoteRoutes from './routes/movingQuotes.js';
 import movingInvoiceRoutes from './routes/movingInvoices.js';
@@ -258,6 +260,8 @@ app.use('/api/moving-leads/public', express.urlencoded({ extended: true }), movi
 // The marketing website's booking API — no login, no auth token, by design.
 // See server/src/routes/publicBooking.js for what keeps it from being abused
 // (a per-IP rate limit and an atomic per-unit claim) despite that.
+// Leads from Meta (Facebook / Instagram) ads — no login. See routes/publicMetaLead.js.
+app.use('/api/public/meta-lead', express.urlencoded({ extended: true }), publicMetaLeadRoutes);
 app.use('/api/public/bookings', publicBookingRoutes);
 // The website's price list: sizes, prices and discounts, no token. Read-only.
 app.use('/api/public/pricing', publicPricingRoutes);
@@ -728,6 +732,8 @@ async function start() {
      abandoned the booking because the hourly sweep above hadn't run yet. */
   setTimeout(() => setInterval(async () => {
     try {
+      // First the payments (Zoho), so a unit turns Occupied as soon as it is paid.
+      await verifyPendingPayments();
       const freed = await releaseLapsedHolds();
       if (freed.length) console.log(`[Units] released ${freed.length} unit(s): ${freed.join(', ')}`);
     } catch (e) {
