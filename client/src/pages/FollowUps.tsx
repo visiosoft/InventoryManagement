@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { IntentReportCard } from '../components/IntentReportCard'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
@@ -491,6 +492,8 @@ export default function FollowUps() {
           </button>
         </div>
       )}
+
+      {isAdmin && <IntentReportCard />}
 
       {openId && (
         <FollowUpDrawer

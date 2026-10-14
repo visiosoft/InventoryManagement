@@ -445,6 +445,28 @@ export async function intentForLeads(leads = [], { now = new Date(), summaries =
   return out;
 }
 
+/**
+ * Remember how promising a lead looked at the moment it closed.
+ *
+ * Call before the status changes: a won or lost lead scores zero by design, so
+ * afterwards the number is gone. Sets `intentAtClose` on the document and
+ * leaves saving to the caller. Quiet if there is nothing to record (no AI read
+ * yet) — a missing snapshot must never block a close.
+ */
+export async function snapshotIntentAtClose(lead, { now = new Date() } = {}) {
+  try {
+    if (!lead || lead.intentAtClose?.at) return false;
+    const plain = typeof lead.toObject === 'function' ? lead.toObject() : lead;
+    const got = (await intentForLeads([{ ...plain, status: plain.status }], { now })).get(String(plain._id));
+    if (!got) return false;
+    lead.intentAtClose = { score: got.score, band: got.band, reason: got.reason, at: now };
+    return true;
+  } catch (e) {
+    console.error('[LeadScore] snapshot at close:', e.message);
+    return false;
+  }
+}
+
 /** The intake facts to ask a customer directly, distinct from `signals`
  *  above (the AI's own read of the conversation) — these are things a rep
  *  is expected to have actually asked, on a call or in person. Kept as

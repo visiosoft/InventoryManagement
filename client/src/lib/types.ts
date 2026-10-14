@@ -83,6 +83,8 @@ export interface Lead {
   ownerSeenAt?: string | null
   /** How warm they are — kept apart from the status, which says where they are. */
   temperature?: LeadTemperature
+  /** The one intent score, when the list was asked for it and the chat has been read. */
+  intent?: { score: number; band: 'high' | 'medium' | 'low'; reason: string } | null
   tags?: string[]
   followUpAt?: string | null
   followUpKind?: 'date' | 'week' | 'month'

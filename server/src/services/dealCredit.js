@@ -19,6 +19,7 @@
  * last nine digits are the only part all three agree on.
  */
 
+import { snapshotIntentAtClose } from './leadScore.js';
 import { Lead } from '../models/index.js';
 
 /** The last nine digits of every number we hold for somebody. */
@@ -109,6 +110,7 @@ export async function markLeadWon({ leadId, contractNo, userId }) {
       if (!lead) return { changed: false, reason: 'lead not found' };
       if (lead.status === 'won') return { changed: false, reason: 'already won' };
 
+      await snapshotIntentAtClose(lead);
       lead.status = 'won';
       lead.timeline = lead.timeline || [];
       lead.timeline.push({

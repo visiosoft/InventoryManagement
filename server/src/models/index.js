@@ -341,6 +341,15 @@ const leadSchema = new Schema(
     // Why a rep overrode the score — the raw material for judging whether the
     // score is right. Written with the override and logged on the timeline.
     leadScoreOverrideReason: { type: String, default: '' },
+    // The intent score the moment this lead was won or lost, before the status
+    // change zeroed it. It is what lets us ask whether hot leads really do
+    // close more often than cold ones.
+    intentAtClose: {
+      score: { type: Number, default: null },
+      band: { type: String, default: '' },
+      reason: { type: String, default: '' },
+      at: { type: Date, default: null },
+    },
     source: {
       type: String,
       enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other'],

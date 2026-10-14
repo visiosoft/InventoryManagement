@@ -12,7 +12,7 @@ import { QUEUE_SINCE } from '../services/followUpQueue.js';
 import { customerContactKeys } from '../services/customerLeads.js';
 import { digitTail } from '../services/leadRouting.js';
 import { buildFunnel } from '../services/leadFunnel.js';
-import { scoreForLead, highIntentToday, intakeChecklist } from '../services/leadScore.js';
+import { scoreForLead, highIntentToday, intakeChecklist, intentForLeads, snapshotIntentAtClose } from '../services/leadScore.js';
 import { summariseConversation } from '../services/conversationSummary.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { dubaiDayRange } from '../services/automationEngine.js';
@@ -307,6 +307,15 @@ router.get('/', async (req, res) => {
     ]);
 
     await resolvePlaceholderNames(leads);
+
+    // Opt-in, and only for a page-sized list: one read of the cached AI
+    // summaries and one of the messages for the whole batch.
+    if (req.query.intent === '1' && leads.length <= 600) {
+        try {
+            const intents = await intentForLeads(leads);
+            for (const l of leads) l.intent = intents.get(String(l._id)) || null;
+        } catch (e) { console.error('[Leads] intent:', e.message); }
+    }
 
     res.json({ data: leads, total, page, pages: Math.ceil(total / limit), limit });
 });
@@ -706,6 +715,29 @@ router.get('/month-funnel/leads', async (req, res) => {
                 owner: l.owner?.name || l.owner?.email || '',
             })),
         });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Does the score mean anything? Closed leads grouped by how promising they
+ * looked when they closed, with the share that were won. Admin only: it reads
+ * across every rep's leads.
+ */
+router.get('/intent-report', async (req, res) => {
+    try {
+        if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+        const days = Math.min(730, Math.max(7, Number(req.query.days) || 180));
+        const since = new Date(Date.now() - days * 864e5);
+        const rows = await Lead.aggregate([
+            { $match: { deletedAt: null, status: { $in: ['won', 'lost'] }, 'intentAtClose.at': { $gte: since }, 'intentAtClose.score': { $ne: null } } },
+            { $group: { _id: { band: '$intentAtClose.band', status: '$status' }, n: { $sum: 1 } } },
+        ]);
+        const out = { high: { won: 0, lost: 0 }, medium: { won: 0, lost: 0 }, low: { won: 0, lost: 0 } };
+        for (const r of rows) if (out[r._id.band]) out[r._id.band][r._id.status] = r.n;
+        const bands = Object.entries(out).map(([band, v]) => ({ band, ...v, total: v.won + v.lost, winRate: v.won + v.lost ? Math.round((v.won / (v.won + v.lost)) * 100) : null }));
+        res.json({ days, bands, enough: bands.reduce((a, b) => a + b.total, 0) >= 30 });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1584,6 +1616,11 @@ router.patch('/:id/status', async (req, res) => {
         return res.status(400).json({ error: 'Pick the follow-up date first — a lead cannot be Follow-Up Scheduled without one.' });
     }
 
+    // Before the status moves: a closed lead scores zero, so this is the only
+    // moment the number can be read.
+    if (['won', 'lost'].includes(status) && !['won', 'lost', 'already_customer'].includes(lead.status)) {
+        await snapshotIntentAtClose(lead);
+    }
     lead.status = status;
 
     // The note belongs to the change, not beside it. Two timeline rows for one

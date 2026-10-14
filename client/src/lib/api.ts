@@ -79,6 +79,8 @@ export function apiError(err: unknown): string {
 }
 
 export type LeadQuery = {
+  /** '1' asks for each lead's intent score (the server skips it for very long lists). */
+  intent?: '1'
   search?: string
   status?: string
   source?: string
