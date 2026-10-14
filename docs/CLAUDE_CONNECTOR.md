@@ -23,6 +23,8 @@ Endpoint: `https://api.purplebox.ae/api/mcp`
 - **Analysis and forecasting:** `business_snapshot` (the whole picture), `occupancy_revenue_trend`,
   `conversion_report` (by source and rep, lost reasons), `forecast` (occupancy and revenue,
   low/base/high, with its assumptions; accepts your own renewal rate / new-tenant pace), `cash_forecast`
+- **Zoho Books** (through the connection the CRM already has): `zoho_outstanding`,
+  `zoho_customer_ledger`, `zoho_expenses`
 - **WhatsApp analysis:** `whatsapp_reply_time_report` (from real messages: person vs AI, working
   hours vs not, per rep), `whatsapp_volume_report`, `whatsapp_topics_report`, `whatsapp_inbound_sample`
   (customer wording, no names or numbers), plus `crm_whatsapp_activity` / `crm_whatsapp_messages`
