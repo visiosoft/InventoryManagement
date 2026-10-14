@@ -172,6 +172,8 @@ export const ACTION_KINDS = [
     'dismissed',        // a person threw a draft or proposal away
     'report',           // a scheduled run's summary
     'email_drafted',    // shadow: an email reply waiting for a person
+    'followup_proposed',    // a follow-up date read from the chat, waiting for a person
+    'deal_check_suggested', // decision maker / reason read from the chat, waiting for a person
 ];
 
 /** How a person answered a draft or a proposed touch. */

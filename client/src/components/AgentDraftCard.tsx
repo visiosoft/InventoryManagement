@@ -4,8 +4,9 @@ import { Sparkles } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { INK, MUTED, PURPLE, PURPLE_DEEP, HAIRLINE } from '../lib/followUpUi'
 
+type Suggestion = { type: 'followup' | 'decisionMaker' | 'whyTheyWant'; date?: string; reason?: string; value?: string; quote: string }
 type Pending = {
-  id: string; kind: 'reply_drafted' | 'touch_proposed'; followUpDue: boolean; text: string
+  id: string; kind: 'reply_drafted' | 'touch_proposed' | 'followup_proposed' | 'deal_check_suggested'; suggestion?: Suggestion | null; followUpDue: boolean; text: string
   template: { name: string; intent: string; bodyText: string } | null
   at: string; agentName: string; agentColor: string
 }
@@ -16,7 +17,7 @@ type Pending = {
  * server re-checks the 24-hour window, the do-not-message list and the
  * one-a-day limit at that moment.
  */
-export function AgentDraftCard({ leadId, onChanged }: { leadId: string; onChanged?: () => void }) {
+export function AgentDraftCard({ leadId, onChanged, suggestionsOnly = false }: { leadId: string; onChanged?: () => void; suggestionsOnly?: boolean }) {
   const qc = useQueryClient()
   const { data } = useQuery<{ items: Pending[] }>({
     queryKey: ['agent-pending', leadId],
@@ -26,6 +27,7 @@ export function AgentDraftCard({ leadId, onChanged }: { leadId: string; onChange
   const [editing, setEditing] = useState<string | null>(null)
   const [text, setText] = useState('')
   const [err, setErr] = useState('')
+  const [pickDate, setPickDate] = useState('')
 
   const resolve = useMutation({
     mutationFn: ({ id, resolution, body }: { id: string; resolution: 'approved' | 'edited' | 'dismissed'; body?: string }) =>
@@ -34,17 +36,49 @@ export function AgentDraftCard({ leadId, onChanged }: { leadId: string; onChange
       setErr(''); setEditing(null)
       qc.invalidateQueries({ queryKey: ['agent-pending', leadId] })
       qc.invalidateQueries({ queryKey: ['follow-up-detail', leadId] })
+      qc.invalidateQueries({ queryKey: ['deal-check', leadId] })
+      qc.invalidateQueries({ queryKey: ['person'] })
       onChanged?.()
     },
     onError: (e) => setErr(apiError(e)),
   })
 
-  const items = data?.items ?? []
+  const all = data?.items ?? []
+  const items = suggestionsOnly ? all.filter((d) => d.suggestion) : all
   if (!items.length) return null
+  const dayLabel = (d?: string) => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : '')
 
   return (
     <div className="space-y-2">
-      {items.map((d) => (
+      {items.map((d) => d.suggestion ? (
+        <div key={d.id} className="rounded-xl p-3" style={{ border: `1px solid ${PURPLE}33`, background: '#FBF9FF' }}>
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase" style={{ letterSpacing: '.08em', color: PURPLE }}>
+            <Sparkles size={12} /> {d.agentName || 'Agent'} read this from the chat
+          </div>
+          <p className="text-sm mt-1.5" style={{ color: INK }}>
+            {d.suggestion.type === 'followup' && <>Follow up on <strong>{dayLabel(d.suggestion.date)}</strong>{d.suggestion.reason ? ` — ${d.suggestion.reason}` : ''}</>}
+            {d.suggestion.type === 'decisionMaker' && <>Decision maker: <strong>{d.suggestion.value}</strong></>}
+            {d.suggestion.type === 'whyTheyWant' && <>Why they want it: <strong>{d.suggestion.value}</strong></>}
+          </p>
+          <p className="text-xs mt-1" style={{ color: MUTED }}>They wrote: “{d.suggestion.quote}”</p>
+          <div className="flex flex-wrap items-center gap-2 mt-2.5">
+            <button type="button" disabled={resolve.isPending} onClick={() => resolve.mutate({ id: d.id, resolution: 'approved' })}
+              className="cursor-pointer disabled:opacity-50 px-3 h-8 rounded-full text-xs font-bold" style={{ background: PURPLE, color: '#fff' }}>
+              {d.suggestion.type === 'followup' ? 'Set this follow-up' : 'Accept'}
+            </button>
+            {d.suggestion.type === 'followup' && (
+              <>
+                <input type="date" value={pickDate} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setPickDate(e.target.value)}
+                  className="h-8 rounded-lg border px-2 text-xs" style={{ borderColor: HAIRLINE, color: INK }} />
+                <button type="button" disabled={resolve.isPending || !pickDate} onClick={() => resolve.mutate({ id: d.id, resolution: 'edited', body: pickDate })}
+                  className="cursor-pointer disabled:opacity-50 px-3 h-8 rounded-full text-xs font-semibold border" style={{ borderColor: HAIRLINE, color: PURPLE_DEEP }}>Use this date</button>
+              </>
+            )}
+            <button type="button" disabled={resolve.isPending} onClick={() => resolve.mutate({ id: d.id, resolution: 'dismissed' })}
+              className="cursor-pointer disabled:opacity-50 px-3 h-8 rounded-full text-xs font-semibold border" style={{ borderColor: HAIRLINE, color: MUTED }}>Dismiss</button>
+          </div>
+        </div>
+      ) : (
         <div key={d.id} className="rounded-xl p-3" style={{ border: `1px solid ${PURPLE}33`, background: '#FBF9FF' }}>
           <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase" style={{ letterSpacing: '.08em', color: PURPLE }}>
             <Sparkles size={12} />

@@ -8,6 +8,7 @@ import {
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
 import { DealCheck } from '../components/DealCheck'
+import { AgentDraftCard } from '../components/AgentDraftCard'
 import WhatsAppConsole from './WhatsApp'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES } from '../components/ui'
@@ -802,6 +803,7 @@ export default function PersonProfile() {
             </dl>
 
             {/* The four questions a deal must answer before it can close. */}
+            <AgentDraftCard leadId={lead._id} suggestionsOnly />
             <DealCheck leadId={lead._id} />
 
             {/* The reminders raised for this lead: what to do, when, and who

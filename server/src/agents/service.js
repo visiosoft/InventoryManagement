@@ -18,6 +18,9 @@ import { sendQuietFollowUp } from '../services/leadFollowUp.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
 import { runJob, isDue } from './jobs.js';
 import { isBlocked, isOptOut, phoneKey, windowOpen } from './guards.js';
+import { worthReading, extractCommitments, validFollowUpDay } from './commitments.js';
+import { syncFollowUpTask } from '../services/followUps.js';
+import { openaiConfigured } from '../services/openai.js';
 
 const escapeHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const textToHtml = (t) => String(t || '').split(/\n{2,}/).map((p) => `<p style="font-size:14px;color:#14081F">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
@@ -269,6 +272,97 @@ export async function applyEvent(file, event, { lead, now = new Date(), actor = 
 /* ---------- a customer writes in ---------- */
 
 /**
+ * Read the customer's message for a promise or a fact the CRM should hold, and
+ * propose it. Runs beside the normal draft, never instead of it, and never
+ * throws: a missing suggestion must not cost a reply.
+ */
+export async function proposeFromChat({ lead, file, agent, text, now = new Date() }) {
+    try {
+        if (!openaiConfigured() || !lead || !file) return { proposed: 0 };
+        const needDecision = !String(lead.decisionMaker || '').trim();
+        const needWhy = !String(lead.whyTheyWant || '').trim();
+        if (!worthReading(text, { needDecision, needWhy })) return { proposed: 0 };
+
+        const rows = await WhatsAppMessage.find({ phoneNormalized: file.phoneNormalized, deletedAt: null, type: { $ne: 'reaction' } })
+            .sort({ occurredAt: -1 }).limit(8).select('direction text transcript').lean();
+        const history = rows.reverse().map((m) => ({ direction: m.direction, text: m.text || m.transcript || '' }));
+        if (!history.length || history[history.length - 1].direction !== 'inbound') history.push({ direction: 'inbound', text: String(text || '') });
+
+        const found = await extractCommitments({ history, now, model: agent?.model || undefined });
+        const open = await AgentAction.find({ lead: lead._id, kind: { $in: ['followup_proposed', 'deal_check_suggested'] }, resolution: null }).select('kind detail').lean();
+        const has = (kind, field) => open.some((a) => a.kind === kind && (!field || a.detail?.field === field));
+        let proposed = 0;
+
+        if (found.followUp && !has('followup_proposed')) {
+            const gap = lead.followUpAt ? Math.abs(new Date(`${found.followUp.date}T00:00:00Z`) - new Date(lead.followUpAt)) / 86_400_000 : Infinity;
+            if (gap > 2) {
+                const when = new Date(`${found.followUp.date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+                await record({
+                    agent, lead, leadFile: file, kind: 'followup_proposed',
+                    summary: `Suggests following up on ${when} — "${found.followUp.quote.slice(0, 100)}"`,
+                    detail: { ...found.followUp, previous: lead.followUpAt || null }, at: now,
+                });
+                proposed += 1;
+            }
+        }
+        if (found.decisionMaker && needDecision && !has('deal_check_suggested', 'decisionMaker')) {
+            await record({
+                agent, lead, leadFile: file, kind: 'deal_check_suggested',
+                summary: `Heard who decides: ${found.decisionMaker.name} — "${found.decisionMaker.quote.slice(0, 100)}"`,
+                detail: { field: 'decisionMaker', value: found.decisionMaker.name, quote: found.decisionMaker.quote }, at: now,
+            });
+            proposed += 1;
+        }
+        if (found.why && needWhy && !has('deal_check_suggested', 'whyTheyWant')) {
+            await record({
+                agent, lead, leadFile: file, kind: 'deal_check_suggested',
+                summary: `Heard why they want it: ${found.why.text} — "${found.why.quote.slice(0, 100)}"`,
+                detail: { field: 'whyTheyWant', value: found.why.text, quote: found.why.quote }, at: now,
+            });
+            proposed += 1;
+        }
+        return { proposed };
+    } catch (e) {
+        console.error('[Agents] proposeFromChat:', e.message);
+        return { proposed: 0 };
+    }
+}
+
+/** A person answers one of those proposals: approving applies it to the lead. */
+async function resolveSuggestion(action, { resolution, text, user, now }) {
+    const leadId = action.lead?._id || action.lead;
+    if ((resolution === 'approved' || resolution === 'edited') && leadId) {
+        const lead = await Lead.findById(leadId);
+        if (!lead) throw new Error('That lead no longer exists');
+        if (action.kind === 'followup_proposed') {
+            const day = validFollowUpDay(resolution === 'edited' ? text : action.detail?.date, now);
+            if (!day) throw new Error('Pick a date after today (and within a year)');
+            lead.followUpAt = new Date(`${day}T00:00:00.000Z`);
+            lead.followUpKind = 'date';
+            lead.followUpNotifiedAt = null;
+            lead.followUpPushedAt = null;
+            lead.sequenceExhaustedAt = null;
+            if (action.detail?.reason) lead.followUpNote = String(action.detail.reason).slice(0, 300);
+            const when = new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+            lead.timeline.push({ type: 'note', text: `Follow-up set for ${when} — suggested from the chat: "${String(action.detail?.quote || '').slice(0, 160)}"`, user: user?.id, at: now });
+            await syncFollowUpTask(lead);
+            await lead.save();
+        } else {
+            const field = action.detail?.field;
+            if (!['decisionMaker', 'whyTheyWant'].includes(field)) throw new Error('Unknown suggestion');
+            lead[field] = String(resolution === 'edited' ? text : action.detail?.value || '').trim().slice(0, field === 'whyTheyWant' ? 1000 : 200);
+            lead.timeline.push({ type: 'note', text: `${field === 'decisionMaker' ? 'Decision maker' : 'Why they want it'} recorded from the chat: "${String(action.detail?.quote || '').slice(0, 160)}"`, user: user?.id, at: now });
+            await lead.save();
+        }
+    }
+    action.resolution = resolution;
+    action.resolvedAt = now;
+    action.resolvedBy = user?.id || null;
+    await action.save();
+    return { ok: true, sent: false };
+}
+
+/**
  * They asked us to stop. Recorded whether or not any agent is on duty: it is
  * the customer's instruction, not an agent's decision, and it must outlive
  * every setting. The number goes on the do-not-message list, the lead file
@@ -302,6 +396,8 @@ export async function onInbound({ phoneNormalized, text, occurredAt, businessNum
     const now = occurredAt ? new Date(occurredAt) : new Date();
     const { file } = await adoptLead(lead, { now, signals: { businessNumber } });
     file.lastInboundAt = now;
+    // Beside the normal reply, not in front of it: the webhook does not wait.
+    void proposeFromChat({ lead, file, agent: await agentOf(file), text, now });
     const { agent } = await applyEvent(file, 'inbound', { lead, now });
     if (BUCKETS[file.bucket].closed || file.bucket === 'with_person' || !agent || agent.mode === 'off') {
         return { handled: true, drafted: false, bucket: file.bucket };
@@ -570,7 +666,10 @@ export async function resolveAction(actionId, { resolution, text = '', user, alr
     const action = await AgentAction.findById(actionId).populate('lead').populate('agent');
     if (!action) throw new Error('That item does not exist');
     if (action.resolution) throw new Error('Already answered');
-    if (!['reply_drafted', 'touch_proposed', 'email_drafted'].includes(action.kind)) throw new Error('Only drafts and proposed touches can be answered');
+    if (!['reply_drafted', 'touch_proposed', 'email_drafted', 'followup_proposed', 'deal_check_suggested'].includes(action.kind)) throw new Error('Only drafts and proposed touches can be answered');
+    if (action.kind === 'followup_proposed' || action.kind === 'deal_check_suggested') {
+        return resolveSuggestion(action, { resolution, text, user, now: new Date() });
+    }
     const file = action.leadFile ? await AgentLeadFile.findById(action.leadFile) : null;
     const lead = action.lead;
     const agent = action.agent;
