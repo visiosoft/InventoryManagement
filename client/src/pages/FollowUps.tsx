@@ -120,6 +120,18 @@ function cadenceText(it: FollowUpQueueItem) {
   return `${it.quietStage.label}${sent}`
 }
 
+/** Where a lead stands on having a next step — the same three-colour idea
+ *  Pipedrive uses on its deal cards: red it is owed or overdue, amber nothing
+ *  is planned, green a date is booked. */
+function nextStepDot(it: FollowUpQueueItem): { color: string; label: string } {
+  if (it.reason === 'sales_response_overdue') return { color: '#DC2626', label: 'Waiting on you' }
+  if (it.reasonDetail === 'no_next_step') return { color: '#D97706', label: 'No next step booked' }
+  if (it.reasonDetail === 'overdue_date') return { color: '#DC2626', label: 'Follow-up due or overdue' }
+  if (it.reasonDetail === 'exhausted') return { color: '#D97706', label: 'Chase finished — decide' }
+  if (it.reasonDetail === 'scheduled') return { color: '#16A34A', label: 'Follow-up booked' }
+  return { color: '#D97706', label: 'No date set — going quiet' }
+}
+
 /**
  * The follow-up queue: who to contact, grouped by how promising they are.
  *
@@ -217,6 +229,13 @@ export default function FollowUps() {
   const activeFilters = [priority, reasonF, customerF, owner].filter(Boolean).length
   const tenantsInView = visible.filter((it) => it.customer?.status === 'active').length
 
+  // Progress through today's work: what is already done against what is still
+  // due now, so the list visibly shrinks as it is worked.
+  const dueNow = items.filter((it) => it.window === 'now' || it.window === 'today' || it.window === 'exhausted').length
+  const doneToday = data?.doneToday ?? 0
+  const progress = doneToday + dueNow > 0 ? Math.round((doneToday / (doneToday + dueNow)) * 100) : 0
+  const firstToWork = visible.find((it) => it.window === 'now' || it.window === 'today' || it.window === 'exhausted') ?? visible[0]
+
   function toggle(id: string) {
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
@@ -248,6 +267,12 @@ export default function FollowUps() {
             <CalendarDays size={16} style={{ color: SUB }} />
             {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
           </span>
+          {!selecting && firstToWork && (
+            <button type="button" onClick={() => setOpenId(firstToWork.leadId)}
+              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg border text-[14px] font-semibold cursor-pointer bg-white" style={{ borderColor: BRAND, color: BRAND }}>
+              Start working
+            </button>
+          )}
           {selecting ? (
             <button type="button" onClick={leaveSelectMode}
               className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg border text-[14px] font-semibold cursor-pointer bg-white" style={{ borderColor: LINE }}>
@@ -261,6 +286,18 @@ export default function FollowUps() {
           )}
         </div>
       </div>
+
+      {(dueNow > 0 || doneToday > 0) && (
+        <div className="mt-4 rounded-xl border px-4 py-3 bg-white" style={{ borderColor: LINE }}>
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="font-semibold">{dueNow === 0 ? 'Everything due today is done 🎉' : `${dueNow} to do now`}</span>
+            <span style={{ color: SUB }}>{doneToday} done today</span>
+          </div>
+          <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: '#EEE9F6' }}>
+            <div className="h-full rounded-full" style={{ width: `${progress}%`, background: BRAND, transition: 'width .3s' }} />
+          </div>
+        </div>
+      )}
 
       <PipelineFunnel />
 
@@ -428,6 +465,7 @@ export default function FollowUps() {
                       <td className="px-2 py-3">{pill(p.bg, p.fg, p.label, p.dot)}</td>
                       <td className="px-2 py-3 min-w-[190px]">
                         <div className="flex items-center gap-1.5 flex-wrap">
+                          {(() => { const d = nextStepDot(it); return <span title={d.label} aria-label={d.label} className="rounded-full shrink-0" style={{ width: 8, height: 8, background: d.color }} /> })()}
                           <span className="text-[13.5px] font-bold">{it.name}</span>
                           {(() => { const b = customerBadge(it.customer); return b ? <span title={b.title} className="px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap" style={{ background: b.bg, color: b.fg }}>{b.label}</span> : null })()}
                         </div>
@@ -499,6 +537,7 @@ export default function FollowUps() {
         <FollowUpDrawer
           leadId={openId}
           nextLeadId={nextId}
+          position={openIndex >= 0 ? { index: openIndex + 1, total: visible.length } : undefined}
           snapshotAt={data?.snapshotAt}
           onClose={() => setOpenId(null)}
           onAdvance={(id) => setOpenId(id)}
