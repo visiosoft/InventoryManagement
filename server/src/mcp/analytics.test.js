@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Contract, Unit, Lead, Quote, Payment } from '../models/index.js';
+import { Contract, Unit, Lead, Quote, Payment, Invoice } from '../models/index.js';
 import { forecast, occupancyAndRevenueTrend } from './analytics.js';
 
 const D = 864e5;
@@ -14,6 +14,7 @@ function stub(contracts) {
   Lead.countDocuments = async () => 4;
   Quote.aggregate = async () => [];
   Payment.aggregate = async () => [];
+  Invoice.aggregate = async () => [];
 }
 
 test('forecast: a tenant who says they are leaving drops out, one renewing stays', async () => {

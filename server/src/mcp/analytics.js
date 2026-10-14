@@ -1,4 +1,4 @@
-import { Contract, Unit, Lead, Payment, Quote } from '../models/index.js';
+import { Contract, Unit, Lead, Payment, Quote, Invoice } from '../models/index.js';
 import { responseTimeReport } from './crmTools.js';
 
 /**
@@ -9,6 +9,8 @@ import { responseTimeReport } from './crmTools.js';
  */
 
 const DAY = 864e5;
+const VAT_PCT = 5;
+const incVat = (n) => money(n * (1 + VAT_PCT / 100));
 const day = (d) => new Date(d).toISOString().slice(0, 10);
 const money = (n) => Number(Number(n || 0).toFixed(2));
 const monthKey = (d) => new Date(d).toISOString().slice(0, 7);
@@ -30,13 +32,29 @@ function occupiedOn(contracts, at) {
   return set.size;
 }
 
+/**
+ * Money received per month. Every payment recorded against an invoice lives on
+ * the invoice itself (with its date), and the scheduled Payment rows only mirror
+ * those, so the invoices are the source. Scheduled payments marked paid with no
+ * invoice behind them are added on top, so nothing is counted twice or missed.
+ */
+export async function collectedByMonth(from) {
+  const [inv, loose] = await Promise.all([
+    Invoice.aggregate([{ $match: { deletedAt: null, status: { $ne: 'cancelled' } } }, { $unwind: '$paymentHistory' }, { $match: { 'paymentHistory.date': { $gte: from } } }, { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$paymentHistory.date' } }, total: { $sum: '$paymentHistory.amount' }, n: { $sum: 1 } } }]),
+    Payment.aggregate([{ $match: { status: 'paid', deletedAt: null, invoice: { $in: [null, undefined] }, paidDate: { $gte: from } } }, { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$paidDate' } }, total: { $sum: '$amount' }, n: { $sum: 1 } } }]),
+  ]);
+  const m = new Map();
+  for (const r of [...inv, ...loose]) { const x = m.get(r._id) || { _id: r._id, total: 0, n: 0 }; x.total += r.total; x.n += r.n; m.set(r._id, x); }
+  return [...m.values()];
+}
+
 export async function occupancyAndRevenueTrend({ months = 12 } = {}) {
   const m = Math.min(36, Math.max(2, months));
   const from = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - m, 1));
   const [totalUnits, contracts, paid] = await Promise.all([
     Unit.countDocuments({ status: { $ne: 'maintenance' } }),
     Contract.find({ ...live, endDate: { $gte: from } }).select('unit units startDate endDate').lean(),
-    Payment.aggregate([{ $match: { status: 'paid', deletedAt: null, paidDate: { $gte: from } } }, { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$paidDate' } }, total: { $sum: '$amount' }, n: { $sum: 1 } } }]),
+    collectedByMonth(from),
   ]);
   const byMonth = new Map(paid.map((p) => [p._id, p]));
   const rows = [];
@@ -48,7 +66,7 @@ export async function occupancyAndRevenueTrend({ months = 12 } = {}) {
     const key = monthKey(ref);
     rows.push({ month: key, occupiedUnits: occ, occupancyPct: totalUnits ? Math.round((occ / totalUnits) * 1000) / 10 : null, paymentsCollectedAed: money(byMonth.get(key)?.total), paymentsCount: byMonth.get(key)?.n || 0 });
   }
-  return { totalUnits, note: 'Occupancy at each month end (today for the current month), from contract start and end dates. Payments are those marked paid in that month.', months: rows };
+  return { totalUnits, note: 'Occupancy at each month end (today for the current month), from contract start and end dates. Collected = money recorded against invoices that month (plus any paid scheduled payment with no invoice), VAT included.', months: rows };
 }
 
 export async function conversionReport({ days = 90 } = {}) {
@@ -71,7 +89,7 @@ export async function conversionReport({ days = 90 } = {}) {
  * contracts that ended in the last 12 months. New tenants arrive at the recent
  * average pace, and the open quoted pipeline is shown separately as upside.
  */
-export async function forecast({ weeks = 12 } = {}) {
+export async function forecast({ weeks = 12, renewalRatePct, newTenantsPerWeek } = {}) {
   const w = Math.min(52, Math.max(1, weeks));
   const now = new Date();
   const horizon = new Date(now.getTime() + w * 7 * DAY);
@@ -91,12 +109,13 @@ export async function forecast({ weeks = 12 } = {}) {
     const next = (byCustomer.get(String(c.customer)) || []).some((o) => o !== c && new Date(o.startDate) >= new Date(new Date(c.endDate).getTime() - 7 * DAY) && new Date(o.startDate) <= new Date(new Date(c.endDate).getTime() + 30 * DAY));
     if (next) renewed += 1;
   }
-  const histRenewal = ended >= 10 ? renewed / ended : 0.6;
+  const given = Number.isFinite(Number(renewalRatePct)) && renewalRatePct !== undefined && renewalRatePct !== null && renewalRatePct !== '';
+  const histRenewal = given ? Math.min(1, Math.max(0, Number(renewalRatePct) / 100)) : ended >= 10 ? renewed / ended : 0.6;
 
   // Recent pace of new contracts (last 12 weeks), in contracts and AED per 4 weeks.
   const paceFrom = new Date(now.getTime() - 84 * DAY);
   const fresh = contracts.filter((c) => c.startDate && new Date(c.startDate) >= paceFrom && new Date(c.startDate) <= now);
-  const newPerWeek = fresh.length / 12;
+  const newPerWeek = Number.isFinite(Number(newTenantsPerWeek)) && newTenantsPerWeek !== undefined && newTenantsPerWeek !== null && newTenantsPerWeek !== '' ? Math.max(0, Number(newTenantsPerWeek)) : fresh.length / 12;
   const avgRate = fresh.length ? fresh.reduce((s, c) => s + rate4wk(c), 0) / fresh.length : 0;
   const avgUnitsPer = fresh.length ? fresh.reduce((s, c) => s + ids(c).length, 0) / fresh.length : 1;
 
@@ -121,7 +140,7 @@ export async function forecast({ weeks = 12 } = {}) {
       return { units: Math.min(totalUnits, Math.round(units)), revenue: money(revenue) };
     };
     const lo = scenario('low'); const base = scenario('base'); const hi = scenario('high');
-    rows.push({ weekEnding: day(at), occupiedUnits: { low: lo.units, base: base.units, high: hi.units }, occupancyPct: totalUnits ? Math.round((base.units / totalUnits) * 1000) / 10 : null, revenuePer4WeeksAed: { low: lo.revenue, base: base.revenue, high: hi.revenue } });
+    rows.push({ weekEnding: day(at), occupiedUnits: { low: lo.units, base: base.units, high: hi.units }, occupancyPct: totalUnits ? Math.round((base.units / totalUnits) * 1000) / 10 : null, revenuePer4WeeksAed: { low: lo.revenue, base: base.revenue, high: hi.revenue }, revenuePer4WeeksIncVatAed: { low: incVat(lo.revenue), base: incVat(base.revenue), high: incVat(hi.revenue) } });
   }
 
   const endingSoon = activeNow.filter((c) => c.endDate && new Date(c.endDate) <= horizon);
@@ -132,9 +151,11 @@ export async function forecast({ weeks = 12 } = {}) {
 
   return {
     horizonWeeks: w, totalUnits,
-    now: { occupiedUnits: new Set(activeNow.flatMap(ids)).size, revenuePer4WeeksAed: money(activeNow.reduce((s, c) => s + rate4wk(c), 0)) },
+    now: { occupiedUnits: new Set(activeNow.flatMap(ids)).size, revenuePer4WeeksAed: money(activeNow.reduce((s, c) => s + rate4wk(c), 0)), revenuePer4WeeksIncVatAed: incVat(activeNow.reduce((s, c) => s + rate4wk(c), 0)) },
     assumptions: {
-      renewalRateUsed: `${Math.round(histRenewal * 100)}% for undecided tenants (${ended >= 10 ? `real: ${renewed} of ${ended} contracts that ended in the last 12 months were followed by another` : 'default, too little history'})`,
+      revenueBasis: `Run-rate: each contract's 4-week price, excluding VAT (the IncVat figures add ${VAT_PCT}%). One-off first-period discounts are deliberately left out of the run-rate.`,
+      overrides: 'Pass renewalRatePct and/or newTenantsPerWeek to replace the history-based figures with your own.',
+      renewalRateUsed: `${Math.round(histRenewal * 100)}% for undecided tenants (${given ? 'your figure' : ended >= 10 ? `real: ${renewed} of ${ended} contracts that ended in the last 12 months were followed by another` : 'default, too little history'})`,
       tenantSaidRenewing: '95% renew', tenantSaidNotRenewing: '5% renew',
       newTenantsPerWeek: Math.round(newPerWeek * 10) / 10, averageNewRatePer4WeeksAed: money(avgRate),
       scenarios: 'low = renewals 15 points lower and 30% fewer new tenants; high = 15 points higher and 30% more',
