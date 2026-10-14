@@ -1341,6 +1341,8 @@ router.put('/:id', async (req, res) => {
        case that puts the unit under the first-payment check; a check-out
        extension never touches the unit status or Zoho. */
     const holdsUnit = startMoved && contract.status === 'active' && day($set.startDate) >= day(new Date());
+    // The check-out moved by hand: an unpaid card renewal quoted from the old date is now out of date.
+    if (endMoved) await ContractRenewal.updateMany({ contract: contract._id, status: 'pending' }, { $set: { status: 'cancelled' } });
     // Wording saved on this contract carries the old dates: bring them up to date,
     // unless the same request is saving new wording itself.
     if ((startMoved || endMoved) && String(contract.agreementText || '').trim() && req.body.agreementText === undefined) {
@@ -1422,6 +1424,7 @@ router.post('/:id/extend', async (req, res) => {
     if (String(contract.agreementText || '').trim()) {
       contract.agreementText = refreshAgreementDates(contract.agreementText, { endDate: contract.endDate }, { endDate: newEnd });
     }
+    await ContractRenewal.updateMany({ contract: contract._id, status: 'pending' }, { $set: { status: 'cancelled' } });
     contract.endDate = newEnd;
 
     let signingUrl = null;
@@ -1456,7 +1459,12 @@ router.get('/:id/renewals', async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(20)
     .lean();
-  res.json(renewals);
+  /* An unpaid card checkout was quoted from the check-out the contract had then.
+     Once somebody has moved the check-out, that quote is out of date and showing
+     it only confuses: hide it. */
+  const current = await Contract.findById(req.params.id).select('endDate').lean();
+  const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '');
+  res.json(renewals.filter((r) => !(r.status === 'pending' && current?.endDate && day(r.currentEndDate) !== day(current.endDate))));
 });
 
 /**
