@@ -82,10 +82,22 @@ export function initialsOf(name: string): string {
 /** The name {{1}} will carry. A placeholder like "WhatsApp Contact 2003"
  *  is not a name — "Hello WhatsApp," would go out — so it becomes "there",
  *  matching greetingNameFor() on the server. */
+// Mirrors usableFirstName on the server: only a word that looks like a real given
+// name is used, so a preview reads the way the sent message will ("there" otherwise).
+const TITLES = new Set(['dr', 'dr.', 'mr', 'mr.', 'mrs', 'mrs.', 'ms', 'ms.', 'eng', 'eng.', 'sir', 'madam', 'miss'])
+const BUSINESS = /\b(llc|l\.l\.c|fz|fze|fzco|fz-llc|ltd|limited|inc|co|company|corp|trading|movers|transport|services|solutions|group|enterprises|general|contracting|shop|store|studio|restaurant|cafe|hotel|clinic|center|centre)\b/i
 export function firstNameOf(name: string): string {
   const n = (name || '').trim()
-  if (!n || /^whatsapp\s*contact/i.test(n)) return 'there'
-  return n.split(/\s+/)[0]
+  if (!n || /^whatsapp\s*contact/i.test(n) || BUSINESS.test(n)) return 'there'
+  const words = n.split(/\s+/)
+  let w = words[0]
+  if (TITLES.has(w.toLowerCase()) && words[1]) w = words[1]
+  if (/^[A-Za-z][A-Za-z'’-]*$/.test(w)) {
+    if (w.length < 3 || !/[aeiouyAEIOUY]/.test(w) || /^(.)\1+$/i.test(w)) return 'there'
+    return w
+  }
+  if (/^[\u0600-\u06FF]{3,}$/.test(w)) return w
+  return 'there'
 }
 
 const LAST_TEMPLATE_KEY = 'pb_followup_last_template'

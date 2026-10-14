@@ -186,6 +186,7 @@ export const leadApi = {
    *  Day wants, since every card there is personal. Omitted (or false),
    *  the Dashboard's own behaviour applies: a rep's own, an admin's
    *  everyone's. */
+  distributionToday: () => api.get<DistributionToday>('/leads/distribution-today').then((r) => r.data),
   highIntentToday: (opts?: { mine?: boolean }) =>
     api.get<{ items: HighIntentLead[] }>('/leads/high-intent', { params: opts?.mine ? { mine: '1' } : undefined }).then((r) => r.data),
   /** Today's leads from the purplebox.ae landing pages — source: 'website',
@@ -920,4 +921,10 @@ export const followUpQueueApi = {
   config: () => api.get<{ quietFollowUpDays: number; stages: { afterDays: number }[] }>('/follow-up-queue/config').then((r) => r.data),
   setConfig: (stages: number[]) =>
     api.put<{ quietFollowUpDays: number; stages: { afterDays: number }[] }>('/follow-up-queue/config', { stages }).then((r) => r.data),
+}
+
+export interface DistributionToday {
+  distributionOn: boolean; newLeadsToday: number; distributedByRules: number; assignedByHand: number; waitingUnassigned: number
+  contacted: number; waiting: number; waitingOver30Min: number; contactedPct: number | null
+  reps: { rep: string; got: number; contacted: number; waiting: number; waitingOver30Min: number; avgMinutesToContact: number | null }[]
 }

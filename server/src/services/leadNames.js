@@ -96,3 +96,54 @@ export async function backfillPlaceholderNames() {
     );
     return res.modifiedCount ?? 0;
 }
+
+/**
+ * Can we greet this person by this name?
+ *
+ * Plenty of WhatsApp profile names are initials, a handle or a business ("DDM",
+ * "RS", "800 Movers LLC", "Moneyintheair"). "Thanks for letting us know, DDM!"
+ * reads badly. So a name is used only if its first word looks like a real given
+ * name: letters only, at least three, with a vowel, not a business. Anything
+ * else returns '' and the message simply doesn't use a name.
+ *
+ * This is a guess from the shape of the word, not a name database: an odd handle
+ * made of letters can still pass. It errs towards leaving the name out.
+ */
+const TITLES = new Set(['dr', 'dr.', 'mr', 'mr.', 'mrs', 'mrs.', 'ms', 'ms.', 'eng', 'eng.', 'sir', 'madam', 'mrs', 'miss']);
+const BUSINESS = /\b(llc|l\.l\.c|fz|fze|fzco|fz-llc|ltd|limited|inc|co|company|corp|trading|movers|transport|services|solutions|group|enterprises|general|contracting|shop|store|studio|restaurant|cafe|hotel|clinic|center|centre)\b/i;
+export function usableFirstName(fullName) {
+    const full = String(fullName || '').trim();
+    if (!full || PLACEHOLDER_NAME.test(full) || BUSINESS.test(full)) return '';
+    const words = full.split(/\s+/);
+    let w = words[0];
+    if (TITLES.has(w.toLowerCase()) && words[1]) w = words[1];
+    if (/^[A-Za-z][A-Za-z'’-]*$/.test(w)) {
+        if (w.length < 3 || !/[aeiouyAEIOUY]/.test(w)) return '';
+        if (/^(.)\1+$/i.test(w)) return '';
+        return w;
+    }
+    // Arabic script names: letters only, at least three.
+    if (/^[\u0600-\u06FF]{3,}$/.test(w)) return w;
+    return '';
+}
+
+/** Names on the lead that must NOT be used to address them, for stripping from a draft. */
+export function unusableNames(lead = {}) {
+    return [lead.fullName, lead.whatsappProfileName]
+        .map((n) => String(n || '').trim())
+        .filter((n) => n && !PLACEHOLDER_NAME.test(n) && !usableFirstName(n));
+}
+
+/** Take an unusable name out of a message ("Thanks, DDM!" → "Thanks!"). */
+export function stripUnusableNames(text, lead = {}) {
+    let out = String(text || '');
+    for (const n of unusableNames(lead)) {
+        const word = n.split(/\s+/)[0];
+        for (const token of new Set([n, word])) {
+            if (token.length < 2) continue;
+            const esc = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            out = out.replace(new RegExp(`(?:,\\s*|\\s+)${esc}(?=[!.,?]|\\s|$)`, 'gi'), '');
+        }
+    }
+    return out.replace(/\s+([!.,?])/g, '$1').replace(/[ \t]{2,}/g, ' ').trim();
+}

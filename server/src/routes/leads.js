@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
-import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
+import { Customer, Contract, Document, Lead, LeadRoutingConfig, Task, User, WhatsAppMessage } from '../models/index.js';
 import { notifyLeadAssigned, notifyBulkReassignment, pendingAssignmentBadge } from '../services/leadNotify.js';
 import { displayNameFor, promotePlaceholderName, resolvePlaceholderNames } from '../services/leadNames.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask, syncStorageStartTask } from '../services/followUps.js';
@@ -10,7 +10,7 @@ import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES, LOST_REASONS } from '../models/inde
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { QUEUE_SINCE } from '../services/followUpQueue.js';
 import { customerContactKeys } from '../services/customerLeads.js';
-import { digitTail } from '../services/leadRouting.js';
+import { digitTail, startOfDayIn } from '../services/leadRouting.js';
 import { buildFunnel } from '../services/leadFunnel.js';
 import { scoreForLead, highIntentToday, intakeChecklist, intentForLeads, snapshotIntentAtClose } from '../services/leadScore.js';
 import { summariseConversation } from '../services/conversationSummary.js';
@@ -714,6 +714,53 @@ router.get('/month-funnel/leads', async (req, res) => {
                 followUpAt: l.followUpAt || null,
                 owner: l.owner?.name || l.owner?.email || '',
             })),
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Today's distribution at a glance (admin dashboard card): how many leads the
+ * rules handed out, to whom, and how many of those the rep has actually
+ * contacted. "Contacted" = a first response was logged, an attempt was logged,
+ * or we sent them a WhatsApp message after they were assigned.
+ */
+router.get('/distribution-today', async (req, res) => {
+    try {
+        if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+        const config = (await LeadRoutingConfig.findOne().lean()) ?? {};
+        const since = startOfDayIn(new Date(), config.timeZone || 'Asia/Dubai');
+        const [distributed, manual, waitingUnassigned, newToday] = await Promise.all([
+            Lead.find({ deletedAt: null, autoAssigned: true, owner: { $ne: null }, assignedAt: { $gte: since } }).populate('owner', 'name').select('owner assignedAt firstResponseAt attempts phoneNormalized status').lean(),
+            Lead.countDocuments({ deletedAt: null, autoAssigned: { $ne: true }, owner: { $ne: null }, assignedAt: { $gte: since } }),
+            Lead.countDocuments({ deletedAt: null, owner: null, createdAt: { $gte: since }, status: { $nin: ['won', 'lost', 'already_customer'] } }),
+            Lead.countDocuments({ deletedAt: null, createdAt: { $gte: since } }),
+        ]);
+        const firstOut = new Map();
+        const msgs = await WhatsAppMessage.find({ phoneNormalized: { $in: distributed.map((l) => l.phoneNormalized).filter(Boolean) }, direction: 'outbound', deletedAt: null, occurredAt: { $gte: since } }).select('phoneNormalized occurredAt').sort({ occurredAt: 1 }).lean();
+        for (const m of msgs) {
+            if (!firstOut.has(m.phoneNormalized)) firstOut.set(m.phoneNormalized, []);
+            firstOut.get(m.phoneNormalized).push(new Date(m.occurredAt).getTime());
+        }
+        const now = Date.now();
+        const per = new Map();
+        for (const l of distributed) {
+            const key = String(l.owner?._id);
+            const row = per.get(key) || { rep: l.owner?.name || 'Unknown', got: 0, contacted: 0, waiting: 0, waitingOver30Min: 0, minutes: [] };
+            row.got += 1;
+            const assigned = new Date(l.assignedAt).getTime();
+            const times = [l.firstResponseAt && new Date(l.firstResponseAt).getTime(), ...(l.attempts || []).map((a) => new Date(a.at).getTime()), ...(firstOut.get(l.phoneNormalized) || []).filter((t) => t >= assigned - 60_000)].filter((t) => t && t >= assigned - 60_000);
+            if (times.length) { row.contacted += 1; row.minutes.push(Math.max(0, Math.round((Math.min(...times) - assigned) / 60000))); }
+            else { row.waiting += 1; if (now - assigned > 30 * 60000 && !['won', 'lost', 'already_customer'].includes(l.status)) row.waitingOver30Min += 1; }
+            per.set(key, row);
+        }
+        const reps = [...per.values()].map((r) => ({ rep: r.rep, got: r.got, contacted: r.contacted, waiting: r.waiting, waitingOver30Min: r.waitingOver30Min, avgMinutesToContact: r.minutes.length ? Math.round(r.minutes.reduce((a, b) => a + b, 0) / r.minutes.length) : null })).sort((a, b) => b.got - a.got);
+        const contacted = reps.reduce((s, r) => s + r.contacted, 0);
+        res.json({
+            distributionOn: Boolean(config.enabled), newLeadsToday: newToday, distributedByRules: distributed.length, assignedByHand: manual, waitingUnassigned,
+            contacted, waiting: distributed.length - contacted, waitingOver30Min: reps.reduce((s, r) => s + r.waitingOver30Min, 0),
+            contactedPct: distributed.length ? Math.round((contacted / distributed.length) * 100) : null, reps,
         });
     } catch (e) {
         res.status(500).json({ error: e.message });

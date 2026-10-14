@@ -1,6 +1,7 @@
 import { Campaign, CampaignRecipient } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
+import { usableFirstName } from './leadNames.js';
 import { unsubscribeFooterHtml, unsubscribeFooterText } from './marketingConsent.js';
 
 /**
@@ -32,7 +33,7 @@ const stripHtml = (html) => String(html || '').replace(/<[^>]+>/g, ' ').replace(
 /** {name} and {first_name} in a value become the person's own name. */
 export function fillVariables(variables = [], name = '') {
     const full = String(name || '').trim();
-    const first = full.split(/\s+/)[0] || '';
+    const first = usableFirstName(full);
     return variables.map((v) => String(v ?? '')
         .replace(/\{first_name\}/gi, first || 'there')
         .replace(/\{name\}/gi, full || 'there'));
