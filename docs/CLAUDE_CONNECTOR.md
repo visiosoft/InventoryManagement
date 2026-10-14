@@ -20,6 +20,9 @@ Endpoint: `https://api.purplebox.ae/api/mcp`
 - Rotate by changing `MCP_ACCESS_TOKEN` (old URLs stop working at once).
 
 ## What it can read
+- **Analysis and forecasting:** `business_snapshot` (the whole picture), `occupancy_revenue_trend`,
+  `conversion_report` (by source and rep, lost reasons), `forecast` (occupancy and revenue,
+  low/base/high, with its assumptions), `cash_forecast`
 - `response_time_report`, `slow_first_replies`, `customers_waiting_for_reply`
 - `people_to_follow_up` (visit booked, invited not confirmed, visited no outcome,
   quoted no decision, overdue follow-ups, hot/warm gone quiet, no next step, waiting)
