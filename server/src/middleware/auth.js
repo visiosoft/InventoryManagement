@@ -10,6 +10,13 @@ export function requireAuth(req, res, next) {
     if (payload.type === 'customer' || payload.type === 'crew') {
       return res.status(403).json({ error: 'Staff access required' });
     }
+    /* An admin "viewing as" someone gets a token that can look but not touch:
+     * whatever they open, nothing is sent, saved or marked as seen under the
+     * other person's name. Enforced here so every route under requireAuth is
+     * covered, including ones added later. */
+    if (payload.viewAs && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      return res.status(403).json({ error: `View-only: you are viewing as ${payload.name}. Exit to make changes.` });
+    }
     req.user = payload;
     next();
   } catch {
@@ -25,11 +32,11 @@ export function requireAuth(req, res, next) {
  */
 export const effectiveRole = (role) => (role === 'accounts_admin' ? 'admin' : role);
 
-export function signToken(user) {
+export function signToken(user, extra = {}, expiresIn = '7d') {
   return jwt.sign(
-    { id: user._id, email: user.email, name: user.name, role: effectiveRole(user.role), accountsAdmin: user.role === 'accounts_admin', permissions: user.role === 'accounts_admin' ? [] : (user.permissions ?? []) },
+    { ...extra, id: user._id, email: user.email, name: user.name, role: effectiveRole(user.role), accountsAdmin: user.role === 'accounts_admin', permissions: user.role === 'accounts_admin' ? [] : (user.permissions ?? []) },
     process.env.JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn }
   );
 }
 
