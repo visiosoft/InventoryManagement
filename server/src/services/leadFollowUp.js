@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import { Lead, LeadFollowUp, LeadRoutingConfig, WhatsAppMessage } from '../models/index.js';
 import { QUIET_DAYS, wentQuiet, quietDays } from './chatFollowUp.js';
-import { resolvePlaceholderNames, PLACEHOLDER_NAME } from './leadNames.js';
+import { resolvePlaceholderNames, PLACEHOLDER_NAME, usableFirstName } from './leadNames.js';
 
 /**
  * The name that fills {{1}}. A lead still called "WhatsApp Contact 2003"
@@ -10,10 +10,11 @@ import { resolvePlaceholderNames, PLACEHOLDER_NAME } from './leadNames.js';
  * "there" is the floor. Never empty: "Hello ," reads as broken.
  */
 export function greetingNameFor(lead = {}) {
-    const real = [lead.fullName, lead.whatsappProfileName]
-        .map((n) => String(n || '').trim())
-        .find((n) => n && !PLACEHOLDER_NAME.test(n));
-    return real ? real.split(/\s+/)[0] : 'there';
+    for (const n of [lead.fullName, lead.whatsappProfileName]) {
+        const first = usableFirstName(n);
+        if (first) return first;
+    }
+    return 'there';
 }
 import { cachedSummaries, refreshSummariesInBackground } from './conversationSummary.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';

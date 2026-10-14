@@ -9,6 +9,7 @@
  * `touch_proposed` action naming the approved template it would have used.
  */
 
+import { usableFirstName, stripUnusableNames } from '../services/leadNames.js';
 import { WhatsAppMessage, Lead } from '../models/index.js';
 import { chatWithTools, openaiConfigured, openaiModel } from '../services/openai.js';
 import { buildFacts, historyToMessages } from '../services/aiBot.js';
@@ -109,7 +110,12 @@ function leadFileBlock(file, lead, cadence) {
     const n = file.need || {};
     const lines = [
         'THE LEAD FILE:',
-        `- Name: ${lead?.fullName || 'unknown'}`,
+        (() => {
+            const greet = usableFirstName(lead?.fullName) || usableFirstName(lead?.whatsappProfileName);
+            return greet
+                ? `- Name: ${greet} (you may use this name once, at most)`
+                : '- Name: not known, or not a real name. Do NOT address them by any name — no "Hi X", no "Thanks, X".';
+        })(),
         `- Bucket: ${BUCKETS[file.bucket]?.label || file.bucket}${describeStage(file, cadence) ? ` (${describeStage(file, cadence)})` : ''}`,
         `- Needs: ${[n.sizeSqf && `${n.sizeSqf} sqft`, n.moveIn && `from ${n.moveIn}`, n.durationWeeks && `${n.durationWeeks} weeks`, n.budget && `budget AED ${n.budget}/month`, n.storing && `storing ${n.storing}`].filter(Boolean).join(', ') || 'not yet known'}`,
         `- Offered so far: ${(file.offers || []).map((o) => `${o.unitNumber} at AED ${o.monthlyPrice}/month`).join('; ') || 'nothing yet'}`,
@@ -262,7 +268,8 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
     }
 
     const decision = parseDecision(content);
-    const reply = isTouch ? '' : String(decision.reply || '').trim().slice(0, 900);
+    // Never greet by a name that is only an abbreviation or handle, even if the model did.
+    const reply = isTouch ? '' : stripUnusableNames(String(decision.reply || '').trim(), lead).slice(0, 900);
     let needsHuman = decision.needsHuman === true || Boolean(ctx.changes.escalate);
     let reason = ctx.changes.escalate || String(decision.reason || '').trim();
 

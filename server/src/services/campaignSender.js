@@ -32,7 +32,7 @@ const stripHtml = (html) => String(html || '').replace(/<[^>]+>/g, ' ').replace(
 /** {name} and {first_name} in a value become the person's own name. */
 export function fillVariables(variables = [], name = '') {
     const full = String(name || '').trim();
-    const first = full.split(/\s+/)[0] || '';
+    const first = usableFirstName(full);
     return variables.map((v) => String(v ?? '')
         .replace(/\{first_name\}/gi, first || 'there')
         .replace(/\{name\}/gi, full || 'there'));
