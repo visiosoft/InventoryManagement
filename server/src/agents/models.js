@@ -135,6 +135,9 @@ const agentLeadFileSchema = new Schema({
     },
     bucket: { type: String, enum: BUCKET_ORDER, default: 'new', index: true },
     previousBucket: { type: String, default: null },
+    // The follow-up date a draft was already prepared for, so each date is
+    // drafted once and a moved date is drafted again.
+    followUpDraftedFor: { type: Date, default: null },
     touchCount: { type: Number, default: 0 },
     anchorAt: { type: Date, default: Date.now },
     nextTouchAt: { type: Date, default: null, index: true },

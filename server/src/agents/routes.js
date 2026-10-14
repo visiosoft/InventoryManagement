@@ -297,6 +297,31 @@ router.get('/leads/:leadId', wrap(async (req, res) => {
     res.json({ file: { ...file, bucketLabel: BUCKETS[file.bucket].label, stage: describeStage(file, cadenceFor(agent)) }, actions, messages });
 }));
 
+/* What the agents have ready for one lead, waiting for a person: the draft or
+   proposed template, with enough context to approve it from the follow-up
+   drawer. A rep sees only their own leads. */
+router.get('/leads/:leadId/pending', staff, wrap(async (req, res) => {
+    const lead = await Lead.findById(req.params.leadId).select('owner').lean();
+    if (!lead) return res.json({ items: [] });
+    if (req.user?.role === 'sales_rep' && String(lead.owner || '') !== String(req.user.id)) return res.status(403).json({ error: 'Not your lead' });
+    const rows = await AgentAction.find({ lead: req.params.leadId, kind: { $in: ['reply_drafted', 'touch_proposed'] }, resolution: null })
+        .sort({ at: -1 }).limit(3).populate('agent', 'name avatarColor').lean();
+    res.json({
+        items: rows
+            .filter((a) => a.detail?.reply || a.detail?.template?.name)
+            .map((a) => ({
+                id: String(a._id),
+                kind: a.kind,
+                followUpDue: a.detail?.trigger === 'followup',
+                text: a.kind === 'reply_drafted' ? String(a.detail?.reply || '') : '',
+                template: a.kind === 'touch_proposed' ? { name: a.detail.template.name, intent: a.detail.template.intent || '', bodyText: a.detail.template.bodyText || '' } : null,
+                at: a.at,
+                agentName: a.agent?.name || '',
+                agentColor: a.agent?.avatarColor || '',
+            })),
+    });
+}));
+
 router.post('/leads/:leadId/adopt', admin, wrap(async (req, res) => {
     const lead = await Lead.findById(req.params.leadId).lean();
     if (!lead) return res.status(404).json({ error: 'No such lead' });

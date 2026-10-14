@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, Check, ChevronDown, ChevronUp, MessageCircle, Phone } from 'lucide-react'
 import { api, apiError, followUpQueueApi, whatsappApi, type FollowUpTimelineEntry } from '../lib/api'
 import { SlideOver, Skeleton } from './ui'
+import { AgentDraftCard } from './AgentDraftCard'
 import {
   INK, MUTED, PURPLE, PURPLE_DEEP, PURPLE_TINT, HAIRLINE, CREAM, DISPLAY,
   REASON_UI, PRIORITY_UI, TEMP_UI, whyFor, agoText, firstNameOf, initialsOf, defaultTemplate, rememberTemplate, customerBadge,
@@ -164,6 +165,8 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
               )}
             </div>
           </div>
+
+          <AgentDraftCard leadId={leadId} onChanged={onChanged} />
 
           {item && (
             <div className="grid grid-cols-3 gap-2 text-center">
