@@ -1,3 +1,4 @@
+import { LOST_REASONS } from '../lib/types'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -271,6 +272,7 @@ export default function PersonProfile() {
   // The standing note on the lead — what this person is about, not a dated
   // entry in the timeline below.
   const [stageNote, setStageNote] = useState('')
+  const [lostReason, setLostReason] = useState('')
   // The attempt being logged, if one is.
   const [logging, setLogging] = useState(false)
   // "Spoke to them" must leave a next date behind, unless the deal is done.
@@ -372,8 +374,8 @@ export default function PersonProfile() {
   }
 
   const setStatus = useMutation({
-    mutationFn: ({ status, comment }: { status: string; comment?: string }) =>
-      api.patch(`/leads/${data!.lead!._id}/status`, { status, comment }),
+    mutationFn: ({ status, comment, lostReason }: { status: string; comment?: string; lostReason?: string }) =>
+      api.patch(`/leads/${data!.lead!._id}/status`, { status, comment, lostReason }),
     onMutate: async (vars) => {
       setErr(''); setPendingStage(''); setStageNote('')
       return showNow({ status: vars.status })
@@ -1299,6 +1301,16 @@ export default function PersonProfile() {
                   <p style={{ fontSize: 13, color: INK_2, marginBottom: 8 }}>
                     Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((x) => x.value === pendingStage)?.label}</b> — what happened?
                   </p>
+                  {pendingStage === 'lost' && (
+                    <select
+                      value={lostReason}
+                      onChange={(e) => setLostReason(e.target.value)}
+                      style={{ width: '100%', height: 40, borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '0 10px', fontSize: 14, fontFamily: 'inherit', color: INK, marginBottom: 8 }}
+                    >
+                      <option value="">Why was it lost? (required)</option>
+                      {LOST_REASONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  )}
                   <textarea
                     value={stageNote}
                     onChange={(e) => setStageNote(e.target.value)}
@@ -1310,9 +1322,9 @@ export default function PersonProfile() {
                   <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
                     <button
                       type="button"
-                      disabled={setStatus.isPending || (pendingStage === 'follow_up_scheduled' && !(lead.followUpAt && new Date(lead.followUpAt) > new Date()))}
+                      disabled={setStatus.isPending || (pendingStage === 'lost' && !lostReason) || (pendingStage === 'follow_up_scheduled' && !(lead.followUpAt && new Date(lead.followUpAt) > new Date()))}
                       title={pendingStage === 'follow_up_scheduled' && !(lead.followUpAt && new Date(lead.followUpAt) > new Date()) ? 'Pick the follow-up date first' : undefined}
-                      onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
+                      onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined, lostReason: pendingStage === 'lost' ? lostReason : undefined })}
                       className="cursor-pointer disabled:opacity-50"
                       style={{ height: 36, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
                     >

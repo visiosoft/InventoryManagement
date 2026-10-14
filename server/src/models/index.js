@@ -213,6 +213,10 @@ export const ATTEMPT_OUTCOMES = ['no_answer', 'no_reply', 'reached', 'call_back'
  * one day cannot renumber everything after it. Attempts are a record of what
  * happened — they are appended and not edited.
  */
+/** Why a lead was lost — a short fixed list, so the reasons can be counted.
+ *  Free text hides patterns; a long list gets "close enough" picks. */
+export const LOST_REASONS = ['price', 'timing', 'wrong_size', 'went_elsewhere', 'no_response', 'not_interested', 'wrong_number', 'other'];
+
 const leadAttemptSchema = new Schema({
   no: { type: Number, required: true },
   at: { type: Date, default: Date.now },
@@ -341,6 +345,8 @@ const leadSchema = new Schema(
     // Why a rep overrode the score — the raw material for judging whether the
     // score is right. Written with the override and logged on the timeline.
     leadScoreOverrideReason: { type: String, default: '' },
+    // Why it was lost, from LOST_REASONS. Required when a rep closes a lead as lost.
+    lostReason: { type: String, default: '' },
     // The intent score the moment this lead was won or lost, before the status
     // change zeroed it. It is what lets us ask whether hot leads really do
     // close more often than cold ones.

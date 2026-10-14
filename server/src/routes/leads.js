@@ -6,7 +6,7 @@ import { displayNameFor, promotePlaceholderName, resolvePlaceholderNames } from 
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask, syncStorageStartTask } from '../services/followUps.js';
 import { applyOutcome, followUpDateFrom, getFollowUpPlan, hasFutureFollowUp, nextDateFor, sequenceState } from '../services/followUpSequence.js';
 import { summarise } from '../services/speedToLead.js';
-import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
+import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES, LOST_REASONS } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { QUEUE_SINCE } from '../services/followUpQueue.js';
 import { customerContactKeys } from '../services/customerLeads.js';
@@ -1610,6 +1610,13 @@ router.patch('/:id/status', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
+    // Closing a lead as lost needs a reason from the list: without one there is
+    // no way to tell price from timing from "went quiet" when the deals add up.
+    const lostReason = String(req.body?.lostReason || '').trim();
+    if (status === 'lost' && lead.status !== 'lost' && !LOST_REASONS.includes(lostReason)) {
+        return res.status(400).json({ error: 'Say why it was lost — pick a reason.', reasons: LOST_REASONS });
+    }
+
     // "Follow-Up Scheduled" with nothing scheduled is the commonest way a lead
     // is forgotten: the stage says somebody will chase it and nothing will.
     if (status === 'follow_up_scheduled' && !hasFutureFollowUp(lead)) {
@@ -1622,6 +1629,8 @@ router.patch('/:id/status', async (req, res) => {
         await snapshotIntentAtClose(lead);
     }
     lead.status = status;
+    if (status === 'lost') { if (LOST_REASONS.includes(lostReason)) lead.lostReason = lostReason; }
+    else lead.lostReason = '';
 
     // The note belongs to the change, not beside it. Two timeline rows for one
     // action read as two things happening, and their order was decided by
@@ -1634,9 +1643,9 @@ router.patch('/:id/status', async (req, res) => {
     const comment = String(req.body?.comment || '').trim();
     lead.timeline.push({
         type: 'status_changed',
-        text: comment
+        text: (comment
             ? `Status changed to ${status} — ${comment.slice(0, 2000)}`
-            : `Status changed to ${status}`,
+            : `Status changed to ${status}`) + (status === 'lost' && lostReason ? ` (reason: ${lostReason.replace(/_/g, ' ')})` : ''),
         user: req.user.id,
     });
 

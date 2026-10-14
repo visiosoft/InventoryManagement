@@ -911,3 +911,9 @@ export interface MovingInvoice {
   zohoBooksSyncError?: string
   createdAt?: string
 }
+
+export const LOST_REASONS: Array<[string, string]> = [
+  ['price', 'Price too high'], ['timing', 'Not the right time'], ['wrong_size', 'Wrong size / no fit'],
+  ['went_elsewhere', 'Went to a competitor'], ['no_response', 'Stopped replying'],
+  ['not_interested', 'Not interested'], ['wrong_number', 'Wrong number / not a real enquiry'], ['other', 'Other'],
+]

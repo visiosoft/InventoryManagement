@@ -4,7 +4,7 @@ import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate, ContractRenewal, AuditLog } from '../models/index.js';
 import { applyRenewal } from '../services/renewalApply.js';
-import { creditFor, markLeadWon } from '../services/dealCredit.js';
+import { creditFor, onContractSigned } from '../services/dealCredit.js';
 import { contractExportRows } from '../services/contractExportRows.js';
 import { promoteToCustomer } from '../services/customerStage.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
@@ -658,10 +658,8 @@ router.post('/', async (req, res) => {
     status: 'draft',
   });
 
-  // A lead that has signed is won, whoever ends up credited for it.
-  await markLeadWon({ leadId: credit.leadId, contractNo: contract.contractNo, userId: req.user.id });
-  // A signed contract is the only thing that makes somebody a tenant.
-  await promoteToCustomer(contract.customer, { contractNo: contract.contractNo });
+  // The lead is won, and the customer a tenant, when the contract is SIGNED
+  // (see onContractSigned) — not when a draft is written.
 
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 
@@ -843,6 +841,7 @@ async function markSigned(contractId, recordedBy = '') {
     author: recordedBy || 'system',
   });
   await contract.save();
+  await onContractSigned(contract, { userId: req.user?.id });
   try {
     await AuditLog.create({
       action: 'document_signed',
@@ -921,6 +920,7 @@ router.post('/:id/approve', async (req, res) => {
   contract.status = 'active';
   contract.timeline.push({ at: new Date(), text: `Contract approved and activated by ${actor}${req.body?.note ? `: ${req.body.note}` : ''}`, author: actor });
   await contract.save();
+  await onContractSigned(contract, { userId: req.user?.id });
 
   const activateUnitIds = contract.units?.length ? contract.units : [contract.unit];
   await Promise.all(activateUnitIds.map((uid) => syncUnitStatus(uid)));
@@ -960,6 +960,7 @@ router.post('/:id/activate', async (req, res) => {
 
   contract.status = 'active';
   await contract.save();
+  await onContractSigned(contract, { userId: req.user?.id });
 
   const activateUnitIds = contract.units?.length ? contract.units : [contract.unit];
   await Promise.all(activateUnitIds.map((uid) => syncUnitStatus(uid)));
@@ -1078,6 +1079,7 @@ router.post('/:id/sign-inperson', async (req, res) => {
     contract.status = 'active';
     contract.signedDocUrl = stored.url;
     await contract.save();
+    await onContractSigned(contract, { userId: req.user?.id });
 
     const signedUnitIds = contract.units?.length
       ? contract.units.map((u) => u._id ?? u)

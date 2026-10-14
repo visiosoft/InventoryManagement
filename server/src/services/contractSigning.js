@@ -1,4 +1,5 @@
 import { Document } from '../models/index.js';
+import { onContractSigned } from './dealCredit.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { uploadFile } from './drive.js';
 import { buildContractPdf, buildSignedContractPdf } from './contractDocument.js';
@@ -52,6 +53,7 @@ export async function signContract({ contract, body, req }) {
   contract.signingToken = null;
   contract.signingTokenExpiry = null;
   await contract.save();
+  await onContractSigned(contract);
 
   const unitIds = contract.units?.length ? contract.units.map((u) => u._id ?? u) : [contract.unit._id];
   await Promise.all(unitIds.map((uid) => syncUnitStatus(uid)));

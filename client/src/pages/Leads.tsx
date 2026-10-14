@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth'
 import { fromDubaiDatetimeLocal, toDubaiDatetimeLocal } from '../lib/timezone'
 import WaitingStrip from '../components/WaitingStrip'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
+import { LOST_REASONS } from '../lib/types'
 import { ExportButtons } from '../components/ExportButtons'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
@@ -778,6 +779,7 @@ export default function Leads() {
     const [importResult, setImportResult] = useState<ImportResult | null>(null)
     const [pendingChange, setPendingChange] = useState<{ lead: Lead; newStatus: LeadStatus } | null>(null)
     const [changeComment, setChangeComment] = useState('')
+    const [changeLostReason, setChangeLostReason] = useState('')
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [waSearch, setWaSearch] = useState('')
     const [waLabel, setWaLabel] = useState('')
@@ -1036,13 +1038,14 @@ export default function Leads() {
     })
 
     const updateStatus = useMutation({
-        mutationFn: ({ id, nextStatus, comment }: { id: string; nextStatus: LeadStatus; comment?: string }) =>
-            leadApi.updateStatus(id, nextStatus, comment),
+        mutationFn: ({ id, nextStatus, comment, lostReason }: { id: string; nextStatus: LeadStatus; comment?: string; lostReason?: string }) =>
+            leadApi.updateStatus(id, nextStatus, comment, lostReason),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['leads'] })
             qc.invalidateQueries({ queryKey: ['lead-stats'] })
             setPendingChange(null)
             setChangeComment('')
+            setChangeLostReason('')
         },
     })
 
@@ -1963,6 +1966,19 @@ export default function Leads() {
                             Moving <strong className="text-foreground">{pendingChange.lead.fullName}</strong> to{' '}
                             <Badge tone={leadStatusTone[pendingChange.newStatus]}>{statusLabel(pendingChange.newStatus)}</Badge>
                         </p>
+                        {pendingChange.newStatus === 'lost' && (
+                            <div>
+                                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Why was it lost? (required)</label>
+                                <select
+                                    value={changeLostReason}
+                                    onChange={(e) => setChangeLostReason(e.target.value)}
+                                    className="w-full h-10 rounded-md border bg-background px-3 text-sm"
+                                >
+                                    <option value="">Pick a reason…</option>
+                                    {LOST_REASONS.map(([v, lbl]) => <option key={v} value={v}>{lbl}</option>)}
+                                </select>
+                            </div>
+                        )}
                         <div>
                             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Comment (optional)</label>
                             <Textarea
@@ -1977,11 +1993,12 @@ export default function Leads() {
                                 Cancel
                             </Button>
                             <Button
-                                disabled={updateStatus.isPending}
+                                disabled={updateStatus.isPending || (pendingChange.newStatus === 'lost' && !changeLostReason)}
                                 onClick={() => updateStatus.mutate({
                                     id: pendingChange.lead._id,
                                     nextStatus: pendingChange.newStatus,
                                     comment: changeComment.trim() || undefined,
+                                    lostReason: pendingChange.newStatus === 'lost' ? changeLostReason : undefined,
                                 })}
                             >
                                 {updateStatus.isPending ? 'Saving…' : 'Update status'}
