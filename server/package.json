@@ -17,6 +17,7 @@
     "import:contracts": "node src/importContractsFromBackup.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
