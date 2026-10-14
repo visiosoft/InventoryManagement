@@ -338,6 +338,9 @@ const leadSchema = new Schema(
     // override above was set against — how the "cleared when it changes"
     // rule above knows whether the conversation has actually moved since.
     leadScoreOverrideForLeadType: { type: String, default: '' },
+    // Why a rep overrode the score — the raw material for judging whether the
+    // score is right. Written with the override and logged on the timeline.
+    leadScoreOverrideReason: { type: String, default: '' },
     source: {
       type: String,
       enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other'],

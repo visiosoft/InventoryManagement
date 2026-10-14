@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreLead, behavioralSignals, needsConfirmation, intakeChecklist, BAND_HIGH, BAND_MEDIUM, NEED_SOON_WINDOW_DAYS } from './leadScore.js';
+import { scoreLead, behavioralSignals, needsConfirmation, intakeChecklist, BAND_HIGH, BAND_MEDIUM, NEED_SOON_WINDOW_DAYS, COLD_CAP } from './leadScore.js';
 
 const NOW = new Date('2026-09-10T10:00:00Z');
 const daysFromNow = (d) => new Date(NOW.getTime() + d * 864e5);
@@ -223,4 +223,64 @@ test('intakeChecklist: only the still-missing customer-facing facts get a sugges
     assert.ok(c.suggestedMessages.some((m) => /store with us/.test(m)));
     assert.ok(c.suggestedMessages.some((m) => /Al Quoz or DIP/.test(m)));
     assert.ok(!c.suggestedMessages.some((m) => /move in/.test(m)));
+});
+
+const hot = { leadType: 'storage_inquiry', temperature: 'hot', budget: 'AED 500', now: NOW };
+
+test('silence costs points in steps, and the reason says so', () => {
+    const fresh = scoreLead({ ...hot, lastInboundAt: daysFromNow(-1) });
+    const week = scoreLead({ ...hot, lastInboundAt: daysFromNow(-8) });
+    const month = scoreLead({ ...hot, lastInboundAt: daysFromNow(-35) });
+    assert.ok(fresh.score > week.score && week.score > month.score);
+    assert.equal(fresh.score - week.score, 10);
+    assert.equal(fresh.score - month.score, 35);
+    assert.match(month.reason, /no word from them for 35 days/);
+});
+
+test('two months of silence cannot be better than cold, however hot it once was', () => {
+    const v = scoreLead({ ...hot, turnCount: 12, medianReplyMinutes: 2, lastInboundAt: daysFromNow(-70) });
+    assert.ok(v.score <= COLD_CAP);
+    assert.equal(v.band, 'low');
+});
+
+test('a quote or a booked viewing scores up; a follow-up date a little', () => {
+    const base = scoreLead({ leadType: 'storage_inquiry', temperature: 'warm', now: NOW });
+    const quote = scoreLead({ leadType: 'storage_inquiry', temperature: 'warm', status: 'quotation_sent', now: NOW });
+    const visit = scoreLead({ leadType: 'storage_inquiry', temperature: 'warm', siteVisitAt: daysFromNow(2), now: NOW });
+    const scheduled = scoreLead({ leadType: 'storage_inquiry', temperature: 'warm', status: 'follow_up_scheduled', now: NOW });
+    assert.equal(quote.score - base.score, 15);
+    assert.equal(visit.score - base.score, 15);
+    assert.equal(scheduled.score - base.score, 5);
+    assert.match(quote.reason, /quote sent/);
+});
+
+test('a date that passed weeks ago is a stale answer, not "needs it now"', () => {
+    const stale = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold', intendedStartDate: daysFromNow(-30), now: NOW });
+    assert.ok(!stale.reason.includes('needs it now'));
+    assert.match(stale.reason, /date was 30 days ago/);
+    const recent = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold', intendedStartDate: daysFromNow(-5), now: NOW });
+    assert.ok(recent.score > stale.score);
+});
+
+test('a closed lead is not scored as a prospect', () => {
+    for (const status of ['won', 'lost', 'already_customer']) {
+        const v = scoreLead({ ...hot, status });
+        assert.equal(v.score, 0);
+        assert.equal(v.closed, true);
+    }
+});
+
+test('automated and template messages do not count as engagement', () => {
+    const at = (m) => new Date(NOW.getTime() + m * 60000);
+    const human = behavioralSignals([
+        { direction: 'outbound', type: 'text', occurredAt: at(0) }, { direction: 'inbound', type: 'text', occurredAt: at(2) },
+        { direction: 'outbound', type: 'text', occurredAt: at(3) }, { direction: 'inbound', type: 'text', occurredAt: at(4) },
+    ]);
+    const bot = behavioralSignals([
+        { direction: 'outbound', type: 'template', occurredAt: at(0) }, { direction: 'inbound', type: 'text', occurredAt: at(2) },
+        { direction: 'outbound', type: 'text', sentByAi: true, occurredAt: at(3) }, { direction: 'inbound', type: 'text', occurredAt: at(4) },
+    ]);
+    assert.ok(human.turnCount > bot.turnCount);
+    assert.equal(bot.turnCount, 0);
+    assert.equal(human.lastInboundAt.getTime(), at(4).getTime());
 });

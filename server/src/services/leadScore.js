@@ -63,6 +63,31 @@ export const FAST_REPLY_POINTS = 10;
 export const NEED_SOON_WINDOW_DAYS = 14;
 export const NEED_SOON_POINTS = 20;
 
+/** Where the conversation has got to. A quote or a booked viewing is the
+ *  strongest evidence that somebody means it, stronger than tone. */
+export const STAGE_POINTS = { quotation_sent: 15, site_visit_scheduled: 15, follow_up_scheduled: 5 };
+
+/** A date that passed long ago is not "needs it now" — it is a stale answer
+ *  somebody should re-check. Past this many days it earns nothing. */
+export const STALE_DATE_DAYS = 14;
+
+/**
+ * Silence costs points, measured from the customer's last message. Without it
+ * a lead that went quiet in August stays "hot" for ever, because nothing in a
+ * score built from what was said ever changes once the talking stops. Steps
+ * rather than a curve, so a rep can see why a number moved.
+ */
+export const DECAY = [
+  { days: 30, penalty: 35 },
+  { days: 14, penalty: 20 },
+  { days: 7, penalty: 10 },
+];
+/** Silent this long and a lead cannot be better than cold, whatever it once said. */
+export const COLD_AFTER_DAYS = 60;
+export const COLD_CAP = 35;
+
+const CLOSED = new Set(['won', 'lost', 'already_customer']);
+
 export const BAND_HIGH = 70;
 export const BAND_MEDIUM = 40;
 
@@ -79,8 +104,12 @@ const LEAD_TYPE_LABEL = {
  * between polls the way a cached AI read can be.
  */
 export function behavioralSignals(messages = []) {
+  // Only conversation a person had counts: an automated template or an AI
+  // draft is us talking, and a customer answering a bot is not engagement
+  // with a rep. They used to inflate both the turn count and the fast-reply bonus.
   const usable = messages.filter((m) => !m.deletedAt
-    && !['reaction', 'system', 'unsupported', 'ephemeral', 'sticker'].includes(m.type));
+    && !['reaction', 'system', 'unsupported', 'ephemeral', 'sticker'].includes(m.type)
+    && !(m.direction === 'outbound' && (m.sentByAi || m.type === 'template')));
 
   const inboundCount = usable.filter((m) => m.direction === 'inbound').length;
   const outboundCount = usable.filter((m) => m.direction === 'outbound').length;
@@ -105,7 +134,10 @@ export function behavioralSignals(messages = []) {
     ? (new Date(usable[usable.length - 1].occurredAt).getTime() - new Date(usable[0].occurredAt).getTime()) / 3600000
     : 0;
 
-  return { inboundCount, outboundCount, turnCount, medianReplyMinutes, spanHours };
+  const inbound = messages.filter((m) => !m.deletedAt && m.direction === 'inbound' && !['reaction', 'system', 'unsupported', 'ephemeral', 'sticker'].includes(m.type));
+  const lastInboundAt = inbound.length ? inbound[inbound.length - 1].occurredAt : null;
+
+  return { inboundCount, outboundCount, turnCount, medianReplyMinutes, spanHours, lastInboundAt };
 }
 
 /**
@@ -123,7 +155,11 @@ export function scoreLead({
   turnCount = 0, medianReplyMinutes = null,
   intendedStartDate = null, now = new Date(),
   override = '',
+  status = '', lastInboundAt = null, siteVisitAt = null,
 } = {}) {
+  if (CLOSED.has(status)) {
+    return { score: 0, band: 'low', closed: true, reason: status === 'won' ? 'Already won.' : status === 'lost' ? 'Closed as lost.' : 'Already a customer.', signals: { status } };
+  }
   // How far out the stated need is, in whole days — negative or 0 means
   // today or already past, which reads the same as "needs it now".
   const daysUntilNeeded = intendedStartDate
@@ -161,7 +197,9 @@ export function scoreLead({
     if (specific) { score += SPECIFICITY_POINTS; reasons.push('gave specifics'); }
 
     if (hasDate) {
-      if (daysUntilNeeded <= NEED_SOON_WINDOW_DAYS) {
+      if (daysUntilNeeded < -STALE_DATE_DAYS) {
+        reasons.push(`date was ${Math.abs(daysUntilNeeded)} days ago — check it still stands`);
+      } else if (daysUntilNeeded <= NEED_SOON_WINDOW_DAYS) {
         score += NEED_SOON_POINTS;
         reasons.push(daysUntilNeeded <= 0 ? 'needs it now' : `needs it within ${daysUntilNeeded} day${daysUntilNeeded === 1 ? '' : 's'}`);
       } else {
@@ -171,6 +209,18 @@ export function scoreLead({
         reasons.push(`needs it from ${new Date(intendedStartDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`);
       }
     }
+
+    // Where the deal has got to.
+    const stagePts = STAGE_POINTS[status] || 0;
+    if (stagePts) {
+      score += stagePts;
+      reasons.push(status === 'quotation_sent' ? 'quote sent' : status === 'site_visit_scheduled' ? 'viewing booked' : 'follow-up booked');
+    }
+    if (siteVisitAt && new Date(siteVisitAt) > new Date(now) && status !== 'site_visit_scheduled') {
+      score += STAGE_POINTS.site_visit_scheduled;
+      reasons.push('viewing booked');
+    }
+    signals.status = status || null;
 
     signals.turnCount = turnCount;
     if (turnCount >= ENGAGEMENT_TURNS_THRESHOLD) {
@@ -183,6 +233,19 @@ export function scoreLead({
       score += FAST_REPLY_POINTS;
       reasons.push('replies quickly');
     }
+  }
+
+  // Silence. Measured from the customer's last message, and only for a real
+  // enquiry — a non-enquiry is already capped low.
+  if (type === 'storage_inquiry' && lastInboundAt) {
+    const silentDays = Math.floor((new Date(now).getTime() - new Date(lastInboundAt).getTime()) / 864e5);
+    signals.silentDays = silentDays;
+    const step = DECAY.find((d) => silentDays >= d.days);
+    if (step) {
+      score -= step.penalty;
+      reasons.push(`no word from them for ${silentDays} days`);
+    }
+    if (silentDays >= COLD_AFTER_DAYS) score = Math.min(score, COLD_CAP);
   }
 
   score = Math.max(0, Math.min(100, Math.round(score)));
@@ -228,7 +291,7 @@ export async function scoreForLead(lead) {
   }
 
   const messages = await WhatsAppMessage.find({ phoneNormalized: lead.phoneNormalized })
-    .select('direction type occurredAt deletedAt').sort({ occurredAt: 1 }).lean();
+    .select('direction type occurredAt deletedAt sentByAi').sort({ occurredAt: 1 }).lean();
   const behavior = behavioralSignals(messages);
 
   // A confirmation only still counts if it was made against this same read
@@ -242,7 +305,8 @@ export async function scoreForLead(lead) {
     leadType: summary.leadType, temperature: summary.temperature,
     wants: summary.wants, budget: summary.budget, timing: summary.timing,
     turnCount: behavior.turnCount, medianReplyMinutes: behavior.medianReplyMinutes,
-    intendedStartDate: lead.intendedStartDate || null,
+    intendedStartDate: lead.intendedStartDate || lead.storageStartAt || null,
+    status: lead.status || '', lastInboundAt: behavior.lastInboundAt, siteVisitAt: lead.siteVisitAt || null,
     override,
   });
 
@@ -281,7 +345,7 @@ export async function highIntentToday({ ownerId = null, now = new Date() } = {})
   if (ownerId) filter.owner = ownerId;
 
   const leads = await Lead.find(filter)
-    .select('fullName phone phoneNormalized whatsappProfileName owner createdAt intendedStartDate leadScoreOverride leadScoreOverrideForLeadType')
+    .select('fullName phone phoneNormalized whatsappProfileName owner createdAt intendedStartDate storageStartAt siteVisitAt status leadScoreOverride leadScoreOverrideForLeadType')
     .populate('owner', 'name')
     .lean();
   if (!leads.length) return [];
@@ -292,7 +356,7 @@ export async function highIntentToday({ ownerId = null, now = new Date() } = {})
     // Every message for every phone in the batch, one query — grouped by
     // phone below rather than one WhatsAppMessage.find() per lead.
     WhatsAppMessage.find({ phoneNormalized: { $in: phones } })
-      .select('phoneNormalized direction type occurredAt deletedAt').sort({ occurredAt: 1 }).lean(),
+      .select('phoneNormalized direction type occurredAt deletedAt sentByAi').sort({ occurredAt: 1 }).lean(),
   ]);
   if (stale.length) refreshSummariesInBackground(stale);
 
@@ -314,7 +378,8 @@ export async function highIntentToday({ ownerId = null, now = new Date() } = {})
       leadType: summary.leadType, temperature: summary.temperature,
       wants: summary.wants, budget: summary.budget, timing: summary.timing,
       turnCount: behavior.turnCount, medianReplyMinutes: behavior.medianReplyMinutes,
-      intendedStartDate: lead.intendedStartDate || null,
+      intendedStartDate: lead.intendedStartDate || lead.storageStartAt || null,
+      status: lead.status || '', lastInboundAt: behavior.lastInboundAt, siteVisitAt: lead.siteVisitAt || null,
       override, now,
     });
     if (score.band !== 'high') continue;
@@ -333,6 +398,51 @@ export async function highIntentToday({ ownerId = null, now = new Date() } = {})
   }
 
   return results.sort((a, b) => b.score - a.score);
+}
+
+/**
+ * One score per lead, for a whole list at once — the Follow-Ups queue and
+ * anything else that ranks many leads. One cache lookup and one message read
+ * for the batch, never a call per lead. A lead whose AI read is missing or out
+ * of date gets `null` and is handed to the background lane; the caller falls
+ * back to what it already knew.
+ *
+ * `leads` need: _id, phoneNormalized, status, intendedStartDate,
+ * storageStartAt, siteVisitAt, leadScoreOverride, leadScoreOverrideForLeadType.
+ */
+export async function intentForLeads(leads = [], { now = new Date(), summaries = null } = {}) {
+  const out = new Map();
+  if (!leads.length) return out;
+  const phones = [...new Set(leads.map((l) => l.phoneNormalized).filter(Boolean))];
+  let fresh = summaries;
+  if (!fresh) {
+    const cached = await cachedSummaries(phones);
+    fresh = cached.fresh;
+    if (cached.stale.length) refreshSummariesInBackground(cached.stale);
+  }
+  const messages = await WhatsAppMessage.find({ phoneNormalized: { $in: phones } })
+    .select('phoneNormalized direction type occurredAt deletedAt sentByAi').sort({ occurredAt: 1 }).lean();
+  const byPhone = new Map();
+  for (const m of messages) {
+    if (!byPhone.has(m.phoneNormalized)) byPhone.set(m.phoneNormalized, []);
+    byPhone.get(m.phoneNormalized).push(m);
+  }
+  for (const lead of leads) {
+    const summary = fresh.get(lead.phoneNormalized);
+    if (!summary) continue;
+    const behavior = behavioralSignals(byPhone.get(lead.phoneNormalized) || []);
+    const overrideStillValid = lead.leadScoreOverride && lead.leadScoreOverrideForLeadType === summary.leadType;
+    const r = scoreLead({
+      leadType: summary.leadType, temperature: summary.temperature,
+      wants: summary.wants, budget: summary.budget, timing: summary.timing,
+      turnCount: behavior.turnCount, medianReplyMinutes: behavior.medianReplyMinutes,
+      intendedStartDate: lead.intendedStartDate || lead.storageStartAt || null,
+      status: lead.status || '', lastInboundAt: behavior.lastInboundAt, siteVisitAt: lead.siteVisitAt || null,
+      override: overrideStillValid ? lead.leadScoreOverride : '', now,
+    });
+    out.set(String(lead._id), { score: r.score, band: r.band, reason: r.reason });
+  }
+  return out;
 }
 
 /** The intake facts to ask a customer directly, distinct from `signals`

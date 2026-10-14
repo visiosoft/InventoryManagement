@@ -152,8 +152,8 @@ export const leadApi = {
   score: (id: string) => api.get<LeadScore>(`/leads/${id}/score`).then((r) => r.data),
   /** A rep's own confirmation or correction of the score. `decision: ''`
    *  clears it and hands the lead back to the computed score. */
-  scoreConfirm: (id: string, decision: 'qualifying' | 'not_interested' | '') =>
-    api.post<LeadScore>(`/leads/${id}/score-confirm`, { decision }).then((r) => r.data),
+  scoreConfirm: (id: string, decision: 'qualifying' | 'not_interested' | '', reason = '') =>
+    api.post<LeadScore>(`/leads/${id}/score-confirm`, { decision, reason }).then((r) => r.data),
   /** When they actually said they'd need it — a call the AI never heard,
    *  or a correction to what it read from the chat. `date` a plain
    *  'YYYY-MM-DD', or '' to clear it. Not the same thing as when we should
@@ -809,6 +809,8 @@ export interface FollowUpCustomer {
 }
 
 export interface FollowUpQueueItem {
+  /** The one intent score (stage, move-in date, silence, engagement), when the chat has been read. */
+  intent?: { score: number; band: 'high' | 'medium' | 'low'; reason: string }
   leadId: string
   name: string
   phone: string

@@ -295,3 +295,14 @@ test('re-scoring a row that carries its own signals keeps an exhausted chase at 
     const again = classify({ ...signals, ...first }, { now: NOW });
     assert.equal(again.priorityScore, first.priorityScore);
 });
+
+test('an intent score replaces the bare temperature in the priority, and a missing one falls back', () => {
+    const base = { lastInboundAt: daysAgo(4), lastOutboundAt: daysAgo(3), leadStatus: 'contacted' };
+    const hotNoIntent = classify({ ...base, temperature: 'hot' }, { now: NOW });
+    const intentHigh = classify({ ...base, temperature: 'hot', intentScore: 90 }, { now: NOW });
+    const intentLow = classify({ ...base, temperature: 'hot', intentScore: 10 }, { now: NOW });
+    assert.ok(intentHigh.priorityScore > intentLow.priorityScore, 'a promising lead outranks an unpromising one');
+    assert.equal(intentHigh.priorityScore - intentLow.priorityScore, Math.round(90 * 0.25) - Math.round(10 * 0.25));
+    const plain = classify(base, { now: NOW });
+    assert.equal(hotNoIntent.priorityScore - plain.priorityScore, 15, 'the temperature fallback still applies');
+});

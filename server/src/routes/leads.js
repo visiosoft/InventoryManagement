@@ -760,7 +760,7 @@ router.get('/new-from-website', async (req, res) => {
 });
 
 const SCORE_LEAD_FIELDS = 'phoneNormalized owner firstName fullName intendedStartDate leadScoreOverride leadScoreOverrideBy leadScoreOverrideAt leadScoreOverrideForLeadType '
-  + 'leadDateTime durationValue durationUnit lengthOfStayConfirmedAt storageSizeValue storageSizeUnit financiallyQualified locationPreference followUpAt followUpNote followUpNotifiedAt followUpPushedAt status';
+  + 'leadDateTime durationValue durationUnit lengthOfStayConfirmedAt storageSizeValue storageSizeUnit financiallyQualified locationPreference followUpAt followUpNote followUpNotifiedAt followUpPushedAt status siteVisitAt storageStartAt';
 
 /**
  * A score, plus who confirmed or corrected it and when — the same shape
@@ -902,10 +902,23 @@ router.post('/:id/score-confirm', async (req, res) => {
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
         const summary = await summariseConversation(lead.phoneNormalized).catch(() => null);
+        const reason = String(req.body?.reason || '').trim().slice(0, 200);
+        const previous = lead.leadScoreOverride || '';
         lead.leadScoreOverride = decision;
         lead.leadScoreOverrideBy = decision ? req.user.id : null;
         lead.leadScoreOverrideAt = decision ? new Date() : null;
         lead.leadScoreOverrideForLeadType = decision ? (summary?.leadType || '') : '';
+        lead.leadScoreOverrideReason = decision ? reason : '';
+        // A change of mind about a lead is part of its history, with who made
+        // it and why — until now it left no trace, and clearing erased even
+        // the last override.
+        const who = req.user.name || req.user.email || 'a colleague';
+        const label = (d) => (d === 'qualifying' ? 'qualifying' : d === 'not_interested' ? 'not interested' : 'no override');
+        lead.timeline.push({
+            type: 'note',
+            text: `Score ${label(decision)} — set by ${who}${previous && previous !== decision ? ` (was ${label(previous)})` : ''}${reason ? `: ${reason}` : ''}`,
+            user: req.user.id,
+        });
         await lead.save();
 
         res.json(await withOverrideInfo(lead));

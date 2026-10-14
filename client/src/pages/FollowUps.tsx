@@ -59,6 +59,10 @@ const TABS: { key: Tab; label: string; tone?: string }[] = [
  *  the same claim as a cold one, and it should not hide in "Low" where
  *  nobody is looking for it. */
 function intentOf(it: FollowUpQueueItem): 'hot' | 'warm' | 'cold' {
+  // The one intent score, when the conversation has been read: it sees the
+  // stage, the move-in date and how long they have been silent. Otherwise the
+  // AI's bare temperature, otherwise the middle.
+  if (it.intent) return it.intent.band === 'high' ? 'hot' : it.intent.band === 'low' ? 'cold' : 'warm'
   return it.temperature ?? 'warm'
 }
 
@@ -442,6 +446,11 @@ export default function FollowUps() {
                         <div className="text-[12px] mt-0.5" style={{ color: SUB }} title={whyFor(it)}>
                           {recommendationDetail(it)}
                         </div>
+                        {it.intent && (
+                          <div className="text-[11px] mt-1" style={{ color: SUB }} title={`Intent score ${it.intent.score}/100`}>
+                            <strong>{it.intent.band === 'high' ? 'Hot' : it.intent.band === 'low' ? 'Cold' : 'Warm'}</strong> · {it.intent.reason}
+                          </div>
+                        )}
                       </td>
                       <td className="px-2 py-3 pr-4" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1.5">

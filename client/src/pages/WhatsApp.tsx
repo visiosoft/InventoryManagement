@@ -1077,7 +1077,8 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
   })
 
   const confirm = useMutation({
-    mutationFn: (decision: 'qualifying' | 'not_interested' | '') => leadApi.scoreConfirm(leadId!, decision),
+    mutationFn: (v: 'qualifying' | 'not_interested' | '' | { decision: 'qualifying' | 'not_interested' | ''; reason?: string }) =>
+      typeof v === 'string' ? leadApi.scoreConfirm(leadId!, v) : leadApi.scoreConfirm(leadId!, v.decision, v.reason ?? ''),
     onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
   })
 
@@ -1540,7 +1541,7 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
                     </button>
                     <button
                       type="button" disabled={confirm.isPending}
-                      onClick={() => confirm.mutate('not_interested')}
+                      onClick={() => { const reason = window.prompt('Why is this one not interested? (optional — it is kept in the lead\'s history)'); if (reason === null) return; confirm.mutate({ decision: 'not_interested', reason }) }}
                       className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
                       style={{ background: '#F3F4F6', color: '#6B7280', fontSize: 11.5, fontWeight: 700, border: 'none' }}
                     >
