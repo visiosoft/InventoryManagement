@@ -411,7 +411,7 @@ router.get('/renewal-requests', async (req, res) => {
 /** Signed contracts whose first payment is not verified, so their unit reads Reserved. */
 router.get('/unverified-payments', async (req, res) => {
   try {
-    const rows = await Contract.find({ status: 'active', archived: { $ne: true }, 'paymentGate.required': true, 'paymentGate.verified': { $ne: true } })
+    const rows = await Contract.find({ status: 'active', archived: { $ne: true }, 'paymentGate.required': true, 'paymentGate.verified': { $ne: true }, startDate: { $gte: new Date(Date.now() - 30 * 864e5) } })
       .populate('customer', 'fullName phone email').populate('unit', 'unitNumber').sort({ startDate: 1 }).limit(300).lean();
     res.json(rows.map((c) => ({ _id: c._id, contractNo: c.contractNo, customer: c.customer, unit: c.unit, startDate: c.startDate, endDate: c.endDate, detail: c.paymentGate?.detail || '', checkedAt: c.paymentGate?.checkedAt || null })));
   } catch (e) {

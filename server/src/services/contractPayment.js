@@ -1,6 +1,6 @@
 import { Contract, Invoice } from '../models/index.js';
 import { findZohoContactsFor, fetchZohoInvoicesForContacts, zohoBooksConfigured } from './zohoBooks.js';
-import { syncUnitStatus } from '../utils/unitStatus.js';
+import { syncUnitStatus, PAYMENT_GATE_DAYS } from '../utils/unitStatus.js';
 
 /**
  * Has the tenant actually paid for this unit?
@@ -97,7 +97,7 @@ export async function verifyPendingPayments() {
   const pending = await Contract.find({
     status: 'active', archived: { $ne: true },
     'paymentGate.verified': { $ne: true }, 'paymentGate.manual': { $ne: true },
-    startDate: { $lte: soon },
+    startDate: { $lte: soon, $gte: new Date(Date.now() - PAYMENT_GATE_DAYS * 864e5) },
     // Already held to the rule and unpaid, or a contract nobody has checked yet
     // (every contract that was running before the rule: it gets checked once,
     // and from then on is held to it like the rest).

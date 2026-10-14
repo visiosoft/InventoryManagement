@@ -39,6 +39,9 @@ import { Unit, Contract, Quote } from '../models/index.js';
  *  earlier is still being written. */
 export const QUOTE_ISSUED_STEP = 3;
 
+/** How long after check-in a signed contract is still held to the first-payment check. */
+export const PAYMENT_GATE_DAYS = 30;
+
 /**
  * How long a quotation holds a unit.
  *
@@ -126,8 +129,12 @@ export async function statusForUnit(unitId) {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai' }).format(new Date());
     /* Started AND, for contracts held to the payment rule, paid. A tenant who
        has signed but whose first invoice is unpaid in Zoho is still Reserved. */
-    const started = actives.some((c) => (!c.startDate || new Date(c.startDate).toISOString().slice(0, 10) <= today)
-      && (!c.paymentGate?.required || c.paymentGate.verified));
+    const cutoff = new Date(Date.now() - PAYMENT_GATE_DAYS * 864e5).toISOString().slice(0, 10);
+    // Only a recent move-in is held to the payment check. A tenant who has been
+    // there for weeks is occupying the unit whatever Zoho says about their first invoice.
+    const gated = (c) => c.paymentGate?.required && !c.paymentGate.verified
+      && c.startDate && new Date(c.startDate).toISOString().slice(0, 10) >= cutoff;
+    const started = actives.some((c) => (!c.startDate || new Date(c.startDate).toISOString().slice(0, 10) <= today) && !gated(c));
     return started ? 'occupied' : 'reserved';
   }
 
@@ -173,7 +180,7 @@ export async function releaseLapsedHolds() {
 
    // Units on signed contracts that have started but are not verified as paid
    // must read Reserved, not Occupied.
-   const unpaid = await Contract.find({ status: 'active', archived: { $ne: true }, 'paymentGate.required': true, 'paymentGate.verified': { $ne: true }, startDate: { $lte: new Date() } })
+   const unpaid = await Contract.find({ status: 'active', archived: { $ne: true }, 'paymentGate.required': true, 'paymentGate.verified': { $ne: true }, startDate: { $lte: new Date(), $gte: new Date(Date.now() - PAYMENT_GATE_DAYS * 864e5) } })
       .select('unit units').lean();
    for (const id of new Set(unpaid.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String))) await syncUnitStatus(id);
 
