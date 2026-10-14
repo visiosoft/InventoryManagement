@@ -179,6 +179,19 @@ const customerSchema = new Schema(
     // Set when the customer typed this email in the app (unproven), so it is
     // not trusted to match their records in Zoho Books.
     emailFromApp: { type: Boolean, default: false },
+    // Expo tokens for the phones this customer is signed into the app on —
+    // see services/customerNotify.js. Moved, not copied, when a phone signs in
+    // as somebody else, so one device only ever hears about one account.
+    pushTokens: { type: [String], default: [] },
+    // Last time they signed in to the app. Lets a promotion reach app users
+    // whose phone never gave us a token (notifications switched off): it
+    // still lands in their in-app inbox.
+    appLoginAt: { type: Date, default: null },
+    // What the customer chose in the app. Only promotions can be switched off:
+    // a payment or a booking update is about their own account.
+    notificationPrefs: {
+      promotions: { type: Boolean, default: true },
+    },
     // Excluded from marketing campaigns. Never consulted for transactional mail
     // — an invoice or a contract still has to reach them.
     unsubscribed: { type: Boolean, default: false },

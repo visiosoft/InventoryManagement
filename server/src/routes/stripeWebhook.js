@@ -6,6 +6,7 @@ import { constructWebhookEvent, stripeWebhookConfigured } from '../services/stri
 import { applyMovingInvoicePayment } from '../services/movingInvoicePayments.js';
 import { applyInvoicePayment, syncLinkedPayment } from '../services/invoicePayments.js';
 import { notifyPaymentReceived } from '../services/movingNotifications.js';
+import { notifyInvoicePaid } from '../services/customerNotify.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
 
 const router = Router();
@@ -97,6 +98,8 @@ router.post('/', aw(async (req, res) => {
         await invoice.save();
         await syncLinkedPayment(invoice);
         thankYouEmail({ to: invoice.customer?.email, name: invoice.customer?.fullName || 'there', docNo: `Invoice ${invoice.invoiceNo}`, amount });
+        // And in the app, for a tenant who paid from their phone. Never throws.
+        await notifyInvoicePaid(invoice, amount);
       }
     }
 

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { Contract, Customer, CustomerRequest, Invoice, Payment } from '../models/index.js';
 import { requireCustomer, otpLimiter, signCustomerToken, customerPayload } from './customerAuth.js';
 import customerValetRouter from './customerValet.js';
+import customerInboxRouter from './customerInbox.js';
 import { nextPaymentDueDate } from '../services/billingCycle.js';
 import { buildContractPdf } from '../services/contractDocument.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
@@ -427,5 +428,8 @@ router.get('/documents', wrap(async (req, res) => {
 
 // ── Valet storage: items we hold, and pickups / drop-offs / workers ─────────
 router.use(customerValetRouter);
+
+// ── Notifications: the in-app inbox, and whether promotions may be sent ─────
+router.use(customerInboxRouter);
 
 export default router;

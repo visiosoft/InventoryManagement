@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { Customer } from '../models/index.js';
 import { checkOtp, issueOtp, normalizePhone } from '../services/customerOtp.js';
 import { findCustomersByContact, maskEmail, parseContact } from '../services/customerLookup.js';
+import { isExpoPushToken } from '../services/expoPush.js';
 
 const router = Router();
 
@@ -23,6 +24,12 @@ export function signCustomerToken(customer, via) {
     { expiresIn: '30d' },
   );
 }
+
+// Remembered so a promotion can reach somebody who uses the app but never let
+// it send notifications — see promotionAudience in services/customerNotify.js.
+// Bookkeeping only, so a failure here never fails the login.
+const markAppLogin = (customer) => Customer.updateOne({ _id: customer._id }, { $set: { appLoginAt: new Date() } })
+  .catch((e) => console.error('[CustomerAuth] could not note app login:', e.message));
 
 export function customerPayload(customer) {
   return { id: customer._id, fullName: customer.fullName, phone: customer.phone, email: customer.email };
@@ -121,6 +128,7 @@ router.post('/verify-otp', otpLimiter, async (req, res) => {
     }
 
     const token = signCustomerToken(customer, contact.kind === 'phone' ? 'phone' : 'email');
+    await markAppLogin(customer);
     res.json({ token, customer: customerPayload(customer), isNew });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
@@ -158,6 +166,7 @@ router.post('/google', async (req, res) => {
 
     const needsPhone = !customer.phone;
     const token = signCustomerToken(customer);
+    await markAppLogin(customer);
     res.json({ token, customer: customerPayload(customer), needsPhone });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -227,6 +236,38 @@ router.patch('/profile', requireCustomer, async (req, res) => {
     const customer = await Customer.findByIdAndUpdate(req.customer.customerId, update, { new: true }).lean();
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
     res.json({ customer: { ...customerPayload(customer), nationality: customer.nationality, address: customer.address } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* This phone's Expo push token. The app sends it on every launch once it has
+ * permission, so it is idempotent ($addToSet). Pulled off any other customer
+ * first, for the same reason registerExpoPushToken does it for staff: a phone
+ * that signs out and in as somebody else must stop hearing about the previous
+ * account's invoices. `platform` is accepted for the app's sake; Expo's token
+ * already knows where it is going. */
+router.post('/push-token', requireCustomer, async (req, res) => {
+  try {
+    const token = req.body?.token;
+    if (!isExpoPushToken(token)) return res.status(400).json({ error: 'Not an Expo push token' });
+    const customerId = req.customer.customerId;
+    await Customer.updateMany({ _id: { $ne: customerId }, pushTokens: token }, { $pull: { pushTokens: token } });
+    const updated = await Customer.updateOne({ _id: customerId }, { $addToSet: { pushTokens: token }, $set: { appLoginAt: new Date() } });
+    if (!updated.matchedCount) return res.status(404).json({ error: 'Customer not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Signing out: this phone stops receiving this account's notifications.
+router.delete('/push-token', requireCustomer, async (req, res) => {
+  try {
+    const token = req.body?.token;
+    if (typeof token !== 'string' || !token) return res.status(400).json({ error: 'Token is required' });
+    await Customer.updateOne({ _id: req.customer.customerId }, { $pull: { pushTokens: token } });
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

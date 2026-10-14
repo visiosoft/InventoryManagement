@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { User } from '../models/index.js';
 import { ServiceRequest, SERVICE_TYPES, SERVICE_STATUSES } from '../models/serviceRequest.js';
 import { operationalPermission } from '../services/warehouse.js';
+import { notifyServiceStatus } from '../services/customerNotify.js';
 
 /**
  * Staff side of the valet jobs customers book in the app: see what's waiting,
@@ -49,11 +50,13 @@ router.patch('/:id', asyncRoute(async (req, res) => {
   if (!r) fail('Request not found.', 404);
   const body = req.body || {};
 
+  let statusChanged = false;
   if (body.status !== undefined && body.status !== r.status) {
     if (!SERVICE_STATUSES.includes(body.status)) fail('Invalid status.');
     if (FINAL.includes(r.status)) fail(`This request is already ${r.status}.`, 409);
     r.status = body.status;
     r.statusLog.push({ status: body.status, at: new Date() });
+    statusChanged = true;
   }
   if (body.staffNote !== undefined) r.staffNote = shortText(body.staffNote, 2000, 'Staff note');
   if (body.driverName !== undefined) r.driverName = shortText(body.driverName, 120, 'Driver name');
@@ -67,6 +70,9 @@ router.patch('/:id', asyncRoute(async (req, res) => {
     r.charged = body.charged === null ? null : Math.round(body.charged * 100) / 100;
   }
   await r.save();
+  // After the save, so the customer is never told about a change that didn't
+  // stick. Keyed per status, so flicking back and forth announces each once.
+  if (statusChanged) await notifyServiceStatus(r);
   await r.populate('customer', 'fullName phone clientId');
   res.json(r.toObject());
 }));

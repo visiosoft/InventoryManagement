@@ -121,6 +121,8 @@ import publicPricingRoutes from './routes/publicPricing.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
+import { runCustomerNotificationSweep } from './services/customerNotify.js';
+import customerNotificationRoutes from './routes/customerNotifications.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -268,6 +270,8 @@ app.use('/api/integrations/whatsapp/webhook', (req, _res, next) => next());
 app.use('/api/units', requireAuth, unitRoutes);
 app.use('/api/warehouse', requireAuth, warehouseRoutes);
 app.use('/api/service-requests', requireAuth, serviceRequestRoutes);
+// Pushes to customers' phones: promotions, inspections, what went out.
+app.use('/api/customer-notifications', requireAuth, customerNotificationRoutes);
 // Merchants, SKUs, stock and fulfillment jobs. The order webhook is mounted
 // separately above, before the JSON parser.
 app.use('/api/shopify', requireAuth, shopifyMerchantRoutes);
@@ -600,6 +604,21 @@ async function start() {
       if (out.sent) console.log(`[PaymentDueDigest] sent, ${out.count} payment(s)`);
     } catch (e) {
       console.error('[PaymentDueDigest]', e.message);
+    }
+  }, 60_000);
+
+  /* Customer app: payments coming due and agreements coming to an end, as
+     pushes to the tenant's phone. Mid-morning rather than at dawn — it lands
+     on a customer's lock screen. Same minute tick and fixed local hour; every
+     message is keyed per stage, so a restart inside the hour sends nothing twice. */
+  const CUSTOMER_NOTIFY_HOUR = Number(process.env.CUSTOMER_NOTIFY_HOUR ?? 10);
+  setInterval(async () => {
+    try {
+      if (localHour() !== CUSTOMER_NOTIFY_HOUR) return;
+      const out = await runCustomerNotificationSweep();
+      if (out.due || out.renewal) console.log(`[CustomerNotify] ${out.due} payment and ${out.renewal} renewal notification(s)`);
+    } catch (e) {
+      console.error('[CustomerNotify]', e.message);
     }
   }, 60_000);
 

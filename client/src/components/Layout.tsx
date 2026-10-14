@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import {
-  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send } from 'lucide-react'
+  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -15,6 +15,7 @@ import { isSalesRepRole } from '../lib/roles'
 const navTop = [
   { to: '/warehouse', label: 'Stored Inventory', icon: Package, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/service-requests', label: 'Service requests', icon: Truck, perm: ['warehouse', 'warehouse_supervisor'] },
+  { to: '/customer-notifications', label: 'Customer notifications', icon: BellRing, perm: ['warehouse', 'warehouse_supervisor', 'campaign_studio'] },
   { to: '/shopify/orders', label: 'Shopify orders', icon: ReceiptText, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/shopify/fulfillment', label: 'Fulfillment queue', icon: ClipboardCheck, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/shopify/inventory', label: 'Shopify inventory', icon: ShoppingBag, perm: ['warehouse', 'warehouse_supervisor'] },

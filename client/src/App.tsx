@@ -80,6 +80,7 @@ import FollowUps from './pages/FollowUps'
 import Units from './pages/Units'
 import StoredInventory from './pages/warehouse/StoredInventory'
 import ServiceRequests from './pages/warehouse/ServiceRequests'
+import CustomerNotifications from './pages/warehouse/CustomerNotifications'
 import ShopifyMerchants from './pages/shopify/Merchants'
 import ShopifySkuInventory from './pages/shopify/SkuInventory'
 import ShopifyFulfillmentQueue from './pages/shopify/FulfillmentQueue'
@@ -245,6 +246,8 @@ export default function App() {
         <Route path="/units" element={<Units />} />
         <Route path="/warehouse" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><StoredInventory /></PermGuard>} />
         <Route path="/service-requests" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><ServiceRequests /></PermGuard>} />
+        {/* Promotions are Campaign Studio's, inspections the warehouse's; the page shows each to whoever may send it. */}
+        <Route path="/customer-notifications" element={<PermGuard module={['warehouse', 'warehouse_supervisor', 'campaign_studio']}><CustomerNotifications /></PermGuard>} />
         <Route path="/shopify/merchants" element={<AdminGuard><ShopifyMerchants /></AdminGuard>} />
         <Route path="/shopify/inventory" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><ShopifySkuInventory /></PermGuard>} />
         <Route path="/shopify/orders" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><ShopifyOrders /></PermGuard>} />
