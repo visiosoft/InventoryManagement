@@ -31,6 +31,9 @@ signed in (30 days, renewed automatically). Changing the key signs everyone out.
 - **Follow-ups, with the messages:** `lead_followup_file` (one lead: plan, what the rep did, conversation, whose turn),
   `followup_briefing` (a batch of leads each with its latest messages, for Claude to read and prioritise),
   `followup_adherence` (on time / late / missed per rep)
+- **Direct data access (read-only):** `describe_data`, `query_data` (any allowed collection: filter, fields, sort, count or aggregation),
+  `api_get` (the CRM's own GET API), `connector_status` (build and tool list). Secrets, users, sign-in tokens and the
+  audit log are never returned; filters cannot run code or write.
 - **Zoho Books** (through the connection the CRM already has): `zoho_outstanding`,
   `zoho_customer_ledger`, `zoho_expenses`
 - **WhatsApp analysis:** `whatsapp_reply_time_report` (from real messages: person vs AI, working
