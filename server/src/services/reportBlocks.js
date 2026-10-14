@@ -15,7 +15,7 @@
  * not a longer prompt.
  */
 
-import { Contract, Unit, Lead, Payment, User } from '../models/index.js';
+import { Contract, Unit, Lead, Payment, User, WhatsAppMessage } from '../models/index.js';
 
 const money = (n) => Math.round(Number(n || 0) * 100) / 100;
 const iso = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '');
@@ -28,9 +28,16 @@ function monthRange(offset = 0) {
     return { start, end };
 }
 
-function parseDate(v, fallback) {
+/* A plain day ("2026-10-13") means the whole of that day in Dubai time: a start
+ * date is its first moment, an end date its last. Reading both as midnight made a
+ * one-day report an empty range (from = to) and left the end day out of every
+ * longer one. A full timestamp is used exactly as given. */
+function parseDate(v, fallback, edge = 'start') {
     if (!v) return fallback;
-    const d = new Date(v);
+    const s = String(v).trim();
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(s)
+        ? new Date(`${s}T${edge === 'end' ? '23:59:59.999' : '00:00:00.000'}+04:00`)
+        : new Date(s);
     return Number.isNaN(d.getTime()) ? fallback : d;
 }
 
@@ -136,7 +143,7 @@ export const BLOCKS = {
         async run({ from, to }, scope) {
             const { start, end } = monthRange(0);
             const f = parseDate(from, start);
-            const t = parseDate(to, end);
+            const t = parseDate(to, end, 'end');
             const rows = await Contract.find({
                 ...contractWhere(scope), status: 'active', endDate: { $gte: f, $lt: t },
             }).populate('customer', 'fullName').populate('unit', 'unitNumber').populate('units', 'unitNumber')
@@ -159,7 +166,7 @@ export const BLOCKS = {
         shape: 'table',
         async run({ from, to }, scope) {
             const f = parseDate(from, new Date(2000, 0, 1));
-            const t = parseDate(to, new Date());
+            const t = parseDate(to, new Date(), 'end');
             const rows = await Contract.find({
                 ...contractWhere(scope), status: 'ended', endDate: { $gte: f, $lte: t },
             }).populate('customer', 'fullName').populate('unit', 'unitNumber')
@@ -266,7 +273,7 @@ export const BLOCKS = {
             // it becomes a contract on a unit, so scoping here would silently
             // drop every enquiry that has not been placed yet.
             const f = parseDate(from, new Date(2000, 0, 1));
-            const t = parseDate(to, new Date());
+            const t = parseDate(to, new Date(), 'end');
             const match = { deletedAt: null, createdAt: { $gte: f, $lte: t } };
             const [byStatus, bySource] = await Promise.all([
                 Lead.aggregate([{ $match: match }, { $group: { _id: '$status', n: { $sum: 1 } } }, { $sort: { n: -1 } }]),
@@ -290,7 +297,7 @@ export const BLOCKS = {
         shape: 'table',
         async run({ from, to }) {
             const f = parseDate(from, new Date(2000, 0, 1));
-            const t = parseDate(to, new Date());
+            const t = parseDate(to, new Date(), 'end');
             const [users, rows] = await Promise.all([
                 User.find({}).select('name email').lean(),
                 Lead.aggregate([
@@ -305,13 +312,20 @@ export const BLOCKS = {
                     { $sort: { leads: -1 } },
                 ]),
             ]);
+            /* "Contacted" used to mean a logged attempt only, so a rep who answered every
+             * lead on WhatsApp but never logged a call showed as having contacted nobody.
+             * A lead also counts as contacted once we have sent them a WhatsApp message. */
+            const owned = await Lead.find({ createdAt: { $gte: f, $lte: t }, owner: { $ne: null } }).select('owner phoneNormalized attempts').lean();
+            const messaged = new Set(await WhatsAppMessage.distinct('phoneNormalized', { phoneNormalized: { $in: owned.map((l) => l.phoneNormalized).filter(Boolean) }, direction: 'outbound', deletedAt: null }));
+            const contactedBy = new Map();
+            for (const l of owned) if ((l.attempts || []).length || messaged.has(l.phoneNormalized)) contactedBy.set(String(l.owner), (contactedBy.get(String(l.owner)) || 0) + 1);
             const nameOf = (id) => users.find((u) => String(u._id) === String(id));
             return {
                 columns: ['Sales rep', 'Leads', 'Contacted', 'Won', 'Lost', 'Conversion'],
                 rows: rows.map((r) => {
                     const u = nameOf(r._id);
                     return [
-                        u?.name || u?.email || 'Unknown', r.leads, r.contacted, r.won, r.lost,
+                        u?.name || u?.email || 'Unknown', r.leads, contactedBy.get(String(r._id)) || 0, r.won, r.lost,
                         r.leads ? `${Math.round((r.won / r.leads) * 100)}%` : '0%',
                     ];
                 }),
@@ -330,7 +344,7 @@ export const BLOCKS = {
         shape: 'table',
         async run({ from, to }, scope) {
             const f = parseDate(from, new Date(2000, 0, 1));
-            const t = parseDate(to, new Date());
+            const t = parseDate(to, new Date(), 'end');
             const [users, rows] = await Promise.all([
                 User.find({}).select('name email').lean(),
                 Contract.aggregate([
