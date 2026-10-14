@@ -18,6 +18,7 @@ const PURPLE_LIGHT = '#F7F3FF'
 
 type WidgetId =
   | 'stats'
+  | 'lead-distribution'
   | 'high-intent-leads'
   | 'website-leads-today'
   | 'lead-funnel'
@@ -32,6 +33,7 @@ const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 const DEFAULT_LAYOUT: WidgetId[] = [
   'stats',
   'lead-funnel',
+  'lead-distribution',
   'high-intent-leads',
   'website-leads-today',
   'website-analytics',
@@ -200,6 +202,15 @@ export default function Dashboard() {
   // is about volume or backlog; this is the one that says who's worth the
   // time, today or yesterday only. Own card, own load, same as quiet-leads
   // beside it — the heaviest reads on this page never block the rest of it.
+  // Admin only: how many leads the distribution rules handed out today and how many reps have contacted.
+  const { data: distribution, isLoading: distributionLoading } = useQuery({
+    queryKey: ['distribution-today'],
+    queryFn: () => leadApi.distributionToday(),
+    enabled: isAdmin,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  })
+
   const { data: highIntent, isLoading: highIntentLoading } = useQuery({
     queryKey: ['high-intent-leads'],
     queryFn: () => leadApi.highIntentToday(),
@@ -374,6 +385,51 @@ export default function Dashboard() {
             />
 
           </div>
+        ),
+        'lead-distribution': !isAdmin ? null : (
+          <WidgetShell id="lead-distribution" title="Lead distribution — today" subtitle="Leads handed out by the distribution rules, and how many each rep has contacted" {...dragHandlers}>
+            {distributionLoading || !distribution ? <Skeleton className="h-[160px]" /> : (() => {
+              const d = distribution
+              const mins = (m: number | null) => (m == null ? '—' : m < 90 ? `${m} min` : `${(m / 60).toFixed(1)} h`)
+              const tile = (label: string, value: number | string, tone?: string, hint?: string) => (
+                <div style={{ border: '1px solid rgba(20,8,31,.08)', borderRadius: 14, padding: '10px 12px', background: '#fff' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: MUTED_CLR, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
+                  <div style={{ ...HEADING, fontSize: 26, fontWeight: 800, color: tone || INK }}>{value}</div>
+                  {hint && <div style={{ fontSize: 11, color: MUTED_CLR }}>{hint}</div>}
+                </div>
+              )
+              return (
+                <div style={{ display: 'grid', gap: 14 }}>
+                  {!d.distributionOn && <div className="text-xs" style={{ background: '#FFF7E6', color: '#7A4B00', padding: '8px 10px', borderRadius: 10 }}>Distribution is switched off, so new leads are not being handed out by the rules.</div>}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+                    {tile('New leads today', d.newLeadsToday)}
+                    {tile('Handed out by rules', d.distributedByRules, undefined, d.assignedByHand ? `+${d.assignedByHand} assigned by hand` : undefined)}
+                    {tile('Contacted', d.contacted, '#047857', d.contactedPct == null ? undefined : `${d.contactedPct}% of handed out`)}
+                    {tile('Not contacted yet', d.waiting, d.waiting ? '#B45309' : undefined, d.waitingOver30Min ? `${d.waitingOver30Min} waiting over 30 min` : undefined)}
+                    {tile('Unassigned', d.waitingUnassigned, d.waitingUnassigned ? '#B91C1C' : undefined, 'nobody owns these yet')}
+                  </div>
+                  {d.reps.length > 0 ? (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', fontSize: 12.5, minWidth: 420, borderCollapse: 'collapse' }}>
+                        <thead><tr style={{ color: MUTED_CLR, textAlign: 'left' }}><th style={{ padding: '4px 0' }}>Rep</th><th>Got</th><th>Contacted</th><th>Waiting</th><th>Avg. time to contact</th></tr></thead>
+                        <tbody>
+                          {d.reps.map((r) => (
+                            <tr key={r.rep} style={{ borderTop: '1px solid rgba(20,8,31,.08)' }}>
+                              <td style={{ padding: '6px 0', fontWeight: 700 }}>{r.rep}</td>
+                              <td>{r.got}</td>
+                              <td style={{ color: '#047857', fontWeight: 700 }}>{r.contacted}</td>
+                              <td style={{ color: r.waiting ? '#B45309' : MUTED_CLR, fontWeight: r.waiting ? 700 : 400 }}>{r.waiting}{r.waitingOver30Min ? ` (${r.waitingOver30Min} over 30 min)` : ''}</td>
+                              <td>{mins(r.avgMinutesToContact)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : <div className="text-sm text-muted-foreground">No leads have been handed out by the rules yet today.</div>}
+                </div>
+              )
+            })()}
+          </WidgetShell>
         ),
         'high-intent-leads': (
           <WidgetShell id="high-intent-leads" title="High intent — today & yesterday" subtitle="Scored by the AI's read of the conversation — these are the ones to follow up" {...dragHandlers}>
@@ -727,7 +783,7 @@ export default function Dashboard() {
       expiringLoading, expiringIsError, expiringContracts, refetchExpiring, tasksLoading, teamTasks,
       highIntentLoading, highIntent, highIntentPage, websiteLeadsLoading, websiteLeads, websiteLeadsPage,
       websiteAnalyticsLoading, websiteAnalytics, websiteAnalyticsError,
-      monthFunnelLoading, monthFunnelIsError, monthFunnel, refetchMonthFunnel,
+      monthFunnelLoading, monthFunnelIsError, monthFunnel, refetchMonthFunnel, isAdmin, distributionLoading, distribution,
       onDrop, onDragStart, onDragOver]
   )
 
@@ -761,7 +817,7 @@ export default function Dashboard() {
       )}
 
       <div className="space-y-8">
-        {layout.map((id) => {
+        {layout.filter((id) => id !== 'lead-distribution' || isAdmin).map((id) => {
           if (id === 'stats') {
             return (
               <div key={id} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
