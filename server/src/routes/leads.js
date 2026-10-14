@@ -731,12 +731,16 @@ router.get('/distribution-today', async (req, res) => {
         if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
         const config = (await LeadRoutingConfig.findOne().lean()) ?? {};
         const since = startOfDayIn(new Date(), config.timeZone || 'Asia/Dubai');
-        const [distributed, manual, waitingUnassigned, newToday] = await Promise.all([
-            Lead.find({ deletedAt: null, autoAssigned: true, owner: { $ne: null }, assignedAt: { $gte: since } }).populate('owner', 'name').select('owner assignedAt firstResponseAt attempts phoneNormalized status').lean(),
-            Lead.countDocuments({ deletedAt: null, autoAssigned: { $ne: true }, owner: { $ne: null }, assignedAt: { $gte: since } }),
-            Lead.countDocuments({ deletedAt: null, owner: null, createdAt: { $gte: since }, status: { $nin: ['won', 'lost', 'already_customer'] } }),
-            Lead.countDocuments({ deletedAt: null, createdAt: { $gte: since } }),
+        // Everything is counted over the leads that CAME IN today, so the tiles add up:
+        // new = handed out by the rules + assigned by hand + still unassigned.
+        const [todays, reassignedEarlier] = await Promise.all([
+            Lead.find({ deletedAt: null, createdAt: { $gte: since } }).populate('owner', 'name').select('owner autoAssigned assignedAt firstResponseAt attempts phoneNormalized status').lean(),
+            Lead.countDocuments({ deletedAt: null, autoAssigned: true, owner: { $ne: null }, assignedAt: { $gte: since }, createdAt: { $lt: since } }),
         ]);
+        const distributed = todays.filter((l) => l.owner && l.autoAssigned);
+        const manual = todays.filter((l) => l.owner && !l.autoAssigned).length;
+        const waitingUnassigned = todays.filter((l) => !l.owner).length;
+        const newToday = todays.length;
         const firstOut = new Map();
         const msgs = await WhatsAppMessage.find({ phoneNormalized: { $in: distributed.map((l) => l.phoneNormalized).filter(Boolean) }, direction: 'outbound', deletedAt: null, occurredAt: { $gte: since } }).select('phoneNormalized occurredAt').sort({ occurredAt: 1 }).lean();
         for (const m of msgs) {
@@ -758,7 +762,7 @@ router.get('/distribution-today', async (req, res) => {
         const reps = [...per.values()].map((r) => ({ rep: r.rep, got: r.got, contacted: r.contacted, waiting: r.waiting, waitingOver30Min: r.waitingOver30Min, avgMinutesToContact: r.minutes.length ? Math.round(r.minutes.reduce((a, b) => a + b, 0) / r.minutes.length) : null })).sort((a, b) => b.got - a.got);
         const contacted = reps.reduce((s, r) => s + r.contacted, 0);
         res.json({
-            distributionOn: Boolean(config.enabled), newLeadsToday: newToday, distributedByRules: distributed.length, assignedByHand: manual, waitingUnassigned,
+            distributionOn: Boolean(config.enabled), newLeadsToday: newToday, distributedByRules: distributed.length, assignedByHand: manual, waitingUnassigned, reassignedFromEarlier: reassignedEarlier,
             contacted, waiting: distributed.length - contacted, waitingOver30Min: reps.reduce((s, r) => s + r.waitingOver30Min, 0),
             contactedPct: distributed.length ? Math.round((contacted / distributed.length) * 100) : null, reps,
         });

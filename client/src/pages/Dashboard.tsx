@@ -387,7 +387,7 @@ export default function Dashboard() {
           </div>
         ),
         'lead-distribution': !isAdmin ? null : (
-          <WidgetShell id="lead-distribution" title="Lead distribution — today" subtitle="Leads handed out by the distribution rules, and how many each rep has contacted" {...dragHandlers}>
+          <WidgetShell id="lead-distribution" title="Lead distribution — today" subtitle="Leads that came in today: how many the rules handed out, and how many each rep has contacted" {...dragHandlers}>
             {distributionLoading || !distribution ? <Skeleton className="h-[160px]" /> : (() => {
               const d = distribution
               const mins = (m: number | null) => (m == null ? '—' : m < 90 ? `${m} min` : `${(m / 60).toFixed(1)} h`)
@@ -403,10 +403,10 @@ export default function Dashboard() {
                   {!d.distributionOn && <div className="text-xs" style={{ background: '#FFF7E6', color: '#7A4B00', padding: '8px 10px', borderRadius: 10 }}>Distribution is switched off, so new leads are not being handed out by the rules.</div>}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
                     {tile('New leads today', d.newLeadsToday)}
-                    {tile('Handed out by rules', d.distributedByRules, undefined, d.assignedByHand ? `+${d.assignedByHand} assigned by hand` : undefined)}
+                    {tile('Handed out by rules', d.distributedByRules, undefined, [d.assignedByHand ? `${d.assignedByHand} assigned by hand` : '', d.reassignedFromEarlier ? `${d.reassignedFromEarlier} older lead${d.reassignedFromEarlier === 1 ? '' : 's'} re-assigned (not counted)` : ''].filter(Boolean).join(' · ') || undefined)}
                     {tile('Contacted', d.contacted, '#047857', d.contactedPct == null ? undefined : `${d.contactedPct}% of handed out`)}
                     {tile('Not contacted yet', d.waiting, d.waiting ? '#B45309' : undefined, d.waitingOver30Min ? `${d.waitingOver30Min} waiting over 30 min` : undefined)}
-                    {tile('Unassigned', d.waitingUnassigned, d.waitingUnassigned ? '#B91C1C' : undefined, 'nobody owns these yet')}
+                    {tile('Unassigned', d.waitingUnassigned, d.waitingUnassigned ? '#B91C1C' : undefined, 'new today, nobody owns them yet')}
                   </div>
                   {d.reps.length > 0 ? (
                     <div style={{ overflowX: 'auto' }}>
