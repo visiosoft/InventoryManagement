@@ -279,8 +279,10 @@ export async function applyEvent(file, event, { lead, now = new Date(), actor = 
 export async function proposeFromChat({ lead, file, agent, text, now = new Date() }) {
     try {
         if (!openaiConfigured() || !lead || !file) return { proposed: 0 };
-        const needDecision = !String(lead.decisionMaker || '').trim();
-        const needWhy = !String(lead.whyTheyWant || '').trim();
+        // "Who decides" and "why" were dropped from the deal check: nobody sees
+        // those fields any more, so the agent no longer proposes them.
+        const needDecision = false;
+        const needWhy = false;
         if (!worthReading(text, { needDecision, needWhy })) return { proposed: 0 };
 
         const rows = await WhatsAppMessage.find({ phoneNormalized: file.phoneNormalized, deletedAt: null, type: { $ne: 'reaction' } })

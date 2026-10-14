@@ -911,9 +911,6 @@ router.get('/:id/deal-check', async (req, res) => {
 
         const missing = [];
         if (!nextStep) missing.push('next step with a date');
-        if (!String(lead.decisionMaker || '').trim()) missing.push('who decides');
-        else if (!lead.decisionMakerSpoken) missing.push('speak to the decision maker');
-        if (!String(lead.whyTheyWant || '').trim()) missing.push('why they want it');
         if (!lastFollowUp) missing.push('a first follow-up');
 
         res.json({
