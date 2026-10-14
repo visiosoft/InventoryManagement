@@ -2,6 +2,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import crypto from 'crypto';
+import { validAccessToken, baseUrl } from './oauth.js';
 import { toolByName, toolNames } from '../services/assistant/tools.js';
 import { responseTimeReport, slowFirstReplies, customersWaitingForReply, followUpList, FOLLOW_UP_LISTS, listInvoices, pendingPayments, paymentsReceived, listQuotes, contractDetail } from './crmTools.js';
 import { signedExportUrl } from './focusExport.js';
@@ -101,11 +102,13 @@ export async function mcpHandler(req, res) {
   if (!need) return res.status(503).json({ error: 'MCP access is not switched on' });
   const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   const given = bearer || req.headers['x-api-key'] || req.params.token || '';
-  if (!given || !safeEq(given, need)) return res.status(401).json({ error: 'Unauthorized' });
+  if (!given || !(safeEq(given, need) || validAccessToken(given))) {
+    // Tells a connector where to sign in (OAuth discovery).
+    res.set('WWW-Authenticate', `Bearer resource_metadata="${baseUrl(req)}/.well-known/oauth-protected-resource"`);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   if (req.method !== 'POST') return res.status(405).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Use POST' }, id: null });
-  const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  const host = req.headers['x-forwarded-host'] || req.get('host');
-  const server = buildMcpServer({ baseUrl: process.env.PUBLIC_API_URL || `${proto}://${host}`, user: { id: 'mcp', name: 'Claude (MCP)', role: 'admin' } });
+  const server = buildMcpServer({ baseUrl: baseUrl(req), user: { id: 'mcp', name: 'Claude (MCP)', role: 'admin' } });
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on('close', () => { transport.close(); server.close(); });
   await server.connect(transport);

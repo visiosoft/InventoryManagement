@@ -12,6 +12,11 @@ is waiting, who to chase, and quotes, contracts, invoices, payments, messages.
 ## Connect Claude
 Endpoint: `https://api.purplebox.ae/api/mcp`
 
+**Easiest (claude.ai / Claude app):** Settings → Connectors → Add custom connector, URL
+`https://api.purplebox.ae/api/mcp` (no token in it), press Connect. A PurpleBox page opens;
+enter the access key (`MCP_ACCESS_TOKEN`) once and press Allow. The connector then stays
+signed in (30 days, renewed automatically). Changing the key signs everyone out.
+
 - **Claude app / claude.ai** → Settings → Connectors → Add custom connector →
   URL `https://api.purplebox.ae/api/mcp/<YOUR_TOKEN>` (the token is the password;
   anyone with this URL can read CRM data, so share it like a password).
