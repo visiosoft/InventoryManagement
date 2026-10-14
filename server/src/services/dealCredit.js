@@ -147,7 +147,10 @@ export async function onContractSigned(contract, { userId } = {}) {
     // only turns Occupied once the first payment is verified.
     await Contract.updateOne({ _id: contract._id }, { $set: { resignNeeded: null } });
     // New signing: put it under the payment rule (once; a re-signing keeps its original date).
-    await Contract.updateOne({ _id: contract._id, 'paymentGate.since': null }, { $set: { 'paymentGate.required': true, 'paymentGate.since': new Date() } });
+    // Only a move-in that is today, ahead, or just happened: re-signing or renewing
+    // a tenant who has been there a while must not put their unit under the rule.
+    const recent = contract.startDate && new Date(contract.startDate) >= new Date(Date.now() - 3 * 864e5);
+    if (recent) await Contract.updateOne({ _id: contract._id, 'paymentGate.since': null }, { $set: { 'paymentGate.required': true, 'paymentGate.since': new Date() } });
     recheckAndSync(contract._id).catch(() => {});
    } catch (e) {
       console.error('[DealCredit] onContractSigned:', e.message);

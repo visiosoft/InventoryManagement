@@ -1353,7 +1353,7 @@ export default function ContractDetail() {
         style={{ border: '1px solid rgba(20,8,31,.06)' }}>
 
       {/* Check-in moved after signing: the customer must sign again. */}
-      {c.resignNeeded && c.status === 'active' && (
+      {c.resignNeeded && c.status === 'active' && (c.resignNeeded.previousStart || '').slice(0, 10) !== (c.resignNeeded.newStart || '').slice(0, 10) && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" style={{ background: '#FFF7E6', borderColor: '#F5D08A' }}>
           <div className="min-w-0 flex-1 text-sm" style={{ color: '#7A4B00' }}>
             <strong>Needs to be signed again.</strong> Dates changed after the customer signed: check-in {formatDate(c.resignNeeded.previousStart)} → {formatDate(c.resignNeeded.newStart)}{c.resignNeeded.newEnd ? `, check-out ${formatDate(c.resignNeeded.previousEnd || '')} → ${formatDate(c.resignNeeded.newEnd)}` : ''}.
@@ -1367,7 +1367,7 @@ export default function ContractDetail() {
       )}
 
       {/* Payment check: the unit only turns Occupied once the first payment is verified. */}
-      {c.paymentGate?.required && c.paymentGate.since && c.status === 'active' && (
+      {c.paymentGate?.required && c.paymentGate.since && c.status === 'active' && !!c.startDate && new Date(c.startDate).getTime() >= Date.now() - 7 * 864e5 && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" style={c.paymentGate.verified ? { background: '#F3FBF6', borderColor: 'rgba(21,128,61,.35)' } : { background: '#FFF8F7', borderColor: 'rgba(185,28,28,.30)' }}>
           <div className="min-w-0 flex-1 text-sm">
             <strong>{c.paymentGate.verified ? 'Payment verified' : 'Payment not verified'}</strong>
@@ -1614,7 +1614,10 @@ export default function ContractDetail() {
                           {/* What the tenant did on the renewal page. A bank
                               transfer sits here until somebody confirms it —
                               nothing else in the system knows the money came. */}
-                          {renewals.filter((r) => r.status !== 'cancelled').slice(0, 3).map((r) => {
+                          {renewals
+                            // A card checkout somebody opened and never finished is not a renewal in progress: hide it after two days.
+                            .filter((r) => r.status !== 'cancelled' && !(r.status === 'pending' && Date.now() - new Date(r.createdAt || 0).getTime() > 2 * 864e5))
+                            .slice(0, 3).map((r) => {
                             const waiting = r.status === 'awaiting_transfer'
                             const applied = r.status === 'applied'
                             return (

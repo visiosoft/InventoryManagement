@@ -1,6 +1,6 @@
 import { Contract, Invoice } from '../models/index.js';
 import { findZohoContactsFor, fetchZohoInvoicesForContacts, zohoBooksConfigured } from './zohoBooks.js';
-import { syncUnitStatus } from '../utils/unitStatus.js';
+import { syncUnitStatus, PAYMENT_GATE_DAYS } from '../utils/unitStatus.js';
 
 /**
  * Has the tenant actually paid for this unit?
@@ -99,7 +99,7 @@ export async function verifyPendingPayments() {
     status: 'active', archived: { $ne: true },
     'paymentGate.since': { $ne: null }, 'paymentGate.required': true,
     'paymentGate.verified': { $ne: true }, 'paymentGate.manual': { $ne: true },
-    startDate: { $lte: soon },
+    startDate: { $lte: soon, $gte: new Date(Date.now() - PAYMENT_GATE_DAYS * 864e5) },
     // Not looked at in the last 10 minutes, oldest check first.
     $or: [{ 'paymentGate.checkedAt': null }, { 'paymentGate.checkedAt': { $lt: new Date(Date.now() - 10 * 60_000) } }],
   }).sort({ 'paymentGate.checkedAt': 1 }).select('_id').limit(60).lean();
