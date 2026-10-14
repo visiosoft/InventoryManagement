@@ -356,6 +356,12 @@ const leadSchema = new Schema(
       reason: { type: String, default: '' },
       at: { type: Date, default: null },
     },
+    // Every stage the lead has been in, with when it moved. Written by the
+    // save hook below so no route has to remember to; it is what lets a
+    // report say how long leads sit in a stage and where they drop out.
+    stageHistory: [
+      { from: { type: String, default: '' }, to: { type: String, default: '' }, at: { type: Date, default: Date.now }, _id: false },
+    ],
     source: {
       type: String,
       enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other'],
@@ -486,6 +492,14 @@ const leadSchema = new Schema(
   { timestamps: true }
 );
 
+leadSchema.pre('save', function recordStage(next) {
+  if (this.isNew) this.stageHistory.push({ from: '', to: this.status, at: new Date() });
+  else if (this.isModified('status')) {
+    const last = this.stageHistory[this.stageHistory.length - 1];
+    this.stageHistory.push({ from: last?.to || '', to: this.status, at: new Date() });
+  }
+  next();
+});
 leadSchema.index({ leadDateTime: -1, createdAt: -1 });
 leadSchema.index({ status: 1, owner: 1, leadDateTime: -1 });
 leadSchema.index({ source: 1, createdAt: -1 });

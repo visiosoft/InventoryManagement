@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { IntentReportCard } from '../components/IntentReportCard'
 import { LostReasonsCard } from '../components/LostReasonsCard'
+import { SourceReportCard } from '../components/SourceReportCard'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
@@ -534,6 +535,7 @@ export default function FollowUps() {
 
       {isAdmin && <IntentReportCard />}
       {isAdmin && <LostReasonsCard />}
+      {isAdmin && <SourceReportCard />}
 
       {openId && (
         <FollowUpDrawer

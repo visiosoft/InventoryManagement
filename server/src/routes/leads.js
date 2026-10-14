@@ -743,6 +743,36 @@ router.get('/intent-report', async (req, res) => {
     }
 });
 
+/**
+ * Where leads come from and what becomes of them: per source, how many came
+ * in, how many were reached, quoted and won, and the win rate. Admin only.
+ */
+router.get('/source-report', async (req, res) => {
+    try {
+        if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+        const days = Math.min(730, Math.max(7, Number(req.query.days) || 90));
+        const since = new Date(Date.now() - days * 864e5);
+        const rows = await Lead.aggregate([
+            { $match: { deletedAt: null, createdAt: { $gte: since } } },
+            { $group: {
+                _id: '$source',
+                leads: { $sum: 1 },
+                reached: { $sum: { $cond: [{ $in: ['$status', ['contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won']] }, 1, 0] } },
+                quoted: { $sum: { $cond: [{ $in: ['$status', ['quotation_sent', 'won']] }, 1, 0] } },
+                won: { $sum: { $cond: [{ $eq: ['$status', 'won'] }, 1, 0] } },
+                lost: { $sum: { $cond: [{ $eq: ['$status', 'lost'] }, 1, 0] } },
+            } },
+            { $sort: { leads: -1 } },
+        ]);
+        res.json({
+            days,
+            sources: rows.map((r) => ({ source: r._id || 'manual', leads: r.leads, reached: r.reached, quoted: r.quoted, won: r.won, lost: r.lost, winRate: r.leads ? Math.round((r.won / r.leads) * 100) : 0 })),
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 /** Why leads are lost, most common first. Admin only. */
 router.get('/lost-reasons', async (req, res) => {
     try {
