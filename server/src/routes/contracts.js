@@ -17,7 +17,7 @@ import { notifyResignNeeded } from '../services/contractResign.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
-import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, looksLikeHtml } from '../services/agreementText.js';
+import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, looksLikeHtml, refreshAgreementDates } from '../services/agreementText.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
 import { AutomationLog } from '../models/index.js';
 import { buildContractPdf } from '../services/contractDocument.js';
@@ -411,7 +411,7 @@ router.get('/renewal-requests', async (req, res) => {
 /** Signed contracts whose first payment is not verified, so their unit reads Reserved. */
 router.get('/unverified-payments', async (req, res) => {
   try {
-    const rows = await Contract.find({ status: 'active', archived: { $ne: true }, 'paymentGate.since': { $ne: null }, 'paymentGate.required': true, 'paymentGate.verified': { $ne: true } })
+    const rows = await Contract.find({ status: 'active', archived: { $ne: true }, 'paymentGate.since': { $ne: null }, 'paymentGate.required': true, 'paymentGate.verified': { $ne: true }, startDate: { $gte: new Date(Date.now() - 7 * 864e5) } })
       .populate('customer', 'fullName phone email').populate('unit', 'unitNumber').sort({ startDate: 1 }).limit(300).lean();
     res.json(rows.map((c) => ({ _id: c._id, contractNo: c.contractNo, customer: c.customer, unit: c.unit, startDate: c.startDate, endDate: c.endDate, detail: c.paymentGate?.detail || '', checkedAt: c.paymentGate?.checkedAt || null })));
   } catch (e) {
@@ -1336,13 +1336,22 @@ router.put('/:id', async (req, res) => {
     const day = (d) => new Date(d).toISOString().slice(0, 10);
     const startMoved = $set.startDate && contract.startDate && day($set.startDate) !== day(contract.startDate);
     const endMoved = $set.endDate && contract.endDate && day($set.endDate) !== day(contract.endDate);
+    /* Any change to the dates of a signed contract means the customer signs
+       again. But only a moved CHECK-IN, to today or later, is the onboarding
+       case that puts the unit under the first-payment check; a check-out
+       extension never touches the unit status or Zoho. */
+    const holdsUnit = startMoved && contract.status === 'active' && day($set.startDate) >= day(new Date());
+    // Wording saved on this contract carries the old dates: bring them up to date,
+    // unless the same request is saving new wording itself.
+    if ((startMoved || endMoved) && String(contract.agreementText || '').trim() && req.body.agreementText === undefined) {
+      await Contract.updateOne({ _id: contract._id }, { $set: { agreementText: refreshAgreementDates(contract.agreementText, contract, { startDate: $set.startDate || contract.startDate, endDate: $set.endDate || contract.endDate }) } });
+    }
     if ((startMoved || endMoved) && contract.status === 'active') {
       const by = req.user?.name || req.user?.email || 'user';
       await Contract.updateOne({ _id: contract._id }, {
         $set: {
           resignNeeded: { at: new Date(), reason: `${startMoved ? 'Check-in' : 'Check-out'} date changed after signing`, previousStart: contract.startDate, newStart: $set.startDate || contract.startDate, previousEnd: contract.endDate, newEnd: $set.endDate || contract.endDate, by },
-          'paymentGate.required': true,
-          'paymentGate.since': contract.paymentGate?.since || new Date(),
+          ...(holdsUnit ? { 'paymentGate.required': true, 'paymentGate.since': contract.paymentGate?.since || new Date() } : {}),
         },
         $push: { timeline: { text: `${startMoved ? `Check-in moved ${day(contract.startDate)} → ${day($set.startDate)}` : ''}${startMoved && endMoved ? ', ' : ''}${endMoved ? `Check-out moved ${day(contract.endDate)} → ${day($set.endDate)}` : ''} — contract needs to be signed again`, author: by, at: new Date() } },
       });
@@ -1350,7 +1359,7 @@ router.put('/:id', async (req, res) => {
       await notifyResignNeeded({ contract: full, previousStart: contract.startDate, newStart: $set.startDate || contract.startDate, previousEnd: contract.endDate, newEnd: $set.endDate || contract.endDate, byName: by });
     }
     const affected = new Set([contract.unit, ...(contract.units || []), ...($set.units || []), $set.unit].filter(Boolean).map(String));
-    if ((startMoved || endMoved) && contract.status === 'active') await recheckAndSync(contract._id);
+    if (holdsUnit) await recheckAndSync(contract._id);
     for (const uid of affected) await syncUnitStatus(uid);
 
     const populated = await populateAll(Contract.findById(contract._id));
@@ -1410,6 +1419,9 @@ router.post('/:id/extend', async (req, res) => {
       return res.status(400).json({ error: 'New end date must be after the current end date' });
     }
 
+    if (String(contract.agreementText || '').trim()) {
+      contract.agreementText = refreshAgreementDates(contract.agreementText, { endDate: contract.endDate }, { endDate: newEnd });
+    }
     contract.endDate = newEnd;
 
     let signingUrl = null;

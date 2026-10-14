@@ -4,6 +4,7 @@ import { applyInvoicePayment, syncLinkedPayment } from './invoicePayments.js';
 import { sendMail, mailConfigured } from './mail.js';
 import { sendWhatsAppText, whatsappSendConfigured } from './whatsapp.js';
 import { renderInvoicePdf } from './invoicePdf.js';
+import { refreshAgreementDates } from './agreementText.js';
 
 const clientOrigin = () => String(process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae').replace(/\/+$/, '');
 
@@ -279,6 +280,9 @@ export async function applyRenewal(renewalId, { byName = '', paid = true } = {})
     });
     let signingUrl = '';
     if (extends_) {
+        if (String(contract.agreementText || '').trim()) {
+            contract.agreementText = refreshAgreementDates(contract.agreementText, { endDate: contract.endDate }, { endDate: newEnd });
+        }
         contract.endDate = newEnd;
         // Nothing to re-sign when the date did not move — see decideExtension.
         signingUrl = openSigningLink(contract);
