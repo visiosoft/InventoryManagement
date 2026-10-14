@@ -245,13 +245,13 @@ export default function AgentInbox() {
           <SectionHead title={`Drafts to review · ${data.drafts.length}`} hint="newest first · approve sends it as that agent, edit lets you change it first" />
           <div style={{ display: 'grid', gap: 10 }}>
             {data.drafts.length === 0 && <Panel><Note>Nothing waiting. When a customer writes in, the draft appears here.</Note></Panel>}
-            {data.drafts.map((d) => <DraftCard key={d.actionId} d={d} busy={resolve.isPending} onResolve={(r, text) => resolve.mutate({ id: d.actionId, r, text })} />)}
+            {data.drafts.filter((d) => d.lead).map((d) => <DraftCard key={d.actionId} d={d} busy={resolve.isPending} onResolve={(r, text) => resolve.mutate({ id: d.actionId, r, text })} />)}
           </div>
 
           <SectionHead title={`Handed to you · ${data.handed.length}`} hint="the agent stopped and wrote down why — you take it from here" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 10 }}>
             {data.handed.length === 0 && <Panel style={{ gridColumn: '1 / -1' }}><Note>Nobody is waiting on a person.</Note></Panel>}
-            {data.handed.map((h) => (
+            {data.handed.filter((h) => h.lead).map((h) => (
               <Panel key={h.leadFileId} style={{ display: 'grid', gap: 8, borderLeft: `4px solid ${C.danger}` }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><Avatar name={h.lead.fullName} size={28} color={C.grey} /><b>{h.lead.fullName}</b><Tag tone="danger">{h.why.slice(0, 40) || 'needs a person'}</Tag><AgentChip agent={h.agent} prefix="from " /></div>
                 <div style={{ fontSize: 13, color: C.second }}>

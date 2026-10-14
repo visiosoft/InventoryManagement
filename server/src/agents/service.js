@@ -643,6 +643,8 @@ export async function inbox({ agentId = null } = {}) {
         .populate('lead', 'fullName phone temperature status').populate('agent', 'name role avatarColor').sort({ lastActionAt: -1 }).limit(50).lean();
     const handed = [];
     for (const f of handedFiles) {
+        // The lead was deleted since: nothing here for a person to pick up.
+        if (!f.lead) continue;
         const esc = await AgentAction.findOne({ leadFile: f._id, kind: 'escalated' }).sort({ at: -1 }).lean();
         handed.push({ leadFileId: f._id, lead: f.lead, agent: f.agent, phoneNormalized: f.phoneNormalized, previousBucket: f.previousBucket, need: f.need, offers: f.offers, openQuestions: f.openQuestions, lastSummary: f.lastSummary, why: esc?.summary?.replace(/^Handed to a person:\s*/, '') || '', at: esc?.at || f.lastActionAt });
     }
