@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { ArrowRight, Check, ChevronDown, ChevronUp, MessageCircle, Phone } from 'lucide-react'
 import { api, apiError, followUpQueueApi, whatsappApi, type FollowUpTimelineEntry } from '../lib/api'
 import { SlideOver, Skeleton } from './ui'
+import { AgentDraftCard } from './AgentDraftCard'
 import {
   INK, MUTED, PURPLE, PURPLE_DEEP, PURPLE_TINT, HAIRLINE, CREAM, DISPLAY,
   REASON_UI, PRIORITY_UI, TEMP_UI, whyFor, agoText, firstNameOf, initialsOf, defaultTemplate, rememberTemplate, customerBadge,
@@ -22,9 +23,11 @@ const THREAD_LENGTH = 10
  * messaged in the last 12 hours, is not yet due in the cadence, or has
  * since replied; the drawer shows that reason and asks before trying again.
  */
-export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose, onAdvance, onChanged }: {
+export default function FollowUpDrawer({ leadId, nextLeadId, position, snapshotAt, onClose, onAdvance, onChanged }: {
   leadId: string
   nextLeadId: string | null
+  /** Where this lead sits in the list being worked, e.g. 3 of 23. */
+  position?: { index: number; total: number }
   snapshotAt?: string
   onClose: () => void
   onAdvance: (id: string) => void
@@ -101,6 +104,55 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
     onSuccess: () => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() },
     onError: (e) => setError(apiError(e)),
   })
+  const doSnooze = (when: string) => {
+    // A snooze replaces the date somebody already chose; say so first.
+    const existing = item?.followUpAt && new Date(item.followUpAt) > new Date() ? new Date(item.followUpAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : ''
+    if (existing && !confirm(`This lead already has a follow-up on ${existing}. Replace it? (The old date stays in the lead's history.)`)) return
+    snooze.mutate(when)
+  }
+
+  // Logging a call without leaving the list: what happened, and when to try
+  // next. "Spoke to them" needs a next date unless the deal is done, the same
+  // rule the lead page and the server apply.
+  const [logOpen, setLogOpen] = useState(false)
+  const [logOutcome, setLogOutcome] = useState<'no_answer' | 'reached' | 'call_back' | 'not_interested'>('no_answer')
+  const [logNote, setLogNote] = useState('')
+  const [logDate, setLogDate] = useState('')
+  const [logDone, setLogDone] = useState(false)
+  useEffect(() => { setLogOpen(false); setLogNote(''); setLogDate(''); setLogOutcome('no_answer'); setLogDone(false) }, [leadId])
+  const logCall = useMutation({
+    mutationFn: () => api.post(`/leads/${leadId}/attempts`, {
+      channel: 'call', outcome: logOutcome, note: logNote.trim(),
+      nextAt: logDate || undefined,
+      noFollowUpNeeded: logOutcome === 'reached' && logDone ? true : undefined,
+    }),
+    onSuccess: () => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() },
+    onError: (e) => setError(apiError(e)),
+  })
+  const logBlocked = logCall.isPending || (logOutcome === 'reached' && !logDate && !logDone)
+
+  const sendBtnRef = useRef<HTMLButtonElement | null>(null)
+
+  const [helpOpen, setHelpOpen] = useState(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return
+      const k = e.key.toLowerCase()
+      if (k === '?') { e.preventDefault(); setHelpOpen((o) => !o) }
+      else if (!item || sentTo) { if ((k === 'n' || k === 'arrowright') && nextLeadId) { e.preventDefault(); onAdvance(nextLeadId) } }
+      else if (k === 's') { e.preventDefault(); sendBtnRef.current?.focus() }
+      else if (k === 'c') { e.preventDefault(); setLogOpen(true) }
+      else if (k === '1' || k === '2' || k === '3') { e.preventDefault(); doSnooze(SNOOZES[Number(k) - 1][0]) }
+      else if ((k === 'n' || k === 'arrowright') && nextLeadId) { e.preventDefault(); onAdvance(nextLeadId) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }) // re-bound every render so it always sees the current lead
+
+
   const markLost = useMutation({
     mutationFn: () => api.patch(`/leads/${leadId}/status`, { status: 'lost' }),
     onSuccess: () => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() },
@@ -125,7 +177,7 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
           : item.nextContactAt ? new Date(item.nextContactAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'Today'
 
   return (
-    <SlideOver open onClose={onClose} title={lead?.name || 'Follow-up'} subtitle={lead ? `${lead.phone} · ${lead.ownerName}${lead.source ? ` · ${lead.source}` : ''}` : ''} width="max-w-2xl">
+    <SlideOver open onClose={onClose} title={lead?.name || 'Follow-up'} subtitle={lead ? `${position ? `${position.index} of ${position.total} · ` : ''}${lead.phone} · ${lead.ownerName}${lead.source ? ` · ${lead.source}` : ''}` : ''} width="max-w-2xl">
       {isLoading || !lead ? (
         <div className="p-5 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[90px]" />)}</div>
       ) : (
@@ -164,6 +216,8 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
               )}
             </div>
           </div>
+
+          <AgentDraftCard leadId={leadId} onChanged={onChanged} />
 
           {item && (
             <div className="grid grid-cols-3 gap-2 text-center">
@@ -301,7 +355,7 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
                     </label>
                   )}
                   {error && <p className="text-xs" style={{ color: '#B91C1C' }}>{error}</p>}
-                  <button type="button" disabled={!templateName || !extraFilled || send.isPending || (needsOverride && !confirmResend) || (Boolean(tenant) && !allowCustomers)} onClick={() => send.mutate()}
+                  <button ref={sendBtnRef} type="button" disabled={!templateName || !extraFilled || send.isPending || (needsOverride && !confirmResend) || (Boolean(tenant) && !allowCustomers)} onClick={() => send.mutate()}
                     className="inline-flex items-center gap-1.5 h-10 px-5 rounded-lg text-sm font-bold cursor-pointer disabled:opacity-40"
                     style={{ background: '#16A34A', color: '#fff' }}>
                     <MessageCircle size={15} /> {send.isPending ? 'Sending…' : 'Send via WhatsApp'}
@@ -316,14 +370,58 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
             <div className="flex items-center gap-2 flex-wrap text-xs">
               <span style={{ color: MUTED }}>Snooze:</span>
               {SNOOZES.map(([when, label]) => (
-                <button key={when} type="button" disabled={snooze.isPending} onClick={() => snooze.mutate(when)}
+                <button key={when} type="button" disabled={snooze.isPending} onClick={() => doSnooze(when)}
                   className="cursor-pointer font-semibold px-3 py-1.5 rounded-full" style={{ background: PURPLE_TINT, color: PURPLE_DEEP }}>{label}</button>
               ))}
-              <a href={`tel:${lead.phone}`} className="ml-auto inline-flex items-center gap-1 font-semibold px-3 py-1.5 rounded-full border" style={{ borderColor: HAIRLINE, color: INK }}><Phone size={12} /> Call</a>
+              <button type="button" onClick={() => setLogOpen((o) => !o)}
+                className="ml-auto cursor-pointer font-semibold px-3 py-1.5 rounded-full border" style={{ borderColor: HAIRLINE, color: PURPLE_DEEP }}>Log a call (c)</button>
+              <a href={`tel:${lead.phone}`} className="inline-flex items-center gap-1 font-semibold px-3 py-1.5 rounded-full border" style={{ borderColor: HAIRLINE, color: INK }}><Phone size={12} /> Call</a>
               <button type="button" disabled={markLost.isPending} onClick={() => { if (confirm(`Mark ${lead.name} as lost? Pending follow-ups stop.`)) markLost.mutate() }}
                 className="cursor-pointer font-semibold px-3 py-1.5 rounded-full" style={{ background: '#FEE2E2', color: '#B91C1C' }}>Mark lost</button>
             </div>
           )}
+
+          {item && !sentTo && logOpen && (
+            <div className="rounded-xl border p-3 space-y-2.5" style={{ borderColor: HAIRLINE, background: CREAM }}>
+              <div className="text-[11px] font-semibold uppercase" style={{ letterSpacing: '.08em', color: PURPLE }}>How did the call go?</div>
+              <div className="flex flex-wrap gap-1.5">
+                {([['no_answer', 'No answer'], ['reached', 'Spoke to them'], ['call_back', 'Call back later'], ['not_interested', 'Not interested']] as const).map(([v, label]) => (
+                  <button key={v} type="button" onClick={() => setLogOutcome(v)} className="cursor-pointer text-xs font-semibold px-3 py-1.5 rounded-full"
+                    style={{ background: logOutcome === v ? PURPLE : PURPLE_TINT, color: logOutcome === v ? '#fff' : PURPLE_DEEP }}>{label}</button>
+                ))}
+              </div>
+              <textarea value={logNote} onChange={(e) => setLogNote(e.target.value)} rows={2} placeholder="What was said, in a line (optional)"
+                className="w-full rounded-lg border p-2 text-sm" style={{ borderColor: 'rgba(20,8,31,.14)' }} />
+              {logOutcome !== 'not_interested' && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs" style={{ color: MUTED }}>{logOutcome === 'reached' ? 'Next follow-up — when will they decide?' : 'Try again on'}</span>
+                  <input type="date" value={logDate} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setLogDate(e.target.value)}
+                    className="h-8 rounded-lg border px-2 text-xs" style={{ borderColor: 'rgba(20,8,31,.14)' }} />
+                  {logOutcome === 'reached' && (
+                    <label className="flex items-center gap-1.5 text-xs" style={{ color: MUTED }}>
+                      <input type="checkbox" checked={logDone} onChange={(e) => setLogDone(e.target.checked)} /> No follow-up needed — the deal is done
+                    </label>
+                  )}
+                </div>
+              )}
+              <button type="button" disabled={logBlocked} onClick={() => logCall.mutate()}
+                className="cursor-pointer disabled:opacity-40 px-4 h-9 rounded-full text-xs font-bold" style={{ background: PURPLE, color: '#fff' }}>
+                {logCall.isPending ? 'Saving…' : 'Save and go to the next lead'}
+              </button>
+            </div>
+          )}
+
+          {/* Shortcuts: kept out of the way, one tap to see them. */}
+          <div className="text-[11px]" style={{ color: MUTED }}>
+            <button type="button" onClick={() => setHelpOpen((o) => !o)} className="cursor-pointer underline">{helpOpen ? 'Hide shortcuts' : 'Keyboard shortcuts (?)'}</button>
+            {helpOpen && (
+              <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-0.5">
+                <span><b>s</b> jump to Send (then Enter)</span><span><b>1 2 3</b> snooze tomorrow / 3 days / next week</span>
+                <span><b>c</b> log a call</span><span><b>n</b> or <b>→</b> skip to the next lead</span>
+                <span><b>Esc</b> close</span><span><b>?</b> this list</span>
+              </div>
+            )}
+          </div>
 
           {/* ── Attempts / full history, collapsed ───────────────────────── */}
           {(attempts.length > 0 || (data?.timeline.length ?? 0) > thread.length) && (

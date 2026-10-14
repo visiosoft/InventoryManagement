@@ -221,6 +221,12 @@ export async function syncFollowUpTask(lead) {
   // Somebody already picked the task up or finished it. Leave their work
   // alone and let the next change start a fresh one.
   if (existing && existing.status !== 'todo') {
+    // Same date: it is the work they already did or are doing, so there is
+    // nothing new to raise. Starting a second task here made a finished
+    // follow-up reappear after any unrelated edit to the lead (a tag, say).
+    const sameDate = existing.dueDate && fields.dueDate
+      && new Date(existing.dueDate).getTime() === new Date(fields.dueDate).getTime();
+    if (sameDate) return existing;
     lead.followUpTaskId = null;
   } else if (existing) {
     existing.title = fields.title;

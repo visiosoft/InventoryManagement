@@ -170,6 +170,18 @@ export function classify(signals = {}, { now = new Date(), stages = DEFAULT_STAG
             window = windowFor(nextContactAt, now);
         }
     }
+    // An open lead with nothing on its calendar at all: no date, no chat to
+    // read a cadence from, no exhausted chase. This is the lead that is
+    // forgotten — it has no signal anywhere — so it is put in front of the
+    // owner as work to do. Younger than a day it is still the first-response
+    // clock's business, not this list's.
+    if (!reason && signals.leadCreatedAt && (nowT - new Date(signals.leadCreatedAt).getTime()) > DAY) {
+        reason = 'manual_followup_due';
+        reasonDetail = 'no_next_step';
+        since = signals.leadCreatedAt;
+        nextContactAt = new Date(now);
+        window = 'today';
+    }
     if (!reason) return null;
 
     const daysWaiting = Math.max(0, Math.floor((nowT - new Date(since).getTime()) / DAY));
@@ -178,7 +190,12 @@ export function classify(signals = {}, { now = new Date(), stages = DEFAULT_STAG
             : reason === 'manual_followup_due' ? 60
                 : 40;
     let score = base + Math.min(daysWaiting, 14) * 2;
-    if (signals.temperature === 'hot') score += 15;
+    // How promising the lead is comes from the one intent score (leadScore.js)
+    // when there is one: it sees the stage, the move-in date and the silence,
+    // where the bare temperature saw only the AI's tone. The temperature rule
+    // stays as the fallback for a lead whose conversation has not been read.
+    if (signals.intentScore != null) score += Math.round(Number(signals.intentScore) * 0.25);
+    else if (signals.temperature === 'hot') score += 15;
     else if (signals.temperature === 'warm') score += 5;
     if (signals.nextAction || (signals.openQuestions || []).length) score += 10;
 
@@ -488,7 +505,7 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
     else filter.createdAt = { $gte: QUEUE_SINCE };
 
     const leads = await Lead.find(filter)
-        .select('fullName phone phoneNormalized whatsappProfileName status temperature owner followUpAt sequenceExhaustedAt attempts source')
+        .select('fullName phone phoneNormalized whatsappProfileName status temperature owner followUpAt sequenceExhaustedAt attempts source createdAt intendedStartDate storageStartAt siteVisitAt leadScoreOverride leadScoreOverrideForLeadType')
         .populate('owner', 'name')
         .lean();
     if (!leads.length) return [];
@@ -518,6 +535,7 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
             followUpAt: lead.followUpAt,
             sequenceExhaustedAt: lead.sequenceExhaustedAt,
             temperature: lead.temperature || null,
+            leadCreatedAt: lead.createdAt,
         }, { now, stages });
         if (!verdict) continue;
 
@@ -540,6 +558,11 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
             lastSentAt: h.lastSentAt,
             sentSinceReply: h.sentSinceReply,
             followUpAt: lead.followUpAt || null,
+            // Carried on the row so the second scoring pass (after the AI read
+            // is attached) sees the same signals as the first. Without them an
+            // exhausted lead was re-scored as a plain quiet one.
+            sequenceExhaustedAt: lead.sequenceExhaustedAt || null,
+            leadCreatedAt: lead.createdAt,
             sequence: (lead.attempts || []).length && plan ? sequenceState(lead, plan) : null,
             quietStage: stageFor(h.sentSinceReply, stages),
             ...verdict,
@@ -548,6 +571,19 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
     if (!items.length) return [];
 
     items = await attachAi(items, { generate });
+
+    // One intent score per lead, the same arithmetic the lead panel shows, so
+    // the queue ranks by what the rep is told elsewhere. Best effort: a lead
+    // with no AI read yet simply has none.
+    try {
+        const { intentForLeads } = await import('./leadScore.js');
+        const intents = await intentForLeads(leads.filter((l) => items.some((it) => it.leadId === String(l._id))), { now });
+        for (const it of items) {
+            const intent = intents.get(it.leadId);
+            if (intent) { it.intent = intent; it.intentScore = intent.score; }
+        }
+    } catch (e) { console.error('[FollowUps] intent score:', e.message); }
+
     // The AI's temperature and open questions change the score, so re-run
     // the arithmetic now that they are on the row.
     for (const it of items) {

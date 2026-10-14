@@ -17,6 +17,7 @@ import { listWhatsAppTemplates } from '../services/whatsapp.js';
 import { agentTools, toOpenAiTools } from './tools.js';
 import { transition, describeStage, DEFAULT_CADENCE, BUCKETS } from './buckets.js';
 import { record, snapshotOf } from './log.js';
+import { windowOpen, customerWritesArabic, templatesForLanguage } from './guards.js';
 
 const HISTORY_DAYS = 90;
 const HISTORY_TURNS = 60;
@@ -118,6 +119,24 @@ function leadFileBlock(file, lead, cadence) {
     return lines.filter(Boolean).join('\n');
 }
 
+/** What the CRM knows about this lead that the chat does not: the date and
+ *  reason the follow-up was set for, what the rep has tried, and the deal-check
+ *  answers. Only given to a follow-up turn, where it is the whole point. */
+export function crmBlock(lead, now = new Date()) {
+    if (!lead) return '';
+    const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' });
+    const attempts = lead.attempts || [];
+    const last = attempts[attempts.length - 1];
+    return [
+        'WHAT OUR TEAM HAS RECORDED (from the CRM, not the chat):',
+        lead.followUpAt ? `- Follow-up was set for ${fmt(lead.followUpAt)}${lead.followUpNote ? ` — reason: "${lead.followUpNote}"` : ''}` : '',
+        lead.siteVisitAt ? `- Site visit: ${fmt(lead.siteVisitAt)}` : '',
+        attempts.length ? `- ${attempts.length} contact attempt(s) logged${last ? `; the last, on ${fmt(last.at)}, was ${last.outcome}${last.note ? ` ("${String(last.note).slice(0, 160)}")` : ''}` : ''}` : '',
+        lead.decisionMaker ? `- Decision maker: ${lead.decisionMaker}${lead.decisionMakerSpoken ? ' (our team has spoken to them)' : ' (not yet spoken to)'}` : '',
+        lead.whyTheyWant ? `- Why they want it, in their words: "${lead.whyTheyWant}"` : '',
+    ].filter(Boolean).join('\n');
+}
+
 function parseDecision(content) {
     const text = String(content || '').trim();
     const m = text.match(/\{[\s\S]*\}/);
@@ -135,22 +154,12 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
     if (!openaiConfigured()) throw new Error('OpenAI is not configured');
     const cadence = cadenceFor(agent);
     const before = snapshotOf(leadFile);
-    const isTouch = trigger.kind === 'touch';
+    const isFollowup = trigger.kind === 'followup';
     const isRefresh = trigger.kind === 'refresh';
 
     // Working copy: tools mutate this, nothing is saved until the end.
     const work = leadFile.toObject ? leadFile.toObject() : { ...leadFile };
     const ctx = { leadFile: work, lead, now, cadence, changes: {}, scope: null, templates: [] };
-
-    if (isTouch) {
-        const { templates = [] } = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
-        // A touch only ever fills one variable — the customer's first name —
-        // there is no person in this flow to supply anything past that, so a
-        // template needing 2+ variables can never be sent correctly here and
-        // must never be offered (offering it just turns into a WhatsApp
-        // #132000 failure, or worse, a mismatched send).
-        ctx.templates = templates.filter((t) => t.status === 'APPROVED' && (Number(t.variableCount) || 0) <= 1).map((t) => ({ name: t.name, language: t.language, bodyText: t.bodyText, variableCount: t.variableCount }));
-    }
 
     // A rehearsal replays the past: history stops at the moment being
     // replayed, so the agent cannot see what happened next.
@@ -159,17 +168,41 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
         occurredAt: { $gte: new Date(now.getTime() - HISTORY_DAYS * 86_400_000), ...(trigger.until ? { $lte: new Date(trigger.until) } : {}) },
         deletedAt: null,
         type: { $ne: 'reaction' },
-    }).sort({ occurredAt: -1 }).limit(HISTORY_TURNS).select('direction type text transcript').lean();
+    }).sort({ occurredAt: -1 }).limit(HISTORY_TURNS).select('direction type text transcript occurredAt').lean();
+
+    // A follow-up that falls due is a free-text message while the customer's
+    // 24-hour window is open and an approved template once it has closed —
+    // the same rule Meta applies, decided here so the draft is always one a
+    // person can actually send.
+    const lastInbound = history.find((m) => m.direction === 'inbound');
+    const insideWindow = windowOpen(lastInbound?.occurredAt, now);
+    const isTouch = trigger.kind === 'touch' || (isFollowup && !insideWindow);
+
+    if (isTouch) {
+        const { templates = [] } = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
+        // A touch only ever fills one variable — the customer's first name —
+        // there is no person in this flow to supply anything past that, so a
+        // template needing 2+ variables can never be sent correctly here and
+        // must never be offered (offering it just turns into a WhatsApp
+        // #132000 failure, or worse, a mismatched send).
+        const usable = templates.filter((t) => t.status === 'APPROVED' && (Number(t.variableCount) || 0) <= 1).map((t) => ({ name: t.name, language: t.language, bodyText: t.bodyText, variableCount: t.variableCount }));
+        ctx.templates = templatesForLanguage(usable, customerWritesArabic(history));
+    }
+
     // A refresh is asked while the conversation may already have moved on, so
     // the customer's last message is not repeated at the end as if new: the
     // history already ends wherever the conversation really ends.
-    const messages = agentHistoryMessages(history.reverse(), isTouch || isRefresh ? '' : trigger.text);
+    const messages = agentHistoryMessages(history.reverse(), isTouch || isRefresh || isFollowup ? '' : trigger.text);
 
     const facts = await buildFacts(trigger.text || '', { useAvailability: true });
 
-    const task = isTouch
+    const task = isFollowup && !isTouch
+        ? 'TASK: the follow-up date our team set for this lead has arrived. Write the follow-up WhatsApp message to send now — pick up where the conversation and the recorded reason left off, refer to what the customer actually said they wanted or when they said they would decide, and end with one easy next step. Do not re-introduce yourself and do not repeat what has already been sent. Use tools for anything factual. Answer with JSON only: {"reply": string, "needsHuman": boolean, "reason": string, "summary": one line on where this lead stands}.'
+        : isTouch
         ? [
-            `TASK: it is time for the ${describeStage(work, cadence) || 'next'} follow-up touch to this lead, who has not replied. Choose the approved template that fits this stage's intent (early: a friendly check-in; middle: offer what is available; last: ask if they still need storage) by calling propose_follow_up_template. Then answer with JSON: {"summary": one line on where this lead stands, "needsHuman": boolean, "reason": string}.`,
+            `TASK: ${isFollowup
+                ? 'the follow-up date our team set for this lead has arrived and the 24-hour window is closed, so a template is needed. Choose the approved template that best fits the reason recorded in WHAT OUR TEAM HAS RECORDED'
+                : `it is time for the ${describeStage(work, cadence) || 'next'} follow-up touch to this lead, who has not replied. Choose the approved template that fits this stage's intent (early: a friendly check-in; middle: offer what is available; last: ask if they still need storage)`} by calling propose_follow_up_template. Then answer with JSON: {"summary": one line on where this lead stands, "needsHuman": boolean, "reason": string}.`,
             `APPROVED TEMPLATES: ${ctx.templates.length ? ctx.templates.map((t) => `${t.name} — "${(t.bodyText || '').slice(0, 90)}"`).join(' | ') : 'none are configured; call escalate and explain that a template is needed'}`,
         ].join('\n')
         : isRefresh
@@ -179,6 +212,7 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
     const system = [
         String(agent.systemPrompt || '').trim() || 'You are the sales assistant for PurpleBox Storage in Dubai, replying to customers on WhatsApp. Be brief and warm.',
         leadFileBlock(work, lead, cadence),
+        isFollowup ? crmBlock(lead, now) : '',
         'FACTS YOU MAY USE — everything below is from the live system:',
         facts.text || '(no unit data available)',
         RULES,
@@ -246,7 +280,7 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
 
     const summary = String(decision.summary || '').trim().slice(0, 200);
     const result = {
-        mode: agent.mode, trigger: trigger.kind, reply, needsHuman, reason, summary,
+        mode: agent.mode, trigger: trigger.kind, insideWindow, reply, needsHuman, reason, summary,
         template: ctx.changes.template || null,
         bucketBefore: before.bucket, bucketAfter: work.bucket,
         toolCalls: toolLog, grounded, model: agent.model || openaiModel(), promptVersion: agent.promptVersion, usage,
@@ -258,7 +292,7 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
         system, messages, toolCalls: toolLog, rawContent: content, model: result.model, promptVersion: agent.promptVersion, usage, grounded,
         // What the inbox shows and what "approve" sends: kept whole here,
         // since the summary line is truncated.
-        customerText: isTouch ? '' : String(trigger.text || ''), reply, template: ctx.changes.template || null,
+        customerText: isTouch ? '' : String(trigger.text || ''), reply, template: ctx.changes.template || null, trigger: trigger.kind,
     };
     const apply = (fields) => { for (const [k, v] of Object.entries(fields)) leadFile[k] = v; };
 
@@ -298,14 +332,14 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
         await record({
             agent, lead, leadFile, kind: 'touch_proposed',
             summary: ctx.changes.template
-                ? `(shadow) Would send "${ctx.changes.template.name}" — ${ctx.changes.template.intent}. ${describeStage(before, cadence)}.`
+                ? `(shadow) ${isFollowup ? 'Follow-up due: would send' : 'Would send'} "${ctx.changes.template.name}" — ${ctx.changes.template.intent}.${isFollowup ? '' : ` ${describeStage(before, cadence)}.`}`
                 : `(shadow) Could not pick a template for ${describeStage(before, cadence)}: ${reason}`,
             detail, bucketBefore: before.bucket, bucketAfter: after.bucket, revertible: false, at: now,
         });
     } else {
         await record({
             agent, lead, leadFile, kind: 'reply_drafted',
-            summary: reply ? `(shadow) Would reply: "${reply.slice(0, 120)}${reply.length > 120 ? '…' : ''}"` : `(shadow) No reply drafted: ${reason}`,
+            summary: reply ? `(shadow) ${isFollowup ? 'Follow-up due: would send' : 'Would reply'}: "${reply.slice(0, 120)}${reply.length > 120 ? '…' : ''}"` : `(shadow) No reply drafted: ${reason}`,
             detail, bucketBefore: before.bucket, bucketAfter: after.bucket, revertible: false, at: now,
         });
     }

@@ -280,7 +280,7 @@ export default function MyDay() {
               <AlarmClock size={17} />
             </div>
             <div>
-              <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>Quiet leads needing follow-up</div>
+              <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>Follow-ups due</div>
               <div style={{ fontSize: 12.5, color: INK3, marginTop: 1 }}>
                 {overdueReminders} overdue · {Math.max(0, reminders.length - overdueReminders)} later today
                 {' · '}

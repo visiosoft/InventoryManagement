@@ -7,6 +7,8 @@ import {
 } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
+import { DealCheck } from '../components/DealCheck'
+import { AgentDraftCard } from '../components/AgentDraftCard'
 import WhatsAppConsole from './WhatsApp'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES } from '../components/ui'
@@ -271,6 +273,8 @@ export default function PersonProfile() {
   const [stageNote, setStageNote] = useState('')
   // The attempt being logged, if one is.
   const [logging, setLogging] = useState(false)
+  // "Spoke to them" must leave a next date behind, unless the deal is done.
+  const [noFollowUp, setNoFollowUp] = useState(false)
   const [attempt, setAttempt] = useState<{ channel: AttemptChannel; outcome: AttemptOutcome; note: string; nextAt: string }>(
     { channel: 'call', outcome: 'no_answer', note: '', nextAt: '' },
   )
@@ -401,10 +405,12 @@ export default function PersonProfile() {
       outcome: attempt.outcome,
       note: attempt.note.trim(),
       nextAt: attempt.nextAt ? (attemptTime ? `${attempt.nextAt}T${attemptTime}` : attempt.nextAt) : undefined,
+      noFollowUpNeeded: attempt.outcome === 'reached' && noFollowUp ? true : undefined,
     }),
     onSuccess: (res) => {
       setErr('')
       setLogging(false)
+      setNoFollowUp(false)
       setAttempt({ channel: 'call', outcome: 'no_answer', note: '', nextAt: '' })
       // The server suggests where this leaves the lead; the rep confirms it in
       // the stage panel rather than having it moved under them.
@@ -796,6 +802,10 @@ export default function PersonProfile() {
               </div>
             </dl>
 
+            {/* The four questions a deal must answer before it can close. */}
+            <AgentDraftCard leadId={lead._id} suggestionsOnly />
+            <DealCheck leadId={lead._id} />
+
             {/* The reminders raised for this lead: what to do, when, and who
                 it will nudge. Hover for the details. */}
             {(leadTasks ?? []).length > 0 && (
@@ -962,9 +972,11 @@ export default function PersonProfile() {
 
                     {/* Only when the chase continues: there is nothing to book
                         for somebody you have just spoken to or written off. */}
-                    {!outcomeOf(attempt.outcome).ends && (
+                    {(!outcomeOf(attempt.outcome).ends || attempt.outcome === 'reached') && (
                       <div style={{ marginTop: 10 }}>
-                        <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Next attempt on</span>
+                        <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>
+                          {attempt.outcome === 'reached' ? 'Next follow-up on — when did they say they would decide?' : 'Next attempt on'}
+                        </span>
                         <div className="flex" style={{ gap: 8 }}>
                         <input
                           type="date"
@@ -979,7 +991,12 @@ export default function PersonProfile() {
                           style={{ width: 118, height: 40, padding: '0 10px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
                         />
                         </div>
-                        {!attempt.nextAt && (
+                        {attempt.outcome === 'reached' ? (
+                          <label className="flex items-center" style={{ gap: 6, fontSize: 12.5, color: FAINT, marginTop: 8 }}>
+                            <input type="checkbox" checked={noFollowUp} onChange={(e) => setNoFollowUp(e.target.checked)} />
+                            No follow-up needed — the deal is done
+                          </label>
+                        ) : !attempt.nextAt && (
                           <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
                             Leave it blank and the chase ends here, for somebody to decide on.
                           </p>
@@ -990,7 +1007,8 @@ export default function PersonProfile() {
                     <div className="flex flex-wrap" style={{ gap: 8, marginTop: 12 }}>
                       <button
                         type="button"
-                        disabled={logAttempt.isPending}
+                        disabled={logAttempt.isPending || (attempt.outcome === 'reached' && !attempt.nextAt && !noFollowUp && !(lead.followUpAt && new Date(lead.followUpAt) > new Date()))}
+                        title={attempt.outcome === 'reached' && !attempt.nextAt && !noFollowUp ? 'Pick the next follow-up date first' : undefined}
                         onClick={() => logAttempt.mutate()}
                         className="cursor-pointer disabled:opacity-50"
                         style={{ height: 38, padding: '0 18px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
@@ -1292,7 +1310,8 @@ export default function PersonProfile() {
                   <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
                     <button
                       type="button"
-                      disabled={setStatus.isPending}
+                      disabled={setStatus.isPending || (pendingStage === 'follow_up_scheduled' && !(lead.followUpAt && new Date(lead.followUpAt) > new Date()))}
+                      title={pendingStage === 'follow_up_scheduled' && !(lead.followUpAt && new Date(lead.followUpAt) > new Date()) ? 'Pick the follow-up date first' : undefined}
                       onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
                       className="cursor-pointer disabled:opacity-50"
                       style={{ height: 36, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
