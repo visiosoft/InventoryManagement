@@ -126,8 +126,10 @@ export async function statusForUnit(unitId) {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai' }).format(new Date());
     /* Started AND, for contracts held to the payment rule, paid. A tenant who
        has signed but whose first invoice is unpaid in Zoho is still Reserved. */
-    const started = actives.some((c) => (!c.startDate || new Date(c.startDate).toISOString().slice(0, 10) <= today)
-      && (!c.paymentGate?.required || c.paymentGate.verified));
+    // Held to the payment check only if put under the rule (a new signing, or
+    // dates moved after signing). Contracts running before it are never held.
+    const gated = (c) => c.paymentGate?.since && c.paymentGate.required && !c.paymentGate.verified;
+    const started = actives.some((c) => (!c.startDate || new Date(c.startDate).toISOString().slice(0, 10) <= today) && !gated(c));
     return started ? 'occupied' : 'reserved';
   }
 
@@ -173,7 +175,7 @@ export async function releaseLapsedHolds() {
 
    // Units on signed contracts that have started but are not verified as paid
    // must read Reserved, not Occupied.
-   const unpaid = await Contract.find({ status: 'active', archived: { $ne: true }, 'paymentGate.required': true, 'paymentGate.verified': { $ne: true }, startDate: { $lte: new Date() } })
+   const unpaid = await Contract.find({ status: 'active', archived: { $ne: true }, 'paymentGate.since': { $ne: null }, 'paymentGate.required': true, 'paymentGate.verified': { $ne: true }, startDate: { $lte: new Date() } })
       .select('unit units').lean();
    for (const id of new Set(unpaid.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String))) await syncUnitStatus(id);
 

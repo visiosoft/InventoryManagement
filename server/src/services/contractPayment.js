@@ -16,8 +16,9 @@ import { syncUnitStatus } from '../utils/unitStatus.js';
  * desk can also mark it verified by hand (cash, a transfer Zoho has not seen
  * yet); that choice is kept until somebody changes it.
  *
- * Only contracts with `paymentGate.required` are held to this. Contracts that
- * were running before the rule existed are left exactly as they were.
+ * Only contracts with `paymentGate.since` are held to this: new signings and
+ * contracts whose dates were moved after signing. Contracts that were running
+ * before the rule existed are left exactly as they were.
  */
 
 const DAY = 864e5;
@@ -96,16 +97,11 @@ export async function verifyPendingPayments() {
   const soon = new Date(Date.now() + DAY);
   const pending = await Contract.find({
     status: 'active', archived: { $ne: true },
+    'paymentGate.since': { $ne: null }, 'paymentGate.required': true,
     'paymentGate.verified': { $ne: true }, 'paymentGate.manual': { $ne: true },
     startDate: { $lte: soon },
-    // Already held to the rule and unpaid, or a contract nobody has checked yet
-    // (every contract that was running before the rule: it gets checked once,
-    // and from then on is held to it like the rest).
-    $or: [
-      { 'paymentGate.required': true, 'paymentGate.checkedAt': { $lt: new Date(Date.now() - 10 * 60_000) } },
-      { 'paymentGate.required': true, 'paymentGate.checkedAt': null },
-      { 'paymentGate.checkedAt': null }, { 'paymentGate.checkedAt': { $exists: false } },
-    ],
+    // Not looked at in the last 10 minutes, oldest check first.
+    $or: [{ 'paymentGate.checkedAt': null }, { 'paymentGate.checkedAt': { $lt: new Date(Date.now() - 10 * 60_000) } }],
   }).sort({ 'paymentGate.checkedAt': 1 }).select('_id').limit(60).lean();
   for (const c of pending) await recheckAndSync(c._id);
   return pending.length;

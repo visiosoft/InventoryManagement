@@ -741,6 +741,10 @@ const contractSchema = new Schema(
     // payment verified (Zoho Books, or marked by hand). See services/contractPayment.js.
     paymentGate: {
       required: { type: Boolean, default: false },
+      // When this contract was put under the rule. Only contracts with a date here
+      // are held to it: new signings, and contracts whose dates were moved after
+      // signing. Everything running before stays as it was.
+      since: { type: Date, default: null },
       verified: { type: Boolean, default: false },
       manual: { type: Boolean, default: false },
       manualBy: { type: String, default: '' },
