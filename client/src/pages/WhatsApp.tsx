@@ -4241,6 +4241,27 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                         <span className="flex-1">Create a task</span>
                       </button>
 
+                      {/* The client-details form (WhatsApp Flow): name, phone,
+                          Emirates ID / passport photo, authorized person. What
+                          they send is filed against this WhatsApp number. */}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const who = selectedConvo.lead?.fullName || selectedConvo.phoneNormalized
+                          if (!window.confirm(`Send the ID & details form to ${who}?`)) return
+                          try {
+                            const r = await api.post('/client-info/send', { phone: selectedConvo.phoneNormalized, name: selectedConvo.lead?.fullName || '' })
+                            window.alert(r.data?.via === 'template' ? 'Form sent (as a template).' : 'Form sent. Their details and ID will be saved to their customer record.')
+                            onSent()
+                          } catch (e) { window.alert(apiError(e)) }
+                        }}
+                        className={MENU_ROW}
+                        style={{ color: INK }}
+                      >
+                        <UserCog size={15} style={{ color: '#047857' }} />
+                        <span className="flex-1">Request ID &amp; details</span>
+                      </button>
+
                       {/* The move-out feedback form (WhatsApp Flow). The answers
                           come back on the webhook and are filed against this
                           number's contract — see Reports → Exit surveys. */}

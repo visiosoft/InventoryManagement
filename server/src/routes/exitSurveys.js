@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { ExitSurvey } from '../models/index.js';
+import { Contract, ExitSurvey } from '../models/index.js';
 import { sendExitSurvey, summarise, REASONS, COME_BACK } from '../services/exitSurvey.js';
 
 /**
@@ -14,7 +14,7 @@ const dubaiDay = (s, endOfDay) => {
     return new Date(`${s}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}+04:00`);
 };
 
-// GET /api/exit-surveys?from=YYYY-MM-DD&to=YYYY-MM-DD&contract=<id>
+// GET /api/exit-surveys?from=YYYY-MM-DD&to=YYYY-MM-DD&contract=<id>&mine=1
 // Rows newest first, plus totals for the same filter.
 router.get('/', async (req, res) => {
     try {
@@ -23,6 +23,11 @@ router.get('/', async (req, res) => {
         const to = dubaiDay(req.query.to, true);
         if (from || to) q.submittedAt = { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) };
         if (req.query.contract) q.contract = req.query.contract;
+        // mine=1: only tenants whose contract this user booked — a rep's own customers.
+        if (req.query.mine === '1') {
+            const ids = await Contract.find({ salesRep: req.user.id }).distinct('_id');
+            q.contract = { $in: ids };
+        }
 
         const rows = await ExitSurvey.find(q)
             .sort({ submittedAt: -1 })

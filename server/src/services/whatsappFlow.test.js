@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {
-  decryptRequest, encryptResponse, readClientInfo, buildSummaryText,
+  decryptRequest, encryptResponse, readClientInfo, buildSummaryText, decryptFlowMedia, sniffMedia,
   normalisePhone, flowToken, phoneFromFlowToken,
 } from './whatsappFlow.js';
 
@@ -93,19 +93,36 @@ test('a tampered body fails rather than decrypting to something', () => {
 test('a filled form is accepted and normalised', () => {
   const r = readClientInfo({
     full_name: '  Fatima   Ahmed ',
-    authorized_person: 'Ali Ahmed',
-    emergency_contact: '+971 50 123 4567',
-    id_photo: [{ media_id: 'abc' }],
+    phone: '050 123 4567',
+    id_type: 'emirates_id',
+    id_photo: [{ media_id: 'abc' }, { media_id: 'def' }],
+    authorized_name: 'Ali Ahmed',
+    authorized_phone: '+971 55 765 4321',
   });
   assert.equal(r.ok, true);
-  assert.deepEqual(r.fields, { fullName: 'Fatima Ahmed', authorizedPerson: 'Ali Ahmed', emergencyContact: '+971501234567' });
-  assert.equal(r.photos.length, 1);
+  assert.equal(r.fields.fullName, 'Fatima Ahmed');
+  assert.equal(r.fields.phone, '+971501234567');
+  assert.equal(r.fields.idType, 'emirates_id');
+  assert.equal(r.fields.authorizedName, 'Ali Ahmed');
+  assert.equal(r.fields.authorizedPhone, '+971557654321');
+  assert.equal(r.photos.length, 2);
 });
 
-test('a missing name or unusable number is reported, not saved', () => {
-  const r = readClientInfo({ full_name: '', emergency_contact: '123' });
+test('missing name, bad phone and no ID photo are each reported', () => {
+  const r = readClientInfo({ full_name: '', phone: '123', id_photo: [] });
   assert.equal(r.ok, false);
-  assert.deepEqual(r.problems, ['a full name', 'a usable emergency contact number']);
+  assert.deepEqual(r.problems, ['your full name', 'a valid phone number', 'a photo of your Emirates ID or passport']);
+});
+
+test('an authorized phone without a name is refused; both are optional together', () => {
+  assert.deepEqual(readClientInfo({ full_name: 'Sara K', authorized_phone: '0501234567' }).problems, ["the authorized person's name"]);
+  assert.equal(readClientInfo({ full_name: 'Sara K' }).ok, true);
+});
+
+test('the older field names still work', () => {
+  const r = readClientInfo({ full_name: 'Sara K', authorized_person: 'Omar', emergency_contact: '0501234567' });
+  assert.equal(r.fields.authorizedName, 'Omar');
+  assert.equal(r.fields.emergencyContact, '+971501234567');
 });
 
 test('UAE numbers reach the same stored form however they are typed', () => {
@@ -120,12 +137,48 @@ test('something too short to be a number is refused', () => {
   }
 });
 
-test('a missing photo is said out loud on the summary', () => {
-  const fields = { fullName: 'Fatima Ahmed', authorizedPerson: '', emergencyContact: '+971501234567' };
-  assert.match(buildSummaryText(fields, 0), /ID Document: Not uploaded/);
-  assert.match(buildSummaryText(fields, 2), /ID Document: 2 uploaded/);
-  // An absent authorised person shows as a dash rather than an empty line.
+test('the summary says what was uploaded and names the document', () => {
+  const fields = { fullName: 'Fatima Ahmed', phone: '+971501234567', idType: 'passport', authorizedName: '', authorizedPhone: '', emergencyContact: '' };
+  assert.match(buildSummaryText(fields, 0), /Passport: Not uploaded/);
+  assert.match(buildSummaryText(fields, 1), /Passport: 1 photo uploaded/);
+  assert.match(buildSummaryText({ ...fields, idType: 'emirates_id' }, 2), /Emirates ID: 2 photos uploaded/);
   assert.match(buildSummaryText(fields, 0), /Authorized Person: —/);
+  assert.match(buildSummaryText({ ...fields, authorizedName: 'Ali', authorizedPhone: '+971557654321' }, 0), /Authorized Person: Ali \(\+971557654321\)/);
+});
+
+/* Media from a PhotoPicker, encrypted the way Meta documents it. */
+
+function encryptMediaLikeMeta(plain) {
+  const key = crypto.randomBytes(32);
+  const hmacKey = crypto.randomBytes(32);
+  const iv = crypto.randomBytes(16);
+  const c = crypto.createCipheriv('aes-256-cbc', key, iv);
+  const ciphertext = Buffer.concat([c.update(plain), c.final()]);
+  const mac = crypto.createHmac('sha256', hmacKey).update(Buffer.concat([iv, ciphertext])).digest().subarray(0, 10);
+  const cdnFile = Buffer.concat([ciphertext, mac]);
+  const sha = (b) => crypto.createHash('sha256').update(b).digest('base64');
+  return {
+    cdnFile,
+    meta: {
+      encryption_key: key.toString('base64'), hmac_key: hmacKey.toString('base64'), iv: iv.toString('base64'),
+      encrypted_hash: sha(cdnFile), plaintext_hash: sha(plain),
+    },
+  };
+}
+
+test('an uploaded photo decrypts and is recognised as a JPEG', () => {
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), crypto.randomBytes(500)]);
+  const { cdnFile, meta } = encryptMediaLikeMeta(jpeg);
+  const out = decryptFlowMedia(cdnFile, meta);
+  assert.ok(out.equals(jpeg));
+  assert.equal(sniffMedia(out).mimeType, 'image/jpeg');
+});
+
+test('a tampered upload is refused, not stored', () => {
+  const { cdnFile, meta } = encryptMediaLikeMeta(Buffer.from('%PDF-1.4 hello'));
+  const bad = Buffer.from(cdnFile); bad[3] ^= 0xff;
+  assert.throws(() => decryptFlowMedia(bad, meta), /hash mismatch/);
+  assert.throws(() => decryptFlowMedia(bad, { ...meta, encrypted_hash: crypto.createHash('sha256').update(bad).digest('base64') }), /HMAC mismatch/);
 });
 
 /* The token is the only thing tying a submission to a person — the sender's

@@ -1,0 +1,123 @@
+{
+  "version": "6.2",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "CLIENT_INFO": ["SUMMARY"],
+    "SUMMARY": []
+  },
+  "screens": [
+    {
+      "id": "CLIENT_INFO",
+      "title": "Your details",
+      "data": {
+        "phone": { "type": "string", "__example__": "+971501234567" },
+        "error_message": { "type": "string", "__example__": "" },
+        "show_error": { "type": "boolean", "__example__": false }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Please share your details and a photo of your Emirates ID or passport for your storage agreement. Your information is kept confidential."
+          },
+          {
+            "type": "TextCaption",
+            "text": "${data.error_message}",
+            "visible": "${data.show_error}"
+          },
+          {
+            "type": "TextInput",
+            "name": "full_name",
+            "label": "Full name (as on ID)",
+            "input-type": "text",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "phone",
+            "label": "Phone number",
+            "input-type": "phone",
+            "required": true,
+            "init-value": "${data.phone}"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "id_type",
+            "label": "ID document",
+            "required": true,
+            "data-source": [
+              { "id": "emirates_id", "title": "Emirates ID" },
+              { "id": "passport", "title": "Passport" }
+            ]
+          },
+          {
+            "type": "PhotoPicker",
+            "name": "id_photo",
+            "label": "Photo of your ID",
+            "description": "Emirates ID: front and back. Passport: photo page.",
+            "photo-source": "camera_gallery",
+            "min-uploaded-photos": 1,
+            "max-uploaded-photos": 2,
+            "max-file-size-kb": 10240
+          },
+          {
+            "type": "TextInput",
+            "name": "authorized_name",
+            "label": "Authorized person name (optional)",
+            "input-type": "text",
+            "required": false,
+            "helper-text": "Someone allowed to access your unit for you"
+          },
+          {
+            "type": "TextInput",
+            "name": "authorized_phone",
+            "label": "Authorized person phone (optional)",
+            "input-type": "phone",
+            "required": false
+          },
+          {
+            "type": "Footer",
+            "label": "Submit",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "full_name": "${form.full_name}",
+                "phone": "${form.phone}",
+                "id_type": "${form.id_type}",
+                "id_photo": "${form.id_photo}",
+                "authorized_name": "${form.authorized_name}",
+                "authorized_phone": "${form.authorized_phone}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "SUMMARY",
+      "title": "Thank you",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "full_name": { "type": "string", "__example__": "Fatima Ahmed" },
+        "authorized_person": { "type": "string", "__example__": "Ali Ahmed" },
+        "emergency_contact": { "type": "string", "__example__": "" },
+        "summary": { "type": "string", "__example__": "Name: Fatima Ahmed\nEmirates ID: 2 photos uploaded" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          { "type": "TextHeading", "text": "Details received" },
+          { "type": "TextBody", "text": "${data.summary}" },
+          { "type": "TextCaption", "text": "Our team will be in touch if anything else is needed." },
+          {
+            "type": "Footer",
+            "label": "Done",
+            "on-click-action": { "name": "complete", "payload": {} }
+          }
+        ]
+      }
+    }
+  ]
+}
