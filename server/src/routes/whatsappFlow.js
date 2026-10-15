@@ -14,7 +14,7 @@ import { Router } from 'express';
 import { Customer, Lead } from '../models/index.js';
 import {
   flowKeysConfigured, decryptRequest, encryptResponse,
-  readClientInfo, buildSummaryText, phoneFromFlowToken, publicKeyPem,
+  readClientInfo, buildSummaryText, phoneFromFlowToken, publicKeyPem, flowKeyDiagnostics,
 } from '../services/whatsappFlow.js';
 import { readExitSurveyData, saveExitSurvey } from '../services/exitSurvey.js';
 
@@ -133,6 +133,7 @@ router.get('/exit-survey', (_req, res) => {
     note: 'Meta calls this with POST. Opening it in a browser only shows this status.',
     privateKey: key,
     ready: key === 'ok',
+    keyDetails: flowKeyDiagnostics(),
   });
 });
 
