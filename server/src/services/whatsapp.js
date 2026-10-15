@@ -344,6 +344,8 @@ async function findFlowButton(name, language) {
     return {
         index,
         isExitSurvey: (exitFlowId && String(b.flow_id) === exitFlowId) || b.navigate_screen === 'EXIT_SURVEY',
+        isClientInfo: (process.env.WHATSAPP_CLIENT_INFO_FLOW_ID && String(b.flow_id) === String(process.env.WHATSAPP_CLIENT_INFO_FLOW_ID))
+            || b.navigate_screen === 'CLIENT_INFO',
     };
 }
 
@@ -410,6 +412,12 @@ export async function sendWhatsAppTemplate({ to, name, language = 'en', variable
         if (token === undefined && flowButton?.isExitSurvey) {
             const { exitSurveyTokenForPhone } = await import('./exitSurvey.js');
             token = await exitSurveyTokenForPhone(normalizedTo).catch(() => undefined);
+        }
+        // The client-details form: the token carries this number, signed, so
+        // what they upload is filed against it.
+        if (token === undefined && flowButton?.isClientInfo) {
+            const { flowToken: clientInfoToken } = await import('./whatsappFlow.js');
+            token = clientInfoToken(normalizedTo);
         }
         components.push({
             type: 'button', sub_type: 'flow', index: String(flowButton?.index ?? 0),
@@ -604,7 +612,7 @@ export async function sendWhatsAppInteractiveList({ to, bodyText, buttonLabel, r
  * WhatsApp Manager (Business Settings → Flows) — there is no API in this
  * codebase that creates one, the JSON is authored there directly.
  */
-export async function sendWhatsAppInteractiveFlow({ to, bodyText, flowId, flowCta, screenId, flowToken, data }) {
+export async function sendWhatsAppInteractiveFlow({ to, bodyText, flowId, flowCta, screenId, flowToken, data, flowAction = 'navigate' }) {
     if (!whatsappSendConfigured()) {
         throw new Error('WhatsApp is not configured');
     }
@@ -635,11 +643,15 @@ export async function sendWhatsAppInteractiveFlow({ to, bodyText, flowId, flowCt
                         flow_token: String(flowToken || `noop.${Date.now()}`),
                         flow_id: String(flowId),
                         flow_cta: String(flowCta || 'Choose Dates').slice(0, 30),
-                        flow_action: 'navigate',
-                        flow_action_payload: {
-                            screen: String(screenId),
-                            ...(data ? { data } : {}),
-                        },
+                        // 'data_exchange' asks our endpoint for the first screen
+                        // (INIT), so it can be filled in for this person.
+                        flow_action: flowAction,
+                        ...(flowAction === 'navigate' ? {
+                            flow_action_payload: {
+                                screen: String(screenId),
+                                ...(data ? { data } : {}),
+                            },
+                        } : {}),
                     },
                 },
             },

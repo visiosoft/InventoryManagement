@@ -214,35 +214,99 @@ export function normalisePhone(raw) {
  *
  * Returns the fields worth saving and a list of what was wrong, so the flow can
  * say so on the screen rather than silently storing a blank.
+ *
+ * Fields (CLIENT_INFO screen): full_name, phone, id_type (emirates_id |
+ * passport), id_photo (PhotoPicker), authorized_name, authorized_phone.
+ * The older names authorized_person / emergency_contact are still read, so a
+ * flow published before this change keeps working.
  */
 export function readClientInfo(data = {}) {
   const fullName = clean(data.full_name);
-  const authorizedPerson = clean(data.authorized_person);
+  const phone = normalisePhone(data.phone);
+  const idType = ['emirates_id', 'passport'].includes(data.id_type) ? data.id_type : '';
+  const authorizedName = clean(data.authorized_name ?? data.authorized_person);
+  const authorizedPhoneRaw = clean(data.authorized_phone);
+  const authorizedPhone = normalisePhone(authorizedPhoneRaw);
   const emergencyContact = normalisePhone(data.emergency_contact);
 
-  const problems = [];
-  if (fullName.length < 2) problems.push('a full name');
-  if (!emergencyContact) problems.push('a usable emergency contact number');
+  // PhotoPicker / DocumentPicker send media descriptors, not the image itself.
+  const photos = Array.isArray(data.id_photo) ? data.id_photo
+    : Array.isArray(data.id_document) ? data.id_document : [];
 
-  // PhotoPicker sends an array of media descriptors, not the image itself.
-  const photos = Array.isArray(data.id_photo) ? data.id_photo : [];
+  const problems = [];
+  if (fullName.length < 2) problems.push('your full name');
+  if (data.phone !== undefined && !phone) problems.push('a valid phone number');
+  if (data.id_photo !== undefined && photos.length === 0) problems.push('a photo of your Emirates ID or passport');
+  if (authorizedPhoneRaw && !authorizedPhone) problems.push("a valid phone number for the authorized person");
+  if (authorizedPhone && !authorizedName) problems.push("the authorized person's name");
 
   return {
-    fields: { fullName, authorizedPerson, emergencyContact },
+    fields: { fullName, phone, idType, authorizedName, authorizedPhone, emergencyContact,
+      // Kept for older callers that read these names.
+      authorizedPerson: authorizedName },
     photos,
     problems,
     ok: problems.length === 0,
   };
 }
 
+const ID_LABEL = { emirates_id: 'Emirates ID', passport: 'Passport' };
+
 /** The text the confirmation screen reads back. */
-export function buildSummaryText({ fullName, authorizedPerson, emergencyContact }, photoCount = 0) {
+export function buildSummaryText(fields, photoCount = 0) {
+  const doc = ID_LABEL[fields.idType] || 'ID document';
   return [
-    `Name: ${fullName}`,
-    `Authorized Person: ${authorizedPerson || '—'}`,
-    `ID Document: ${photoCount > 0 ? `${photoCount} uploaded` : 'Not uploaded'}`,
-    `Emergency Contact: ${emergencyContact}`,
-  ].join('\n');
+    `Name: ${fields.fullName}`,
+    fields.phone ? `Phone: ${fields.phone}` : '',
+    `${doc}: ${photoCount > 0 ? `${photoCount} photo${photoCount === 1 ? '' : 's'} uploaded` : 'Not uploaded'}`,
+    `Authorized Person: ${fields.authorizedName || '—'}${fields.authorizedPhone ? ` (${fields.authorizedPhone})` : ''}`,
+    fields.emergencyContact ? `Emergency Contact: ${fields.emergencyContact}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+/* ── Uploaded media ──────────────────────────────────────────────────────────
+   A PhotoPicker answer is a list of descriptors: Meta keeps the file on its
+   CDN, encrypted, and hands us the keys. Decrypting it is Meta's documented
+   recipe, checked at every step so a corrupted or tampered file is refused
+   rather than stored as somebody's ID:
+     1. sha256(cdn file) must equal encrypted_hash
+     2. the last 10 bytes are an HMAC-SHA256 (hmac_key) over iv + ciphertext
+     3. AES-256-CBC (encryption_key, iv) with PKCS7 padding
+     4. sha256(plaintext) must equal plaintext_hash */
+
+export function decryptFlowMedia(cdnFile, meta = {}) {
+  const b64 = (v) => Buffer.from(String(v || ''), 'base64');
+  const sha = (buf) => crypto.createHash('sha256').update(buf).digest();
+  if (!sha(cdnFile).equals(b64(meta.encrypted_hash))) throw new Error('media hash mismatch');
+  const ciphertext = cdnFile.subarray(0, -10);
+  const mac = cdnFile.subarray(-10);
+  const iv = b64(meta.iv);
+  const expected = crypto.createHmac('sha256', b64(meta.hmac_key)).update(Buffer.concat([iv, ciphertext])).digest().subarray(0, 10);
+  if (!crypto.timingSafeEqual(mac, expected)) throw new Error('media HMAC mismatch');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', b64(meta.encryption_key), iv);
+  const plain = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  if (!sha(plain).equals(b64(meta.plaintext_hash))) throw new Error('media plaintext hash mismatch');
+  return plain;
+}
+
+/** What a decrypted file actually is, from its first bytes. */
+export function sniffMedia(buf) {
+  if (buf[0] === 0xff && buf[1] === 0xd8) return { mimeType: 'image/jpeg', ext: 'jpg' };
+  if (buf.subarray(0, 4).toString('hex') === '89504e47') return { mimeType: 'image/png', ext: 'png' };
+  if (buf.subarray(0, 4).toString() === '%PDF') return { mimeType: 'application/pdf', ext: 'pdf' };
+  if (buf.subarray(8, 12).toString() === 'WEBP') return { mimeType: 'image/webp', ext: 'webp' };
+  if (buf.subarray(4, 12).toString().startsWith('ftypheic') || buf.subarray(4, 12).toString().startsWith('ftypmif1')) return { mimeType: 'image/heic', ext: 'heic' };
+  return { mimeType: 'application/octet-stream', ext: 'bin' };
+}
+
+/** Download one descriptor's file from Meta's CDN and decrypt it. */
+export async function fetchFlowMedia(descriptor) {
+  if (!descriptor?.cdn_url || !descriptor?.encryption_metadata) throw new Error('media descriptor has no cdn_url or keys');
+  const r = await fetch(descriptor.cdn_url);
+  if (!r.ok) throw new Error(`media download failed: HTTP ${r.status}`);
+  const cdnFile = Buffer.from(await r.arrayBuffer());
+  const buffer = decryptFlowMedia(cdnFile, descriptor.encryption_metadata);
+  return { buffer, ...sniffMedia(buffer) };
 }
 
 /* ── Flow tokens ─────────────────────────────────────────────────────────────

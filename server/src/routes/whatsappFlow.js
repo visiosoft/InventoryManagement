@@ -11,10 +11,11 @@
  */
 
 import { Router } from 'express';
-import { Customer, Lead } from '../models/index.js';
+import { Customer, Document, Lead } from '../models/index.js';
+import { uploadFile } from '../services/drive.js';
 import {
   flowKeysConfigured, decryptRequest, encryptResponse,
-  readClientInfo, buildSummaryText, phoneFromFlowToken, publicKeyPem, flowKeyDiagnostics,
+  readClientInfo, buildSummaryText, phoneFromFlowToken, publicKeyPem, flowKeyDiagnostics, fetchFlowMedia,
 } from '../services/whatsappFlow.js';
 import { readExitSurveyData, saveExitSurvey } from '../services/exitSurvey.js';
 
@@ -26,63 +27,64 @@ const suffix = (v) => {
 };
 
 /**
- * Save what the form sent.
+ * Save what the form sent, against the WhatsApp number it was sent to.
  *
- * Matched to an existing customer on the number the flow was sent to — the
- * same last-nine-digits rule the rest of the app uses — so a tenant filling
- * this in updates their record rather than creating a second one. A flow we
- * cannot attribute still saves, because losing the submission would be worse
- * than an unlinked record somebody can merge.
+ * Matched to an existing customer on that number — the same last-nine-digits
+ * rule the rest of the app uses — so a tenant filling this in updates their
+ * record rather than creating a second one. A flow we cannot attribute still
+ * saves, because losing the submission would be worse than an unlinked record
+ * somebody can merge.
  */
-async function saveClientInfo({ fields, photos, phone }) {
-  const { fullName, authorizedPerson, emergencyContact } = fields;
+async function saveClientInfo({ fields, phone }) {
+  const { fullName, emergencyContact, authorizedName, authorizedPhone } = fields;
+  const typedPhone = fields.phone;
+  const whatsapp = phone ? `+${String(phone).replace(/\D/g, '')}` : '';
 
   let customer = null;
-  if (phone) {
-    const key = suffix(phone);
-    const all = await Customer.find({}).select('fullName phone phones emergencyNumber accessPersons').lean();
-    const hit = all.find((c) => [...(c.phones || []), c.phone].some((p) => suffix(p) === key));
-    if (hit) customer = await Customer.findById(hit._id);
+  const keys = [suffix(phone), suffix(typedPhone)].filter(Boolean);
+  if (keys.length) {
+    const all = await Customer.find({}).select('fullName phone phones').lean();
+    // The WhatsApp number first: it is the one the form was sent to.
+    for (const key of keys) {
+      const hit = all.find((c) => [...(c.phones || []), c.phone].some((p) => suffix(p) === key));
+      if (hit) { customer = await Customer.findById(hit._id); break; }
+    }
   } else {
-    // No usable token, so there is no number to match on. Fall back to the
-    // name and emergency contact together: a retried submission — Meta resends
-    // on a timeout — would otherwise create a second customer every time.
+    // No usable token and no typed number: match on the name and emergency
+    // contact together, so a retried submission (Meta resends on a timeout)
+    // does not create a second customer every time.
     customer = await Customer.findOne({
       fullName: new RegExp(`^${fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
-      emergencyNumber: emergencyContact,
+      ...(emergencyContact ? { emergencyNumber: emergencyContact } : {}),
     });
   }
 
   if (!customer) {
-    customer = new Customer({
-      fullName,
-      phone: phone ? `+${String(phone).replace(/\D/g, '')}` : '',
-      phones: phone ? [`+${String(phone).replace(/\D/g, '')}`] : [],
-    });
+    const primary = whatsapp || typedPhone || '';
+    customer = new Customer({ fullName, phone: primary, phones: primary ? [primary] : [], stage: 'prospect' });
   }
 
   // A name they typed themselves beats a placeholder we generated, but does
   // not overwrite a name somebody already corrected by hand.
   if (!customer.fullName || /^whatsapp\s*contact/i.test(customer.fullName)) customer.fullName = fullName;
-  customer.emergencyNumber = emergencyContact;
 
-  if (authorizedPerson) {
-    const already = (customer.accessPersons || []).some(
-      (p) => p.name?.trim().toLowerCase() === authorizedPerson.toLowerCase(),
-    );
-    if (!already) {
-      customer.accessPersons = [...(customer.accessPersons || []), { name: authorizedPerson, relation: 'Authorized access' }];
+  // Every number they are reachable on, the WhatsApp one included.
+  const have = new Set([...(customer.phones || []), customer.phone].map(suffix).filter(Boolean));
+  for (const p of [whatsapp, typedPhone]) {
+    if (p && !have.has(suffix(p))) { customer.phones = [...(customer.phones || []), p]; have.add(suffix(p)); }
+  }
+  if (!customer.phone) customer.phone = whatsapp || typedPhone || '';
+  if (emergencyContact) customer.emergencyNumber = emergencyContact;
+
+  if (authorizedName) {
+    const list = customer.accessPersons || [];
+    const existing = list.find((p) => p.name?.trim().toLowerCase() === authorizedName.toLowerCase());
+    if (existing) {
+      if (authorizedPhone) existing.phone = authorizedPhone;
+    } else {
+      customer.accessPersons = [...list, { name: authorizedName, phone: authorizedPhone || '', relation: 'Authorized access' }];
     }
   }
-
-  // Photos arrive as media descriptors, not image bytes — Meta uploads them to
-  // its own CDN and the payload names them. What that descriptor contains is
-  // logged rather than guessed at, so the download can be wired against a real
-  // one instead of an assumed shape.
-  const note = photos.length
-    ? `ID document submitted over WhatsApp on ${new Date().toISOString().slice(0, 10)} (${photos.length} file${photos.length === 1 ? '' : 's'}).`
-    : '';
-  if (note) customer.notes = [customer.notes, note].filter(Boolean).join('\n');
 
   await customer.save();
 
@@ -95,6 +97,45 @@ async function saveClientInfo({ fields, photos, phone }) {
   }
 
   return customer;
+}
+
+/**
+ * Download, decrypt and file the ID photos. Run after the flow has had its
+ * answer — Meta allows about ten seconds for a reply, and a few large photos
+ * from a slow CDN can take longer than that. A failure is written on the
+ * customer's notes so somebody asks for the document again.
+ */
+async function storeIdPhotos({ customer, photos, idType, phone }) {
+  const docType = idType === 'passport' ? 'passport' : idType === 'emirates_id' ? 'emirates_id' : 'id_proof';
+  const label = idType === 'passport' ? 'Passport' : idType === 'emirates_id' ? 'Emirates ID' : 'ID document';
+  const date = new Date().toISOString().slice(0, 10);
+  let saved = 0;
+  const failures = [];
+  for (const [i, descriptor] of photos.entries()) {
+    try {
+      const { buffer, mimeType, ext } = await fetchFlowMedia(descriptor);
+      const stored = await uploadFile({
+        buffer,
+        filename: `${customer.fullName} - ${label} ${i + 1} - ${date}.${ext}`.replace(/[\\/:*?"<>|]/g, ''),
+        mimeType,
+        customerName: customer.fullName,
+      });
+      await Document.create({
+        customer: customer._id,
+        name: `${label} ${photos.length > 1 ? `(${i + 1} of ${photos.length}) ` : ''}— WhatsApp${phone ? ` +${phone}` : ''}`,
+        type: docType,
+        ...stored,
+      });
+      saved += 1;
+    } catch (e) {
+      failures.push(e.message);
+      console.error('[Flow] ID photo not stored:', e.message);
+    }
+  }
+  const note = failures.length
+    ? `${label} sent over WhatsApp on ${date}: ${saved} of ${photos.length} file(s) saved; ${failures.length} could not be stored (${failures[0]}). Ask the customer to send it again.`
+    : `${label} received over WhatsApp on ${date} (${saved} file${saved === 1 ? '' : 's'}) — see Documents.`;
+  await Customer.updateOne({ _id: customer._id }, { $set: { notes: [customer.notes, note].filter(Boolean).join('\n') } }).catch(() => {});
 }
 
 /**
@@ -218,12 +259,11 @@ router.post('/', async (req, res) => {
       return reply({ data: { acknowledged: true } });
     }
 
-    if (action === 'INIT') {
-      return reply({ screen: 'CLIENT_INFO', data: {} });
-    }
-
-    if (action === 'BACK') {
-      return reply({ screen: 'CLIENT_INFO', data: {} });
+    // Opening the form: the WhatsApp number it was sent to is filled in
+    // already, so most people only have to check it.
+    if (action === 'INIT' || action === 'BACK') {
+      const phone = phoneFromFlowToken(flowTok);
+      return reply({ screen: 'CLIENT_INFO', data: { phone: phone ? `+${phone}` : '', error_message: '', show_error: false } });
     }
 
     if (action === 'data_exchange' && screen === 'CLIENT_INFO') {
@@ -234,22 +274,27 @@ router.post('/', async (req, res) => {
         // fails silently afterwards is worse than one that says what is wrong.
         return reply({
           screen: 'CLIENT_INFO',
-          data: { error_message: `Please provide ${problems.join(' and ')}.` },
+          data: { error_message: `Please provide ${problems.length > 1 ? `${problems.slice(0, -1).join(', ')} and ${problems.at(-1)}` : problems[0]}.`, show_error: true, phone: fields.phone || '' },
         });
       }
 
       const phone = phoneFromFlowToken(flowTok);
       if (!phone) console.warn('[Flow] unrecognised flow_token — saving unlinked');
-      if (photos.length) console.log('[Flow] photo descriptor:', JSON.stringify(photos[0]).slice(0, 400));
 
-      const customer = await saveClientInfo({ fields, photos, phone });
+      const customer = await saveClientInfo({ fields, phone });
       console.log(`[Flow] saved customer ${customer._id} (${customer.fullName})${phone ? '' : ' — unlinked'}`);
+
+      // After the reply, not before it: see storeIdPhotos.
+      if (photos.length) {
+        setImmediate(() => storeIdPhotos({ customer, photos, idType: fields.idType, phone })
+          .catch((e) => console.error('[Flow] ID photos:', e.message)));
+      }
 
       return reply({
         screen: 'SUMMARY',
         data: {
           full_name: fields.fullName,
-          authorized_person: fields.authorizedPerson,
+          authorized_person: fields.authorizedName,
           emergency_contact: fields.emergencyContact,
           summary: buildSummaryText(fields, photos.length),
         },
@@ -257,12 +302,12 @@ router.post('/', async (req, res) => {
     }
 
     console.warn(`[Flow] unhandled action=${action} screen=${screen}`);
-    return reply({ screen: 'CLIENT_INFO', data: { error_message: 'Sorry, something went wrong. Please try again.' } });
+    return reply({ screen: 'CLIENT_INFO', data: { error_message: 'Sorry, something went wrong. Please try again.', show_error: true, phone: '' } });
   } catch (e) {
     console.error('[Flow] handler failed:', e.message);
     // Encrypted, because an unencrypted body is unreadable to the client and
     // shows as a generic failure with no clue what happened.
-    return reply({ screen: 'CLIENT_INFO', data: { error_message: 'We could not save that. Please try again.' } });
+    return reply({ screen: 'CLIENT_INFO', data: { error_message: 'We could not save that. Please try again.', show_error: true, phone: '' } });
   }
 });
 
