@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import { useLocation, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { api, apiError, integrationApi, productApi, whatsappApi } from '../lib/api'
 import type { IntegrationStatus, Product } from '../lib/types'
 import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Select, Table, Td, Th } from '../components/ui'
@@ -291,6 +291,17 @@ export default function Settings() {
       <Card>
         <CardHeader title="Integrations" />
         <CardBody className="space-y-3 text-sm">
+          {/* Connecting a Shopify store holds live write access to a merchant's
+              account, so it sits here with the other integrations, admin only. */}
+          {isAdmin && (
+            <Link to="/shopify/merchants" className="flex items-center justify-between rounded-lg border px-4 py-3 flex-wrap gap-3 hover:bg-muted/50 transition-colors">
+              <div>
+                <div className="font-medium">Shopify merchants</div>
+                <div className="text-xs text-muted-foreground">Connect and manage merchants' Shopify stores</div>
+              </div>
+              <span className="text-xs font-medium" style={{ color: '#4A1FA0' }}>Manage →</span>
+            </Link>
+          )}
           <div className="flex items-center justify-between rounded-lg border px-4 py-3 flex-wrap gap-3">
             <div>
               <div className="font-medium">Zoho Sign</div>

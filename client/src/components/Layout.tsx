@@ -20,10 +20,8 @@ const navTop = [
   { to: '/shopify/orders', label: 'Shopify orders', icon: ReceiptText, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/shopify/fulfillment', label: 'Fulfillment queue', icon: ClipboardCheck, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/shopify/inventory', label: 'Shopify inventory', icon: ShoppingBag, perm: ['warehouse', 'warehouse_supervisor'] },
-  // Onboarding a store is an admin action (it holds live write access to a
-  // merchant's Shopify account), unlike the two above — 'settings' is this
-  // app's existing catch-all for admin-configuration screens.
-  { to: '/shopify/merchants', label: 'Shopify merchants', icon: ShoppingBag, perm: 'settings' },
+  // Shopify merchants (onboarding a store) lives under Settings → Integrations:
+  // it is configuration, not a page anyone works from day to day.
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' as string | undefined },
   { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'dashboard' },
 ]
