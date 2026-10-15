@@ -4241,6 +4241,26 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                         <span className="flex-1">Create a task</span>
                       </button>
 
+                      {/* The move-out feedback form (WhatsApp Flow). The answers
+                          come back on the webhook and are filed against this
+                          number's contract — see Reports → Exit surveys. */}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!window.confirm(`Send the exit survey to ${selectedConvo.lead?.fullName || selectedConvo.phoneNormalized}?`)) return
+                          try {
+                            const r = await api.post('/exit-surveys/send', { phone: selectedConvo.phoneNormalized })
+                            window.alert(r.data?.contractNo ? `Exit survey sent — linked to contract ${r.data.contractNo}.` : 'Exit survey sent. No contract found for this number, so answers will be saved against the number only.')
+                            onSent()
+                          } catch (e) { window.alert(apiError(e)) }
+                        }}
+                        className={MENU_ROW}
+                        style={{ color: INK }}
+                      >
+                        <ClipboardList size={15} style={{ color: '#4A1FA0' }} />
+                        <span className="flex-1">Send exit survey</span>
+                      </button>
+
                       {/* Opens in place like the labels row, so picking a
                           person does not shut the menu before the list. */}
                       <div data-keep-open>

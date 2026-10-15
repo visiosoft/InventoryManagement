@@ -15,7 +15,8 @@ const day = (d) => new Date(d).toISOString().slice(0, 10);
 const money = (n) => Number(Number(n || 0).toFixed(2));
 const monthKey = (d) => new Date(d).toISOString().slice(0, 7);
 const rate4wk = (c) => Number(c.leasedPrice || c.rate || 0);
-const ids = (c) => [c.unit, ...(c.units || [])].filter(Boolean).map(String);
+// A contract's primary unit is also in its units list, so de-duplicate or every unit counts twice.
+const ids = (c) => [...new Set([c.unit, ...(c.units || [])].filter(Boolean).map(String))];
 const live = { archived: { $ne: true }, status: { $in: ['active', 'ended'] } };
 
 function endOfMonth(y, m) { return new Date(Date.UTC(y, m + 1, 1) - 1); }

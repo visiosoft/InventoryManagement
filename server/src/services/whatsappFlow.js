@@ -55,6 +55,12 @@ function privateKey() {
   return crypto.createPrivateKey(passphrase ? { key: pem, passphrase } : { key: pem });
 }
 
+/** The public half of the configured key, as PEM — what Meta's "Sign public
+ *  key" step asks for. Not secret: it can only encrypt, never decrypt. */
+export function publicKeyPem() {
+  return crypto.createPublicKey(privateKey()).export({ type: 'spki', format: 'pem' }).toString();
+}
+
 /** AES-128 and AES-256 are both allowed; the key length says which. */
 const cipherFor = (key) => (key.length === 32 ? 'aes-256-gcm' : 'aes-128-gcm');
 

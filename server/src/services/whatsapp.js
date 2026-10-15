@@ -359,7 +359,7 @@ export function windowOpenFor({ lastInboundAt = null, now = new Date() } = {}) {
  * `variables` fill {{1}}, {{2}} … in order. Passing the wrong number of them is
  * rejected by Meta rather than silently truncated, so the caller checks first.
  */
-export async function sendWhatsAppTemplate({ to, name, language = 'en', variables = [], urlButtonText, headerImageUrl }) {
+export async function sendWhatsAppTemplate({ to, name, language = 'en', variables = [], urlButtonText, headerImageUrl, flowToken }) {
     if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured');
     const normalizedTo = normalizeRecipientPhone(to);
     if (!normalizedTo) throw new Error('Recipient phone number is required');
@@ -378,6 +378,11 @@ export async function sendWhatsAppTemplate({ to, name, language = 'en', variable
     // filled with the same code as the body.
     if (urlButtonText !== undefined) {
         components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(urlButtonText) }] });
+    }
+    // A template whose button opens a WhatsApp Flow: the token is what comes
+    // back with the answers, so they can be matched to whatever it was sent for.
+    if (flowToken !== undefined) {
+        components.push({ type: 'button', sub_type: 'flow', index: '0', parameters: [{ type: 'action', action: { flow_token: String(flowToken) } }] });
     }
 
     const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
