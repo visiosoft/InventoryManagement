@@ -37,7 +37,17 @@ const TOKEN_PREFIX = 'exit_survey.';
 const suffix = (p) => String(p || '').replace(/\D/g, '').slice(-9);
 const clip = (v, n) => String(v ?? '').trim().slice(0, n);
 
-export const exitSurveyToken = (contractId) => `${TOKEN_PREFIX}${contractId || 'none'}.${Date.now()}`;
+/* exit_survey.<contractId|none>.<phone digits>.<time>. The phone is there
+ * because a request to the flow endpoint carries the token and nothing else
+ * about who is answering. */
+export const exitSurveyToken = (contractId, phone = '') =>
+    `${TOKEN_PREFIX}${contractId || 'none'}.${String(phone).replace(/\D/g, '') || '0'}.${Date.now()}`;
+
+/** The phone carried in a token we generated, or ''. */
+export function phoneFromExitToken(token) {
+    const m = String(token || '').match(/^exit_survey\.[a-z0-9]+\.(\d{7,15})\.\d+$/i);
+    return m ? m[1] : '';
+}
 
 /** The contract id carried in a token we generated, or '' for any other token. */
 export function contractIdFromToken(token) {
@@ -62,7 +72,11 @@ export function isExitSurveyReply(raw) {
 
 /** The answers, cleaned. Unknown ids are kept as given rather than dropped. */
 export function readExitSurvey(raw) {
-    const d = flowReplyData(raw);
+    return readExitSurveyData(flowReplyData(raw));
+}
+
+/** Same, from the plain answers object — what the flow endpoint receives. */
+export function readExitSurveyData(d = {}) {
     const rating = Number.parseInt(d.rating, 10);
     return {
         reason: clip(d.reason, 40),
@@ -105,13 +119,25 @@ async function contractFor({ token, phoneNormalized }) {
 /**
  * Save a submitted survey. Returns { handled } so the webhook keeps the AI
  * assistant from answering a form submission as if it were a chat message.
- * Idempotent on the WhatsApp message id — Meta redelivers webhooks.
  */
 export async function handleExitSurveyReply({ phoneNormalized, messageId, raw, occurredAt }) {
     if (!isExitSurveyReply(raw)) return { handled: false };
+    return saveExitSurvey({ answers: readExitSurvey(raw), phoneNormalized, messageId, occurredAt });
+}
 
-    const answers = readExitSurvey(raw);
+/**
+ * Store one set of answers, from the webhook or from the flow endpoint.
+ *
+ * Idempotent: on the WhatsApp message id (Meta redelivers webhooks), and on
+ * our own flow token — a survey answered through the endpoint is followed by
+ * the same answers on the webhook once the flow closes.
+ */
+export async function saveExitSurvey({ answers, phoneNormalized = '', messageId = '', occurredAt }) {
     if (messageId && await ExitSurvey.exists({ messageId })) return { handled: true, duplicate: true };
+    if (answers.flowToken.startsWith(TOKEN_PREFIX) && await ExitSurvey.exists({ flowToken: answers.flowToken })) {
+        return { handled: true, duplicate: true };
+    }
+    phoneNormalized = phoneNormalized || phoneFromExitToken(answers.flowToken);
 
     const contract = await contractFor({ token: answers.flowToken, phoneNormalized });
 
@@ -169,7 +195,7 @@ export async function sendExitSurvey({ contractId, phone }) {
         .sort({ occurredAt: -1 }).select('occurredAt').lean();
     const windowOpen = windowOpenFor({ lastInboundAt: lastInbound?.occurredAt || null });
 
-    const flowToken = exitSurveyToken(contract?._id);
+    const flowToken = exitSurveyToken(contract?._id, normalizeLeadPhone(to));
     const firstName = String(contract?.customer?.fullName || '').trim().split(/\s+/)[0];
     const template = process.env.WHATSAPP_EXIT_SURVEY_TEMPLATE;
 

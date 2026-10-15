@@ -2343,6 +2343,7 @@ const exitSurveySchema = new Schema({
   submittedAt: { type: Date, default: Date.now, index: true },
 }, { timestamps: true });
 exitSurveySchema.index({ messageId: 1 });
+exitSurveySchema.index({ flowToken: 1 });
 export const ExitSurvey = model('ExitSurvey', exitSurveySchema);
 
 const counterSchema = new Schema({

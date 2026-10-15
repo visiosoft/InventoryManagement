@@ -54,3 +54,9 @@ test('summary totals', () => {
     assert.deepEqual(s.comeBack, { yes: 1, maybe: 1, no: 1 });
     assert.deepEqual(s.byReason[0], { id: 'price', label: 'Price too high', count: 2 });
 });
+
+test('token carries the phone for the flow endpoint', async () => {
+    const { phoneFromExitToken } = await import('./exitSurvey.js');
+    assert.equal(phoneFromExitToken(exitSurveyToken('64b7f0c2a1b2c3d4e5f60718', '+971 50 123 4567')), '971501234567');
+    assert.equal(phoneFromExitToken(exitSurveyToken(null)), '');
+});
