@@ -146,3 +146,12 @@ test('a token cannot be edited to point at someone else', () => {
   const swapped = `971509999999.${mine.split('.')[1]}`;
   assert.equal(phoneFromFlowToken(swapped), '');
 });
+
+test('a PEM with its line breaks lost is rebuilt', async () => {
+  const crypto = await import('node:crypto');
+  const { normalizePem } = await import('./whatsappFlow.js');
+  const pem = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  for (const mangled of [pem.replace(/\n/g, ' '), pem.replace(/\n/g, ''), pem.replace(/\n/g, '\\n'), Buffer.from(pem).toString('base64')]) {
+    assert.doesNotThrow(() => crypto.createPrivateKey(normalizePem(mangled)));
+  }
+});
