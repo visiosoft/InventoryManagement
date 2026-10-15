@@ -64,17 +64,18 @@
           {
             "type": "TextInput",
             "name": "authorized_name",
-            "label": "Authorized person name (optional)",
+            "label": "Authorized person",
             "input-type": "text",
             "required": false,
-            "helper-text": "Someone allowed to access your unit for you"
+            "helper-text": "Optional: someone allowed to access your unit"
           },
           {
             "type": "TextInput",
             "name": "authorized_phone",
-            "label": "Authorized person phone (optional)",
+            "label": "Authorized phone",
             "input-type": "phone",
-            "required": false
+            "required": false,
+            "helper-text": "Optional: their phone number"
           },
           {
             "type": "Footer",
