@@ -1,4 +1,5 @@
-import { Contract, Customer, ExitSurvey, WhatsAppMessage } from '../models/index.js';
+import { AiBotConfig, Contract, Customer, ExitSurvey, Task, User, WhatsAppMessage } from '../models/index.js';
+import { pushConfigured, pushToUser } from './push.js';
 import { usableFirstName } from './leadNames.js';
 import { isFlowReply, flowReplyData } from './renewalReply.js';
 import {
@@ -102,6 +103,53 @@ export function exitSurveySummary(raw) {
 }
 
 /**
+ * A low rating promises the customer a call, so it lands on a person: the
+ * contract's sales rep, else whoever receives hand-overs, else the first
+ * admin — never on nobody. One open task per contract.
+ */
+async function createLowRatingTask({ contract, answers, phoneNormalized }) {
+    let assignee = contract?.salesRep ? await User.findById(contract.salesRep).select('_id name email isActive').lean() : null;
+    if (!assignee || assignee.isActive === false) {
+        const cfg = await AiBotConfig.findOne().select('escalateTo').lean();
+        assignee = cfg?.escalateTo ? await User.findById(cfg.escalateTo).select('_id name email isActive').lean() : null;
+    }
+    if (!assignee || assignee.isActive === false) {
+        assignee = await User.findOne({ role: 'admin', isActive: { $ne: false } }).select('_id name email').sort({ createdAt: 1 }).lean();
+    }
+    if (!assignee) return;
+
+    const customer = contract?.customer ? await Customer.findById(contract.customer).select('fullName').lean() : null;
+    const who = customer?.fullName || phoneNormalized || 'Tenant';
+    if (contract && await Task.exists({ leadId: contract._id, status: { $ne: 'done' }, title: /^Low exit-survey rating/ })) return;
+
+    await Task.create({
+        title: `Low exit-survey rating — ${who}`,
+        description: [
+            `${who} rated PurpleBox ${answers.rating}/5 in the exit survey${contract?.contractNo ? ` (${contract.contractNo})` : ''}.`,
+            `Reason for leaving: ${REASONS[answers.reason] || answers.reason || '—'}. Would come back: ${COME_BACK[answers.comeBack] || answers.comeBack || '—'}.`,
+            answers.oneChange ? `One thing to change: "${answers.oneChange}"` : '',
+            answers.whatWouldKeepYou ? `What would keep them: "${answers.whatWouldKeepYou}"` : '',
+            `They were told on WhatsApp that someone will reach out — call them${phoneNormalized ? ` on +${phoneNormalized}` : ''}.`,
+        ].filter(Boolean).join('\n'),
+        assignedTo: assignee._id,
+        createdByName: 'System',
+        leadId: contract?._id || null,
+        leadType: contract ? 'contract' : null,
+        leadName: who,
+        priority: 'high',
+        dueDate: new Date(Date.now() + 864e5),
+        assignmentHistory: [{ fromId: null, fromName: '', toId: assignee._id, toName: assignee.name || assignee.email, byId: null, byName: 'System', reason: 'Low exit-survey rating' }],
+    });
+    if (pushConfigured()) {
+        await pushToUser(assignee._id, {
+            title: 'Low exit-survey rating',
+            body: `${who} rated us ${answers.rating}/5. Please call them.`,
+            url: contract ? `/contracts/${contract._id}` : '/exit-surveys',
+        }).catch(() => { });
+    }
+}
+
+/**
  * The thank-you sent once the form is in. It answers what they said rather
  * than a generic "thanks": a low rating gets an apology and a promise that
  * someone will follow up, a "yes" or "maybe" to coming back gets a welcome.
@@ -129,7 +177,7 @@ export function thankYouText(answers, firstName = '') {
 async function contractFor({ token, phoneNormalized }) {
     const id = contractIdFromToken(token);
     if (id) {
-        const c = await Contract.findById(id).select('_id customer unit').lean();
+        const c = await Contract.findById(id).select('_id customer unit salesRep contractNo').lean();
         if (c) return c;
     }
     const key = suffix(phoneNormalized);
@@ -138,7 +186,7 @@ async function contractFor({ token, phoneNormalized }) {
     const customers = await Customer.find({ $or: [{ phone: rx }, { phones: rx }] }).select('_id').lean();
     if (!customers.length) return null;
     return Contract.findOne({ customer: { $in: customers.map((c) => c._id) } })
-        .sort({ endDate: -1 }).select('_id customer unit').lean();
+        .sort({ endDate: -1 }).select('_id customer unit salesRep contractNo').lean();
 }
 
 /**
@@ -185,6 +233,11 @@ export async function saveExitSurvey({ answers, phoneNormalized = '', messageId 
         await Contract.updateOne({ _id: contract._id }, {
             $push: { timeline: { at: new Date(), author: 'Tenant (WhatsApp)', text: `Exit survey submitted — ${parts.join(', ')}` } },
         }).catch(() => { });
+    }
+
+    // A 1-2 rating is promised a follow-up in the thank-you, so somebody gets the job.
+    if (answers.rating && answers.rating <= 2) {
+        await createLowRatingTask({ contract, answers, phoneNormalized }).catch((e) => console.error('[ExitSurvey] task:', e.message));
     }
 
     /* Their submission is itself an inbound message, so the 24-hour window
