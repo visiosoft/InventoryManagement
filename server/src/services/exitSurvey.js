@@ -1,7 +1,9 @@
-import { Contract, Customer, ExitSurvey, WhatsAppMessage } from '../models/index.js';
+import { AiBotConfig, Contract, Customer, ExitSurvey, Task, User, WhatsAppMessage } from '../models/index.js';
+import { pushConfigured, pushToUser } from './push.js';
+import { usableFirstName } from './leadNames.js';
 import { isFlowReply, flowReplyData } from './renewalReply.js';
 import {
-    sendWhatsAppInteractiveFlow, sendWhatsAppTemplate, whatsappSendConfigured, windowOpenFor,
+    sendWhatsAppInteractiveFlow, sendWhatsAppTemplate, sendWhatsAppText, whatsappSendConfigured, windowOpenFor,
 } from './whatsapp.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
 
@@ -100,11 +102,82 @@ export function exitSurveySummary(raw) {
     ].filter(Boolean).join(' · ');
 }
 
+/**
+ * A low rating promises the customer a call, so it lands on a person: the
+ * contract's sales rep, else whoever receives hand-overs, else the first
+ * admin — never on nobody. One open task per contract.
+ */
+async function createLowRatingTask({ contract, answers, phoneNormalized }) {
+    let assignee = contract?.salesRep ? await User.findById(contract.salesRep).select('_id name email isActive').lean() : null;
+    if (!assignee || assignee.isActive === false) {
+        const cfg = await AiBotConfig.findOne().select('escalateTo').lean();
+        assignee = cfg?.escalateTo ? await User.findById(cfg.escalateTo).select('_id name email isActive').lean() : null;
+    }
+    if (!assignee || assignee.isActive === false) {
+        assignee = await User.findOne({ role: 'admin', isActive: { $ne: false } }).select('_id name email').sort({ createdAt: 1 }).lean();
+    }
+    if (!assignee) return;
+
+    const customer = contract?.customer ? await Customer.findById(contract.customer).select('fullName').lean() : null;
+    const who = customer?.fullName || phoneNormalized || 'Tenant';
+    if (contract && await Task.exists({ leadId: contract._id, status: { $ne: 'done' }, title: /^Low exit-survey rating/ })) return;
+
+    await Task.create({
+        title: `Low exit-survey rating — ${who}`,
+        description: [
+            `${who} rated PurpleBox ${answers.rating}/5 in the exit survey${contract?.contractNo ? ` (${contract.contractNo})` : ''}.`,
+            `Reason for leaving: ${REASONS[answers.reason] || answers.reason || '—'}. Would come back: ${COME_BACK[answers.comeBack] || answers.comeBack || '—'}.`,
+            answers.oneChange ? `One thing to change: "${answers.oneChange}"` : '',
+            answers.whatWouldKeepYou ? `What would keep them: "${answers.whatWouldKeepYou}"` : '',
+            `They were told on WhatsApp that someone will reach out — call them${phoneNormalized ? ` on +${phoneNormalized}` : ''}.`,
+        ].filter(Boolean).join('\n'),
+        assignedTo: assignee._id,
+        createdByName: 'System',
+        leadId: contract?._id || null,
+        leadType: contract ? 'contract' : null,
+        leadName: who,
+        priority: 'high',
+        dueDate: new Date(Date.now() + 864e5),
+        assignmentHistory: [{ fromId: null, fromName: '', toId: assignee._id, toName: assignee.name || assignee.email, byId: null, byName: 'System', reason: 'Low exit-survey rating' }],
+    });
+    if (pushConfigured()) {
+        await pushToUser(assignee._id, {
+            title: 'Low exit-survey rating',
+            body: `${who} rated us ${answers.rating}/5. Please call them.`,
+            url: contract ? `/contracts/${contract._id}` : '/exit-surveys',
+        }).catch(() => { });
+    }
+}
+
+/**
+ * The thank-you sent once the form is in. It answers what they said rather
+ * than a generic "thanks": a low rating gets an apology and a promise that
+ * someone will follow up, a "yes" or "maybe" to coming back gets a welcome.
+ */
+export function thankYouText(answers, firstName = '') {
+    const hi = `Thank you${firstName ? `, ${firstName},` : ''} for your feedback! 🙏`;
+    const lines = [hi];
+    if (answers.rating && answers.rating <= 2) {
+        lines.push("We're sorry we fell short. A member of our team will reach out to make things right.");
+    } else if (answers.rating >= 4) {
+        lines.push("We're glad you enjoyed storing with PurpleBox.");
+    } else {
+        lines.push('Your answers help us improve PurpleBox.');
+    }
+    if (answers.comeBack === 'yes' || answers.comeBack === 'maybe') {
+        lines.push("Whenever you need storage again, just message us here — we'd love to have you back.");
+    } else {
+        lines.push('We wish you all the best, and our door is always open.');
+    }
+    lines.push('— Team PurpleBox');
+    return lines.join('\n');
+}
+
 /** The contract this survey is about: the one in our token, else the number's latest contract. */
 async function contractFor({ token, phoneNormalized }) {
     const id = contractIdFromToken(token);
     if (id) {
-        const c = await Contract.findById(id).select('_id customer unit').lean();
+        const c = await Contract.findById(id).select('_id customer unit salesRep contractNo').lean();
         if (c) return c;
     }
     const key = suffix(phoneNormalized);
@@ -113,7 +186,7 @@ async function contractFor({ token, phoneNormalized }) {
     const customers = await Customer.find({ $or: [{ phone: rx }, { phones: rx }] }).select('_id').lean();
     if (!customers.length) return null;
     return Contract.findOne({ customer: { $in: customers.map((c) => c._id) } })
-        .sort({ endDate: -1 }).select('_id customer unit').lean();
+        .sort({ endDate: -1 }).select('_id customer unit salesRep contractNo').lean();
 }
 
 /**
@@ -162,7 +235,38 @@ export async function saveExitSurvey({ answers, phoneNormalized = '', messageId 
         }).catch(() => { });
     }
 
-    return { handled: true, surveyId: String(survey._id), contractId: contract ? String(contract._id) : '' };
+    // A 1-2 rating is promised a follow-up in the thank-you, so somebody gets the job.
+    if (answers.rating && answers.rating <= 2) {
+        await createLowRatingTask({ contract, answers, phoneNormalized }).catch((e) => console.error('[ExitSurvey] task:', e.message));
+    }
+
+    /* Their submission is itself an inbound message, so the 24-hour window
+     * is open and a plain text is allowed. Never allowed to fail the save. */
+    let thanked = false;
+    if (phoneNormalized && whatsappSendConfigured()) {
+        try {
+            const customer = contract?.customer ? await Customer.findById(contract.customer).select('fullName').lean() : null;
+            const body = thankYouText(answers, usableFirstName(customer?.fullName));
+            const sent = await sendWhatsAppText({ to: phoneNormalized, body });
+            await WhatsAppMessage.create({
+                messageId: sent?.messages?.[0]?.id || '',
+                phone: phoneNormalized,
+                phoneNormalized,
+                direction: 'outbound',
+                type: 'text',
+                text: body,
+                status: 'sent',
+                occurredAt: new Date(),
+                sentByAi: false,
+                raw: sent,
+            });
+            thanked = true;
+        } catch (e) {
+            console.error('[ExitSurvey] thank-you not sent:', e.message);
+        }
+    }
+
+    return { handled: true, surveyId: String(survey._id), contractId: contract ? String(contract._id) : '', thanked };
 }
 
 /** A survey token for this number, carrying its latest contract when there is one. */
