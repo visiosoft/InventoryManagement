@@ -216,7 +216,16 @@ export interface Quote {
   salesperson?: string
   expiryDate: string
   pdfTemplate: string
-  customer: { _id: string; fullName: string; email?: string; phone?: string }
+  customer: {
+    _id: string; fullName: string; email?: string; phone?: string
+    // Added by GET /quotes: how complete the file is, and the WhatsApp ID form's outcome.
+    profile?: { pct: number; done: number; total: number; missing: string[] }
+    idDocuments?: number
+    whatsappId?: {
+      status: 'processing' | 'saved' | 'partial' | 'failed'; at: string; idType: string
+      filesSaved: number; filesTotal: number; problem: string; resolved: boolean
+    } | null
+  }
   lead?: { _id: string; fullName: string; phone?: string; email?: string } | string
   billingPeriod?: 'weekly' | 'monthly'
   billingAddress?: string

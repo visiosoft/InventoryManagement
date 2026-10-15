@@ -5,6 +5,7 @@ import { ChevronRight, FileSignature, Package, Plus, Search, Trash2 } from 'luci
 import { api, apiError, quoteApi, type AvailableUnit } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Quote, QuoteStatus, QuoteUnit, QuoteAddOn } from '../lib/types'
+import CustomerReadiness from '../components/CustomerReadiness'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea } from '../components/ui'
 import { RentalFlowStepper, type FlowStep } from '../components/RentalFlowStepper'
 import { formatDate, formatMoney } from '../lib/utils'
@@ -654,6 +655,7 @@ function QuoteDetailPanel({ quote }: { quote: Quote }) {
           <p className="text-xs text-muted-foreground">Customer</p>
           <p className="font-semibold text-sm">{q.customer?.fullName}</p>
           {q.customer?.phone && <p className="text-xs text-muted-foreground">{q.customer.phone}</p>}
+          <CustomerReadiness customer={q.customer} />
         </div>
         <div className="rounded-lg border bg-muted/30 p-3">
           <p className="text-xs text-muted-foreground">Dates</p>
@@ -1026,6 +1028,7 @@ export default function Quotations() {
                             {q.customer?.phone && (
                               <div className="text-xs text-muted-foreground">{q.customer.phone}</div>
                             )}
+                            <CustomerReadiness customer={q.customer} />
                           </Td>
                           <Td className="hidden md:table-cell">
                             <div className="flex flex-col gap-1">
