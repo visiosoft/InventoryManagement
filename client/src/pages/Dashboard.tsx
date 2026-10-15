@@ -12,6 +12,7 @@ import DashboardAsk from '../components/DashboardAsk'
 import CustomerFeedbackCard from '../components/CustomerFeedbackCard'
 import ClientInfoSubmissionsCard from '../components/ClientInfoSubmissionsCard'
 import AccountsDashboard from './AccountsDashboard'
+import ZohoBooksOverview from '../components/ZohoBooksOverview'
 import { useAuth } from '../lib/auth'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -858,7 +859,12 @@ export default function Dashboard() {
 
       {tab === 'overview' && <div className="mb-6"><DashboardAsk /></div>}
 
-      {tab === 'finance' && <AccountsDashboard embedded />}
+      {tab === 'finance' && (
+        <div className="space-y-8">
+          <ZohoBooksOverview />
+          <AccountsDashboard embedded />
+        </div>
+      )}
 
       {tab === 'overview' && isAdmin && Boolean(pendingExpiry?.total) && (
         <Link

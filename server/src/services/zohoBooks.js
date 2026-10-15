@@ -597,3 +597,124 @@ export async function fetchZohoInvoicePdf(invoiceId) {
     });
     return { configured: true, pdf: Buffer.from(data) };
 }
+
+
+/* ── The Zoho Books home dashboard, rebuilt from the API ─────────────────────
+   Zoho has no API for its own dashboard widgets, so the same figures are
+   worked out from the documents behind them. Each section is fetched on its
+   own and fails on its own: one Zoho error leaves the others standing. */
+
+async function zohoListAll(path, key, params = {}, maxPages = 25) {
+    const token = await getAccessToken();
+    const headers = { Authorization: `Zoho-oauthtoken ${token}` };
+    let out = [];
+    for (let page = 1; page <= maxPages; page++) {
+        const { data } = await axios.get(`${API_BASE}/${path}`, {
+            headers, params: { ...orgParam(), page, per_page: 200, ...params },
+        });
+        out = out.concat(data[key] || []);
+        if (!data.page_context?.has_more_page) break;
+    }
+    return out;
+}
+
+/** Unpaid documents (invoices or bills) from every "still owed" filter, de-duplicated. */
+async function openDocuments(path, key, idField) {
+    const seen = new Map();
+    for (const filter of ['Status.Unpaid', 'Status.PartiallyPaid', 'Status.OverDue']) {
+        for (const d of await zohoListAll(path, key, { filter_by: filter })) seen.set(d[idField], d);
+    }
+    return [...seen.values()];
+}
+
+/** Total, current and overdue, the way Zoho's Receivables / Payables cards split it. */
+export function splitOutstanding(docs, today = new Date().toISOString().slice(0, 10)) {
+    let current = 0;
+    let overdue = 0;
+    for (const d of docs) {
+        const bal = Number(d.balance ?? 0);
+        if (!(bal > 0)) continue;
+        if (d.due_date && d.due_date < today) overdue += bal; else current += bal;
+    }
+    const r = (n) => Math.round(n * 100) / 100;
+    return { total: r(current + overdue), current: r(current), overdue: r(overdue), count: docs.filter((d) => Number(d.balance) > 0).length };
+}
+
+/** Sum an amount field into the twelve months of a year: [{ month: '2026-01', value }]. */
+export function byMonth(rows, year, amountOf, dateOf = (r) => r.date) {
+    const months = Array.from({ length: 12 }, (_, i) => ({ month: `${year}-${String(i + 1).padStart(2, '0')}`, value: 0 }));
+    for (const row of rows) {
+        const d = String(dateOf(row) || '');
+        if (!d.startsWith(String(year))) continue;
+        const m = Number(d.slice(5, 7)) - 1;
+        if (m >= 0 && m < 12) months[m].value += Number(amountOf(row) || 0);
+    }
+    return months.map((m) => ({ ...m, value: Math.round(m.value * 100) / 100 }));
+}
+
+let dashboardCache = { at: 0, data: null };
+
+export async function zohoBooksDashboard({ force = false } = {}) {
+    if (!zohoBooksConfigured()) return { configured: false };
+    if (!force && dashboardCache.data && Date.now() - dashboardCache.at < 10 * 60_000) return dashboardCache.data;
+
+    const year = new Date().getFullYear();
+    const range = { date_start: `${year}-01-01`, date_end: `${year}-12-31` };
+    const problems = [];
+    const safe = async (label, fn, fallback) => {
+        try { return await fn(); } catch (e) {
+            problems.push(`${label}: ${e.response?.data?.message || e.message}`);
+            return fallback;
+        }
+    };
+
+    const [openInvoices, openBills, banks, payIn, payOut, expenses, invoicesYear, billsYear] = await Promise.all([
+        safe('Receivables', () => openDocuments('invoices', 'invoices', 'invoice_id'), null),
+        safe('Payables', () => openDocuments('bills', 'bills', 'bill_id'), null),
+        safe('Bank accounts', () => zohoListAll('bankaccounts', 'bankaccounts'), null),
+        safe('Customer payments', () => zohoListAll('customerpayments', 'customerpayments', range), null),
+        safe('Vendor payments', () => zohoListAll('vendorpayments', 'vendorpayments', range), null),
+        safe('Expenses', () => zohoListAll('expenses', 'expenses', range), null),
+        safe('Invoices', () => zohoListAll('invoices', 'invoices', range), null),
+        safe('Bills', () => zohoListAll('bills', 'bills', range), null),
+    ]);
+
+    const moneyIn = payIn ? byMonth(payIn, year, (p) => p.amount) : null;
+    const moneyOut = payOut || expenses
+        ? byMonth([...(payOut || []), ...(expenses || [])], year, (r) => r.amount ?? r.total)
+        : null;
+    const income = invoicesYear ? byMonth(invoicesYear.filter((i) => !['void', 'draft'].includes(i.status)), year, (i) => i.total) : null;
+    const spend = expenses || billsYear
+        ? byMonth([...(expenses || []), ...((billsYear || []).filter((b) => !['void', 'draft'].includes(b.status)))], year, (r) => r.total ?? r.amount)
+        : null;
+
+    const topExpenses = expenses
+        ? Object.entries(expenses.reduce((acc, e) => {
+            const k = e.account_name || 'Other';
+            acc[k] = (acc[k] || 0) + Number(e.total ?? e.amount ?? 0);
+            return acc;
+        }, {})).map(([account, total]) => ({ account, total: Math.round(total * 100) / 100 }))
+            .sort((a, b) => b.total - a.total).slice(0, 6)
+        : null;
+
+    const sum = (arr) => (arr ? Math.round(arr.reduce((s, m) => s + m.value, 0) * 100) / 100 : null);
+    const data = {
+        configured: true,
+        year,
+        orgId: process.env.ZOHO_BOOKS_ORG_ID,
+        receivables: openInvoices ? splitOutstanding(openInvoices) : null,
+        payables: openBills ? splitOutstanding(openBills) : null,
+        bank: banks ? {
+            total: Math.round(banks.filter((b) => b.is_active !== false).reduce((s, b) => s + Number(b.balance || 0), 0) * 100) / 100,
+            accounts: banks.filter((b) => b.is_active !== false)
+                .map((b) => ({ name: b.account_name, type: b.account_type, balance: Number(b.balance || 0) })),
+        } : null,
+        cashFlow: moneyIn || moneyOut ? { moneyIn, moneyOut, totalIn: sum(moneyIn), totalOut: sum(moneyOut) } : null,
+        incomeExpense: income || spend ? { income, expense: spend, totalIncome: sum(income), totalExpense: sum(spend) } : null,
+        topExpenses,
+        problems,
+        fetchedAt: new Date().toISOString(),
+    };
+    dashboardCache = { at: Date.now(), data };
+    return data;
+}

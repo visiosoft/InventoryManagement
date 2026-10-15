@@ -13,7 +13,7 @@
 
 import { Router } from 'express';
 import { Contract, Customer, Task } from '../models/index.js';
-import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
+import { zohoBooksConfigured, zohoOutstandingByCustomer, zohoBooksDashboard } from '../services/zohoBooks.js';
 
 const router = Router();
 
@@ -114,6 +114,18 @@ router.get('/', async (req, res) => {
  * it, rather than eleven tasks waiting on somebody else's API. */
 router.get('/zoho', async (_req, res) => {
    res.json(await zohoPanel());
+});
+
+/* GET /api/accounts-dashboard/zoho-books — Zoho Books' own home-dashboard
+   figures: receivables and payables (current / overdue), bank balances,
+   money in and out by month, income vs expense, top expenses. Cached ten
+   minutes; ?refresh=1 to fetch now. */
+router.get('/zoho-books', async (req, res) => {
+   try {
+      res.json(await zohoBooksDashboard({ force: req.query.refresh === '1' }));
+   } catch (e) {
+      res.json({ configured: true, error: e.message });
+   }
 });
 
 export default router;
