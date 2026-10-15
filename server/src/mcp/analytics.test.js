@@ -48,3 +48,10 @@ test('data health warns when payments stopped being recorded and when rows look 
   assert.ok(w.some((x) => /3 pending payment rows look duplicated.*AED 900/.test(x)));
   assert.ok(w.some((x) => /10 unpaid rows.*120 days/.test(x)));
 });
+
+test('forecast does not count a contract\'s primary unit twice', async () => {
+  stub([c(1, { units: ['u1'] }), c(2, { units: ['u2'] })]);
+  const f = await forecast({ weeks: 1 });
+  assert.equal(f.now.occupiedUnits, 2);
+  assert.equal(f.weeks[0].occupiedUnits.base, 2 + Math.round(0));
+});

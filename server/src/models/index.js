@@ -2383,6 +2383,29 @@ const movingStorageFlowSchema = new Schema({
 }, { timestamps: true });
 export const MovingStorageFlowThread = model('MovingStorageFlowThread', movingStorageFlowSchema);
 
+/* A move-out exit survey submitted through the EXIT_SURVEY WhatsApp Flow —
+ * see services/exitSurvey.js. Ids are stored as the form sent them
+ * (reason 'price', comeBack 'maybe'); the labels live in the service. */
+const exitSurveySchema = new Schema({
+  contract: { type: Schema.Types.ObjectId, ref: 'Contract', default: null, index: true },
+  customer: { type: Schema.Types.ObjectId, ref: 'Customer', default: null },
+  unit: { type: Schema.Types.ObjectId, ref: 'Unit', default: null },
+  phoneNormalized: { type: String, default: '' },
+  // The WhatsApp message it arrived in — Meta redelivers webhooks, and this
+  // is what keeps a redelivery from saving the same answers twice.
+  messageId: { type: String, default: '' },
+  flowToken: { type: String, default: '' },
+  reason: { type: String, default: '' },
+  oneChange: { type: String, default: '' },
+  rating: { type: Number, min: 1, max: 5, default: null },
+  comeBack: { type: String, default: '' },
+  whatWouldKeepYou: { type: String, default: '' },
+  submittedAt: { type: Date, default: Date.now, index: true },
+}, { timestamps: true });
+exitSurveySchema.index({ messageId: 1 });
+exitSurveySchema.index({ flowToken: 1 });
+export const ExitSurvey = model('ExitSurvey', exitSurveySchema);
+
 const counterSchema = new Schema({
   key: { type: String, required: true, unique: true },
   seq: { type: Number, default: 0 },

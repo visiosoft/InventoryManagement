@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useState } from 'react'
-import { MessageCircle, Phone } from 'lucide-react'
+import { ClipboardList, MessageCircle, Phone } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Card, CardBody, CardHeader } from '../components/ui'
@@ -54,7 +54,73 @@ function WhatsAppSend({ contractId, name, phone }: { contractId: string; name: s
   )
 }
 
-function Group({ title, hint, items, tone }: { title: string; hint: string; items: Item[]; tone: string }) {
+/** Send the EXIT_SURVEY WhatsApp Flow; the answers come back on their own and show in the Exit surveys card. */
+function ExitSurveySend({ contractId, name, phone }: { contractId: string; name: string; phone: string }) {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  async function send() {
+    if (!confirm(`Send the exit survey to ${name} on ${phone}?`)) return
+    setBusy(true); setMsg('')
+    try {
+      const r = await api.post('/exit-surveys/send', { contractId })
+      setMsg(r.data?.via === 'template' ? 'Sent (template)' : 'Sent')
+    } catch (e) { setMsg(apiError(e)) } finally { setBusy(false) }
+  }
+  return (
+    <>
+      <button type="button" onClick={send} disabled={busy} className="inline-flex items-center gap-1 text-xs font-semibold border rounded-full px-3 py-1.5 cursor-pointer disabled:opacity-40">
+        <ClipboardList size={12} /> {busy ? 'Sending…' : 'Exit survey'}
+      </button>
+      {msg && <span className="basis-full text-xs text-muted-foreground">{msg}</span>}
+    </>
+  )
+}
+
+type Survey = {
+  _id: string; submittedAt: string; reasonLabel: string; rating: number | null; comeBackLabel: string
+  oneChange: string; whatWouldKeepYou: string
+  customer?: { fullName: string }; unit?: { unitNumber: string }; contract?: { _id: string; contractNo: string }
+}
+type SurveyData = {
+  summary: { total: number; averageRating: number | null; byReason: { id: string; label: string; count: number }[]; comeBack: { yes: number; maybe: number; no: number } }
+  rows: Survey[]
+}
+
+/** Answers from the move-out exit survey. */
+function ExitSurveys() {
+  const { data } = useQuery<SurveyData>({ queryKey: ['exit-surveys'], queryFn: () => api.get('/exit-surveys', { params: { limit: 50 } }).then((r) => r.data) })
+  const s = data?.summary
+  return (
+    <Card>
+      <CardHeader
+        title={`Exit surveys (${s?.total ?? 0})`}
+        action={<Link to="/exit-surveys" className="text-xs font-semibold hover:underline">Full report →</Link>}
+        subtitle={s && s.total ? `Average rating ${s.averageRating ?? '—'}/5 · would come back: ${s.comeBack.yes} yes, ${s.comeBack.maybe} maybe, ${s.comeBack.no} no` : 'Answers from tenants who were sent the exit survey.'}
+      />
+      <CardBody className="space-y-2">
+        {s && s.byReason.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {s.byReason.map((r) => <span key={r.id} className="text-xs font-semibold rounded-full border px-2.5 py-1">{r.label}: {r.count}</span>)}
+          </div>
+        )}
+        {data && data.rows.length === 0 && <div className="text-sm text-muted-foreground">No answers yet.</div>}
+        {(data?.rows ?? []).map((r) => (
+          <div key={r._id} className="rounded-xl border p-3 text-sm">
+            <div className="flex flex-wrap gap-2 items-baseline">
+              {r.contract ? <Link to={`/contracts/${r.contract._id}`} className="font-semibold hover:underline">{r.customer?.fullName || 'Tenant'}</Link> : <span className="font-semibold">{r.customer?.fullName || 'Unlinked number'}</span>}
+              <span className="text-xs text-muted-foreground">Unit {r.unit?.unitNumber || '—'} · {new Date(r.submittedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            </div>
+            <div className="text-xs mt-1">{r.reasonLabel || '—'} · {r.rating ?? '—'}/5 · come back: {r.comeBackLabel || '—'}</div>
+            {r.oneChange && <div className="text-xs text-muted-foreground mt-1">Change: {r.oneChange}</div>}
+            {r.whatWouldKeepYou && <div className="text-xs text-muted-foreground mt-0.5">Would keep them: {r.whatWouldKeepYou}</div>}
+          </div>
+        ))}
+      </CardBody>
+    </Card>
+  )
+}
+
+function Group({ title, hint, items, tone, exitSurvey }: { title: string; hint: string; items: Item[]; tone: string; exitSurvey?: boolean }) {
   return (
     <Card>
       <CardHeader title={`${title} (${items.length})`} subtitle={hint} />
@@ -73,6 +139,7 @@ function Group({ title, hint, items, tone }: { title: string; hint: string; item
               {i.daysLeft == null ? '—' : i.daysLeft < 0 ? `${-i.daysLeft}d overdue` : `${i.daysLeft}d left`}
             </span>
             {i.customer?.phone && <WhatsAppSend contractId={i._id} name={i.customer.fullName || 'the tenant'} phone={i.customer.phone} />}
+            {exitSurvey && i.customer?.phone && <ExitSurveySend contractId={i._id} name={i.customer.fullName || 'the tenant'} phone={i.customer.phone} />}
             {i.customer?.phone && (
               <a href={`tel:${i.customer.phone}`} className="inline-flex items-center gap-1 text-xs font-semibold border rounded-full px-3 py-1.5"><Phone size={12} /> Call</a>
             )}
@@ -125,10 +192,11 @@ export default function RenewalRequests() {
       </div>
       {isLoading || !data ? <div className="text-sm text-muted-foreground">Loading…</div> : (
         <>
-          <Group title="Moving out" hint="Arrange the date and the key return; the unit frees up after." items={data.moveOut} tone="#FEE2E2" />
+          <Group title="Moving out" hint="Arrange the date and the key return; the unit frees up after." items={data.moveOut} tone="#FEE2E2" exitSurvey />
           <Group title="Renewing" hint="Confirm the new term and raise the next invoice." items={data.renewing} tone="#DCFCE7" />
           <UnverifiedPayments />
           <Group title="No answer yet" hint="Ending within 60 days with no reply — call these." items={data.silent} tone="#FEF3C7" />
+          <ExitSurveys />
         </>
       )}
     </div>

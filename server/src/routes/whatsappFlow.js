@@ -14,8 +14,9 @@ import { Router } from 'express';
 import { Customer, Lead } from '../models/index.js';
 import {
   flowKeysConfigured, decryptRequest, encryptResponse,
-  readClientInfo, buildSummaryText, phoneFromFlowToken,
+  readClientInfo, buildSummaryText, phoneFromFlowToken, publicKeyPem,
 } from '../services/whatsappFlow.js';
+import { readExitSurveyData, saveExitSurvey } from '../services/exitSurvey.js';
 
 const router = Router();
 
@@ -95,6 +96,79 @@ async function saveClientInfo({ fields, photos, phone }) {
 
   return customer;
 }
+
+/**
+ * GET /api/whatsapp/flow/public-key — the key to paste into Meta's Flows →
+ * Endpoint → "Sign public key" step. Same key for every flow on the number.
+ */
+router.get('/public-key', (_req, res) => {
+  if (!flowKeysConfigured()) return res.status(500).type('text/plain').send('WHATSAPP_FLOW_PRIVATE_KEY is not set');
+  try {
+    res.type('text/plain').send(publicKeyPem());
+  } catch (e) {
+    res.status(500).type('text/plain').send(e.message);
+  }
+});
+
+/**
+ * POST /api/whatsapp/flow/exit-survey — the endpoint for the EXIT_SURVEY flow.
+ *
+ * Its own URL, so a request needs no guessing about which flow it belongs to
+ * (the payload does not say). Same key and encryption as the Client Info flow.
+ *
+ * With the form's footer on "complete", Meta only calls this for its health
+ * check and opening the flow; the answers arrive on the webhook. If the footer
+ * is switched to "data_exchange", the answers come here instead, are saved,
+ * and the flow is closed with the SUCCESS response.
+ */
+router.post('/exit-survey', async (req, res) => {
+  if (!flowKeysConfigured()) {
+    console.error('[ExitSurveyFlow] WHATSAPP_FLOW_PRIVATE_KEY is not set');
+    return res.status(500).send('Flow endpoint is not configured');
+  }
+
+  let decrypted;
+  try {
+    decrypted = decryptRequest(req.body || {});
+  } catch (e) {
+    console.error('[ExitSurveyFlow] could not decrypt:', e.message);
+    return res.status(421).send('Could not decrypt the request');
+  }
+
+  const { body, aesKey, iv } = decrypted;
+  const reply = (payload) => res.type('text/plain').send(encryptResponse(payload, aesKey, iv));
+
+  try {
+    const { action, data = {}, flow_token: token } = body;
+
+    if (action === 'ping') return reply({ data: { status: 'active' } });
+
+    if (data?.error) {
+      console.error('[ExitSurveyFlow] client error:', data.error_message || data.error);
+      return reply({ data: { acknowledged: true } });
+    }
+
+    if (action === 'INIT' || action === 'BACK') return reply({ screen: 'EXIT_SURVEY', data: {} });
+
+    if (action === 'data_exchange') {
+      const answers = readExitSurveyData({ ...data, flow_token: token });
+      if (!answers.reason || !answers.rating || !answers.comeBack) {
+        return reply({ screen: 'EXIT_SURVEY', data: { error_message: 'Please answer the reason, rating and come-back questions.' } });
+      }
+      await saveExitSurvey({ answers });
+      return reply({
+        screen: 'SUCCESS',
+        data: { extension_message_response: { params: { flow_token: token, reason: answers.reason, rating: String(answers.rating), come_back: answers.comeBack } } },
+      });
+    }
+
+    console.warn(`[ExitSurveyFlow] unhandled action=${action}`);
+    return reply({ screen: 'EXIT_SURVEY', data: {} });
+  } catch (e) {
+    console.error('[ExitSurveyFlow] handler failed:', e.message);
+    return reply({ screen: 'EXIT_SURVEY', data: { error_message: 'We could not save that. Please try again.' } });
+  }
+});
 
 router.post('/', async (req, res) => {
   if (!flowKeysConfigured()) {

@@ -36,8 +36,47 @@ const TAG_LENGTH = 16;
  */
 function readPem() {
   const file = process.env.WHATSAPP_FLOW_PRIVATE_KEY_FILE;
-  if (file) return fs.readFileSync(file, 'utf8');
-  return String(process.env.WHATSAPP_FLOW_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  if (file) return normalizePem(fs.readFileSync(file, 'utf8'));
+  return normalizePem(process.env.WHATSAPP_FLOW_PRIVATE_KEY || '');
+}
+
+/**
+ * Rebuild a PEM whose line breaks were lost on the way into the environment.
+ *
+ * Hosting dashboards turn the newlines into spaces, into literal "\n", or
+ * drop them; quotes and \r creep in. The decoder then fails with the
+ * unhelpful "DECODER routines::unsupported". The content survives all of
+ * that, so it is re-laid out here: the BEGIN/END lines, the Proc-Type and
+ * DEK-Info headers of a passphrase-protected key, and the base64 body
+ * wrapped at 64 columns. A whole PEM pasted as one base64 string is
+ * accepted too.
+ */
+export function normalizePem(input) {
+  let text = String(input || '').trim().replace(/^['"]|['"]$/g, '').replace(/\\r/g, '').replace(/\\n/g, '\n').replace(/\r/g, '');
+  if (!text.includes('-----BEGIN') && /^[A-Za-z0-9+/=\s]+$/.test(text)) {
+    const decoded = Buffer.from(text.replace(/\s+/g, ''), 'base64').toString('utf8');
+    if (decoded.includes('-----BEGIN')) text = decoded;
+  }
+  const m = text.match(/-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/);
+  if (!m) return text;
+  const [, label, inner] = m;
+  const headers = [];
+  let body = inner;
+  // Matched by shape, not up to the next space: with the line breaks dropped
+  // outright, the DEK-Info IV runs straight into the base64 body. The IV is
+  // 8 bytes for DES, 16 for AES — 16 or 32 hex characters.
+  const proc = body.match(/Proc-Type:\s*(\d,ENCRYPTED)/);
+  if (proc) { headers.push(`Proc-Type: ${proc[1]}`); body = body.replace(proc[0], ''); }
+  const dek = body.match(/DEK-Info:\s*([A-Z0-9-]+),\s*/i);
+  if (dek) {
+    const ivLen = /^AES/i.test(dek[1]) ? 32 : 16;
+    const iv = body.slice(dek.index + dek[0].length, dek.index + dek[0].length + ivLen);
+    headers.push(`DEK-Info: ${dek[1]},${iv}`);
+    body = body.slice(0, dek.index) + body.slice(dek.index + dek[0].length + ivLen);
+  }
+  const b64 = body.replace(/[^A-Za-z0-9+/=]/g, '');
+  const lines = b64.match(/.{1,64}/g) || [];
+  return [`-----BEGIN ${label}-----`, ...headers, ...(headers.length ? [''] : []), ...lines, `-----END ${label}-----`, ''].join('\n');
 }
 
 export function flowKeysConfigured() {
@@ -51,8 +90,25 @@ function privateKey() {
   if (!pem.includes('PRIVATE KEY-----')) {
     throw new Error('The private key looks truncated — a PEM pasted into .env keeps only its first line. Use WHATSAPP_FLOW_PRIVATE_KEY_FILE instead.');
   }
+  const encrypted = /ENCRYPTED/.test(pem);
   const passphrase = process.env.WHATSAPP_FLOW_KEY_PASSPHRASE || '';
-  return crypto.createPrivateKey(passphrase ? { key: pem, passphrase } : { key: pem });
+  if (encrypted && !passphrase) {
+    throw new Error('The private key is passphrase-protected but WHATSAPP_FLOW_KEY_PASSPHRASE is not set.');
+  }
+  try {
+    return crypto.createPrivateKey(passphrase ? { key: pem, passphrase } : { key: pem });
+  } catch (e) {
+    if (encrypted && /bad decrypt/i.test(e.message)) {
+      throw new Error('WHATSAPP_FLOW_KEY_PASSPHRASE does not match the private key.');
+    }
+    throw new Error(`The private key could not be read (${e.message}). Check WHATSAPP_FLOW_PRIVATE_KEY holds the whole PEM, BEGIN to END.`);
+  }
+}
+
+/** The public half of the configured key, as PEM — what Meta's "Sign public
+ *  key" step asks for. Not secret: it can only encrypt, never decrypt. */
+export function publicKeyPem() {
+  return crypto.createPublicKey(privateKey()).export({ type: 'spki', format: 'pem' }).toString();
 }
 
 /** AES-128 and AES-256 are both allowed; the key length says which. */
