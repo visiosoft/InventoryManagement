@@ -121,6 +121,21 @@ router.get('/public-key', (_req, res) => {
  * is switched to "data_exchange", the answers come here instead, are saved,
  * and the flow is closed with the SUCCESS response.
  */
+// GET /api/whatsapp/flow/exit-survey — a status check for a person opening
+// the URL in a browser. Meta itself only ever POSTs here.
+router.get('/exit-survey', (_req, res) => {
+  let key = 'not set';
+  if (flowKeysConfigured()) {
+    try { publicKeyPem(); key = 'ok'; } catch (e) { key = e.message; }
+  }
+  res.json({
+    endpoint: 'WhatsApp Flow endpoint for EXIT_SURVEY',
+    note: 'Meta calls this with POST. Opening it in a browser only shows this status.',
+    privateKey: key,
+    ready: key === 'ok',
+  });
+});
+
 router.post('/exit-survey', async (req, res) => {
   if (!flowKeysConfigured()) {
     console.error('[ExitSurveyFlow] WHATSAPP_FLOW_PRIVATE_KEY is not set');
