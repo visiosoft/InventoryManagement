@@ -43,11 +43,25 @@
           },
           {
             "type": "TextInput",
+            "name": "email",
+            "label": "Email",
+            "input-type": "email",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "nationality",
+            "label": "Nationality",
+            "input-type": "text",
+            "required": true
+          },
+          {
+            "type": "TextInput",
             "name": "emergency_contact",
             "label": "Emergency phone",
             "input-type": "phone",
             "required": true,
-            "helper-text": "Someone we can call if we cannot reach you"
+            "helper-text": "A different number we can call if we cannot reach you"
           },
           {
             "type": "RadioButtonsGroup",
@@ -93,6 +107,8 @@
               "payload": {
                 "full_name": "${form.full_name}",
                 "phone": "${form.phone}",
+                "email": "${form.email}",
+                "nationality": "${form.nationality}",
                 "emergency_contact": "${form.emergency_contact}",
                 "id_type": "${form.id_type}",
                 "id_photo": "${form.id_photo}",

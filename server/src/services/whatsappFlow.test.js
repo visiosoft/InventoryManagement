@@ -94,6 +94,8 @@ test('a filled form is accepted and normalised', () => {
   const r = readClientInfo({
     full_name: '  Fatima   Ahmed ',
     phone: '050 123 4567',
+    email: ' Fatima@Example.com ',
+    nationality: 'Emirati',
     emergency_contact: '0521112222',
     id_type: 'emirates_id',
     id_photo: [{ media_id: 'abc' }, { media_id: 'def' }],
@@ -103,6 +105,8 @@ test('a filled form is accepted and normalised', () => {
   assert.equal(r.ok, true);
   assert.equal(r.fields.fullName, 'Fatima Ahmed');
   assert.equal(r.fields.phone, '+971501234567');
+  assert.equal(r.fields.email, 'fatima@example.com');
+  assert.equal(r.fields.nationality, 'Emirati');
   assert.equal(r.fields.idType, 'emirates_id');
   assert.equal(r.fields.authorizedName, 'Ali Ahmed');
   assert.equal(r.fields.authorizedPhone, '+971557654321');
@@ -123,11 +127,18 @@ test('an authorized phone without a name is refused; both are optional together'
   assert.equal(readClientInfo(base).ok, true);
 });
 
+test('a bad email, blank nationality or own number as emergency contact are refused', () => {
+  const base = { full_name: 'Sara K', phone: '0501234567', emergency_contact: '0521112222', id_type: 'passport', id_photo: [{ media_id: 'a' }] };
+  assert.deepEqual(readClientInfo({ ...base, email: 'sara@', nationality: '' }).problems, ['a valid email address', 'your nationality']);
+  assert.deepEqual(readClientInfo({ ...base, emergency_contact: '+971 50 123 4567' }).problems, ['an emergency number different from your own']);
+  assert.equal(readClientInfo({ ...base, email: 'sara@mail.ae', nationality: 'Indian' }).ok, true);
+});
+
 test('the older field names still work', () => {
-  const r = readClientInfo({ full_name: 'Sara K', phone: '0501234567', id_type: 'emirates_id', id_photo: [{ media_id: 'a' }], authorized_person: 'Omar', emergency_contact: '0501234567' });
+  const r = readClientInfo({ full_name: 'Sara K', phone: '0501234567', id_type: 'emirates_id', id_photo: [{ media_id: 'a' }], authorized_person: 'Omar', emergency_contact: '0521112222' });
   assert.equal(r.ok, true);
   assert.equal(r.fields.authorizedName, 'Omar');
-  assert.equal(r.fields.emergencyContact, '+971501234567');
+  assert.equal(r.fields.emergencyContact, '+971521112222');
 });
 
 test('UAE numbers reach the same stored form however they are typed', () => {
