@@ -60,3 +60,15 @@ test('token carries the phone for the flow endpoint', async () => {
     assert.equal(phoneFromExitToken(exitSurveyToken('64b7f0c2a1b2c3d4e5f60718', '+971 50 123 4567')), '971501234567');
     assert.equal(phoneFromExitToken(exitSurveyToken(null)), '');
 });
+
+test('thank-you answers the rating and the come-back choice', async () => {
+    const { thankYouText } = await import('./exitSurvey.js');
+    const low = thankYouText({ rating: 1, comeBack: 'no' }, 'Sara');
+    assert.match(low, /^Thank you, Sara, for your feedback/);
+    assert.match(low, /sorry/);
+    assert.match(low, /door is always open/);
+    const high = thankYouText({ rating: 5, comeBack: 'yes' });
+    assert.match(high, /^Thank you for your feedback/);
+    assert.match(high, /glad/);
+    assert.match(high, /love to have you back/);
+});

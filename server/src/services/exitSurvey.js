@@ -1,7 +1,8 @@
 import { Contract, Customer, ExitSurvey, WhatsAppMessage } from '../models/index.js';
+import { usableFirstName } from './leadNames.js';
 import { isFlowReply, flowReplyData } from './renewalReply.js';
 import {
-    sendWhatsAppInteractiveFlow, sendWhatsAppTemplate, whatsappSendConfigured, windowOpenFor,
+    sendWhatsAppInteractiveFlow, sendWhatsAppTemplate, sendWhatsAppText, whatsappSendConfigured, windowOpenFor,
 } from './whatsapp.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
 
@@ -100,6 +101,30 @@ export function exitSurveySummary(raw) {
     ].filter(Boolean).join(' · ');
 }
 
+/**
+ * The thank-you sent once the form is in. It answers what they said rather
+ * than a generic "thanks": a low rating gets an apology and a promise that
+ * someone will follow up, a "yes" or "maybe" to coming back gets a welcome.
+ */
+export function thankYouText(answers, firstName = '') {
+    const hi = `Thank you${firstName ? `, ${firstName},` : ''} for your feedback! 🙏`;
+    const lines = [hi];
+    if (answers.rating && answers.rating <= 2) {
+        lines.push("We're sorry we fell short. A member of our team will reach out to make things right.");
+    } else if (answers.rating >= 4) {
+        lines.push("We're glad you enjoyed storing with PurpleBox.");
+    } else {
+        lines.push('Your answers help us improve PurpleBox.');
+    }
+    if (answers.comeBack === 'yes' || answers.comeBack === 'maybe') {
+        lines.push("Whenever you need storage again, just message us here — we'd love to have you back.");
+    } else {
+        lines.push('We wish you all the best, and our door is always open.');
+    }
+    lines.push('— Team PurpleBox');
+    return lines.join('\n');
+}
+
 /** The contract this survey is about: the one in our token, else the number's latest contract. */
 async function contractFor({ token, phoneNormalized }) {
     const id = contractIdFromToken(token);
@@ -162,7 +187,33 @@ export async function saveExitSurvey({ answers, phoneNormalized = '', messageId 
         }).catch(() => { });
     }
 
-    return { handled: true, surveyId: String(survey._id), contractId: contract ? String(contract._id) : '' };
+    /* Their submission is itself an inbound message, so the 24-hour window
+     * is open and a plain text is allowed. Never allowed to fail the save. */
+    let thanked = false;
+    if (phoneNormalized && whatsappSendConfigured()) {
+        try {
+            const customer = contract?.customer ? await Customer.findById(contract.customer).select('fullName').lean() : null;
+            const body = thankYouText(answers, usableFirstName(customer?.fullName));
+            const sent = await sendWhatsAppText({ to: phoneNormalized, body });
+            await WhatsAppMessage.create({
+                messageId: sent?.messages?.[0]?.id || '',
+                phone: phoneNormalized,
+                phoneNormalized,
+                direction: 'outbound',
+                type: 'text',
+                text: body,
+                status: 'sent',
+                occurredAt: new Date(),
+                sentByAi: false,
+                raw: sent,
+            });
+            thanked = true;
+        } catch (e) {
+            console.error('[ExitSurvey] thank-you not sent:', e.message);
+        }
+    }
+
+    return { handled: true, surveyId: String(survey._id), contractId: contract ? String(contract._id) : '', thanked };
 }
 
 /** A survey token for this number, carrying its latest contract when there is one. */
