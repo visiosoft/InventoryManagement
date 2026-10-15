@@ -655,7 +655,7 @@ function QuoteDetailPanel({ quote }: { quote: Quote }) {
           <p className="text-xs text-muted-foreground">Customer</p>
           <p className="font-semibold text-sm">{q.customer?.fullName}</p>
           {q.customer?.phone && <p className="text-xs text-muted-foreground">{q.customer.phone}</p>}
-          <CustomerReadiness customer={q.customer} />
+          <CustomerReadiness customer={q.customer} offerForm={q.status === 'draft' || q.status === 'sent'} />
         </div>
         <div className="rounded-lg border bg-muted/30 p-3">
           <p className="text-xs text-muted-foreground">Dates</p>
@@ -1028,7 +1028,8 @@ export default function Quotations() {
                             {q.customer?.phone && (
                               <div className="text-xs text-muted-foreground">{q.customer.phone}</div>
                             )}
-                            <CustomerReadiness customer={q.customer} />
+                            {/* Every new booking (draft or sent) gets the WhatsApp details form button. */}
+                            <CustomerReadiness customer={q.customer} offerForm={q.status === 'draft' || q.status === 'sent'} />
                           </Td>
                           <Td className="hidden md:table-cell">
                             <div className="flex flex-col gap-1">
