@@ -79,6 +79,38 @@ export function normalizePem(input) {
   return [`-----BEGIN ${label}-----`, ...headers, ...(headers.length ? [''] : []), ...lines, `-----END ${label}-----`, ''].join('\n');
 }
 
+/**
+ * What the server is actually reading as its flow key — never the key itself,
+ * only its shape — so a broken setup can be diagnosed from a browser.
+ */
+export function flowKeyDiagnostics() {
+  const file = process.env.WHATSAPP_FLOW_PRIVATE_KEY_FILE || '';
+  const out = {
+    source: file ? 'WHATSAPP_FLOW_PRIVATE_KEY_FILE' : (process.env.WHATSAPP_FLOW_PRIVATE_KEY ? 'WHATSAPP_FLOW_PRIVATE_KEY' : 'none'),
+    file: file || null,
+    alsoSetInline: Boolean(file && process.env.WHATSAPP_FLOW_PRIVATE_KEY),
+    passphraseSet: Boolean(process.env.WHATSAPP_FLOW_KEY_PASSPHRASE),
+  };
+  let raw = '';
+  if (file) {
+    out.fileExists = fs.existsSync(file);
+    if (out.fileExists) {
+      try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { out.fileError = e.message; }
+    }
+  } else {
+    raw = String(process.env.WHATSAPP_FLOW_PRIVATE_KEY || '');
+  }
+  const pem = normalizePem(raw);
+  out.characters = raw.length;
+  out.beginLine = (pem.match(/-----BEGIN [A-Z0-9 ]+-----/) || [null])[0];
+  out.hasEndLine = /-----END [A-Z0-9 ]+-----/.test(pem);
+  out.encrypted = /ENCRYPTED/.test(pem);
+  // A 2048-bit key is about 1,700 characters; a value cut off after its first
+  // line is about 30.
+  if (out.beginLine && !out.hasEndLine) out.problem = 'Only the start of the key is there — it was cut off (usually a multi-line value in .env). Use a key file instead.';
+  return out;
+}
+
 export function flowKeysConfigured() {
   return Boolean(process.env.WHATSAPP_FLOW_PRIVATE_KEY_FILE || process.env.WHATSAPP_FLOW_PRIVATE_KEY);
 }
@@ -101,7 +133,8 @@ function privateKey() {
     if (encrypted && /bad decrypt/i.test(e.message)) {
       throw new Error('WHATSAPP_FLOW_KEY_PASSPHRASE does not match the private key.');
     }
-    throw new Error(`The private key could not be read (${e.message}). Check WHATSAPP_FLOW_PRIVATE_KEY holds the whole PEM, BEGIN to END.`);
+    const where = process.env.WHATSAPP_FLOW_PRIVATE_KEY_FILE ? `the file ${process.env.WHATSAPP_FLOW_PRIVATE_KEY_FILE}` : 'WHATSAPP_FLOW_PRIVATE_KEY';
+    throw new Error(`The private key could not be read (${e.message}). Check ${where} holds the whole PEM, BEGIN to END.`);
   }
 }
 
