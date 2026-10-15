@@ -618,12 +618,29 @@ async function zohoListAll(path, key, params = {}, maxPages = 25) {
     return out;
 }
 
-/** Unpaid documents (invoices or bills) from every "still owed" filter, de-duplicated. */
+/* Which list filters mean "still owed". Invoices and bills do not share a
+ * vocabulary: bills reject Status.Unpaid ("Invalid value passed for
+ * filter_by") and use the status parameter's open / overdue /
+ * partially_paid instead. */
+const OPEN_FILTERS = {
+    invoices: [{ filter_by: 'Status.Unpaid' }, { filter_by: 'Status.PartiallyPaid' }, { filter_by: 'Status.OverDue' }],
+    bills: [{ status: 'open' }, { status: 'overdue' }, { status: 'partially_paid' }],
+};
+
+/** Unpaid documents (invoices or bills) from every "still owed" filter, de-duplicated.
+ *  A filter Zoho rejects is skipped; only if every one fails is it an error. */
 async function openDocuments(path, key, idField) {
     const seen = new Map();
-    for (const filter of ['Status.Unpaid', 'Status.PartiallyPaid', 'Status.OverDue']) {
-        for (const d of await zohoListAll(path, key, { filter_by: filter })) seen.set(d[idField], d);
+    const failures = [];
+    const filters = OPEN_FILTERS[path] || [{ filter_by: 'Status.Unpaid' }];
+    for (const params of filters) {
+        try {
+            for (const d of await zohoListAll(path, key, params)) seen.set(d[idField], d);
+        } catch (e) {
+            failures.push(e);
+        }
     }
+    if (failures.length === filters.length) throw failures[0];
     return [...seen.values()];
 }
 
