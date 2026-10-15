@@ -165,6 +165,13 @@ export async function saveExitSurvey({ answers, phoneNormalized = '', messageId 
     return { handled: true, surveyId: String(survey._id), contractId: contract ? String(contract._id) : '' };
 }
 
+/** A survey token for this number, carrying its latest contract when there is one. */
+export async function exitSurveyTokenForPhone(phone) {
+    const phoneNormalized = normalizeLeadPhone(phone);
+    const contract = await contractFor({ phoneNormalized });
+    return exitSurveyToken(contract?._id, phoneNormalized);
+}
+
 /**
  * Send the survey to a contract's tenant.
  *

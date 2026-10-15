@@ -327,6 +327,26 @@ export async function listWhatsAppTemplates({ force = false } = {}) {
     return data;
 }
 
+/**
+ * The Flow button on an approved template, if it has one: its position among
+ * the buttons, and whether it opens the exit survey (by flow id, or by the
+ * EXIT_SURVEY screen it navigates to). Read from the cached template list.
+ */
+async function findFlowButton(name, language) {
+    const { templates = [] } = await listWhatsAppTemplates();
+    const t = templates.find((x) => x.name === name && (!language || x.language === language))
+        || templates.find((x) => x.name === name);
+    const buttons = (t?.components || []).find((c) => c.type === 'BUTTONS')?.buttons || [];
+    const index = buttons.findIndex((b) => b.type === 'FLOW');
+    if (index === -1) return null;
+    const b = buttons[index];
+    const exitFlowId = String(process.env.WHATSAPP_EXIT_SURVEY_FLOW_ID || '');
+    return {
+        index,
+        isExitSurvey: (exitFlowId && String(b.flow_id) === exitFlowId) || b.navigate_screen === 'EXIT_SURVEY',
+    };
+}
+
 function countTemplateVariables(components) {
     const body = components.find((c) => c.type === 'BODY')?.text || '';
     const found = new Set([...body.matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1]));
@@ -379,10 +399,22 @@ export async function sendWhatsAppTemplate({ to, name, language = 'en', variable
     if (urlButtonText !== undefined) {
         components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(urlButtonText) }] });
     }
-    // A template whose button opens a WhatsApp Flow: the token is what comes
-    // back with the answers, so they can be matched to whatever it was sent for.
-    if (flowToken !== undefined) {
-        components.push({ type: 'button', sub_type: 'flow', index: '0', parameters: [{ type: 'action', action: { flow_token: String(flowToken) } }] });
+    /* A template whose button opens a WhatsApp Flow. Meta rejects the send
+     * with "(#131009) Parameter value is not valid" unless that button is
+     * given its own parameter, at the button's own position — so it is looked
+     * up from the template rather than assumed. The token is what comes back
+     * with the answers, so they can be matched to whatever it was sent for. */
+    const flowButton = await findFlowButton(name, language).catch(() => null);
+    if (flowButton || flowToken !== undefined) {
+        let token = flowToken;
+        if (token === undefined && flowButton?.isExitSurvey) {
+            const { exitSurveyTokenForPhone } = await import('./exitSurvey.js');
+            token = await exitSurveyTokenForPhone(normalizedTo).catch(() => undefined);
+        }
+        components.push({
+            type: 'button', sub_type: 'flow', index: String(flowButton?.index ?? 0),
+            parameters: [{ type: 'action', action: { flow_token: String(token ?? `flow.${Date.now()}`) } }],
+        });
     }
 
     const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
