@@ -7,6 +7,7 @@ import { uploadFile, driveConfigured, driveClient, UPLOADS_DIR } from '../servic
 import { openaiConfigured, openaiModel, visionJson } from '../services/openai.js';
 import { parseIdFields, diffAgainstCustomer, EXTRACT_SYSTEM } from '../services/documentExtract.js';
 import { softDelete } from '../utils/softDelete.js';
+import { sniffMedia } from '../services/whatsappFlow.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -107,6 +108,24 @@ async function readDocumentBytes(doc) {
     if (!fs.existsSync(localPath)) throw new Error('File not found on the server');
     return fs.readFileSync(localPath);
 }
+
+/**
+ * GET /api/documents/:id/file — the file itself, through the API, so the app
+ * can show an ID thumbnail without the Drive file being public. Behind the
+ * normal login like every other document route.
+ */
+router.get('/:id/file', async (req, res) => {
+    try {
+        const doc = await Document.findById(req.params.id);
+        if (!doc) return res.status(404).json({ error: 'Document not found' });
+        const bytes = await readDocumentBytes(doc);
+        const { mimeType } = sniffMedia(bytes);
+        res.set('Cache-Control', 'private, max-age=3600');
+        res.type(mimeType).send(bytes);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
 router.post('/:id/extract', async (req, res) => {
     try {

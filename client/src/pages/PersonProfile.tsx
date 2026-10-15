@@ -17,6 +17,7 @@ import { formatDate, formatDateTime } from '../lib/utils'
 import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
 import { dubaiToday } from '../lib/timezone'
 import ClientInfoStatus from '../components/ClientInfoStatus'
+import IdThumbnails from '../components/IdThumbnails'
 import {
   CHANNELS, OUTCOMES, channelOf, outcomeOf, sequenceState, suggestedNextDate,
   type Attempt, type AttemptChannel, type AttemptOutcome, type FollowUpPlan,
@@ -678,6 +679,7 @@ export default function PersonProfile() {
                       ))}
                     </div>
                   )}
+                  {documents.length > 0 && <div style={{ marginTop: 14 }}><IdThumbnails documents={documents} /></div>}
                   {(lead || customer) && (
                     <button
                       type="button"
@@ -730,6 +732,7 @@ export default function PersonProfile() {
                     <Field label="Nationality" value={form.nationality} onChange={(v) => setForm((f) => ({ ...f, nationality: v }))} />
                     <Field label="Emergency contact" value={form.emergencyNumber} onChange={(v) => setForm((f) => ({ ...f, emergencyNumber: v }))} />
                     <Field label="Emirates ID" value={form.emiratesId} onChange={(v) => setForm((f) => ({ ...f, emiratesId: v }))} />
+                    <IdThumbnails documents={documents} />
                     <Field label="Address" value={form.address} onChange={(v) => setForm((f) => ({ ...f, address: v }))} />
                   </>}
 
