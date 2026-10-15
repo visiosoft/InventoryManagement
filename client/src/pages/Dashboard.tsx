@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, GripVertical, ChevronDown } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError, leadApi, type HighIntentLead, type WebsiteLead, type WebsiteAnalytics, type MonthFunnelStage } from '../lib/api'
@@ -11,6 +11,7 @@ import { formatDate, formatMoney } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
 import CustomerFeedbackCard from '../components/CustomerFeedbackCard'
 import ClientInfoSubmissionsCard from '../components/ClientInfoSubmissionsCard'
+import AccountsDashboard from './AccountsDashboard'
 import { useAuth } from '../lib/auth'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -31,6 +32,20 @@ type WidgetId =
   | 'team-tasks'
   | 'customer-feedback'
   | 'whatsapp-id'
+
+/* The dashboard in tabs, so each one answers one question instead of every
+ * card on one long page. A widget not listed here falls into Overview, so a
+ * card added later still shows up somewhere. Finance is the accounts
+ * dashboard itself, not a copy of it. */
+type TabKey = 'overview' | 'sales' | 'leads' | 'finance' | 'feedback'
+const TABS: { key: TabKey; label: string; widgets: WidgetId[]; adminOnly?: boolean }[] = [
+  { key: 'overview', label: 'Overview', widgets: ['stats', 'units-by-size', 'floor-occupancy', 'team-tasks'] },
+  { key: 'sales', label: 'Sales', widgets: ['lead-funnel', 'high-intent-leads', 'expiring-contracts'] },
+  { key: 'leads', label: 'Leads', widgets: ['lead-distribution', 'website-leads-today', 'website-analytics'] },
+  { key: 'finance', label: 'Finance', widgets: [], adminOnly: true },
+  { key: 'feedback', label: 'Customer Feedback', widgets: ['customer-feedback', 'whatsapp-id'] },
+]
+const tabOf = (id: WidgetId): TabKey => TABS.find((t) => t.widgets.includes(id))?.key ?? 'overview'
 
 const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
@@ -173,6 +188,13 @@ export default function Dashboard() {
   const isAdmin = user?.role === 'admin'
 
   const [layout, setLayout] = useState<WidgetId[]>(() => safeLoadLayout())
+
+  // The open tab lives in the URL (?tab=leads) so a link or a refresh keeps it.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabs = TABS.filter((t) => !t.adminOnly || isAdmin)
+  const tab: TabKey = tabs.some((t) => t.key === searchParams.get('tab')) ? (searchParams.get('tab') as TabKey) : 'overview'
+  const chooseTab = (key: TabKey) => setSearchParams((p) => { const n = new URLSearchParams(p); if (key === 'overview') n.delete('tab'); else n.set('tab', key); return n }, { replace: true })
+  const visible = layout.filter((id) => (id !== 'lead-distribution' || isAdmin) && tabOf(id) === tab)
   const [, setDragged] = useState<WidgetId | null>(null)
   const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
   const [sizeFilter, setSizeFilter] = useState<number | null>(null)
@@ -805,9 +827,31 @@ export default function Dashboard() {
   return (
     <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-6 sm:p-9">
 
-      <div className="mb-6"><DashboardAsk /></div>
+      <div className="mb-6 flex flex-wrap gap-1.5" role="tablist" style={{ borderBottom: '1px solid rgba(20,8,31,0.08)', paddingBottom: 10 }}>
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => chooseTab(t.key)}
+            className="cursor-pointer"
+            style={{
+              padding: '8px 16px', borderRadius: 20, fontSize: 13, fontWeight: 600, border: 'none',
+              color: tab === t.key ? '#fff' : MUTED_CLR,
+              background: tab === t.key ? '#4A1FA0' : 'transparent',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      {isAdmin && Boolean(pendingExpiry?.total) && (
+      {tab === 'overview' && <div className="mb-6"><DashboardAsk /></div>}
+
+      {tab === 'finance' && <AccountsDashboard embedded />}
+
+      {tab === 'overview' && isAdmin && Boolean(pendingExpiry?.total) && (
         <Link
           to="/settings/automation?tab=pending"
           className="mb-6 flex items-center gap-3 flex-wrap rounded-2xl border px-5 py-3.5 hover:bg-amber-100/60 transition-colors"
@@ -826,7 +870,7 @@ export default function Dashboard() {
       )}
 
       <div className="space-y-8">
-        {layout.filter((id) => id !== 'lead-distribution' || isAdmin).map((id) => {
+        {visible.map((id) => {
           if (id === 'stats') {
             return (
               <div key={id} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
@@ -843,11 +887,11 @@ export default function Dashboard() {
 
           if (id === 'high-intent-leads' || id === 'website-leads-today') {
             const peerIds: WidgetId[] = ['high-intent-leads', 'website-leads-today']
-            const first = peerIds.find((x) => layout.includes(x))
+            const first = peerIds.find((x) => visible.includes(x))
             if (id !== first) return null
             return (
               <div key="leads-grid" className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
-                {peerIds.filter((x) => layout.includes(x)).map((x) => (
+                {peerIds.filter((x) => visible.includes(x)).map((x) => (
                   <div key={x}>{widgets[x]}</div>
                 ))}
               </div>
@@ -856,11 +900,11 @@ export default function Dashboard() {
 
           if (id === 'units-by-size' || id === 'floor-occupancy') {
             const peerIds: WidgetId[] = ['units-by-size', 'floor-occupancy']
-            const first = peerIds.find((x) => layout.includes(x))
+            const first = peerIds.find((x) => visible.includes(x))
             if (id !== first) return null
             return (
               <div key="charts-grid" className="grid gap-5 lg:grid-cols-2">
-                {peerIds.filter((x) => layout.includes(x)).map((x) => (
+                {peerIds.filter((x) => visible.includes(x)).map((x) => (
                   <div key={x}>{widgets[x]}</div>
                 ))}
               </div>
@@ -869,11 +913,11 @@ export default function Dashboard() {
 
           if (id === 'expiring-contracts' || id === 'team-tasks') {
             const peerIds: WidgetId[] = ['expiring-contracts', 'team-tasks']
-            const first = peerIds.find((x) => layout.includes(x))
+            const first = peerIds.find((x) => visible.includes(x))
             if (id !== first) return null
             return (
               <div key="middle-grid" className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
-                {peerIds.filter((x) => layout.includes(x)).map((x) => (
+                {peerIds.filter((x) => visible.includes(x)).map((x) => (
                   <div key={x}>{widgets[x]}</div>
                 ))}
               </div>

@@ -49,7 +49,8 @@ const STATUS_LABEL: Record<string, string> = {
   pending_signature: 'Awaiting signature',
 }
 
-export default function AccountsDashboard() {
+/** `embedded`: shown as the admin dashboard's Finance tab — no greeting or ask box of its own. */
+export default function AccountsDashboard({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth()
 
   const { data, isLoading } = useQuery<Data>({
@@ -70,12 +71,13 @@ export default function AccountsDashboard() {
 
   return (
     <div>
-      <PageHeader
-        title={firstName ? `Good day, ${firstName}` : 'Accounts'}
-        subtitle="What you have been asked to raise, what is waiting to be invoiced, and who owes us"
-      />
-
-      <div className="mb-5"><DashboardAsk /></div>
+      {!embedded && <>
+        <PageHeader
+          title={firstName ? `Good day, ${firstName}` : 'Accounts'}
+          subtitle="What you have been asked to raise, what is waiting to be invoiced, and who owes us"
+        />
+        <div className="mb-5"><DashboardAsk /></div>
+      </>}
 
       {isLoading || !data ? <Spinner /> : (
         <div className="space-y-5">
