@@ -102,6 +102,7 @@ import customerPortalRoutes from './routes/customerPortal.js';
 import crewAuthRoutes from './routes/crewAuth.js';
 import crewPortalRoutes from './routes/crewPortal.js';
 import whatsappFlowRoutes from './routes/whatsappFlow.js';
+import exitSurveyRoutes from './routes/exitSurveys.js';
 import { startBackupScheduler } from './services/backup.js';
 import { runFollowUps, pushDueFollowUps } from './services/followUps.js';
 import { sweepUnassignedLeads } from './services/leadRouting.js';
@@ -340,6 +341,7 @@ app.use('/api/site-visits',
   (req, res, next) => req.path.startsWith('/drive-stream/') ? next() : requireAuth(req, res, next),
   siteVisitRoutes,
 );
+app.use('/api/exit-surveys', requireAuth, exitSurveyRoutes);
 app.use('/api/products', requireAuth, productRoutes);
 app.use('/api/unit-types', requireAuth, unitTypeRoutes);
 app.use('/api/floor-plan', requireAuth, floorPlanRoutes);

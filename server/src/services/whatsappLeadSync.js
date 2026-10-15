@@ -14,6 +14,7 @@ import { markQuietFollowUpReplied } from './leadFollowUp.js';
 import { buttonReplyText, handleRenewalButtonReply } from './renewalReply.js';
 import { parseFormMessage, ingestMetaLead } from './metaLead.js';
 import { handleMovingStorageFlow } from './movingStorageFlow.js';
+import { handleExitSurveyReply, exitSurveySummary } from './exitSurvey.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
@@ -224,7 +225,7 @@ export function extractMessagesFromPayload(payload) {
                    `interactive.button_reply`. Without this every tap was stored
                    as a blank message, so the chat showed nothing and nobody
                    could tell what the customer had answered. */
-                const text = msg?.text?.body || buttonReplyText(msg) || '';
+                const text = msg?.text?.body || buttonReplyText(msg) || exitSurveySummary(msg) || '';
                 const messageId = msg?.id || '';
                 const type = msg?.type || 'text';
                 const ts = msg?.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();
@@ -542,6 +543,22 @@ async function persistMessages(messages) {
             sendFirstContactVideo({ phoneNormalized: msg.phoneNormalized, config: aiBotConfig })
                 .catch((e) => console.error('[FirstContact]', e.message));
 
+            /* A submitted exit survey (WhatsApp Flow) is a form, not a chat
+             * message: saved against the contract and kept away from the
+             * assistant, which would otherwise reply to a blob of answers. */
+            let handledAsExitSurvey = false;
+            try {
+                const out = await handleExitSurveyReply({
+                    phoneNormalized: msg.phoneNormalized,
+                    messageId: msg.messageId,
+                    raw: msg.raw,
+                    occurredAt: msg.occurredAt,
+                });
+                handledAsExitSurvey = out.handled;
+            } catch (e) {
+                console.error('[ExitSurvey]', e.message);
+            }
+
             /* Yes/No on the contract-expiry template.
              *
              * Handled before the assistant is told anything, and when it is
@@ -550,17 +567,19 @@ async function persistMessages(messages) {
              * word "yes", which reads as two different people answering. Only
              * an actual button tap on a number with an active contract is taken
              * this way; everything else falls through untouched. */
-            let handledAsRenewal = false;
-            try {
-                const out = await handleRenewalButtonReply({
-                    phoneNormalized: msg.phoneNormalized,
-                    text: msg.text,
-                    type: msg.type,
-                    raw: msg.raw,
-                });
-                handledAsRenewal = out.handled;
-            } catch (e) {
-                console.error('[RenewalReply]', e.message);
+            let handledAsRenewal = handledAsExitSurvey;
+            if (!handledAsExitSurvey) {
+                try {
+                    const out = await handleRenewalButtonReply({
+                        phoneNormalized: msg.phoneNormalized,
+                        text: msg.text,
+                        type: msg.type,
+                        raw: msg.raw,
+                    });
+                    handledAsRenewal = out.handled;
+                } catch (e) {
+                    console.error('[RenewalReply]', e.message);
+                }
             }
 
             /* The moving/storage button menu — same idea as the renewal
