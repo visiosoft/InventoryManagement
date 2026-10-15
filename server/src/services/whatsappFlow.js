@@ -234,10 +234,11 @@ export function readClientInfo(data = {}) {
     : Array.isArray(data.id_document) ? data.id_document : [];
 
   const problems = [];
-  // Name, phone, ID type and the ID photo are all mandatory — checked here
+  // Name, phone, emergency phone, ID type and the ID photo are all mandatory — checked here
   // too, not only by the form, so nothing half-filled is ever saved.
   if (fullName.length < 2) problems.push('your full name');
   if (!phone) problems.push('a valid phone number');
+  if (!emergencyContact) problems.push('a valid emergency phone number');
   if (!idType) problems.push('the ID type (Emirates ID or passport)');
   if (photos.length === 0) problems.push('a photo of your Emirates ID or passport');
   if (authorizedPhoneRaw && !authorizedPhone) problems.push("a valid phone number for the authorized person");
