@@ -111,7 +111,7 @@ export async function uploadPublicImage({ buffer, stream, filename, mimeType, cu
   return { storage: 'drive', driveFileId: data.id, url, viewUrl: data.webViewLink };
 }
 
-export async function uploadFile({ buffer, filename, mimeType, customerName }) {
+export async function uploadFile({ buffer, filename, mimeType, customerName, private: keepPrivate = false }) {
   // Tests and the local demo server (scripts/demo-server.mjs) have no Drive
   // account; production sets neither flag and never takes this branch.
   if ((process.env.NODE_ENV === 'test' || process.env.LOCAL_UPLOADS_ONLY === '1') && !driveConfigured()) {
@@ -133,11 +133,15 @@ export async function uploadFile({ buffer, filename, mimeType, customerName }) {
     supportsAllDrives: true,
   });
 
-  await drive.permissions.create({
-    fileId: data.id,
-    requestBody: { role: 'reader', type: 'anyone' },
-    supportsAllDrives: true,
-  });
+  // Everything staff upload is readable by anyone holding the link. Identity documents must not be: with
+  // `private: true` nothing is shared, and the file is only served through an authenticated route (downloadFile).
+  if (!keepPrivate) {
+    await drive.permissions.create({
+      fileId: data.id,
+      requestBody: { role: 'reader', type: 'anyone' },
+      supportsAllDrives: true,
+    });
+  }
 
   // Drive's viewer page renders PDFs and images in the browser; the
   // uc?export=download form forces a file download instead.
@@ -180,11 +184,15 @@ export async function uploadToVendorFolder({ buffer, filename, mimeType, vendorN
     supportsAllDrives: true,
   });
 
-  await drive.permissions.create({
-    fileId: data.id,
-    requestBody: { role: 'reader', type: 'anyone' },
-    supportsAllDrives: true,
-  });
+  // Everything staff upload is readable by anyone holding the link. Identity documents must not be: with
+  // `private: true` nothing is shared, and the file is only served through an authenticated route (downloadFile).
+  if (!keepPrivate) {
+    await drive.permissions.create({
+      fileId: data.id,
+      requestBody: { role: 'reader', type: 'anyone' },
+      supportsAllDrives: true,
+    });
+  }
 
   // Drive's viewer page renders PDFs and images in the browser; the
   // uc?export=download form forces a file download instead.

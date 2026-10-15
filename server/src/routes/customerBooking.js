@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { Contract, Quote } from '../models/index.js';
+import { Contract, Customer, Quote } from '../models/index.js';
 import { requireCustomer, otpLimiter } from './customerAuth.js';
 import { CARD_FEE_PCT, PAYING_HOLD_MINUTES, bookingState, listSizes, pricingFor, reserve, syncBookingPayment } from '../services/appBooking.js';
 import { buildContractPdf } from '../services/contractDocument.js';
 import { signContract } from '../services/contractSigning.js';
-import { createCheckoutSession, expireCheckoutSession, stripeConfigured, stripeEmbeddedConfigured, stripePublishableKey } from '../services/stripe.js';
+import { createCheckoutSession, createSheetPayment, ensureStripeCustomer, expireCheckoutSession, stripeConfigured, stripeEmbeddedConfigured, stripePublishableKey, stripeSheetEnabled } from '../services/stripe.js';
 
 /**
  * A signed-in customer booking a unit for themselves: pick a size, hold it, pay
@@ -121,6 +121,40 @@ router.post('/:id/pay', wrap(async (req, res) => {
   res.json({
     ...(embedded ? { clientSecret: session.clientSecret, publishableKey: stripePublishableKey() } : { url: session.url }),
     amount: pricing.total, cardFee: session.feeAmount, totalCharged: Math.round((pricing.total + session.feeAmount) * 100) / 100,
+  });
+}));
+
+// The app's native payment sheet (cards, Apple Pay, Google Pay) for the first payment. Answers 404 until STRIPE_PAYMENT_SHEET=true,
+// which makes the app use the embedded card form above instead. Stripe confirms it through the payment_intent.succeeded webhook
+// (and the app's status check asks Stripe too), exactly like a Checkout payment: the app never tells us it was paid.
+router.post('/:id/pay-sheet', wrap(async (req, res) => {
+  if (!stripeSheetEnabled()) throw fail(404, 'Payment sheet is not available');
+  const quote = await ownedBooking(req);
+  if (quote.stripePaidAt) throw fail(409, 'This booking is already paid');
+  if (quote.status !== 'sent' || quote.expiryDate <= new Date()) throw fail(410, 'Your reservation has expired. Please choose a unit again.');
+
+  // Only one way to pay may be open at a time: close an earlier Checkout session, and don't open a second if it was paid.
+  if (quote.stripeCheckoutSessionId) {
+    const previous = await expireCheckoutSession(quote.stripeCheckoutSessionId);
+    if (previous === 'complete') throw fail(409, 'Your payment went through — we are finishing your booking');
+  }
+
+  const customer = await Customer.findById(req.customer.customerId);
+  const stripeCustomerId = await ensureStripeCustomer(customer);
+  const pricing = pricingFor(quote);
+  const sheet = await createSheetPayment({
+    amountAed: pricing.total, feePct: CARD_FEE_PCT, stripeCustomerId,
+    description: `Storage unit ${quote.units[0].unitNumber} — first payment (${quote.quoteNo})`,
+    metadata: { storageQuoteId: String(quote._id), quoteNo: quote.quoteNo, purpleboxCustomerId: String(customer._id) },
+  });
+  quote.stripePaymentIntentId = sheet.id;
+  quote.appBooking.checkoutStartedAt = new Date();
+  quote.expiryDate = new Date(Date.now() + PAYING_HOLD_MINUTES * 60_000);
+  await quote.save();
+  res.json({
+    paymentIntentClientSecret: sheet.clientSecret, publishableKey: stripePublishableKey(), merchantDisplayName: 'PurpleBox Storage',
+    customerId: stripeCustomerId, customerSessionClientSecret: sheet.customerSessionClientSecret,
+    amount: pricing.total, cardFee: sheet.feeAmount, totalCharged: Math.round((pricing.total + sheet.feeAmount) * 100) / 100,
   });
 }));
 

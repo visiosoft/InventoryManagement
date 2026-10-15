@@ -28,6 +28,12 @@ import { auditLogMiddleware } from './middleware/auditLog.js';
 import { UPLOADS_DIR } from './services/drive.js';
 import authRoutes from './routes/auth.js';
 import unitRoutes from './routes/units.js';
+import warehouseRoutes from './routes/warehouse.js';
+import serviceRequestRoutes from './routes/serviceRequests.js';
+import shopifyMerchantRoutes from './routes/shopifyMerchants.js';
+import shopifyWebhookRoutes from './routes/shopifyWebhook.js';
+import { retryFailedFulfillmentPushes, runInventorySync, runOrderPull } from './services/shopifyFulfillment.js';
+import warehouseJobPublicRoutes from './routes/warehouseJobPublic.js';
 import floorPlanRoutes from './routes/floorPlans.js';
 import siteRoutes from './routes/sites.js';
 import customerRoutes from './routes/customers.js';
@@ -97,6 +103,9 @@ import auditLogRoutes from './routes/auditLog.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
 import customerStorageRoutes from './routes/customerStorage.js';
+import customerProfileRoutes from './routes/customerProfile.js';
+import customerFilesRoutes from './routes/customerFiles.js';
+import customerAutopayRoutes from './routes/customerAutopay.js';
 import customerBookingRoutes from './routes/customerBooking.js';
 import customerPortalRoutes from './routes/customerPortal.js';
 import crewAuthRoutes from './routes/crewAuth.js';
@@ -111,6 +120,7 @@ import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
+import { runAutopay } from './services/autopay.js';
 import { runDayBriefs } from './services/dayBrief.js';
 import { runPaymentDueDigest } from './services/paymentDueDigest.js';
 import { runLeadSla } from './services/leadSla.js';
@@ -122,6 +132,8 @@ import publicPricingRoutes from './routes/publicPricing.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
+import { runCustomerNotificationSweep } from './services/customerNotify.js';
+import customerNotificationRoutes from './routes/customerNotifications.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -148,6 +160,10 @@ if (process.env.CORS_HANDLED_BY_PROXY === 'true') {
 // limit of its own — Meta calls it directly, so there is no JWT, and the
 // encrypted payload can exceed the 2mb the rest of the app allows.
 app.use('/api/whatsapp/flow', express.json({ limit: '20mb' }), whatsappFlowRoutes);
+// Shopify order webhooks: no JWT, verified by HMAC over the exact bytes
+// Shopify sent — so the body must reach the route unparsed, ahead of the
+// global JSON parser.
+app.use('/api/shopify/webhooks', express.raw({ type: '*/*', limit: '5mb' }), shopifyWebhookRoutes);
 
 app.use(
   express.json({
@@ -241,6 +257,9 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/customer-auth', customerAuthRoutes);
 app.use('/api/customer-portal/storage', customerStorageRoutes);
+app.use('/api/customer-portal/storage', customerFilesRoutes); // identity files + authorised persons
+app.use('/api/customer-portal/profile', customerProfileRoutes);
+app.use('/api/customer-portal/autopay', customerAutopayRoutes);
 app.use('/api/customer-portal/booking', customerBookingRoutes);
 app.use('/api/customer-portal', customerPortalRoutes);
 app.use('/api/crew-auth', crewAuthRoutes);
@@ -278,11 +297,19 @@ app.use('/api/public/bookings', publicBookingRoutes);
 // The website's price list: sizes, prices and discounts, no token. Read-only.
 app.use('/api/public/pricing', publicPricingRoutes);
 app.use('/api/public/template-media', templateMediaPublic);
+app.use('/api/warehouse-jobs/public', warehouseJobPublicRoutes);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.
 app.use('/api/integrations/whatsapp/webhook', (req, _res, next) => next());
 app.use('/api/units', requireAuth, unitRoutes);
+app.use('/api/warehouse', requireAuth, warehouseRoutes);
+app.use('/api/service-requests', requireAuth, serviceRequestRoutes);
+// Pushes to customers' phones: promotions, inspections, what went out.
+app.use('/api/customer-notifications', requireAuth, customerNotificationRoutes);
+// Merchants, SKUs, stock and fulfillment jobs. The order webhook is mounted
+// separately above, before the JSON parser.
+app.use('/api/shopify', requireAuth, shopifyMerchantRoutes);
 /* Accounts read tenants and contracts to invoice against them; they do not
    agree terms or correct somebody's details. See readOnlyFor. */
 const accountsReadOnly = readOnlyFor('accounts');
@@ -434,6 +461,13 @@ async function start() {
   await seedUnitTypes();
   console.log(`Connected to MongoDB (db: ${process.env.DB_NAME})`);
   app.listen(PORT, () => console.log(`PurpleBox API listening on http://localhost:${PORT}`));
+
+  // Local interactive sessions can run the API without duplicating production
+  // schedulers or sending customer communications in the background.
+  if (process.env.DISABLE_BACKGROUND_JOBS === 'true') {
+    console.log('Background jobs disabled for this session.');
+    return;
+  }
 
   // Assigned leads still named "WhatsApp Contact …" take their WhatsApp profile
   // name. Idempotent, so running on every start is fine.
@@ -610,6 +644,21 @@ async function start() {
     }
   }, 60_000);
 
+  /* Customer app: payments coming due and agreements coming to an end, as
+     pushes to the tenant's phone. Mid-morning rather than at dawn — it lands
+     on a customer's lock screen. Same minute tick and fixed local hour; every
+     message is keyed per stage, so a restart inside the hour sends nothing twice. */
+  const CUSTOMER_NOTIFY_HOUR = Number(process.env.CUSTOMER_NOTIFY_HOUR ?? 10);
+  setInterval(async () => {
+    try {
+      if (localHour() !== CUSTOMER_NOTIFY_HOUR) return;
+      const out = await runCustomerNotificationSweep();
+      if (out.due || out.renewal) console.log(`[CustomerNotify] ${out.due} payment and ${out.renewal} renewal notification(s)`);
+    } catch (e) {
+      console.error('[CustomerNotify]', e.message);
+    }
+  }, 60_000);
+
   const FOLLOW_UP_HOUR = Number(process.env.FOLLOW_UP_HOUR ?? 7);
   setInterval(async () => {
     try {
@@ -690,6 +739,26 @@ async function start() {
     }
   }, 60 * 60 * 1000), 90_000);
 
+  /* Shopify: pull any orders a webhook missed, retry fulfillments that didn't
+     reach Shopify when they shipped, and push stock for merchants with sync on. Stock changes already push
+     about 30 seconds after they happen; this catches anything a restart or a
+     Shopify outage dropped. */
+  setTimeout(() => setInterval(async () => {
+    try {
+      for (const r of await runOrderPull()) {
+        if (r.error) console.error(`[Shopify] order pull for ${r.merchant}:`, r.error);
+        else if (r.created || r.cancelled) console.log(`[Shopify] ${r.merchant}: pulled ${r.created} new, ${r.cancelled} cancelled order(s)`);
+      }
+      const out = await retryFailedFulfillmentPushes();
+      if (out.tried) console.log(`[Shopify] fulfillment retries: ${out.fixed}/${out.tried} sent`);
+      for (const r of await runInventorySync()) {
+        if (r.error) console.error(`[Shopify] stock sync for ${r.merchant}:`, r.error);
+      }
+    } catch (e) {
+      console.error('[Shopify]', e.message);
+    }
+  }, 10 * 60 * 1000), 120_000);
+
   /* The same release, every 5 minutes rather than hourly.
      The public booking API's hold is only 15 minutes — the website should
      not still be showing a unit as taken 45 minutes after a visitor
@@ -704,6 +773,26 @@ async function start() {
       console.error('[Units]', e.message);
     }
   }, 5 * 60 * 1000), 45_000);
+
+  /* Automatic payments from saved cards, once a day at AUTOPAY_HOUR (default 10:00, server local time).
+     Off unless AUTOPAY_ENABLED=true, and AUTOPAY_DRY_RUN=true only logs what it would charge. The job itself is safe to
+     run twice in a day: each invoice is claimed first and Stripe is given an idempotency key — see services/autopay.js. */
+  if (process.env.AUTOPAY_ENABLED === 'true') {
+    const AUTOPAY_HOUR = Number(process.env.AUTOPAY_HOUR ?? 10);
+    let lastAutopayDay = '';
+    setInterval(async () => {
+      try {
+        if (localHour() !== AUTOPAY_HOUR) return;
+        const today = dayKeyFor();
+        if (lastAutopayDay === today) return;
+        lastAutopayDay = today;
+        const out = await runAutopay({ dryRun: process.env.AUTOPAY_DRY_RUN === 'true' });
+        if (out.attempted || out.failed) console.log('[Autopay]', JSON.stringify(out));
+      } catch (e) {
+        console.error('[Autopay]', e.message);
+      }
+    }, 60_000);
+  }
 
   const SWEEP_INTERVAL = 2 * 60 * 1000;
   setTimeout(() => setInterval(async () => {

@@ -59,6 +59,9 @@ function SmartHome() {
   if (isSalesRepRole(user?.role)) {
     return <MyDay />
   }
+  if (hasPermission(['warehouse', 'warehouse_supervisor']) && !hasPermission('dashboard') && !hasPermission('units')) {
+    return <Navigate to="/warehouse" replace />
+  }
   const hasMoving = hasPermission('moving_dashboard')
   const hasStorage = hasPermission('units') || hasPermission('dashboard')
   const isMovingOnly = hasMoving && !hasStorage
@@ -77,6 +80,13 @@ import FollowUps from './pages/FollowUps'
 import RenewalRequests from './pages/RenewalRequests'
 import ExitSurveys from './pages/ExitSurveys'
 import Units from './pages/Units'
+import StoredInventory from './pages/warehouse/StoredInventory'
+import ServiceRequests from './pages/warehouse/ServiceRequests'
+import CustomerNotifications from './pages/warehouse/CustomerNotifications'
+import ShopifyMerchants from './pages/shopify/Merchants'
+import ShopifySkuInventory from './pages/shopify/SkuInventory'
+import ShopifyFulfillmentQueue from './pages/shopify/FulfillmentQueue'
+import ShopifyOrders from './pages/shopify/Orders'
 import FloorMap from './pages/FloorMap'
 import Sites from './pages/Sites'
 import Customers from './pages/Customers'
@@ -164,6 +174,7 @@ import PaySuccess from './pages/PaySuccess'
 import RenewContract from './pages/RenewContract'
 import WatchVideo from './pages/WatchVideo'
 import SharedJobView from './pages/moving/SharedJobView'
+import WarehouseJobConfirm from './pages/warehouse/WarehouseJobConfirm'
 import FieldLogin from './pages/field/FieldLogin'
 import FieldApp from './pages/field/FieldApp'
 import ReminderSettings from './pages/ReminderSettings'
@@ -200,6 +211,9 @@ export default function App() {
         <Route path="/sign-moving/:token" element={<SignMovingJob />} />
         <Route path="/upload/moving/:token" element={<ClientUpload />} />
         <Route path="/share/job/:token" element={<SharedJobView />} />
+        {/* A delivery/pickup partner confirming a warehouse job has no
+            PurpleBox account — see routes/warehouseJobPublic.js. */}
+        <Route path="/confirm/warehouse-job/:token" element={<WarehouseJobConfirm />} />
         <Route path="/pay/success" element={<PaySuccess />} />
         {/* Tenant renewal, reached from the expiry email or WhatsApp. Public:
             the HMAC token in the URL is the authorisation, and it is listed in
@@ -223,6 +237,7 @@ export default function App() {
       <Route path="/sign-moving/:token" element={<SignMovingJob />} />
       <Route path="/upload/moving/:token" element={<ClientUpload />} />
       <Route path="/share/job/:token" element={<SharedJobView />} />
+      <Route path="/confirm/warehouse-job/:token" element={<WarehouseJobConfirm />} />
       <Route path="/pay/success" element={<PaySuccess />} />
       <Route path="/renew/:contractId/:token" element={<RenewContract />} />
       <Route path="/watch" element={<WatchVideo />} />
@@ -231,6 +246,14 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<SmartHome />} />
         <Route path="/units" element={<Units />} />
+        <Route path="/warehouse" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><StoredInventory /></PermGuard>} />
+        <Route path="/service-requests" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><ServiceRequests /></PermGuard>} />
+        {/* Promotions are Campaign Studio's, inspections the warehouse's; the page shows each to whoever may send it. */}
+        <Route path="/customer-notifications" element={<PermGuard module={['warehouse', 'warehouse_supervisor', 'campaign_studio']}><CustomerNotifications /></PermGuard>} />
+        <Route path="/shopify/merchants" element={<AdminGuard><ShopifyMerchants /></AdminGuard>} />
+        <Route path="/shopify/inventory" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><ShopifySkuInventory /></PermGuard>} />
+        <Route path="/shopify/orders" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><ShopifyOrders /></PermGuard>} />
+        <Route path="/shopify/fulfillment" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><ShopifyFulfillmentQueue /></PermGuard>} />
         <Route path="/floor-map" element={<PermGuard module="units"><FloorMap /></PermGuard>} />
         <Route path="/sites" element={<PermGuard module="units"><Sites /></PermGuard>} />
         <Route path="/customers" element={<PermGuard module="customers"><Customers /></PermGuard>} />

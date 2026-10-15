@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import { Contract, Customer, CustomerRequest, Invoice, Payment } from '../models/index.js';
 import { requireCustomer, otpLimiter, signCustomerToken, customerPayload } from './customerAuth.js';
+import customerValetRouter from './customerValet.js';
+import customerInboxRouter from './customerInbox.js';
 import { nextPaymentDueDate } from '../services/billingCycle.js';
 import { buildContractPdf } from '../services/contractDocument.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
 import { renderReceiptPdf } from '../services/receiptPdf.js';
 import { checkOtp, issueOtp, normalizePhone } from '../services/customerOtp.js';
 import { findCustomersByContact, maskEmail, maskPhone, parseContact } from '../services/customerLookup.js';
-import { createCheckoutSession, stripeConfigured, stripeEmbeddedConfigured, stripePublishableKey } from '../services/stripe.js';
+import { createCheckoutSession, createSheetPayment, ensureStripeCustomer, stripeConfigured, stripeEmbeddedConfigured, stripePublishableKey, stripeSheetEnabled } from '../services/stripe.js';
 import {
   fetchZohoInvoicePdf, fetchZohoInvoicesForContacts, fetchZohoPaymentsForContacts, findZohoContactsFor, zohoBooksConfigured,
 } from '../services/zohoBooks.js';
@@ -165,13 +167,34 @@ router.post('/contracts/:id/checkout-change', wrap(async (req, res) => {
     throw badRequest('Unknown action');
   }
 
-  const dup = await CustomerRequest.findOne({ contract: contract._id, type: 'checkout_change', status: 'pending' });
-  if (dup) throw Object.assign(new Error('You already have a change request waiting for approval'), { status: 409 });
+  const request = await fileRequest(req, contract, 'checkout_change', payload, summary, 'You already have a change request waiting for approval');
+  res.status(201).json({ id: request._id, status: request.status, payload });
+}));
 
-  const request = await CustomerRequest.create({ customer: req.customer.customerId, contract: contract._id, type: 'checkout_change', payload });
+const cleanText = (v, max) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, max);
+
+// Records a request and puts it on the contract timeline. One pending request
+// of a kind per contract: a second tap is a duplicate, not a second job.
+async function fileRequest(req, contract, type, payload, summary, pendingMsg) {
+  const dup = await CustomerRequest.findOne({ contract: contract._id, type, status: 'pending' });
+  if (dup) throw Object.assign(new Error(pendingMsg), { status: 409 });
+  const request = await CustomerRequest.create({ customer: req.customer.customerId, contract: contract._id, type, payload });
   contract.timeline.push({ text: `Tenant requested via app: ${summary}`, author: 'customer app' });
   await contract.save();
-  res.status(201).json({ id: request._id, status: request.status, payload });
+  return request;
+}
+
+// The deposit comes back once the unit is handed back, so only an ended
+// agreement can ask. Staff check the unit and pay it out.
+router.post('/contracts/:id/refund-request', wrap(async (req, res) => {
+  const contract = await ownedContract(req, req.params.id);
+  if (contract.status !== 'ended') throw badRequest('A refund can be requested once you have checked out');
+  const note = cleanText(req.body?.note, 1000);
+  const payload = { deposit: money(contract.deposit), ...(note ? { note } : {}) };
+  const request = await fileRequest(req, contract, 'refund', payload,
+    `deposit refund (AED ${payload.deposit})${note ? ` — "${note}"` : ''}`,
+    'You already have a refund request waiting — we will be in touch');
+  res.status(201).json({ ok: true, id: request._id, status: request.status });
 }));
 
 // ── Link a unit ─────────────────────────────────────────────────────────────
@@ -265,7 +288,10 @@ router.post('/invoices/:id/pay', wrap(async (req, res) => {
   const balanceDue = Math.max(0, money(invoice.total) - money(invoice.paymentMade));
   if (balanceDue <= 0) throw badRequest('This invoice is already paid');
 
-  const customer = await Customer.findById(req.customer.customerId).select('email').lean();
+  // "Save my card" (and, separately, "charge it automatically") are the customer's explicit choices in the app.
+  const saveCard = req.body?.saveCard === true;
+  const customer = await Customer.findById(req.customer.customerId);
+  const stripeCustomerId = saveCard ? await ensureStripeCustomer(customer) : undefined;
   const clientOrigin = process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae';
   // `embedded: true`: Stripe's card form inside the app's own checkout page.
   const embedded = req.body?.embedded === true && stripeEmbeddedConfigured();
@@ -273,8 +299,12 @@ router.post('/invoices/:id/pay', wrap(async (req, res) => {
     amountAed: balanceDue,
     productName: `Invoice ${invoice.invoiceNo}`,
     description: 'Storage invoice balance due — PurpleBox',
-    metadata: { storageInvoiceId: String(invoice._id), invoiceNo: invoice.invoiceNo },
+    metadata: {
+      storageInvoiceId: String(invoice._id), invoiceNo: invoice.invoiceNo,
+      ...(saveCard ? { saveCard: '1', purpleboxCustomerId: String(customer._id), autopayConsent: req.body?.autopayConsent === true ? '1' : '0' } : {}),
+    },
     customerEmail: customer?.email || undefined,
+    stripeCustomerId, saveCard,
     successUrl: `${clientOrigin}/pay/success?invoice=${invoice.invoiceNo}`,
     cancelUrl: `${clientOrigin}/pay/success?invoice=${invoice.invoiceNo}&cancelled=1`,
     feePct: invoice.cardFeeEnabled ? invoice.cardFeePct : 0,
@@ -284,6 +314,30 @@ router.post('/invoices/:id/pay', wrap(async (req, res) => {
     ...(embedded ? { clientSecret: session.clientSecret, publishableKey: stripePublishableKey() } : { url: session.url }),
     sessionId: session.id, balanceDue: money(balanceDue), cardFee: session.feeAmount,
     totalCharged: Math.round((balanceDue + session.feeAmount) * 100) / 100,
+  });
+}));
+
+// The app's native payment sheet (cards, Apple Pay, Google Pay). Answers 404 until STRIPE_PAYMENT_SHEET=true,
+// which makes the app fall back to the embedded card form above.
+router.post('/invoices/:id/pay-sheet', wrap(async (req, res) => {
+  if (!stripeSheetEnabled()) throw notFound('Payment sheet');
+  const invoice = await ownedInvoice(req, req.params.id);
+  const balanceDue = Math.max(0, money(invoice.total) - money(invoice.paymentMade));
+  if (balanceDue <= 0) throw badRequest('This invoice is already paid');
+  const customer = await Customer.findById(req.customer.customerId);
+  const stripeCustomerId = await ensureStripeCustomer(customer);
+  const saveCard = req.body?.saveCard === true;
+  const sheet = await createSheetPayment({
+    amountAed: balanceDue, feePct: invoice.cardFeeEnabled ? invoice.cardFeePct : 0, stripeCustomerId, saveCard,
+    description: `Invoice ${invoice.invoiceNo}`,
+    metadata: {
+      storageInvoiceId: String(invoice._id), invoiceNo: invoice.invoiceNo, purpleboxCustomerId: String(customer._id),
+      ...(saveCard ? { saveCard: '1', autopayConsent: req.body?.autopayConsent === true ? '1' : '0' } : {}),
+    },
+  });
+  res.json({
+    paymentIntentClientSecret: sheet.clientSecret, publishableKey: stripePublishableKey(), merchantDisplayName: 'PurpleBox Storage',
+    customerId: stripeCustomerId, customerSessionClientSecret: sheet.customerSessionClientSecret,
   });
 }));
 
@@ -402,5 +456,11 @@ router.get('/documents', wrap(async (req, res) => {
     })),
   });
 }));
+
+// ── Valet storage: items we hold, and pickups / drop-offs / workers ─────────
+router.use(customerValetRouter);
+
+// ── Notifications: the in-app inbox, and whether promotions may be sent ─────
+router.use(customerInboxRouter);
 
 export default router;

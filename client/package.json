@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test:warehouse": "playwright test --config playwright.warehouse.config.ts",
     "dev": "node scripts/version.mjs && vite",
     "build": "node scripts/version.mjs && tsc -b && vite build",
     "lint": "eslint .",
@@ -15,6 +16,8 @@
     "@stripe/stripe-js": "^9.15.0",
     "@tailwindcss/vite": "^4.3.1",
     "@tanstack/react-query": "^5.101.0",
+    "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
     "axios": "^1.17.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
@@ -28,6 +31,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

@@ -4,6 +4,7 @@ import { softDeletePlugin } from '../utils/softDelete.js';
 const { Schema, model } = mongoose;
 
 const ALL_MODULES = [
+  'warehouse', 'warehouse_supervisor',
   'dashboard', 'units', 'moving_inventory', 'contracts', 'documents',
   'agreement_templates',
   'customers', 'quotes', 'invoices', 'vendors', 'expenses',
@@ -169,9 +170,28 @@ const customerSchema = new Schema(
     source: { type: String, enum: ['manual', 'import_csv', 'google'], default: 'manual' },
     importBatch: { type: String, default: null },
     googleId: { type: String, default: '' },
+    // Addresses the customer saved in the app for valet pickups and drop-offs.
+    // Typed by the customer, so they are where to drive, not proof of anything.
+    savedAddresses: [{
+      label: { type: String, maxlength: 40, required: true },
+      line: { type: String, maxlength: 300, required: true },
+    }],
     // Set when the customer typed this email in the app (unproven), so it is
     // not trusted to match their records in Zoho Books.
     emailFromApp: { type: Boolean, default: false },
+    // Expo tokens for the phones this customer is signed into the app on —
+    // see services/customerNotify.js. Moved, not copied, when a phone signs in
+    // as somebody else, so one device only ever hears about one account.
+    pushTokens: { type: [String], default: [] },
+    // Last time they signed in to the app. Lets a promotion reach app users
+    // whose phone never gave us a token (notifications switched off): it
+    // still lands in their in-app inbox.
+    appLoginAt: { type: Date, default: null },
+    // What the customer chose in the app. Only promotions can be switched off:
+    // a payment or a booking update is about their own account.
+    notificationPrefs: {
+      promotions: { type: Boolean, default: true },
+    },
     // Excluded from marketing campaigns. Never consulted for transactional mail
     // — an invoice or a contract still has to reach them.
     unsubscribed: { type: Boolean, default: false },
@@ -180,7 +200,33 @@ const customerSchema = new Schema(
     // channel is not agreeing to the other.
     whatsappOptIn: {
       at: { type: Date, default: null },
-      source: { type: String, default: '' },   // form | inbound_message | manual
+      source: { type: String, default: '' },   // form | inbound_message | manual | app
+    },
+    // "Complete your profile" in the customer app. All optional.
+    // Which number WhatsApp messages go to: the login phone, or another one that was proven with a code.
+    whatsappSameAsPhone: { type: Boolean, default: true },
+    whatsappPhone: { type: String, default: '' },
+    // When a code sent to the phone / email was last entered correctly.
+    phoneVerifiedAt: { type: Date, default: null },
+    emailVerifiedAt: { type: Date, default: null },
+    // Stripe: the customer record cards are saved against, and the auto-pay setup.
+    // Only the Stripe ids and the card's display details are kept here, never card numbers.
+    stripeCustomerId: { type: String, default: '' },
+    autopay: {
+      enabled: { type: Boolean, default: false },
+      paymentMethodId: { type: String, default: '' },
+      brand: { type: String, default: '' },
+      last4: { type: String, default: '' },
+      expMonth: { type: Number, default: null },
+      expYear: { type: Number, default: null },
+      savedAt: { type: Date, default: null },
+      // The customer's consent to automatic charges: when, which wording, and where from.
+      consentAt: { type: Date, default: null },
+      consentVersion: { type: String, default: '' },
+      consentSource: { type: String, default: '' },
+      failureCount: { type: Number, default: 0 },
+      lastFailureAt: { type: Date, default: null },
+      lastFailureReason: { type: String, default: '' },
     },
   },
   { timestamps: true }
@@ -913,6 +959,8 @@ const quoteSchema = new Schema(
     // A Stripe Checkout session for paying this quote online, and when it
     // actually cleared — the webhook sets stripePaidAt, nothing else does.
     stripeCheckoutSessionId: { type: String, default: null },
+    // Set when the customer pays with the app's native payment sheet (Apple Pay, Google Pay, card) instead of Checkout.
+    stripePaymentIntentId: { type: String, default: null },
     stripePaymentLinkUrl: { type: String, default: null },
     stripePaidAt: { type: Date, default: null },
     /* Whether a card-processing surcharge applies if this is paid by Stripe —
@@ -1019,6 +1067,13 @@ const invoiceSchema = new Schema(
     zohoBooksSyncId: { type: String, default: null },
     zohoBooksSyncedAt: { type: Date, default: null },
     zohoBooksSyncError: { type: String, default: null },
+    // The last automatic (saved-card) charge attempt on this invoice. See services/autopay.js.
+    autopay: {
+      lastAttemptAt: { type: Date, default: null },
+      lastStatus: { type: String, enum: ['', 'processing', 'succeeded', 'failed'], default: '' },
+      paymentIntentId: { type: String, default: '' },
+      lastError: { type: String, default: '' },
+    },
   },
   { timestamps: true }
 );
@@ -1741,6 +1796,11 @@ const documentSchema = new Schema(
     customer: { type: Schema.Types.ObjectId, ref: 'Customer' },
     name: { type: String, required: true },
     type: { type: String, enum: ['contract', 'id_proof', 'emirates_id', 'passport', 'visa', 'trade_license', 'other'], default: 'other' },
+    // Which side of an Emirates ID ('front' | 'back'), or 'page' for a passport. Empty for everything else.
+    side: { type: String, default: '' },
+    // Who put it there: staff in the office, or the customer from the app.
+    source: { type: String, enum: ['staff', 'customer_app'], default: 'staff' },
+    mime: { type: String, default: '' },
     storage: { type: String, enum: ['drive', 'local'], default: 'local' },
     driveFileId: { type: String, default: '' },
     url: { type: String, default: '' },
@@ -2652,12 +2712,13 @@ const customerOtpSchema = new mongoose.Schema({
 export const CustomerOtp = model('CustomerOtp', customerOtpSchema);
 
 // Something a tenant asks for from the app that staff must action — a check-out
-// change today. Kept as its own record so it can be listed and answered, and
-// mirrored onto the contract timeline so it is seen where staff already look.
+// change or a deposit refund. Kept as its own record so it can be listed and
+// answered, and mirrored onto the contract timeline so it is seen where staff
+// already look. Valet pickups and drop-offs are ServiceRequests, not these.
 const customerRequestSchema = new mongoose.Schema({
   customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
   contract: { type: mongoose.Schema.Types.ObjectId, ref: 'Contract', required: true },
-  type: { type: String, enum: ['checkout_change'], required: true },
+  type: { type: String, enum: ['checkout_change', 'refund'], required: true },
   payload: { type: mongoose.Schema.Types.Mixed, default: {} },
   status: { type: String, enum: ['pending', 'approved', 'declined'], default: 'pending' },
   staffNote: { type: String, default: '' },

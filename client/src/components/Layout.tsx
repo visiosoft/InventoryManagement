@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import {
-  Shuffle, Bot, Megaphone, Send, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck } from 'lucide-react'
+  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -14,6 +14,16 @@ import { isSalesRepRole } from '../lib/roles'
 import { ViewAsSwitcher, ViewAsBanner } from './ViewAsSwitcher'
 
 const navTop = [
+  { to: '/warehouse', label: 'Stored Inventory', icon: Package, perm: ['warehouse', 'warehouse_supervisor'] },
+  { to: '/service-requests', label: 'Service requests', icon: Truck, perm: ['warehouse', 'warehouse_supervisor'] },
+  { to: '/customer-notifications', label: 'Customer notifications', icon: BellRing, perm: ['warehouse', 'warehouse_supervisor', 'campaign_studio'] },
+  { to: '/shopify/orders', label: 'Shopify orders', icon: ReceiptText, perm: ['warehouse', 'warehouse_supervisor'] },
+  { to: '/shopify/fulfillment', label: 'Fulfillment queue', icon: ClipboardCheck, perm: ['warehouse', 'warehouse_supervisor'] },
+  { to: '/shopify/inventory', label: 'Shopify inventory', icon: ShoppingBag, perm: ['warehouse', 'warehouse_supervisor'] },
+  // Onboarding a store is an admin action (it holds live write access to a
+  // merchant's Shopify account), unlike the two above — 'settings' is this
+  // app's existing catch-all for admin-configuration screens.
+  { to: '/shopify/merchants', label: 'Shopify merchants', icon: ShoppingBag, perm: 'settings' },
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' as string | undefined },
   { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'dashboard' },
 ]
@@ -335,7 +345,7 @@ export default function Layout() {
   const profileRef = useRef<HTMLDivElement>(null)
   const isAdmin = user?.role === 'admin'
   const isSalesRepUser = isSalesRepRole(user?.role)
-  const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard')
+  const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard') && !hasPermission(['warehouse', 'warehouse_supervisor'])
 
   // ── Business switcher ──────────────────────────────────────────
   // Storage and Moving are two businesses in one app; the sidebar shows one

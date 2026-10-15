@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
+    "test:warehouse": "node --test test/warehouse.test.js",
     "dev": "node --watch-path=src src/index.js",
     "start": "node src/index.js",
     "test": "node --test test/ src/",
@@ -14,12 +15,14 @@
     "import:inventory": "node src/importInventory.js",
     "import:vendors": "node src/importVendors.js",
     "import:expenses": "node src/importExpenses.js",
-    "import:contracts": "node src/importContractsFromBackup.js"
+    "import:contracts": "node src/importContractsFromBackup.js",
+    "test:shopify": "node --test test/shopifyFulfillment.test.js test/shopifyIntegration.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.5",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
+    "bwip-js": "^4.11.4",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",

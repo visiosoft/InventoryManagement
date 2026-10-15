@@ -27,6 +27,60 @@ export function expoPushConfigured() {
   return process.env.EXPO_PUSH_DISABLED !== 'true';
 }
 
+// Tests swap this for a fake, so nothing in a test run reaches Expo.
+const expoSend = (chunk) => expo.sendPushNotificationsAsync(chunk);
+let sendChunk = expoSend;
+export function setExpoSender(fn) {
+  const previous = sendChunk;
+  sendChunk = fn || expoSend;
+  return previous;
+}
+
+/**
+ * Send one message to a list of device tokens. Staff and customers are sent
+ * to the same way; only whose record a dead token gets pulled from differs,
+ * so that is left to the caller — `dead` lists them.
+ *
+ * Returns `{ sent, gone, failed, dead }` and never throws.
+ */
+export async function pushExpoToTokens(rawTokens, payload = {}) {
+  const out = { sent: 0, gone: 0, failed: 0, dead: [] };
+  if (!expoPushConfigured()) return out;
+  const tokens = (rawTokens || []).filter((t) => Expo.isExpoPushToken(t));
+  if (!tokens.length) return out;
+
+  const messages = tokens.map((to) => ({
+    to,
+    title: payload.title,
+    body: payload.body,
+    data: payload.data || {},
+    sound: payload.silent ? undefined : 'default',
+    ...(payload.badge != null ? { badge: payload.badge } : {}),
+    ...(payload.channelId ? { channelId: payload.channelId } : {}),
+    ...(payload.silent ? { _contentAvailable: true, priority: 'high' } : {}),
+  }));
+
+  for (const chunk of expo.chunkPushNotifications(messages)) {
+    try {
+      const tickets = await sendChunk(chunk);
+      tickets.forEach((ticket, i) => {
+        if (ticket.status === 'ok') { out.sent += 1; return; }
+        if (ticket.details?.error === 'DeviceNotRegistered') {
+          out.dead.push(chunk[i].to);
+          out.gone += 1;
+        } else {
+          out.failed += 1;
+          console.error('[ExpoPush] send failed:', ticket.details?.error || ticket.message || '');
+        }
+      });
+    } catch (e) {
+      out.failed += chunk.length;
+      console.error('[ExpoPush] chunk failed:', e.message);
+    }
+  }
+  return out;
+}
+
 /**
  * Push one message to every device a person is logged into the mobile app
  * on. A token Expo reports as dead (`DeviceNotRegistered` — the app was
@@ -42,38 +96,8 @@ export async function pushExpoToUser(userId, payload = {}) {
 
   try {
     const user = await User.findById(userId).select('pushTokens').lean();
-    const tokens = (user?.pushTokens || []).filter((t) => Expo.isExpoPushToken(t));
-    if (!tokens.length) return out;
-
-    const messages = tokens.map((to) => ({
-      to,
-      title: payload.title,
-      body: payload.body,
-      data: payload.data || {},
-      sound: payload.silent ? undefined : 'default',
-      ...(payload.badge != null ? { badge: payload.badge } : {}),
-      ...(payload.silent ? { _contentAvailable: true, priority: 'high' } : {}),
-    }));
-
-    const dead = [];
-    for (const chunk of expo.chunkPushNotifications(messages)) {
-      try {
-        const tickets = await expo.sendPushNotificationsAsync(chunk);
-        tickets.forEach((ticket, i) => {
-          if (ticket.status === 'ok') { out.sent += 1; return; }
-          if (ticket.details?.error === 'DeviceNotRegistered') {
-            dead.push(chunk[i].to);
-            out.gone += 1;
-          } else {
-            out.failed += 1;
-            console.error('[ExpoPush] send failed:', ticket.details?.error || ticket.message || '');
-          }
-        });
-      } catch (e) {
-        out.failed += chunk.length;
-        console.error('[ExpoPush] chunk failed:', e.message);
-      }
-    }
+    const { dead, ...counts } = await pushExpoToTokens(user?.pushTokens, payload);
+    Object.assign(out, counts);
 
     if (dead.length) {
       await User.updateOne({ _id: userId }, { $pull: { pushTokens: { $in: dead } } });
@@ -108,3 +132,7 @@ export async function unregisterExpoPushToken(userId, token) {
   await User.updateOne({ _id: userId }, { $pull: { pushTokens: token } });
   return true;
 }
+
+/** Whether a string is a token Expo would accept, for routes that take one
+ *  from an app and should say no rather than store junk. */
+export const isExpoPushToken = (token) => typeof token === 'string' && Expo.isExpoPushToken(token);
