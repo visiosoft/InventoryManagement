@@ -16,6 +16,7 @@ import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES } from '../co
 import { formatDate, formatDateTime } from '../lib/utils'
 import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
 import { dubaiToday } from '../lib/timezone'
+import ClientInfoStatus from '../components/ClientInfoStatus'
 import {
   CHANNELS, OUTCOMES, channelOf, outcomeOf, sequenceState, suggestedNextDate,
   type Attempt, type AttemptChannel, type AttemptOutcome, type FollowUpPlan,
@@ -1515,7 +1516,12 @@ export default function PersonProfile() {
             </Card>
           )}
 
-          {isCustomer && (
+          {/* The WhatsApp ID form's outcome — shown for prospects too, since
+              that is usually who is sending their ID. */}
+          {customer && <ClientInfoStatus customerId={customer._id} />}
+
+          {/* Also for a lead who has sent their ID on WhatsApp before booking. */}
+          {(isCustomer || documents.length > 0) && (
             <Card title={`Documents (${documents.length})`}>
               {documents.length === 0 ? (
                 <p style={{ fontSize: 14, color: FAINT }}>Nothing uploaded.</p>

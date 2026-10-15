@@ -11,11 +11,11 @@
  */
 
 import { Router } from 'express';
-import { Customer, Document, Lead } from '../models/index.js';
-import { uploadFile } from '../services/drive.js';
+import { ClientInfoSubmission, Customer, Lead } from '../models/index.js';
+import { processIdPhotos } from '../services/clientInfoFlow.js';
 import {
   flowKeysConfigured, decryptRequest, encryptResponse,
-  readClientInfo, buildSummaryText, phoneFromFlowToken, publicKeyPem, flowKeyDiagnostics, fetchFlowMedia,
+  readClientInfo, buildSummaryText, phoneFromFlowToken, publicKeyPem, flowKeyDiagnostics,
 } from '../services/whatsappFlow.js';
 import { readExitSurveyData, saveExitSurvey } from '../services/exitSurvey.js';
 
@@ -106,44 +106,6 @@ async function saveClientInfo({ fields, phone }) {
   return customer;
 }
 
-/**
- * Download, decrypt and file the ID photos. Run after the flow has had its
- * answer — Meta allows about ten seconds for a reply, and a few large photos
- * from a slow CDN can take longer than that. A failure is written on the
- * customer's notes so somebody asks for the document again.
- */
-async function storeIdPhotos({ customer, photos, idType, phone }) {
-  const docType = idType === 'passport' ? 'passport' : idType === 'emirates_id' ? 'emirates_id' : 'id_proof';
-  const label = idType === 'passport' ? 'Passport' : idType === 'emirates_id' ? 'Emirates ID' : 'ID document';
-  const date = new Date().toISOString().slice(0, 10);
-  let saved = 0;
-  const failures = [];
-  for (const [i, descriptor] of photos.entries()) {
-    try {
-      const { buffer, mimeType, ext } = await fetchFlowMedia(descriptor);
-      const stored = await uploadFile({
-        buffer,
-        filename: `${customer.fullName} - ${label} ${i + 1} - ${date}.${ext}`.replace(/[\\/:*?"<>|]/g, ''),
-        mimeType,
-        customerName: customer.fullName,
-      });
-      await Document.create({
-        customer: customer._id,
-        name: `${label} ${photos.length > 1 ? `(${i + 1} of ${photos.length}) ` : ''}— WhatsApp${phone ? ` +${phone}` : ''}`,
-        type: docType,
-        ...stored,
-      });
-      saved += 1;
-    } catch (e) {
-      failures.push(e.message);
-      console.error('[Flow] ID photo not stored:', e.message);
-    }
-  }
-  const note = failures.length
-    ? `${label} sent over WhatsApp on ${date}: ${saved} of ${photos.length} file(s) saved; ${failures.length} could not be stored (${failures[0]}). Ask the customer to send it again.`
-    : `${label} received over WhatsApp on ${date} (${saved} file${saved === 1 ? '' : 's'}) — see Documents.`;
-  await Customer.updateOne({ _id: customer._id }, { $set: { notes: [customer.notes, note].filter(Boolean).join('\n') } }).catch(() => {});
-}
 
 /**
  * GET /api/whatsapp/flow/public-key — the key to paste into Meta's Flows →
@@ -291,11 +253,15 @@ router.post('/', async (req, res) => {
       const customer = await saveClientInfo({ fields, phone });
       console.log(`[Flow] saved customer ${customer._id} (${customer.fullName})${phone ? '' : ' — unlinked'}`);
 
-      // After the reply, not before it: see storeIdPhotos.
-      if (photos.length) {
-        setImmediate(() => storeIdPhotos({ customer, photos, idType: fields.idType, phone })
-          .catch((e) => console.error('[Flow] ID photos:', e.message)));
-      }
+      // The photos are fetched, filed and read after the reply, not before
+      // it: Meta allows about ten seconds, and a few large photos from a slow
+      // CDN can take longer. The submission record says how it went.
+      const submission = await ClientInfoSubmission.create({
+        customer: customer._id, phoneNormalized: phone || '', fullName: customer.fullName,
+        idType: fields.idType, filesTotal: photos.length, status: 'processing',
+      });
+      setImmediate(() => processIdPhotos({ submission, customer, photos, idType: fields.idType, phone })
+        .catch((e) => console.error('[Flow] ID photos:', e.message)));
 
       return reply({
         screen: 'SUMMARY',

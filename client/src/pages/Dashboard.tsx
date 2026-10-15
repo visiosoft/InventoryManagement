@@ -10,6 +10,7 @@ import { CHART_STYLE } from './reports/shared'
 import { formatDate, formatMoney } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
 import CustomerFeedbackCard from '../components/CustomerFeedbackCard'
+import ClientInfoSubmissionsCard from '../components/ClientInfoSubmissionsCard'
 import { useAuth } from '../lib/auth'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -29,6 +30,7 @@ type WidgetId =
   | 'expiring-contracts'
   | 'team-tasks'
   | 'customer-feedback'
+  | 'whatsapp-id'
 
 const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
@@ -44,6 +46,7 @@ const DEFAULT_LAYOUT: WidgetId[] = [
   'expiring-contracts',
   'team-tasks',
   'customer-feedback',
+  'whatsapp-id',
 ]
 
 function safeLoadLayout() {
@@ -740,6 +743,7 @@ export default function Dashboard() {
         ),
         // Admins see every tenant's feedback; anyone else on this dashboard, their own.
         'customer-feedback': <CustomerFeedbackCard scope={isAdmin ? 'all' : 'mine'} />,
+        'whatsapp-id': <ClientInfoSubmissionsCard scope={isAdmin ? 'all' : 'mine'} />,
         'team-tasks': (
           <WidgetShell id="team-tasks" title="Latest tasks from the team" subtitle="Newest first, across everyone" {...dragHandlers}>
             {tasksLoading ? <Skeleton className="h-[240px]" /> : !teamTasks || teamTasks.length === 0 ? (
