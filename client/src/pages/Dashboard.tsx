@@ -211,18 +211,22 @@ export default function Dashboard() {
   const { data: stats, isLoading: statsLoading, isError: statsIsError, error: statsError, refetch: refetchStats } = useQuery<DashboardStats>({
     queryKey: ['dashboard-stats'],
     queryFn: () => api.get('/reports/stats').then((r) => r.data),
+    // Each card loads only once its tab is open (see TABS).
+    enabled: tab === 'overview',
     staleTime: 5 * 60_000,
   })
 
   const { data: floor, isLoading: floorLoading, isError: floorIsError, refetch: refetchFloor } = useQuery<FloorOccupancy>({
     queryKey: ['dashboard-floor-occupancy'],
     queryFn: () => api.get('/reports/floor-occupancy').then((r) => r.data),
+    enabled: tab === 'overview',
     staleTime: 5 * 60_000,
   })
 
   const { data: expiringContracts, isLoading: expiringLoading, isError: expiringIsError, refetch: refetchExpiring } = useQuery<Contract[]>({
     queryKey: ['dashboard-expiring'],
     queryFn: () => api.get('/reports/expiring', { params: { days: 15 } }).then((r) => r.data),
+    enabled: tab === 'sales',
     staleTime: 5 * 60_000,
   })
 
@@ -234,7 +238,7 @@ export default function Dashboard() {
   const { data: distribution, isLoading: distributionLoading } = useQuery({
     queryKey: ['distribution-today'],
     queryFn: () => leadApi.distributionToday(),
-    enabled: isAdmin,
+    enabled: isAdmin && tab === 'leads',
     staleTime: 60_000,
     refetchInterval: 120_000,
   })
@@ -242,6 +246,7 @@ export default function Dashboard() {
   const { data: highIntent, isLoading: highIntentLoading } = useQuery({
     queryKey: ['high-intent-leads'],
     queryFn: () => leadApi.highIntentToday(),
+    enabled: tab === 'sales',
     staleTime: 60_000,
   })
 
@@ -251,6 +256,7 @@ export default function Dashboard() {
   const { data: websiteLeads, isLoading: websiteLeadsLoading } = useQuery({
     queryKey: ['website-leads-today'],
     queryFn: () => leadApi.newFromWebsiteToday(),
+    enabled: tab === 'leads',
     staleTime: 60_000,
   })
 
@@ -259,6 +265,7 @@ export default function Dashboard() {
   const { data: monthFunnel, isLoading: monthFunnelLoading, isError: monthFunnelIsError, refetch: refetchMonthFunnel } = useQuery({
     queryKey: ['lead-month-funnel'],
     queryFn: () => leadApi.monthFunnel(),
+    enabled: tab === 'sales',
     staleTime: 60_000,
   })
 
@@ -278,6 +285,7 @@ export default function Dashboard() {
   const { data: websiteAnalytics, isLoading: websiteAnalyticsLoading, error: websiteAnalyticsError } = useQuery<WebsiteAnalytics>({
     queryKey: ['website-analytics'],
     queryFn: () => api.get('/reports/website-analytics', { params: { days: 30 } }).then((r) => r.data),
+    enabled: tab === 'leads',
     staleTime: 5 * 60_000,
   })
 
@@ -286,7 +294,7 @@ export default function Dashboard() {
   const { data: pendingExpiry } = useQuery<{ groups: PendingExpiryGroup[]; total: number }>({
     queryKey: ['automation-rules-pending'],
     queryFn: () => api.get('/automation-rules/pending').then((r) => r.data),
-    enabled: isAdmin,
+    enabled: isAdmin && tab === 'overview',
     staleTime: 60_000,
   })
 
@@ -304,6 +312,7 @@ export default function Dashboard() {
   const { data: teamTasks, isLoading: tasksLoading } = useQuery<TeamTask[]>({
     queryKey: ['team-tasks-latest'],
     queryFn: () => api.get('/tasks', { params: { limit: 5, sort: 'createdAt' } }).then((r) => r.data),
+    enabled: tab === 'overview',
     staleTime: 60_000,
   })
 
