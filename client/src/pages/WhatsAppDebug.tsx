@@ -15,6 +15,47 @@ type Result = { steps: Step[]; phoneId: string; tokenHint: string; usingOverride
  * "wrong id" and "your token may not see this object" with the same sentence.
  * This runs the checks in the order that separates them.
  */
+type FlowKey = { serverKeyOk: boolean; serverKeyError: string; uploaded: boolean; matchesServer: boolean; signatureStatus: string }
+
+/** Meta's "Sign public key" step for WhatsApp Flows, done from here — Meta has no paste box for it. */
+function FlowPublicKey() {
+  const [msg, setMsg] = useState('')
+  const status = useQuery<FlowKey>({
+    queryKey: ['flow-public-key'],
+    queryFn: () => api.get('/whatsapp-debug/flow-public-key').then((r) => r.data),
+    retry: false,
+  })
+  const upload = useMutation({
+    mutationFn: () => api.post('/whatsapp-debug/flow-public-key').then((r) => r.data),
+    onSuccess: () => { setMsg('Uploaded to Meta. Go back to the flow and run the Health check.'); status.refetch() },
+    onError: (e) => setMsg(apiError(e)),
+  })
+  const s = status.data
+  return (
+    <Card className="mb-4">
+      <CardHeader title="WhatsApp Flows public key"
+        subtitle="Meta's “Sign public key” step. Uploads the public half of this server's flow key to your WhatsApp number." />
+      <CardBody className="space-y-2 text-sm">
+        {status.isLoading && <Spinner />}
+        {status.isError && <div style={{ color: '#B91C1C' }}>{apiError(status.error)}</div>}
+        {s && (
+          <div className="space-y-1">
+            <div>Server key: {s.serverKeyOk ? 'OK' : <span style={{ color: '#B91C1C' }}>{s.serverKeyError || 'not set'}</span>}</div>
+            <div>On Meta: {s.uploaded ? (s.matchesServer ? 'uploaded, matches this server' : <span style={{ color: '#B45309' }}>uploaded, but a different key — upload again</span>) : 'not uploaded yet'}</div>
+            {s.signatureStatus && <div className="text-muted-foreground">Meta signature status: {s.signatureStatus}</div>}
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <Button onClick={() => upload.mutate()} disabled={upload.isPending || !s?.serverKeyOk}>
+            {upload.isPending ? 'Uploading…' : s?.matchesServer ? 'Upload again' : 'Upload public key to Meta'}
+          </Button>
+          {msg && <span className="text-[12.5px] text-muted-foreground">{msg}</span>}
+        </div>
+      </CardBody>
+    </Card>
+  )
+}
+
 export default function WhatsAppDebug() {
   const [token, setToken] = useState('')
   const [phoneId, setPhoneId] = useState('')
@@ -57,6 +98,8 @@ export default function WhatsAppDebug() {
     <div>
       <PageHeader title="WhatsApp connection debug"
         subtitle="Runs the Meta checks in order, so a bad token and a bad ID stop looking the same" />
+
+      <FlowPublicKey />
 
       <Card className="mb-4">
         <CardHeader title="What to test"

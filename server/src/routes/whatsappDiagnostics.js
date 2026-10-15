@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
 import { WhatsAppWebhookHit, WhatsAppWebhookEvent, WhatsAppMessage } from '../models/index.js';
+import { flowKeysConfigured, publicKeyPem } from '../services/whatsappFlow.js';
 
 const router = Router();
 const GRAPH = 'https://graph.facebook.com/v20.0';
@@ -162,6 +163,52 @@ router.post('/subscribe-waba', requireAdmin, async (req, res) => {
     const r = await fetch(`${GRAPH}/${waba}/subscribed_apps`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(400).json({ error: body?.error?.message || `HTTP ${r.status}` });
+    res.json({ ok: true, result: body });
+});
+
+/**
+ * The WhatsApp Flows public key, as Meta holds it for our phone number.
+ *
+ * Meta's Flow builder has no box to paste the key into — its "Sign public key"
+ * step is done through the API, against the phone number. GET reads what Meta
+ * has; POST uploads the public half of the key this server decrypts with, so
+ * the two can never drift apart.
+ */
+router.get('/flow-public-key', requireAdmin, async (_req, res) => {
+    const token = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    if (!token || !phoneId) return res.status(400).json({ error: 'WhatsApp access token or phone number id is not set' });
+    let ours = '';
+    let keyError = '';
+    if (flowKeysConfigured()) { try { ours = publicKeyPem(); } catch (e) { keyError = e.message; } }
+    const r = await graph(`${phoneId}/whatsapp_business_encryption`, token);
+    if (!r.ok) return res.status(400).json({ error: r.error || `HTTP ${r.status}` });
+    const theirs = r.body?.data?.[0] || {};
+    const flat = (k) => String(k || '').replace(/\s+/g, '');
+    res.json({
+        serverKeyOk: Boolean(ours),
+        serverKeyError: keyError,
+        uploaded: Boolean(theirs.business_public_key),
+        matchesServer: Boolean(ours && theirs.business_public_key && flat(ours) === flat(theirs.business_public_key)),
+        signatureStatus: theirs.business_public_key_signature_status || '',
+    });
+});
+
+router.post('/flow-public-key', requireAdmin, async (_req, res) => {
+    const token = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    if (!token || !phoneId) return res.status(400).json({ error: 'WhatsApp access token or phone number id is not set' });
+    if (!flowKeysConfigured()) return res.status(400).json({ error: 'No flow private key is set on the server' });
+    let pub;
+    try { pub = publicKeyPem(); } catch (e) { return res.status(400).json({ error: e.message }); }
+
+    const r = await fetch(`${GRAPH}/${phoneId}/whatsapp_business_encryption`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ business_public_key: pub }).toString(),
     });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) return res.status(400).json({ error: body?.error?.message || `HTTP ${r.status}` });
