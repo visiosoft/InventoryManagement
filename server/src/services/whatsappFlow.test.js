@@ -108,19 +108,23 @@ test('a filled form is accepted and normalised', () => {
   assert.equal(r.photos.length, 2);
 });
 
-test('missing name, bad phone and no ID photo are each reported', () => {
+test('name, phone, ID type and ID photo are all mandatory', () => {
   const r = readClientInfo({ full_name: '', phone: '123', id_photo: [] });
   assert.equal(r.ok, false);
-  assert.deepEqual(r.problems, ['your full name', 'a valid phone number', 'a photo of your Emirates ID or passport']);
+  assert.deepEqual(r.problems, ['your full name', 'a valid phone number', 'the ID type (Emirates ID or passport)', 'a photo of your Emirates ID or passport']);
+  // Leaving fields out entirely is refused the same way.
+  assert.equal(readClientInfo({ full_name: 'Sara K' }).ok, false);
 });
 
 test('an authorized phone without a name is refused; both are optional together', () => {
-  assert.deepEqual(readClientInfo({ full_name: 'Sara K', authorized_phone: '0501234567' }).problems, ["the authorized person's name"]);
-  assert.equal(readClientInfo({ full_name: 'Sara K' }).ok, true);
+  const base = { full_name: 'Sara K', phone: '0501234567', id_type: 'passport', id_photo: [{ media_id: 'a' }] };
+  assert.deepEqual(readClientInfo({ ...base, authorized_phone: '0501234567' }).problems, ["the authorized person's name"]);
+  assert.equal(readClientInfo(base).ok, true);
 });
 
 test('the older field names still work', () => {
-  const r = readClientInfo({ full_name: 'Sara K', authorized_person: 'Omar', emergency_contact: '0501234567' });
+  const r = readClientInfo({ full_name: 'Sara K', phone: '0501234567', id_type: 'emirates_id', id_photo: [{ media_id: 'a' }], authorized_person: 'Omar', emergency_contact: '0501234567' });
+  assert.equal(r.ok, true);
   assert.equal(r.fields.authorizedName, 'Omar');
   assert.equal(r.fields.emergencyContact, '+971501234567');
 });
