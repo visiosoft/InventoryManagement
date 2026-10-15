@@ -25,13 +25,23 @@ async function me(req) {
   return customer;
 }
 
+// What staff file an ID under in the office: often 'id_proof', or an Emirates ID with no side recorded.
+const STAFF_ID_TYPES = [...ID_TYPES, 'id_proof'];
+
 async function snapshot(customer) {
-  const [contracts, idDocs] = await Promise.all([
+  const [contracts, everRented, idDocs] = await Promise.all([
     Contract.find({ customer: customer._id, status: { $in: LIVE } }).select('authorizedPersons').lean(),
-    customerDocumentFilter(customer._id).then((f) => Document.find({ ...f, type: { $in: ID_TYPES } }).select('type side createdAt').lean()),
+    Contract.exists({ customer: customer._id, status: { $in: [...LIVE, 'ended'] } }),
+    customerDocumentFilter(customer._id).then((f) => Document.find({ ...f, type: { $in: STAFF_ID_TYPES } }).select('type side source createdAt').lean()),
   ]);
   const accessCount = contracts.reduce((n, c) => n + (c.authorizedPersons?.length || 0), 0);
-  const checklist = profileChecklist(customer, { idComplete: idComplete(idDocs), accessCount, hasContract: contracts.length > 0 });
+  const checklist = profileChecklist(customer, {
+    idComplete: idComplete(idDocs),
+    idOnFile: idDocs.some((d) => d.source !== 'customer_app'),
+    accessCount,
+    hasContract: contracts.length > 0,
+    isTenant: !!everRented,
+  });
   return {
     customer: {
       id: customer._id, fullName: customer.fullName, phone: customer.phone, email: customer.email,

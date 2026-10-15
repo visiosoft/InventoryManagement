@@ -69,6 +69,23 @@ test('logging in with a code marks the phone verified and the checklist starts l
   assert.ok(r.body.checklist.percent < 50);
 });
 
+test('an existing tenant sees what the office holds as done, and is only asked for what is missing', async () => {
+  // A tenant staff set up in the CRM: email, ID filed against the contract, no app activity yet.
+  const tenant = await Customer.create({
+    fullName: 'Layla Haddad', phone: '+971501110009', phones: ['+971501110009'], email: 'layla@example.ae',
+    nationality: 'UAE', address: 'Villa 7, Jumeirah 1', stage: 'customer',
+  });
+  const contract = await seedContract(tenant._id, 'C-CRM');
+  await Document.create({ contract: contract._id, name: 'EID', type: 'id_proof', source: 'staff', url: 'x' });
+  const { token } = await login('+971501110009');
+
+  const r = await request(app).get('/api/customer-portal/profile').set(as(token));
+  assert.equal(r.status, 200);
+  const todo = r.body.checklist.items.filter((i) => !i.done).map((i) => i.key);
+  assert.deepEqual(todo, ['access', 'emergency'], 'email, WhatsApp and ID come from the office record');
+  assert.equal(r.body.customer.email, 'layla@example.ae', 'the app form opens with what we hold');
+});
+
 test('email: a code sent to the address verifies it; a wrong code does not', async () => {
   const { token, id } = await login('+971501110002');
   const ask = await request(app).post('/api/customer-portal/profile/email/request').set(as(token)).send({ email: 'Sara@Example.com' });
