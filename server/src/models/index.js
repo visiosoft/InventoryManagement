@@ -546,6 +546,20 @@ leadSchema.pre('save', function recordStage(next) {
   }
   next();
 });
+/* A deleted lead keeps its phone number, and the production index on that
+ * number predates soft-delete: it is unique across every lead, deleted ones
+ * included. So saving that number again — "Save as lead", a new WhatsApp
+ * message, a booking — failed with "E11000 duplicate key … phoneNormalized".
+ * Before a new lead is written, any deleted lead holding the number has it
+ * renamed (…#deleted-<id>) so the record and its history stay, archived, and
+ * the number is free. Does nothing when no deleted lead has the number. */
+leadSchema.pre('save', async function freeNumberFromDeletedLead() {
+  if (!this.isNew || !this.phoneNormalized) return;
+  await this.constructor.updateMany(
+    { phoneNormalized: this.phoneNormalized, deletedAt: { $ne: null } },
+    [{ $set: { phoneNormalized: { $concat: ['$phoneNormalized', '#deleted-', { $toString: '$_id' }] } } }],
+  );
+});
 leadSchema.index({ leadDateTime: -1, createdAt: -1 });
 leadSchema.index({ status: 1, owner: 1, leadDateTime: -1 });
 leadSchema.index({ source: 1, createdAt: -1 });

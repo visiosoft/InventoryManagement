@@ -1050,6 +1050,10 @@ router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
         await WhatsAppMessage.updateMany({ phoneNormalized, lead: null }, { $set: { lead: lead._id } });
         res.status(201).json({ action: 'created', lead: { _id: lead._id, fullName: lead.fullName, status: lead.status } });
     } catch (e) {
+        // A raw "E11000 duplicate key" tells a rep nothing.
+        if (e?.code === 11000) {
+            return res.status(409).json({ error: 'A lead with this number already exists. Search for it under Leads, or refresh the inbox and try again.' });
+        }
         res.status(500).json({ error: e.message });
     }
 });
