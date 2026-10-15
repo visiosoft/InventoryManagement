@@ -102,6 +102,7 @@ type Customer = {
   _id: string; fullName: string; email: string; phone: string; phones: string[]
   company: string; nationality: string; emergencyNumber: string; address: string
   emiratesId: string; eidExpiry: string | null; passportNumber: string; notes: string
+  accessPersons?: { name: string; phone?: string; relation?: string }[]
 }
 type ContractRow = {
   _id: string; contractNo: string; status: string; startDate: string; endDate: string
@@ -662,6 +663,11 @@ export default function PersonProfile() {
                         ['Emergency contact', customer.emergencyNumber],
                         ['Emirates ID', customer.emiratesId],
                         ['ID expiry', customer.eidExpiry ? formatDate(customer.eidExpiry) : ''],
+                        ['Passport', customer.passportNumber],
+                        // Who else may access the unit — includes what the
+                        // WhatsApp "ID & details" form sends.
+                        ['Authorized person', (customer.accessPersons || []).map((p) => `${p.name}${p.phone ? ` · ${p.phone}` : ''}`).join(', ')],
+                        ['Other numbers', (customer.phones || []).filter((p) => p.replace(/\D/g, '').slice(-9) !== (customer.phone || '').replace(/\D/g, '').slice(-9)).join(', ')],
                         ['Address', customer.address],
                       ] as const).filter(([, v]) => v).map(([label, v]) => (
                         <div key={label} style={{ maxWidth: 280 }}>

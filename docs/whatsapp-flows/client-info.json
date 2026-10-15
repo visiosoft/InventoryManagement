@@ -42,6 +42,14 @@
             "init-value": "${data.phone}"
           },
           {
+            "type": "TextInput",
+            "name": "emergency_contact",
+            "label": "Emergency phone",
+            "input-type": "phone",
+            "required": true,
+            "helper-text": "Someone we can call if we cannot reach you"
+          },
+          {
             "type": "RadioButtonsGroup",
             "name": "id_type",
             "label": "ID document",
@@ -64,17 +72,18 @@
           {
             "type": "TextInput",
             "name": "authorized_name",
-            "label": "Authorized person name (optional)",
+            "label": "Authorized person",
             "input-type": "text",
             "required": false,
-            "helper-text": "Someone allowed to access your unit for you"
+            "helper-text": "Optional: someone allowed to access your unit"
           },
           {
             "type": "TextInput",
             "name": "authorized_phone",
-            "label": "Authorized person phone (optional)",
+            "label": "Authorized phone",
             "input-type": "phone",
-            "required": false
+            "required": false,
+            "helper-text": "Optional: their phone number"
           },
           {
             "type": "Footer",
@@ -84,6 +93,7 @@
               "payload": {
                 "full_name": "${form.full_name}",
                 "phone": "${form.phone}",
+                "emergency_contact": "${form.emergency_contact}",
                 "id_type": "${form.id_type}",
                 "id_photo": "${form.id_photo}",
                 "authorized_name": "${form.authorized_name}",
