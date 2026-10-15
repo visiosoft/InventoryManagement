@@ -75,6 +75,13 @@ async function saveClientInfo({ fields, phone }) {
   }
   if (!customer.phone) customer.phone = whatsapp || typedPhone || '';
   if (emergencyContact) customer.emergencyNumber = emergencyContact;
+  // Filled in only where the record has nothing yet — a value somebody here
+  // already entered or corrected is not overwritten by the form.
+  if (fields.email && !customer.email) {
+    customer.email = fields.email;
+    customer.emailFromApp = true; // typed by the customer, not yet proven
+  }
+  if (fields.nationality && !customer.nationality) customer.nationality = fields.nationality;
 
   if (authorizedName) {
     const list = customer.accessPersons || [];

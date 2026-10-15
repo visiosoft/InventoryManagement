@@ -228,6 +228,8 @@ export function readClientInfo(data = {}) {
   const authorizedPhoneRaw = clean(data.authorized_phone);
   const authorizedPhone = normalisePhone(authorizedPhoneRaw);
   const emergencyContact = normalisePhone(data.emergency_contact);
+  const email = clean(data.email).toLowerCase();
+  const nationality = clean(data.nationality);
 
   // PhotoPicker / DocumentPicker send media descriptors, not the image itself.
   const photos = Array.isArray(data.id_photo) ? data.id_photo
@@ -239,13 +241,18 @@ export function readClientInfo(data = {}) {
   if (fullName.length < 2) problems.push('your full name');
   if (!phone) problems.push('a valid phone number');
   if (!emergencyContact) problems.push('a valid emergency phone number');
+  // Somebody to call when the customer cannot be reached is no use if it is
+  // the customer's own number.
+  else if (phone && emergencyContact === phone) problems.push('an emergency number different from your own');
+  if (data.email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) problems.push('a valid email address');
+  if (data.nationality !== undefined && nationality.length < 2) problems.push('your nationality');
   if (!idType) problems.push('the ID type (Emirates ID or passport)');
   if (photos.length === 0) problems.push('a photo of your Emirates ID or passport');
   if (authorizedPhoneRaw && !authorizedPhone) problems.push("a valid phone number for the authorized person");
   if (authorizedPhone && !authorizedName) problems.push("the authorized person's name");
 
   return {
-    fields: { fullName, phone, idType, authorizedName, authorizedPhone, emergencyContact,
+    fields: { fullName, phone, email, nationality, idType, authorizedName, authorizedPhone, emergencyContact,
       // Kept for older callers that read these names.
       authorizedPerson: authorizedName },
     photos,
@@ -262,6 +269,8 @@ export function buildSummaryText(fields, photoCount = 0) {
   return [
     `Name: ${fields.fullName}`,
     fields.phone ? `Phone: ${fields.phone}` : '',
+    fields.email ? `Email: ${fields.email}` : '',
+    fields.nationality ? `Nationality: ${fields.nationality}` : '',
     `${doc}: ${photoCount > 0 ? `${photoCount} photo${photoCount === 1 ? '' : 's'} uploaded` : 'Not uploaded'}`,
     `Authorized Person: ${fields.authorizedName || '—'}${fields.authorizedPhone ? ` (${fields.authorizedPhone})` : ''}`,
     fields.emergencyContact ? `Emergency Contact: ${fields.emergencyContact}` : '',
