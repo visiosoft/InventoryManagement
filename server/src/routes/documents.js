@@ -5,7 +5,7 @@ import multer from 'multer';
 import { Document, Customer } from '../models/index.js';
 import { uploadFile, driveConfigured, driveClient, UPLOADS_DIR } from '../services/drive.js';
 import { openaiConfigured, openaiModel, visionJson } from '../services/openai.js';
-import { parseIdFields, diffAgainstCustomer } from '../services/documentExtract.js';
+import { parseIdFields, diffAgainstCustomer, EXTRACT_SYSTEM } from '../services/documentExtract.js';
 import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
@@ -91,15 +91,7 @@ router.post('/:id/sync-to-drive', async (req, res) => {
 const READABLE_TYPES = new Set(['emirates_id', 'passport', 'visa', 'id_proof']);
 const READABLE_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
 
-const EXTRACT_SYSTEM = [
-    'You read a photographed or scanned identity document and report what is printed on it.',
-    'Reply with JSON only, no prose.',
-    'Shape: {"fullName":string|null,"emiratesId":string|null,"eidExpiry":"YYYY-MM-DD"|null,"passportNumber":string|null,"passportExpiry":"YYYY-MM-DD"|null,"nationality":string|null}',
-    'Use null for anything not printed on this document, or that you cannot read with confidence.',
-    'Never infer, complete or correct a value. A partially visible number is null.',
-    'Do not confuse a date of birth or an issue date with an expiry date.',
-    'Dates must be YYYY-MM-DD. Convert from whatever format is printed.',
-].join('\n');
+// The prompt lives in services/documentExtract.js, shared with the WhatsApp ID form.
 
 /** The file's bytes, wherever it is stored. */
 async function readDocumentBytes(doc) {

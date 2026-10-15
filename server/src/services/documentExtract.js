@@ -140,3 +140,15 @@ export function diffAgainstCustomer(fields, customer = {}) {
     return { field, proposed, current, changed: current !== proposed, isNew: current === '' };
   });
 }
+
+/** The instruction the vision model reads an ID photo with. Shared by the
+ *  manual "Read document" button and the WhatsApp ID form. */
+export const EXTRACT_SYSTEM = [
+    'You read a photographed or scanned identity document and report what is printed on it.',
+    'Reply with JSON only, no prose.',
+    'Shape: {"fullName":string|null,"emiratesId":string|null,"eidExpiry":"YYYY-MM-DD"|null,"passportNumber":string|null,"passportExpiry":"YYYY-MM-DD"|null,"nationality":string|null}',
+    'Use null for anything not printed on this document, or that you cannot read with confidence.',
+    'Never infer, complete or correct a value. A partially visible number is null.',
+    'Do not confuse a date of birth or an issue date with an expiry date.',
+    'Dates must be YYYY-MM-DD. Convert from whatever format is printed.',
+].join('\n');

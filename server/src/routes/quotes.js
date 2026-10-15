@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { profileStatusFor } from '../services/customerProfileStatus.js';
 import crypto from 'crypto';
 import { Contract, Customer, Invoice, Lead, Payment, Quote, Unit, nextQuoteNo, nextContractNo, nextInvoiceNo } from '../models/index.js';
 import { creditFor, markLeadWon, leadForCustomer } from '../services/dealCredit.js';
@@ -232,6 +233,12 @@ router.get('/', async (req, res) => {
         .populate('assignedTo', 'name email')
         .sort({ createdAt: -1 })
         .lean();
+    // How complete each customer's file is, and what the WhatsApp ID form did —
+    // most bookings are for exactly these customers.
+    const status = await profileStatusFor(quotes.map((q) => q.customer?._id)).catch(() => ({}));
+    for (const q of quotes) {
+        if (q.customer?._id) Object.assign(q.customer, status[String(q.customer._id)] || {});
+    }
     res.json(quotes);
 });
 

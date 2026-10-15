@@ -2406,6 +2406,30 @@ exitSurveySchema.index({ messageId: 1 });
 exitSurveySchema.index({ flowToken: 1 });
 export const ExitSurvey = model('ExitSurvey', exitSurveySchema);
 
+/* One WhatsApp "ID & details" form submission and what became of its ID
+ * photos — see routes/whatsappFlow.js. The record that lets the profile, the
+ * dashboard and Book Unit say "received and saved to Drive" or "failed, ask
+ * again" rather than leaving somebody to infer it from the documents list. */
+const clientInfoSubmissionSchema = new Schema({
+  customer: { type: Schema.Types.ObjectId, ref: 'Customer', default: null, index: true },
+  phoneNormalized: { type: String, default: '', index: true },
+  fullName: { type: String, default: '' },
+  idType: { type: String, default: '' },
+  // processing → saved (every file in Drive) | partial | failed (none saved)
+  status: { type: String, enum: ['processing', 'saved', 'partial', 'failed'], default: 'processing', index: true },
+  filesTotal: { type: Number, default: 0 },
+  filesSaved: { type: Number, default: 0 },
+  problems: [{ type: String }],
+  documents: [{ type: Schema.Types.ObjectId, ref: 'Document' }],
+  // Profile fields filled in from the ID photo (only ones that were empty).
+  filledFromId: [{ type: String }],
+  processedAt: { type: Date, default: null },
+  // Somebody has looked at a failure and dealt with it.
+  resolvedAt: { type: Date, default: null },
+  resolvedBy: { type: String, default: '' },
+}, { timestamps: true });
+export const ClientInfoSubmission = model('ClientInfoSubmission', clientInfoSubmissionSchema);
+
 const counterSchema = new Schema({
   key: { type: String, required: true, unique: true },
   seq: { type: Number, default: 0 },

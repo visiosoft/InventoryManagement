@@ -11,6 +11,7 @@ import { useAuth } from '../lib/auth'
 import { Button, Field, Input, Select, Textarea, Modal, Spinner } from '../components/ui'
 import { SignInPersonModal } from './ContractDetail'
 import { formatDate, formatMoney } from '../lib/utils'
+import ClientInfoStatus from '../components/ClientInfoStatus'
 
 const STEPS = [
   { key: 'customer', label: 'Customer', icon: User },
@@ -1845,6 +1846,9 @@ export default function NewQuote() {
                           </button>
                         </div>
                       </div>
+                      {/* What the customer sent through the WhatsApp ID form, and
+                          whether it reached Google Drive. */}
+                      {customerId && <ClientInfoStatus customerId={customerId} />}
                       <p className="text-xs" style={{ color: MUTED }}>
                         Upload customer Emirates ID, passport, or other documents. These are required before creating a contract.
                       </p>
