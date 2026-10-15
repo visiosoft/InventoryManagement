@@ -7,6 +7,7 @@ import { api, leadApi, type HighIntentLead } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import WhatsApp from './WhatsApp'
 import QuietLeadsModal from '../components/QuietLeadsModal'
+import CustomerFeedbackCard from '../components/CustomerFeedbackCard'
 import { SlideOver } from '../components/ui'
 
 /**
@@ -700,6 +701,9 @@ export default function MyDay() {
           </div>
         )}
       </section>
+
+      {/* ── Exit-survey feedback from this rep's tenants ─────────────────── */}
+      <div style={{ marginTop: 20 }}><CustomerFeedbackCard scope="mine" /></div>
 
       {/* ── The chat, as a slide-over ────────────────────────────────────── */}
       <SlideOver open={!!chatPhone} onClose={() => setChatPhone(null)} title="Conversation" width="max-w-[460px]">
