@@ -103,6 +103,9 @@ import auditLogRoutes from './routes/auditLog.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
 import customerStorageRoutes from './routes/customerStorage.js';
+import customerProfileRoutes from './routes/customerProfile.js';
+import customerFilesRoutes from './routes/customerFiles.js';
+import customerAutopayRoutes from './routes/customerAutopay.js';
 import customerBookingRoutes from './routes/customerBooking.js';
 import customerPortalRoutes from './routes/customerPortal.js';
 import crewAuthRoutes from './routes/crewAuth.js';
@@ -115,6 +118,7 @@ import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
+import { runAutopay } from './services/autopay.js';
 import { runDayBriefs } from './services/dayBrief.js';
 import { runPaymentDueDigest } from './services/paymentDueDigest.js';
 import { runLeadSla } from './services/leadSla.js';
@@ -251,6 +255,9 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/customer-auth', customerAuthRoutes);
 app.use('/api/customer-portal/storage', customerStorageRoutes);
+app.use('/api/customer-portal/storage', customerFilesRoutes); // identity files + authorised persons
+app.use('/api/customer-portal/profile', customerProfileRoutes);
+app.use('/api/customer-portal/autopay', customerAutopayRoutes);
 app.use('/api/customer-portal/booking', customerBookingRoutes);
 app.use('/api/customer-portal', customerPortalRoutes);
 app.use('/api/crew-auth', crewAuthRoutes);
@@ -762,6 +769,26 @@ async function start() {
       console.error('[Units]', e.message);
     }
   }, 5 * 60 * 1000), 45_000);
+
+  /* Automatic payments from saved cards, once a day at AUTOPAY_HOUR (default 10:00, server local time).
+     Off unless AUTOPAY_ENABLED=true, and AUTOPAY_DRY_RUN=true only logs what it would charge. The job itself is safe to
+     run twice in a day: each invoice is claimed first and Stripe is given an idempotency key — see services/autopay.js. */
+  if (process.env.AUTOPAY_ENABLED === 'true') {
+    const AUTOPAY_HOUR = Number(process.env.AUTOPAY_HOUR ?? 10);
+    let lastAutopayDay = '';
+    setInterval(async () => {
+      try {
+        if (localHour() !== AUTOPAY_HOUR) return;
+        const today = dayKeyFor();
+        if (lastAutopayDay === today) return;
+        lastAutopayDay = today;
+        const out = await runAutopay({ dryRun: process.env.AUTOPAY_DRY_RUN === 'true' });
+        if (out.attempted || out.failed) console.log('[Autopay]', JSON.stringify(out));
+      } catch (e) {
+        console.error('[Autopay]', e.message);
+      }
+    }, 60_000);
+  }
 
   const SWEEP_INTERVAL = 2 * 60 * 1000;
   setTimeout(() => setInterval(async () => {

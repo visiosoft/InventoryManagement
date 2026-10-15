@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeFeeFils } from './stripe.js';
+import { computeFeeFils, stripeSheetEnabled } from './stripe.js';
 
 /**
  * The card fee, in fils. Pure and rounded the way Stripe wants amounts, so
@@ -28,4 +28,22 @@ test('rounds to the nearest fil rather than leaving a fraction Stripe will rejec
 
 test('a fractional percentage works the same as a whole one', () => {
     assert.equal(computeFeeFils(100_000, 2.5), 2_500);
+});
+
+test('the native payment sheet is off unless explicitly switched on, and needs both Stripe keys', () => {
+    const saved = { ...process.env };
+    try {
+        delete process.env.STRIPE_PAYMENT_SHEET;
+        process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+        process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_x';
+        assert.equal(stripeSheetEnabled(), false, 'keys alone do not enable it');
+        process.env.STRIPE_PAYMENT_SHEET = 'true';
+        assert.equal(stripeSheetEnabled(), true);
+        delete process.env.STRIPE_PUBLISHABLE_KEY;
+        assert.equal(stripeSheetEnabled(), false, 'without the publishable key the sheet cannot start');
+    } finally {
+        for (const k of ['STRIPE_PAYMENT_SHEET', 'STRIPE_SECRET_KEY', 'STRIPE_PUBLISHABLE_KEY']) {
+            if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+        }
+    }
 });

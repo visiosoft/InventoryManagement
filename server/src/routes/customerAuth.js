@@ -127,6 +127,8 @@ router.post('/verify-otp', otpLimiter, async (req, res) => {
       customer = await Customer.create({ fullName: fullName || e164, phone: e164, phones: [e164], stage: 'prospect' });
     }
 
+    // Entering a code sent to this phone proves they hold it; "Complete your profile" shows that as done.
+    if (contact.kind === 'phone') await Customer.updateOne({ _id: customer._id }, { $set: { phoneVerifiedAt: new Date() } });
     const token = signCustomerToken(customer, contact.kind === 'phone' ? 'phone' : 'email');
     await markAppLogin(customer);
     res.json({ token, customer: customerPayload(customer), isNew });

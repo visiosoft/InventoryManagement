@@ -1,11 +1,12 @@
 import { Contract, Customer, Quote, Unit, nextQuoteNo } from '../models/index.js';
+import { linkIdentityToContract } from './customerIdentity.js';
 import { computeUnitAvailability } from './unitAvailability.js';
 import { buildFirstInvoice, normalizeBody } from './quotePricing.js';
 import { convertQuoteToContract } from './quoteConversion.js';
 import { applyInvoicePayment, syncLinkedPayment } from './invoicePayments.js';
 import { candidatesFor, claimFirstAvailable } from '../routes/publicBooking.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
-import { retrieveCheckoutSession, stripeConfigured } from './stripe.js';
+import { retrieveCheckoutSession, retrievePaymentIntent, stripeConfigured } from './stripe.js';
 
 /**
  * Self-serve unit booking for the customer app.
@@ -197,6 +198,9 @@ export async function finalizePaidBooking(paidQuote, { sessionId, amount }) {
 
   try {
     const { contract, invoice } = await convertQuoteToContract(quote, { actor: { name: 'customer app', userId: null }, paymentMethod: 'card' });
+    // The ID the customer already uploaded in the app goes on this new contract too.
+    await linkIdentityToContract(contract.customer?._id ?? contract.customer, contract._id)
+      .catch((e) => console.error('[appBooking] could not attach ID to the new contract:', e.message));
     applyInvoicePayment(invoice, { amount, method: 'card', notes: `Paid in the customer app via Stripe Checkout (${sessionId}) incl. ${CARD_FEE_PCT}% card fee paid separately` });
     if (invoice.status === 'draft') invoice.status = invoice.paymentMade >= invoice.total ? 'paid' : 'sent';
     await invoice.save();
@@ -219,7 +223,22 @@ export async function finalizePaidBooking(paidQuote, { sessionId, amount }) {
  * cannot reach this server at all (a local test). Returns the current quote.
  */
 export async function syncBookingPayment(quote) {
-  if (!quote.appBooking?.active || quote.stripePaidAt || !quote.stripeCheckoutSessionId || !stripeConfigured()) return quote;
+  if (!quote.appBooking?.active || quote.stripePaidAt || !stripeConfigured()) return quote;
+  // Paid with the native payment sheet (Apple Pay, Google Pay, card)? Ask Stripe about that PaymentIntent.
+  if (quote.stripePaymentIntentId) {
+    try {
+      const intent = await retrievePaymentIntent(quote.stripePaymentIntentId);
+      if (intent.status === 'succeeded' && intent.metadata?.storageQuoteId === String(quote._id)) {
+        const { settleQuoteFromIntent } = await import('./cardPayments.js'); // lazy: cardPayments imports this file
+        await settleQuoteFromIntent(intent);
+        return Quote.findById(quote._id);
+      }
+    } catch (err) {
+      console.error('[appBooking] could not read Stripe payment:', err.message);
+    }
+    if (!quote.stripeCheckoutSessionId) return quote;
+  }
+  if (!quote.stripeCheckoutSessionId) return quote;
   let session;
   try {
     session = await retrieveCheckoutSession(quote.stripeCheckoutSessionId);
