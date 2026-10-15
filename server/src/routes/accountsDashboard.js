@@ -13,7 +13,7 @@
 
 import { Router } from 'express';
 import { Contract, Customer, Task } from '../models/index.js';
-import { zohoBooksConfigured, zohoOutstandingByCustomer, zohoBooksDashboard } from '../services/zohoBooks.js';
+import { zohoBooksConfigured, zohoOutstandingByCustomer, zohoBooksDashboard, zohoReceivables } from '../services/zohoBooks.js';
 
 const router = Router();
 
@@ -120,6 +120,15 @@ router.get('/zoho', async (_req, res) => {
    figures: receivables and payables (current / overdue), bank balances,
    money in and out by month, income vs expense, top expenses. Cached ten
    minutes; ?refresh=1 to fetch now. */
+// GET /api/accounts-dashboard/zoho-receivables — the Receivables card alone, for the Overview tab.
+router.get('/zoho-receivables', async (req, res) => {
+   try {
+      res.json(await zohoReceivables({ force: req.query.refresh === '1' }));
+   } catch (e) {
+      res.json({ configured: true, error: e.response?.data?.message || e.message });
+   }
+});
+
 router.get('/zoho-books', async (req, res) => {
    try {
       res.json(await zohoBooksDashboard({ force: req.query.refresh === '1' }));

@@ -718,3 +718,19 @@ export async function zohoBooksDashboard({ force = false } = {}) {
     dashboardCache = { at: Date.now(), data };
     return data;
 }
+
+/** Just the receivables card — what the Overview tab shows — without
+ *  fetching the rest of the Zoho dashboard. Cached ten minutes. */
+let receivablesCache = { at: 0, data: null };
+export async function zohoReceivables({ force = false } = {}) {
+    if (!zohoBooksConfigured()) return { configured: false };
+    if (!force && receivablesCache.data && Date.now() - receivablesCache.at < 10 * 60_000) return receivablesCache.data;
+    // The full dashboard, if it was fetched recently, already has the answer.
+    if (!force && dashboardCache.data?.receivables && Date.now() - dashboardCache.at < 10 * 60_000) {
+        return { configured: true, receivables: dashboardCache.data.receivables, orgId: process.env.ZOHO_BOOKS_ORG_ID, fetchedAt: dashboardCache.data.fetchedAt };
+    }
+    const docs = await openDocuments('invoices', 'invoices', 'invoice_id');
+    const data = { configured: true, receivables: splitOutstanding(docs), orgId: process.env.ZOHO_BOOKS_ORG_ID, fetchedAt: new Date().toISOString() };
+    receivablesCache = { at: Date.now(), data };
+    return data;
+}

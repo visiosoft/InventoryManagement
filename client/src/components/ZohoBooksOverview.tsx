@@ -25,7 +25,7 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 const kfmt = (v: number) => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}K` : String(v))
 
 /** Receivables / Payables card in Zoho's own layout: total, bar, current vs overdue. */
-function OwedCard({ title, sub, s }: { title: string; sub: string; s: Split | null }) {
+export function OwedCard({ title, sub, s }: { title: string; sub: string; s: Split | null }) {
   const overduePct = s && s.total > 0 ? (s.overdue / s.total) * 100 : 0
   return (
     <div style={CARD}>
@@ -177,4 +177,18 @@ export default function ZohoBooksOverview() {
       </div>
     </div>
   )
+}
+
+/** The Receivables card on its own, for the dashboard's Overview tab. Uses a
+ *  lighter request than the Finance tab: unpaid invoices only. */
+export function ZohoReceivablesCard() {
+  const { data, isLoading } = useQuery<{ configured: boolean; error?: string; receivables?: Split; orgId?: string }>({
+    queryKey: ['zoho-receivables'],
+    queryFn: () => api.get('/accounts-dashboard/zoho-receivables').then((r) => r.data),
+    staleTime: 5 * 60_000,
+  })
+  if (isLoading) return <div style={CARD} className="text-sm"><span style={{ color: MUTED }}>Loading receivables from Zoho…</span></div>
+  if (!data?.configured) return null
+  if (data.error) return <div style={CARD} className="text-sm"><span style={{ color: '#B91C1C' }}>Zoho receivables could not be read: {data.error}</span></div>
+  return <OwedCard title="Total Receivables" sub="Unpaid invoices in Zoho" s={data.receivables ?? null} />
 }

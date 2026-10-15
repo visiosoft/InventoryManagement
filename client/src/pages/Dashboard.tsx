@@ -12,7 +12,7 @@ import DashboardAsk from '../components/DashboardAsk'
 import CustomerFeedbackCard from '../components/CustomerFeedbackCard'
 import ClientInfoSubmissionsCard from '../components/ClientInfoSubmissionsCard'
 import AccountsDashboard from './AccountsDashboard'
-import ZohoBooksOverview from '../components/ZohoBooksOverview'
+import ZohoBooksOverview, { ZohoReceivablesCard } from '../components/ZohoBooksOverview'
 import { useAuth } from '../lib/auth'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -33,6 +33,7 @@ type WidgetId =
   | 'team-tasks'
   | 'customer-feedback'
   | 'whatsapp-id'
+  | 'zoho-receivables'
 
 /* The dashboard in tabs, so each one answers one question instead of every
  * card on one long page. A widget not listed here falls into Overview, so a
@@ -40,7 +41,7 @@ type WidgetId =
  * dashboard itself, not a copy of it. */
 type TabKey = 'overview' | 'sales' | 'leads' | 'finance' | 'feedback'
 const TABS: { key: TabKey; label: string; widgets: WidgetId[]; adminOnly?: boolean }[] = [
-  { key: 'overview', label: 'Overview', widgets: ['stats', 'units-by-size', 'floor-occupancy', 'team-tasks'] },
+  { key: 'overview', label: 'Overview', widgets: ['stats', 'zoho-receivables', 'units-by-size', 'floor-occupancy', 'team-tasks'] },
   { key: 'sales', label: 'Sales', widgets: ['lead-funnel', 'high-intent-leads', 'expiring-contracts'] },
   { key: 'leads', label: 'Leads', widgets: ['lead-distribution', 'website-leads-today', 'website-analytics'] },
   { key: 'finance', label: 'Finance', widgets: [], adminOnly: true },
@@ -52,6 +53,7 @@ const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
 const DEFAULT_LAYOUT: WidgetId[] = [
   'stats',
+  'zoho-receivables',
   'lead-funnel',
   'lead-distribution',
   'high-intent-leads',
@@ -776,6 +778,8 @@ export default function Dashboard() {
         // Admins see every tenant's feedback; anyone else on this dashboard, their own.
         'customer-feedback': <CustomerFeedbackCard scope={isAdmin ? 'all' : 'mine'} />,
         'whatsapp-id': <ClientInfoSubmissionsCard scope={isAdmin ? 'all' : 'mine'} />,
+        // Zoho Books receivables — admin only (the endpoint is admin/accounts).
+        'zoho-receivables': isAdmin ? <div className="max-w-xl"><ZohoReceivablesCard /></div> : null,
         'team-tasks': (
           <WidgetShell id="team-tasks" title="Latest tasks from the team" subtitle="Newest first, across everyone" {...dragHandlers}>
             {tasksLoading ? <Skeleton className="h-[240px]" /> : !teamTasks || teamTasks.length === 0 ? (
