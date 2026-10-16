@@ -4,7 +4,8 @@
  * A native WhatsApp Flow (docs/whatsapp-flows/welcome-size-date.json) with two
  * screens — which unit size, then from what date. It is a static flow: no
  * data-exchange endpoint; the answers come back on the ordinary webhook as an
- * nfm_reply, and are written onto the lead (storageSizeValue,
+ * nfm_reply, and are written onto the lead (storageSizeValue, and the
+ * start date as storageStartAt — the profile's "Needs storage from" — and
  * intendedStartDate) so whoever picks the chat up already knows both.
  *
  * Switched on by putting the published flow's id in WHATSAPP_WELCOME_FLOW_ID.
@@ -18,6 +19,7 @@ import { Lead, WhatsAppMessage } from '../models/index.js';
 import { sendWhatsAppInteractiveFlow, sendWhatsAppText, whatsappSendConfigured } from './whatsapp.js';
 import { isFlowReply, flowReplyData } from './renewalReply.js';
 import { isExistingCustomerPhone } from './customerLeads.js';
+import { syncStorageStartTask } from './followUps.js';
 
 export const WELCOME_TOKEN_PREFIX = 'welcome.';
 export const WELCOME_BODY = 'Hi, welcome to PurpleBox Storage! 👋 Tell us the unit size you need and when you would like to start — it takes 10 seconds.';
@@ -134,6 +136,13 @@ export async function handleWelcomeReply({ phoneNormalized, phone, raw }) {
     if (lead) {
         if (answers.size !== null && !(lead.storageSizeValue > 0)) lead.storageSizeValue = answers.size;
         if (answers.startDate && !lead.intendedStartDate) lead.intendedStartDate = answers.startDate;
+        /* The profile's "Needs storage from" card reads storageStartAt, and
+           setting it puts a "Needs a unit from today" task on the owner's
+           board for that day — the same as a rep picking the date. */
+        if (answers.startDate && !lead.storageStartAt) {
+            lead.storageStartAt = answers.startDate;
+            await syncStorageStartTask(lead).catch((e) => console.error('[WelcomeFlow] start-date task:', e.message));
+        }
         lead.timeline.push({ type: 'note', text: summary });
         await lead.save();
     }
