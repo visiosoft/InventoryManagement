@@ -2577,6 +2577,21 @@ const leadRoutingRuleSchema = new Schema({
     start: { type: String, default: '' },
     end: { type: String, default: '' },
   },
+  /* The weekly roster: a shift per day, which may differ day to day
+     (Emad 8am-4pm Mon-Sat, Randa 10am-6pm except Wednesday...). When set it
+     replaces workingHours above. A shift that ends before it starts runs past
+     midnight into the next day. */
+  weeklyShifts: {
+    type: [{
+      _id: false,
+      day: { type: Number, min: 0, max: 6, required: true },   // 0 = Sunday
+      start: { type: String, required: true },                 // "08:00"
+      end: { type: String, required: true },                   // "16:00"
+    }],
+    default: [],
+  },
+  // The rep's colour on the coverage calendar.
+  color: { type: String, default: '' },
   // Where this rep's share goes while they are away: spread across whoever is
   // left in proportion, or handed to one named stand-in.
   fallbackMode: { type: String, enum: ['pool', 'user'], default: 'pool' },

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Bell, BellOff, Bot, Clock, Plus, Trash2, UserCheck } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { PageHeader, Card, CardHeader, CardBody, Spinner, Field, Input, Select, Button } from '../components/ui'
+import CoverageCalendar, { type Shift } from '../components/CoverageCalendar'
 
 /**
  * Who gets the next WhatsApp lead.
@@ -33,6 +34,8 @@ type Rule = {
   absentTo?: string | null
   dailyCap: number
   workingHours?: { days?: number[]; start?: string; end?: string }
+  weeklyShifts?: Shift[]
+  color?: string
   fallbackMode: 'pool' | 'user'
   fallbackUser?: { _id: string; name: string } | null
   notes?: string
@@ -92,6 +95,17 @@ export default function LeadDistribution() {
     mutationFn: ({ userId, body }: { userId: string; body: Record<string, unknown> }) =>
       api.put(`/lead-routing/rules/${userId}`, body),
     onSuccess: () => { setErr(''); setAdding(''); invalidate() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  /* The whole roster at once: one save per rep, in turn. */
+  const saveRoster = useMutation({
+    mutationFn: async (changes: { userId: string; color: string; weeklyShifts: Shift[] }[]) => {
+      for (const c of changes) {
+        await api.put(`/lead-routing/rules/${c.userId}`, { color: c.color, weeklyShifts: c.weeklyShifts })
+      }
+    },
+    onSuccess: () => { setErr(''); invalidate() },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -271,6 +285,10 @@ export default function LeadDistribution() {
               </CardBody>
             )}
           </Card>
+
+          {data.rules.length > 0 && (
+            <CoverageCalendar rules={data.rules} saving={saveRoster.isPending} onSave={(changes) => saveRoster.mutate(changes)} />
+          )}
 
           {/* The rest */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -540,6 +558,17 @@ function RuleRow({ rule, busy, onSave, onRemove }: {
       </td>
 
       <td style={cell}>
+        {rule.weeklyShifts?.length ? (
+          <div style={{ fontSize: 12.5 }}>
+            <span className="inline-flex items-center gap-1.5" style={{ fontWeight: 600, color: INK }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: rule.color || PURPLE }} />
+              Weekly roster
+            </span>
+            <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>
+              {rule.weeklyShifts.length} day{rule.weeklyShifts.length === 1 ? '' : 's'} · edit on the calendar below
+            </div>
+          </div>
+        ) : (<>
         <Select
           value={custom ? 'custom' : (matched ? matched.key : 'any')}
           onChange={(e) => {
@@ -588,6 +617,7 @@ function RuleRow({ rule, busy, onSave, onRemove }: {
             </div>
           </div>
         )}
+        </>)}
       </td>
 
       <td style={{ ...cell, textAlign: 'right' }}>

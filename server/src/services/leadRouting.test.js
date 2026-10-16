@@ -271,3 +271,27 @@ test('pickOwner with random draws by share and respects who is available', async
   assert.notEqual(first.ownerId, last.ownerId);
   assert.match(first.reason, /random pick/);
 });
+
+test('weekly roster: the coverage calendar decides who is on', async () => {
+   const { onRosterShift, cleanWeeklyShifts, pickOwner: pick } = await import('./leadRouting.js');
+   const days = (list, start, end) => list.map((day) => ({ day, start, end }));
+   const emad = { user: 'emad', status: 'active', sharePct: 1, weeklyShifts: days([1, 2, 3, 4, 5, 6], '08:00', '16:00') };
+   const randa = { user: 'randa', status: 'active', sharePct: 1, weeklyShifts: days([0, 1, 2, 4, 5, 6], '10:00', '18:00') };
+   const mahmoud = { user: 'mahmoud', status: 'active', sharePct: 1, weeklyShifts: days([0, 1, 2, 3, 4, 5], '15:00', '22:00') };
+   const rules = [emad, randa, mahmoud];
+   // Dubai is UTC+4: these are Dubai wall-clock times.
+   const at = (iso) => new Date(`${iso}+04:00`);
+   const who = (iso) => pick({ rules, at: at(iso), random: () => 0 }).ownerId;
+   const onNow = (iso) => availability({ rules, at: at(iso) }).available.map((a) => a.id).sort();
+
+   assert.deepEqual(onNow('2026-10-19T09:00:00'), ['emad']);                     // Monday 9am
+   assert.deepEqual(onNow('2026-10-19T15:30:00'), ['emad', 'mahmoud', 'randa']); // Monday 3pm: all three
+   assert.deepEqual(onNow('2026-10-21T12:00:00'), ['emad']);                     // Wednesday: no Randa
+   assert.deepEqual(onNow('2026-10-24T19:00:00'), []);                           // Saturday 7pm: the gap
+   assert.deepEqual(onNow('2026-10-25T09:00:00'), []);                           // Sunday 9am: gap
+   assert.deepEqual(onNow('2026-10-25T16:00:00'), ['mahmoud', 'randa']);         // Sunday 4pm
+   assert.equal(who('2026-10-19T23:00:00'), null);                               // overnight gap
+   assert.equal(onRosterShift([{ day: 6, start: '22:00', end: '06:00' }], 0, 120), true);   // past midnight
+   assert.deepEqual(cleanWeeklyShifts([{ day: 1, start: '08:00', end: '16:00' }, { day: 9, start: '08:00', end: '16:00' }, { day: 2, start: 'x', end: '16:00' }]),
+      [{ day: 1, start: '08:00', end: '16:00' }]);
+});

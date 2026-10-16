@@ -49,6 +49,10 @@ export function parseClock(v) {
  * midnight, which is how a night shift is written.
  */
 export function withinWorkingHours(rule, at, timeZone = 'Asia/Dubai') {
+   // The weekly roster, when there is one, is the whole answer.
+   if (Array.isArray(rule?.weeklyShifts) && rule.weeklyShifts.length) {
+      return onRosterShift(rule.weeklyShifts, weekdayIn(at, timeZone), minutesInDay(at, timeZone));
+   }
    const hours = rule?.workingHours;
    if (!hours) return true;
 
@@ -61,6 +65,36 @@ export function withinWorkingHours(rule, at, timeZone = 'Asia/Dubai') {
 
    const now = minutesInDay(at, timeZone);
    return start <= end ? now >= start && now < end : now >= start || now < end;
+}
+
+/**
+ * On shift by the weekly roster, at this weekday and minute of the day.
+ *
+ * A shift whose end is not after its start runs past midnight: Saturday
+ * 22:00-06:00 covers Saturday night and the small hours of Sunday.
+ */
+export function onRosterShift(shifts, weekday, minute) {
+   for (const sh of shifts || []) {
+      const start = parseClock(sh.start);
+      const end = parseClock(sh.end);
+      const day = Number(sh.day);
+      if (start == null || end == null || !(day >= 0 && day <= 6)) continue;
+      if (start < end) {
+         if (weekday === day && minute >= start && minute < end) return true;
+      } else if ((weekday === day && minute >= start) || (weekday === (day + 1) % 7 && minute < end)) {
+         return true;
+      }
+   }
+   return false;
+}
+
+/** A roster as sent by the settings page, cleaned: valid days and clocks only. */
+export function cleanWeeklyShifts(input) {
+   if (!Array.isArray(input)) return [];
+   return input
+      .map((sh) => ({ day: Number(sh?.day), start: String(sh?.start || '').trim(), end: String(sh?.end || '').trim() }))
+      .filter((sh) => Number.isInteger(sh.day) && sh.day >= 0 && sh.day <= 6 && parseClock(sh.start) != null && parseClock(sh.end) != null && sh.start !== sh.end)
+      .slice(0, 21);
 }
 
 /** Absent for a stretch of dates, so nobody has to remember to switch it back. */

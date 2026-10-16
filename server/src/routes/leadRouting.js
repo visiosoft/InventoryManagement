@@ -8,7 +8,7 @@ import { Router } from 'express';
 import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, PushSubscription, User, WhatsAppMessage } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { softDelete } from '../utils/softDelete.js';
-import { availability, countsForToday, digitTail, pickOwner, targetShares } from '../services/leadRouting.js';
+import { availability, cleanWeeklyShifts, countsForToday, digitTail, pickOwner, targetShares } from '../services/leadRouting.js';
 import { runLeadSla } from '../services/leadSla.js';
 
 const router = Router();
@@ -110,7 +110,7 @@ router.get('/sla/preview', async (_req, res) => {
    }
 });
 
-const FIELDS = ['sharePct', 'status', 'absentFrom', 'absentTo', 'dailyCap', 'workingHours', 'fallbackMode', 'fallbackUser', 'notes'];
+const FIELDS = ['sharePct', 'status', 'absentFrom', 'absentTo', 'dailyCap', 'workingHours', 'weeklyShifts', 'color', 'fallbackMode', 'fallbackUser', 'notes'];
 
 /** One row per rep, created on first save. */
 router.put('/rules/:userId', async (req, res) => {
@@ -123,6 +123,8 @@ router.put('/rules/:userId', async (req, res) => {
       if (update.sharePct !== undefined) update.sharePct = Math.max(0, Number(update.sharePct) || 0);
       if (update.dailyCap !== undefined) update.dailyCap = Math.max(0, Number(update.dailyCap) || 0);
       if (update.fallbackUser === '') update.fallbackUser = null;
+      if (update.weeklyShifts !== undefined) update.weeklyShifts = cleanWeeklyShifts(update.weeklyShifts);
+      if (update.color !== undefined) update.color = /^#[0-9a-f]{6}$/i.test(String(update.color)) ? String(update.color) : '';
       // A stand-in cannot be the person they are standing in for.
       if (update.fallbackUser && String(update.fallbackUser) === String(user._id)) {
          return res.status(400).json({ error: 'Somebody cannot be their own stand-in' });
