@@ -632,6 +632,9 @@ const whatsappMessageSchema = new Schema(
     // Written by the assistant rather than a colleague. The console labels
     // these, so a customer's reply is never mistaken for a human's work.
     sentByAi: { type: Boolean, default: false },
+    // The colleague who pressed send in the CRM. Tells us who started a chat,
+    // so the lead stays with them (services/chatStarter.js).
+    sentBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     // WhatsApp lets people edit, delete and react to a message after sending
     // it. Each arrives as its own webhook naming the message it changes, so
     // they are recorded here rather than stored as bubbles of their own.

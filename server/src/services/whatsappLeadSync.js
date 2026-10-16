@@ -15,6 +15,7 @@ import { buttonReplyText, handleRenewalButtonReply } from './renewalReply.js';
 import { parseFormMessage, ingestMetaLead } from './metaLead.js';
 import { handleMovingStorageFlow } from './movingStorageFlow.js';
 import { handleExitSurveyReply, exitSurveySummary } from './exitSurvey.js';
+import { starterOfChat } from './chatStarter.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
@@ -303,7 +304,7 @@ export function extractMessagesFromPayload(payload) {
    Falling back to the first user on the system put leads on admins who were
    never in the rotation. */
 
-export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status: statusIn = 'new', timelineText, fullName, ownerId: ownerOverride, profileName = '' }) {
+export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status: statusIn = 'new', timelineText, fullName, ownerId: ownerOverride, ownerNote = '', profileName = '' }) {
     /* Who this belongs to.
      *
      * An explicit owner wins — somebody saving a chat as a lead has already
@@ -315,7 +316,10 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
      * first user on the system, who is usually an admin outside the rotation. */
     let status = statusIn;
     let ownerId = ownerOverride || null;
-    let routingNote = '';
+    /* ownerNote: the owner was decided for a reason worth recording — the rep
+       who started the chat keeps it. That is a real assignment (clock starts,
+       they are told) but not the rota's work, so it never counts as autoAssigned. */
+    let routingNote = ownerId && ownerNote ? ownerNote : '';
     if (!ownerId) {
         const decision = await routeInboundLead({ phoneNormalized }).catch(() => null);
         if (decision && !decision.off) {
@@ -360,7 +364,7 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
            the auto-created contacts that exist only to hang messages off. */
         assignedAt: routingNote && ownerId ? new Date() : null,
         // The rota counts its own work when deciding whose turn is next.
-        autoAssigned: Boolean(routingNote && ownerId),
+        autoAssigned: Boolean(routingNote && ownerId && !ownerOverride),
         unitsNeeded: 1,
         notes: '',
         timeline: [
@@ -466,11 +470,16 @@ async function persistMessages(messages) {
              * let the distribution rules give it to someone. (Messages we send
              * through the API were stored when sent and never reach here; a
              * signed tenant being messaged is not a sales lead.) */
+            /* Whoever started it keeps it — known from their introduction
+             * ("This is Emad from PurpleBox"). Only a chat whose starter we
+             * cannot tell goes to the distribution rules. */
+            const starter = await starterOfChat(msg.phoneNormalized, { pending: [msg] }).catch(() => null);
             lead = await createLeadFromWhatsAppPhone({
                 phone: msg.phone,
                 phoneNormalized: msg.phoneNormalized,
                 status: 'new',
                 timelineText: 'Lead created from a chat our team started on WhatsApp (no reply from the customer yet)',
+                ...(starter ? { ownerId: starter._id, ownerNote: `Kept with ${starter.name}, who started this chat` } : {}),
             }).catch((e) => { console.error('[WhatsAppLeadSync] outbound lead:', e.message); return null; });
         } else if (lead && msg.profileName && lead.whatsappProfileName !== msg.profileName) {
             // People rename themselves. Kept current, and never allowed to

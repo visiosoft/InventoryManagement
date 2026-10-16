@@ -219,6 +219,7 @@ export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone =
 
 import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, User } from '../models/index.js';
 import { notifyLeadAssigned } from './leadNotify.js';
+import { starterOfChat } from './chatStarter.js';
 
 /** The last nine digits of a number, however it was written down. */
 export function digitTail(v) {
@@ -374,7 +375,13 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
    for (const lead of waiting) {
       /* Re-read the tally each time, so a sweep of twenty respects the shares
          rather than giving them all to whoever was furthest behind first. */
-      const decision = await routeInboundLead({ phoneNormalized: lead.phoneNormalized, at });
+      /* The rep who started the chat keeps it; the rules only place leads
+         whose starter we cannot tell. A lead someone assigned by hand already
+         has an owner and never reaches this loop. */
+      const starter = await starterOfChat(lead.phoneNormalized).catch(() => null);
+      const decision = starter
+         ? { ownerId: starter._id, reason: `kept with ${starter.name}, who started this chat`, kept: true }
+         : await routeInboundLead({ phoneNormalized: lead.phoneNormalized, at });
       if (!decision.ownerId) { nobodyOnShift = true; break; }   // try again later
 
       // owner: null in the filter too — a lead somebody was given in the meantime
@@ -383,12 +390,12 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
          $set: {
             owner: decision.ownerId,
             assignedAt: at,
-            autoAssigned: true,
+            autoAssigned: !decision.kept,
             assignedBy: null,        // the rules, not a person
             ownerSeenAt: null,
             firstResponseAt: null,
          },
-         $push: { timeline: { type: 'note', text: `Assigned by distribution rules — ${decision.reason}` } },
+         $push: { timeline: { type: 'note', text: decision.kept ? `Kept with ${starter.name}, who started this chat` : `Assigned by distribution rules — ${decision.reason}` } },
       });
       if (!claimed.modifiedCount) continue;   // somebody got it first; leave it
       assigned += 1;
@@ -428,11 +435,13 @@ async function leadsForChatsWithoutOne({ at = new Date(), limit = 25 } = {}) {
       if (!phone || withLead.has(phone) || blocked.has(phone)) continue;
       if (await isExistingCustomerPhone(phone).catch(() => false)) continue;
       const sample = await WhatsAppMessage.findOne({ phoneNormalized: phone }).sort({ occurredAt: -1 }).select('phone direction').lean();
+      const starter = await starterOfChat(phone).catch(() => null);
       const lead = await createLeadFromWhatsAppPhone({
          phone: sample?.phone || phone,
          phoneNormalized: phone,
          status: 'new',
          timelineText: 'Lead created for a WhatsApp chat that had none, so it could be assigned',
+         ...(starter ? { ownerId: starter._id, ownerNote: `Kept with ${starter.name}, who started this chat` } : {}),
       }).catch((e) => { console.error('[LeadRouting] create for chat:', e.message); return null; });
       if (!lead) break;            // nobody on shift, or distribution off
       if (!lead.owner) break;      // created but nobody available: stop, retry later

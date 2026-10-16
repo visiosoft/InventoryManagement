@@ -9,6 +9,7 @@ import { agentStatusForLeads } from '../agents/service.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
+import { keepChatWithSender } from '../services/chatStarter.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 import { deleteCustomerCascade } from './customers.js';
 import { promotePlaceholderName } from '../services/leadNames.js';
@@ -1101,8 +1102,14 @@ router.post('/send', async (req, res) => {
         // Set explicitly by the assistant's own send; a message from this route
         // is always someone typing it.
         sentByAi: false,
+        sentBy: req.user?.id || null,
         raw: result,
     });
+
+    // First message to a number with no lead: whoever sent it started the
+    // chat and keeps it. Never allowed to fail the send.
+    await keepChatWithSender({ phone: to, phoneNormalized, userId: req.user?.id })
+        .catch((e) => console.error('[WhatsApp] keep chat with sender:', e.message));
 
     // A colleague has taken the conversation, so the assistant steps back and
     // its pending suggestion — now stale — is dropped.
@@ -1257,8 +1264,14 @@ router.post('/send-template', async (req, res) => {
             status: 'sent',
             occurredAt: new Date(),
             sentByAi: false,
+            sentBy: req.user?.id || null,
             raw: { template: { name, language, variables }, sendResult: result },
         });
+
+        // First message to a number with no lead: whoever sent it started the
+        // chat and keeps it. Never allowed to fail the send.
+        await keepChatWithSender({ phone: to, phoneNormalized, userId: req.user?.id })
+            .catch((e) => console.error('[WhatsApp] keep chat with sender:', e.message));
 
         // A person has taken this conversation on, the same as any typed send.
         await pauseBotForHuman(phoneNormalized);
@@ -1563,10 +1576,16 @@ router.post('/send-media', uploadOne, async (req, res) => {
             text: caption,
             status: 'sent',
             occurredAt: new Date(),
+            sentBy: req.user?.id || null,
             // Mirror the inbound webhook shape so mediaFromRaw finds it and the
             // same proxy serves it back into the thread.
             raw: { [kind]: { id: mediaId, mime_type: mimeType, filename, caption }, sendResult: result },
         });
+
+        // First message to a number with no lead: whoever sent it started the
+        // chat and keeps it. Never allowed to fail the send.
+        await keepChatWithSender({ phone: to, phoneNormalized: String(to).replace(/\D/g, ''), userId: req.user?.id })
+            .catch((e) => console.error('[WhatsApp] keep chat with sender:', e.message));
 
         await pauseBotForHuman(String(to).replace(/\D/g, ''));
 
