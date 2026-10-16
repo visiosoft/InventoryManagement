@@ -15,6 +15,7 @@ import { buttonReplyText, handleRenewalButtonReply } from './renewalReply.js';
 import { parseFormMessage, ingestMetaLead } from './metaLead.js';
 import { handleMovingStorageFlow } from './movingStorageFlow.js';
 import { handleExitSurveyReply, exitSurveySummary } from './exitSurvey.js';
+import { sendWelcomeFlow, handleWelcomeReply, welcomeSummary } from './welcomeFlow.js';
 import { starterOfChat, keptNote } from './chatStarter.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
@@ -226,7 +227,7 @@ export function extractMessagesFromPayload(payload) {
                    `interactive.button_reply`. Without this every tap was stored
                    as a blank message, so the chat showed nothing and nobody
                    could tell what the customer had answered. */
-                const text = msg?.text?.body || buttonReplyText(msg) || exitSurveySummary(msg) || '';
+                const text = msg?.text?.body || buttonReplyText(msg) || exitSurveySummary(msg) || welcomeSummary(msg) || '';
                 const messageId = msg?.id || '';
                 const type = msg?.type || 'text';
                 const ts = msg?.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();
@@ -566,11 +567,33 @@ async function persistMessages(messages) {
             sendFirstContactVideo({ phoneNormalized: msg.phoneNormalized, config: aiBotConfig })
                 .catch((e) => console.error('[FirstContact]', e.message));
 
+            /* Somebody brand new: the welcome form (size, then start date)
+             * is our first reply, so nothing else answers this message. The
+             * answers coming back are written onto the lead, thanked, and
+             * handed to the assistant as a plain line it can act on. */
+            let welcomeSummaryText = '';
+            let welcomeHandled = false;
+            try {
+                const reply = await handleWelcomeReply({ phoneNormalized: msg.phoneNormalized, phone: msg.phone, raw: msg.raw });
+                if (reply.handled) { welcomeHandled = true; welcomeSummaryText = reply.summary || ''; }
+                else welcomeHandled = (await sendWelcomeFlow({ phoneNormalized: msg.phoneNormalized, phone: msg.phone, wasNewLead: isNewLead })).sent;
+            } catch (e) {
+                console.error('[WelcomeFlow]', e.message);
+            }
+            if (welcomeSummaryText) {
+                try {
+                    await noteInboundForBot({
+                        phoneNormalized: msg.phoneNormalized, messageId: msg.messageId,
+                        text: welcomeSummaryText, type: 'text', occurredAt: msg.occurredAt,
+                    });
+                } catch { /* never break delivery */ }
+            }
+
             /* A submitted exit survey (WhatsApp Flow) is a form, not a chat
              * message: saved against the contract and kept away from the
              * assistant, which would otherwise reply to a blob of answers. */
-            let handledAsExitSurvey = false;
-            try {
+            let handledAsExitSurvey = welcomeHandled;
+            if (!welcomeHandled) try {
                 const out = await handleExitSurveyReply({
                     phoneNormalized: msg.phoneNormalized,
                     messageId: msg.messageId,
