@@ -129,6 +129,9 @@ export interface IntegrationStatus {
   analytics: { configured: boolean; propertyId?: string; missing?: string[]; method?: string }
   /** keyHint is a masked fragment — the key itself never leaves the server. */
   openai?: { configured: boolean; model: string; keyHint: string }
+  anthropic?: { configured: boolean; model: string; effort: string; keyHint: string }
+  /** chosen is the switch; active is who answers (the other steps in if the chosen one has no key). */
+  ai?: { chosen: 'openai' | 'anthropic'; active: 'openai' | 'anthropic'; configured: boolean }
   whatsapp: { configured: boolean; missing?: string[] }
   googleContacts: { configured: boolean; missing?: string[] }
   /** publishableKey is returned in full — it is designed to be public and the

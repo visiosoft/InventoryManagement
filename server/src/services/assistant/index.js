@@ -1,5 +1,5 @@
 import { AssistantConfig } from '../../models/index.js';
-import { chatWithTools, openaiConfigured, openaiModel } from '../openai.js';
+import { chatWithTools, openaiConfigured, openaiModel, resolveModel } from '../openai.js';
 import { siteScope } from '../../utils/siteScope.js';
 import { dayKeyFor } from '../dailyDigest.js';
 import { toolDefinitions, toolByName } from './tools.js';
@@ -77,7 +77,7 @@ function systemPromptFor(config, { user, now }) {
  * @returns {{ answer, tools: [{name, args, ok}], model, rounds, grounded }}
  */
 export async function askAssistant({ question, history = [], siteId = null, user = null, now = new Date(), authHeader = '' }) {
-   if (!openaiConfigured()) return { answer: 'The assistant is not set up — OpenAI is not configured.', tools: [], model: '', rounds: 0, grounded: true };
+   if (!openaiConfigured()) return { answer: 'The assistant is not set up — no AI provider is configured.', tools: [], model: '', rounds: 0, grounded: true };
    const config = await getAssistantConfig();
    if (!config.enabled) return { answer: 'The assistant is switched off.', tools: [], model: '', rounds: 0, grounded: true };
 
@@ -89,7 +89,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
    // user's own token — same reason the confirmed-proposal executor does:
    // whatever it creates is attributed exactly as if they had used the page.
    const ctx = { scope, user, now, authHeader };
-   const model = config.model || openaiModel();
+   const model = resolveModel(config.model);
    const system = systemPromptFor(config, { user, now });
 
    // Only the last few turns, and only their text — tool traffic is not replayed.

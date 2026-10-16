@@ -63,7 +63,7 @@ export default function AssistantSettings() {
 
       {!data?.openai.configured && (
         <p className="mb-4 px-4 py-3" style={{ background: '#FFF7E6', border: '1px solid #E9D9B4', borderRadius: 10, fontSize: 13, color: '#6B4500' }}>
-          OpenAI is not connected, so the assistant cannot answer. Connect it under Settings → Integrations.
+          No AI provider is connected, so the assistant cannot answer. Connect OpenAI or Claude under Settings → Integrations.
         </p>
       )}
 
@@ -87,6 +87,9 @@ export default function AssistantSettings() {
                 <option value="gpt-6-luna">gpt-6-luna — cheaper than gpt-4o-mini, untested here</option>
                 <option value="gpt-6-sol">gpt-6-sol — newer, untested here</option>
                 <option value="gpt-6-astra">gpt-6-astra — untested here</option>
+                <option value="claude-opus-5-5">Claude Opus 5.5 — when Claude is the provider</option>
+                <option value="claude-sonnet-5-5">Claude Sonnet 5.5 — when Claude is the provider</option>
+                <option value="claude-haiku-5-5">Claude Haiku 5.5 — when Claude is the provider</option>
               </select>
             </label>
             <label style={{ display: 'block' }}>

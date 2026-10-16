@@ -130,7 +130,7 @@ router.get('/:id/file', async (req, res) => {
 router.post('/:id/extract', async (req, res) => {
     try {
         if (!openaiConfigured()) {
-            return res.status(400).json({ error: 'OpenAI is not configured. Add a key in Settings → Integrations.' });
+            return res.status(400).json({ error: 'No AI provider is configured. Add an OpenAI or Claude key in Settings → Integrations.' });
         }
         const doc = await Document.findById(req.params.id);
         if (!doc) return res.status(404).json({ error: 'Document not found' });

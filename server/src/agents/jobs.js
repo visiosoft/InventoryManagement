@@ -10,7 +10,7 @@
  * manager is another tool pack on the same runner.
  */
 
-import { chatWithTools, openaiConfigured, openaiModel } from '../services/openai.js';
+import { chatWithTools, openaiConfigured, openaiModel, resolveModel } from '../services/openai.js';
 import { listGmailInbox, readGmailMessage } from '../services/gmail.js';
 import { figuresGrounded } from '../services/assistant/index.js';
 import { buildFacts } from '../services/aiBot.js';
@@ -124,7 +124,7 @@ function parseFinal(content) {
  * `email_drafted` action per draft, then stamps lastRunAt. Never sends.
  */
 export async function runJob({ agent, now = new Date(), reason = 'schedule' }) {
-    if (!openaiConfigured()) throw new Error('OpenAI is not configured');
+    if (!openaiConfigured()) throw new Error('No AI provider is configured');
     const enabled = new Set(agent.enabledTools || []);
     const defs = [...agentTools(agent.enabledTools).filter((t) => ['units_available', 'price_booking', 'escalate'].includes(t.name)), ...EMAIL_TOOLS.filter((t) => enabled.has(t.name))];
     const tools = toOpenAiTools(defs);
@@ -161,7 +161,7 @@ export async function runJob({ agent, now = new Date(), reason = 'schedule' }) {
     }
     const final = parseFinal(content);
     const summary = String(final.summary || '').slice(0, 1200);
-    const model = agent.model || openaiModel();
+    const model = resolveModel(agent.model);
 
     const reportRow = await record({
         agent, kind: 'report',

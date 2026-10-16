@@ -14,7 +14,7 @@
 
 import { Lead, WhatsAppMessage, Customer } from '../models/index.js';
 import { AgentAction, AgentLeadFile, AgentProfile, AgentRehearsal, AgentReview } from './models.js';
-import { chatJson, openaiConfigured, openaiModel } from '../services/openai.js';
+import { chatJson, openaiConfigured, openaiModel, resolveModel } from '../services/openai.js';
 import { runAgent } from './runtime.js';
 import { tenantPhoneSuffixes } from './service.js';
 import { freshState, BUCKETS } from './buckets.js';
@@ -213,7 +213,7 @@ async function runTouchRehearsal(doc, agent, { conversations, turns, now }) {
 
 export async function startRehearsal(agent, { conversations = 8, turns = 3, now = new Date() } = {}) {
     const mode = isTouchOnlyAgent(agent) ? 'touch' : 'inbound';
-    const doc = await AgentRehearsal.create({ agent: agent._id, promptVersion: agent.promptVersion, model: agent.model || openaiModel(), mode, params: { conversations, turns } });
+    const doc = await AgentRehearsal.create({ agent: agent._id, promptVersion: agent.promptVersion, model: resolveModel(agent.model), mode, params: { conversations, turns } });
     // Runs on its own; the page polls. A failure is recorded, never thrown.
     (async () => {
         try {
@@ -288,7 +288,7 @@ const REVIEW_SYSTEM = [
 ].join('\n');
 
 export async function reviewAgent(agent, { now = new Date(), days = 30 } = {}) {
-    if (!openaiConfigured()) throw new Error('OpenAI is not configured');
+    if (!openaiConfigured()) throw new Error('No AI provider is configured');
     const stats = await agentStats(agent._id, { now, days });
     const rehearsal = await AgentRehearsal.findOne({ agent: agent._id, status: 'done' }).sort({ finishedAt: -1 }).lean();
     const judged = await AgentAction.find({ agent: agent._id, kind: { $in: ['edited', 'dismissed', 'approved'] } }).sort({ at: -1 }).limit(12).select('kind summary detail at').lean();
@@ -314,5 +314,5 @@ export async function reviewAgent(agent, { now = new Date(), days = 30 } = {}) {
         strengths: (parsed.strengths || []).slice(0, 4).map(String), weaknesses: (parsed.weaknesses || []).slice(0, 4).map(String),
         suggestions: (parsed.suggestions || []).slice(0, 4).map((s) => ({ section: ['who', 'talk', 'sell', 'hand'].includes(s.section) ? s.section : 'talk', change: String(s.change || ''), why: String(s.why || ''), text: String(s.text || '') })),
     };
-    return AgentReview.create({ agent: agent._id, promptVersion: agent.promptVersion, model: agent.model || openaiModel(), periodDays: days, stats, rehearsal: rehearsal?._id || null, review });
+    return AgentReview.create({ agent: agent._id, promptVersion: agent.promptVersion, model: resolveModel(agent.model), periodDays: days, stats, rehearsal: rehearsal?._id || null, review });
 }

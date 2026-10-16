@@ -11,7 +11,8 @@ import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhat
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey, stripePublishableKey, stripeEmbeddedConfigured } from '../services/stripe.js';
 import { updateEnvFile } from '../utils/env.js';
-import { openaiConfigured, openaiModel, openaiKeyHint, verifyOpenAIKey, parseAvailabilityQuery } from '../services/openai.js';
+import { openaiConfigured, openaiOwnModel, openaiKeyPresent, openaiKeyHint, verifyOpenAIKey, parseAvailabilityQuery, aiProvider, chosenProvider, PROVIDERS } from '../services/openai.js';
+import { claudeConfigured, claudeModel, claudeKeyHint, claudeEffort, verifyClaudeKey, CLAUDE_EFFORTS } from '../services/claude.js';
 import { analyticsConfigured, analyticsMissing } from '../services/googleAnalytics.js';
 
 const router = Router();
@@ -34,7 +35,11 @@ router.get('/status', async (_req, res) => {
             method: analyticsConfigured() ? (process.env.GOOGLE_ANALYTICS_SERVICE_ACCOUNT_FILE ? 'service_account' : 'oauth') : '',
         },
         // The key itself is never sent to the client — only a masked hint.
-        openai: { configured: openaiConfigured(), model: openaiModel(), keyHint: openaiKeyHint() },
+        openai: { configured: openaiKeyPresent(), model: openaiOwnModel(), keyHint: openaiKeyHint() },
+        anthropic: { configured: claudeConfigured(), model: claudeModel(), effort: claudeEffort(), keyHint: claudeKeyHint() },
+        // `chosen` is the switch; `active` is who actually answers (the other
+        // provider steps in when the chosen one has no key).
+        ai: { chosen: chosenProvider(), active: aiProvider(), configured: openaiConfigured() },
         // Deep link into Zoho Books' own invoice composer, so staff who raise
         // invoices there can jump straight to it. Data-centre specific, hence
         // the env override.
@@ -124,7 +129,7 @@ router.post('/openai/connect', requireAdmin, async (req, res) => {
 
     const effectiveKey = apiKey || process.env.OPENAI_API_KEY;
     if (!effectiveKey) return res.status(400).json({ error: 'An API key is required' });
-    const effectiveModel = model || openaiModel();
+    const effectiveModel = model || openaiOwnModel();
 
     try {
         await verifyOpenAIKey(effectiveKey, effectiveModel);
@@ -141,7 +146,7 @@ router.post('/openai/connect', requireAdmin, async (req, res) => {
     updateEnvFile(updates);
     Object.assign(process.env, updates);
 
-    res.json({ ok: true, configured: true, model: openaiModel(), keyHint: openaiKeyHint() });
+    res.json({ ok: true, configured: true, model: openaiOwnModel(), keyHint: openaiKeyHint() });
 });
 
 router.post('/openai/disconnect', requireAdmin, async (_req, res) => {
@@ -151,12 +156,63 @@ router.post('/openai/disconnect', requireAdmin, async (_req, res) => {
     res.json({ ok: true });
 });
 
+// Save or rotate the Claude (Anthropic) key, model and effort. Validated
+// before anything is written, like the OpenAI key above.
+router.post('/anthropic/connect', requireAdmin, async (req, res) => {
+    const apiKey = String(req.body?.apiKey || '').trim();
+    const model = String(req.body?.model || '').trim();
+    const effort = String(req.body?.effort || '').trim().toLowerCase();
+    if (!apiKey && !model && !effort) return res.status(400).json({ error: 'Nothing to save' });
+    if (model && !/^claude-[a-z0-9.-]+$/.test(model)) return res.status(400).json({ error: 'That is not a Claude model id' });
+    if (effort && !CLAUDE_EFFORTS.includes(effort)) return res.status(400).json({ error: `Effort must be one of ${CLAUDE_EFFORTS.join(', ')}` });
+
+    const effectiveKey = apiKey || process.env.ANTHROPIC_API_KEY;
+    if (!effectiveKey) return res.status(400).json({ error: 'An API key is required' });
+    if (apiKey && !/^sk-ant-/.test(apiKey)) return res.status(400).json({ error: 'That doesn\'t look like an Anthropic key (should start with sk-ant-)' });
+    const effectiveModel = model || claudeModel();
+
+    if (apiKey || model) {
+        try {
+            await verifyClaudeKey(effectiveKey, effectiveModel);
+        } catch (e) {
+            return res.status(400).json({ error: e.message });
+        }
+    }
+
+    const updates = {};
+    if (apiKey) updates.ANTHROPIC_API_KEY = effectiveKey;
+    if (model) updates.ANTHROPIC_MODEL = effectiveModel;
+    if (effort) updates.ANTHROPIC_EFFORT = effort;
+    updateEnvFile(updates);
+    Object.assign(process.env, updates);
+
+    res.json({ ok: true, configured: true, model: claudeModel(), effort: claudeEffort(), keyHint: claudeKeyHint() });
+});
+
+router.post('/anthropic/disconnect', requireAdmin, async (_req, res) => {
+    const blanks = { ANTHROPIC_API_KEY: '' };
+    updateEnvFile(blanks);
+    Object.assign(process.env, blanks);
+    res.json({ ok: true });
+});
+
+// Switch which AI answers everywhere in the app. Takes effect on the next call.
+router.post('/ai/provider', requireAdmin, async (req, res) => {
+    const provider = String(req.body?.provider || '').trim();
+    if (!PROVIDERS.includes(provider)) return res.status(400).json({ error: `Provider must be one of ${PROVIDERS.join(', ')}` });
+    const ready = provider === 'anthropic' ? claudeConfigured() : openaiKeyPresent();
+    if (!ready) return res.status(400).json({ error: `Save the ${provider === 'anthropic' ? 'Claude' : 'OpenAI'} key first` });
+    updateEnvFile({ AI_PROVIDER: provider });
+    process.env.AI_PROVIDER = provider;
+    res.json({ ok: true, chosen: chosenProvider(), active: aiProvider() });
+});
+
 // Turn a phrase into availability filters. Any signed-in user may call this —
 // it reads nothing and writes nothing, it only interprets text.
 router.post('/ai/parse-availability', async (req, res) => {
     const text = String(req.body?.text || '').trim();
     if (!text) return res.status(400).json({ error: 'Nothing to interpret' });
-    if (!openaiConfigured()) return res.status(501).json({ error: 'OpenAI is not configured' });
+    if (!openaiConfigured()) return res.status(501).json({ error: 'No AI provider is configured' });
 
     const floors = Array.isArray(req.body?.floors) ? req.body.floors.map(String) : [];
     const sizes = Array.isArray(req.body?.sizes) ? req.body.sizes.map(Number).filter(Number.isFinite) : [];
@@ -166,7 +222,7 @@ router.post('/ai/parse-availability', async (req, res) => {
         res.json(result);
     } catch (e) {
         const msg = e.response?.data?.error?.message || e.message;
-        res.status(502).json({ error: `Could not reach OpenAI: ${msg}` });
+        res.status(502).json({ error: `Could not reach ${aiProvider() === 'anthropic' ? 'Claude' : 'OpenAI'}: ${msg}` });
     }
 });
 

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { claudeConfigured, claudeModel, claudeChatJson, claudeChatWithTools, claudeVisionJson } from './claude.js';
 
 // OpenAI is used for exactly one thing: turning a plain-English availability
 // request into structured filters. It never decides availability itself —
@@ -12,12 +13,54 @@ const TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
 // Text to speech, for answering a voice note in kind.
 const SPEECH_MODEL = process.env.OPENAI_SPEECH_MODEL || 'gpt-4o-mini-tts';
 
-export function openaiConfigured() {
-    return Boolean(process.env.OPENAI_API_KEY);
+/* ── Which AI answers ───────────────────────────────────────────────────
+ * OpenAI or Claude (Anthropic), switched from Settings → Integrations
+ * (AI_PROVIDER). Every chat, JSON, vision and tool call in the app goes
+ * through this file, so the switch moves all of them at once. Voice notes
+ * (transcription, spoken replies) are OpenAI-only and keep using its key.
+ *
+ * If the chosen provider has no key but the other one does, the other one
+ * answers rather than everything going dark. */
+export const PROVIDERS = ['openai', 'anthropic'];
+
+export const openaiKeyPresent = () => Boolean(process.env.OPENAI_API_KEY);
+
+export function chosenProvider() {
+    return process.env.AI_PROVIDER === 'anthropic' ? 'anthropic' : 'openai';
 }
 
-export function openaiModel() {
+export function aiProvider() {
+    const chosen = chosenProvider();
+    const has = { openai: openaiKeyPresent(), anthropic: claudeConfigured() };
+    if (has[chosen]) return chosen;
+    return has.openai ? 'openai' : has.anthropic ? 'anthropic' : chosen;
+}
+
+const isClaudeModel = (m) => /^claude-/.test(String(m || ''));
+
+/** The OpenAI model, ignoring the provider switch. */
+export function openaiOwnModel() {
     return process.env.OPENAI_MODEL || DEFAULT_MODEL;
+}
+
+/**
+ * A feature can pick its own model (the WhatsApp assistant, an agent). That
+ * choice is kept only when it belongs to the provider in use; otherwise the
+ * provider's own default answers, so flipping the switch moves everything.
+ */
+export function resolveModel(model) {
+    if (aiProvider() === 'anthropic') return isClaudeModel(model) ? model : claudeModel();
+    return model && !isClaudeModel(model) ? model : openaiOwnModel();
+}
+
+/** Whether any AI can answer right now (name kept: every caller uses it). */
+export function openaiConfigured() {
+    return aiProvider() === 'anthropic' ? claudeConfigured() : openaiKeyPresent();
+}
+
+/** The model the active provider answers with by default. */
+export function openaiModel() {
+    return aiProvider() === 'anthropic' ? claudeModel() : openaiOwnModel();
 }
 
 /** Masked for display — the key itself is never returned to the client. */
@@ -178,7 +221,8 @@ export async function verifyOpenAIKey(apiKey, model) {
  * empty answer.
  */
 export async function chatJson({ system, messages = [], temperature = 0, maxTokens = 400, timeout = 30000, model }) {
-    const chosenModel = model || openaiModel();
+    const chosenModel = resolveModel(model);
+    if (aiProvider() === 'anthropic') return claudeChatJson({ system, messages, maxTokens, timeout, model: chosenModel });
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {
@@ -232,8 +276,9 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
  * @returns {{ content: string, toolCalls: Array<{id, name, args}>, message: object, usage }}
  */
 export async function chatWithTools({ system, messages = [], tools = [], model, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
-    if (!openaiConfigured()) throw new Error('OpenAI is not configured');
-    const chosenModel = model || openaiModel();
+    if (!openaiConfigured()) throw new Error('No AI provider is configured');
+    const chosenModel = resolveModel(model);
+    if (aiProvider() === 'anthropic') return claudeChatWithTools({ system, messages, tools, model: chosenModel, maxTokens, timeout, toolChoice });
     if (usesResponsesApi(chosenModel, tools.length > 0)) {
         return chatWithToolsResponses({ system, messages, tools, model: chosenModel, maxTokens, timeout, toolChoice });
     }
@@ -265,7 +310,8 @@ export async function chatWithTools({ system, messages = [], tools = [], model, 
 }
 
 export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000, model }) {
-    const chosenModel = model || openaiModel();
+    const chosenModel = resolveModel(model);
+    if (aiProvider() === 'anthropic') return claudeVisionJson({ system, imageBase64, mimeType, prompt, maxTokens, timeout, model: chosenModel });
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {
@@ -327,28 +373,13 @@ export async function parseAvailabilityQuery(text, context = {}) {
         'Put anything you could not interpret in `unreadable`.',
     ].filter(Boolean).join('\n');
 
-    const { data } = await axios.post(
-        `${API_BASE}/chat/completions`,
-        {
-            model: openaiModel(),
-            messages: [
-                { role: 'system', content: system },
-                { role: 'user', content: String(text || '').slice(0, 500) },
-            ],
-            response_format: { type: 'json_object' },
-            ...temperatureParam(openaiModel(), 0),
-            ...tokenLimitParam(openaiModel(), 200),
-        },
-        { headers: headers(), timeout: 20000 },
-    );
-
-    const raw = data?.choices?.[0]?.message?.content || '{}';
-    let parsed;
-    try {
-        parsed = JSON.parse(raw);
-    } catch {
-        return { configured: true, error: 'The model did not return usable JSON' };
-    }
+    const parsed = await chatJson({
+        system,
+        messages: [{ role: 'user', content: String(text || '').slice(0, 500) }],
+        maxTokens: 200,
+        timeout: 20000,
+    });
+    if (!parsed) return { configured: true, error: 'The model did not return usable JSON' };
 
     // Never trust the model's values straight through — a floor or size it
     // invented would silently filter the results to nothing.
@@ -385,7 +416,7 @@ export async function parseAvailabilityQuery(text, context = {}) {
  * would have the assistant answer a question it never received.
  */
 export async function transcribeAudio({ buffer, mimeType = 'audio/ogg', filename = 'voice.ogg', timeout = 45000 }) {
-    if (!openaiConfigured()) return '';
+    if (!openaiKeyPresent()) return '';
     if (!buffer?.length) return '';
 
     const form = new FormData();
@@ -417,7 +448,7 @@ export async function transcribeAudio({ buffer, mimeType = 'audio/ogg', filename
  * "send the text instead", never "send nothing".
  */
 export async function synthesizeSpeech({ text, voice = 'coral', instructions = '', speed = 1, format = 'opus', timeout = 45000 }) {
-    if (!openaiConfigured()) return null;
+    if (!openaiKeyPresent()) return null;
     const words = String(text || '').trim();
     if (!words) return null;
 

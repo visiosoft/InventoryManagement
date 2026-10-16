@@ -128,7 +128,7 @@ export default function AiAssistant() {
           <CardBody className="flex items-start gap-2.5 text-sm">
             <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
             <span>
-              No OpenAI key is connected, so the assistant cannot run. Add one under{' '}
+              No AI provider (OpenAI or Claude) is connected, so the assistant cannot run. Add one under{' '}
               <Link to="/settings" className="font-semibold underline">Settings → Integrations</Link>.
             </span>
           </CardBody>

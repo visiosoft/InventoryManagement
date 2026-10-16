@@ -1,7 +1,7 @@
 import {
     AiBotConfig, AiBotThread, WhatsAppMessage, Unit, Lead, Task, User,
 } from '../models/index.js';
-import { openaiConfigured, openaiModel, chatJson, parseAvailabilityQuery, synthesizeSpeech } from './openai.js';
+import { openaiConfigured, openaiModel, resolveModel, chatJson, parseAvailabilityQuery, synthesizeSpeech } from './openai.js';
 import { computeUnitAvailability } from './unitAvailability.js';
 import { sendWhatsAppMedia, sendWhatsAppText, uploadWhatsAppMedia, whatsappSendConfigured } from './whatsapp.js';
 import { understandMedia } from './mediaUnderstanding.js';
@@ -178,7 +178,7 @@ export function historyToMessages(docs, inboundText) {
  * rather than sending a guess or nothing at all.
  */
 export async function generateReply({ phoneNormalized, inboundText, config }) {
-    if (!openaiConfigured()) return { reply: '', needsHuman: true, reason: 'OpenAI is not configured' };
+    if (!openaiConfigured()) return { reply: '', needsHuman: true, reason: 'No AI provider is configured' };
 
     const facts = await buildFacts(inboundText, config);
 
@@ -248,7 +248,7 @@ export async function generateReply({ phoneNormalized, inboundText, config }) {
         reason: typeof parsed.reason === 'string' && parsed.reason.trim()
             ? parsed.reason.trim()
             : (needsHuman ? 'The assistant did not produce an answer' : ''),
-        model: config.model || openaiModel(),
+        model: resolveModel(config.model),
         facts: facts.text,
     };
 }

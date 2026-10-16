@@ -19,6 +19,7 @@
     "test:shopify": "node --test test/shopifyFulfillment.test.js test/shopifyIntegration.test.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@modelcontextprotocol/sdk": "^1.17.5",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",

@@ -413,7 +413,7 @@ export async function askInbox(question) {
   if (local) return { ...(await runAsk(local)), question, usedModel: false };
 
   if (!openaiConfigured()) {
-    return { question, usedModel: false, rows: [], total: 0, unreadable: 'I could not read that question, and OpenAI is not configured to help.' };
+    return { question, usedModel: false, rows: [], total: 0, unreadable: 'I could not read that question, and no AI provider is configured to help.' };
   }
 
   const raw = await chatJson({

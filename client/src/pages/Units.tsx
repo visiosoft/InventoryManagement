@@ -638,12 +638,12 @@ export default function Units() {
   // describe a sentence that is no longer on screen.
   useEffect(() => { setAiParsed(null) }, [phrase])
 
-  const { data: integrationStatus } = useQuery<{ openai?: { configured: boolean; model: string } }>({
+  const { data: integrationStatus } = useQuery<{ openai?: { configured: boolean; model: string }; ai?: { configured: boolean } }>({
     queryKey: ['integrations-status'],
     queryFn: () => api.get('/integrations/status').then((r) => r.data),
     staleTime: 5 * 60_000,
   })
-  const aiConfigured = Boolean(integrationStatus?.openai?.configured)
+  const aiConfigured = Boolean(integrationStatus?.ai?.configured ?? integrationStatus?.openai?.configured)
 
   async function askAi() {
     if (!phrase.trim()) return
@@ -737,7 +737,7 @@ export default function Units() {
           <p style={{ fontSize: 11.5, color: MUTED }}>
             Type the request in the box beside <strong>Ask PurpleBox AI</strong> above. A phrase
             reader in your browser interprets it; <strong>Ask the model</strong> sends it to
-            OpenAI instead. It recognises a
+            the AI model (OpenAI or Claude, per Settings) instead. It recognises a
             fixed set of wordings — dates ("today", "next week", "in 2 weeks", "for 3 months",
             "1 Oct", "2026-10-01"), sizes ("small", "large", "50 sq ft") and floors ("F2",
             "first floor", "shed").

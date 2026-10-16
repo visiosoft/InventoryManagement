@@ -11,7 +11,7 @@
 
 import { usableFirstName, stripUnusableNames } from '../services/leadNames.js';
 import { WhatsAppMessage, Lead } from '../models/index.js';
-import { chatWithTools, openaiConfigured, openaiModel } from '../services/openai.js';
+import { chatWithTools, openaiConfigured, openaiModel, resolveModel } from '../services/openai.js';
 import { buildFacts, historyToMessages } from '../services/aiBot.js';
 import { figuresGrounded } from '../services/assistant/index.js';
 import { listWhatsAppTemplates } from '../services/whatsapp.js';
@@ -157,7 +157,7 @@ function parseDecision(content) {
  * @returns the decision, already persisted and logged unless persist=false
  */
 export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(), persist = true }) {
-    if (!openaiConfigured()) throw new Error('OpenAI is not configured');
+    if (!openaiConfigured()) throw new Error('No AI provider is configured');
     const cadence = cadenceFor(agent);
     const before = snapshotOf(leadFile);
     const isFollowup = trigger.kind === 'followup';
@@ -290,7 +290,7 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
         mode: agent.mode, trigger: trigger.kind, insideWindow, reply, needsHuman, reason, summary,
         template: ctx.changes.template || null,
         bucketBefore: before.bucket, bucketAfter: work.bucket,
-        toolCalls: toolLog, grounded, model: agent.model || openaiModel(), promptVersion: agent.promptVersion, usage,
+        toolCalls: toolLog, grounded, model: resolveModel(agent.model), promptVersion: agent.promptVersion, usage,
     };
     if (!persist) return result;
 

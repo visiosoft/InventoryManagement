@@ -10,6 +10,7 @@ import { useAuth } from '../lib/auth'
 import UnitPricing from './UnitPricing'
 import BulkUnitPricing from './BulkUnitPricing'
 import WebsitePricing from './WebsitePricing'
+import AiProviderCard from '../components/AiProviderCard'
 
 
 // ---- Products / Services Card ----
@@ -588,13 +589,13 @@ export default function Settings() {
               </p>
             )}
           </div>
+          <AiProviderCard integrations={integrations} />
           <div className="rounded-lg border px-4 py-3 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <div className="font-medium">OpenAI</div>
                 <div className="text-xs text-muted-foreground">
-                  Reads plain-English availability requests on the Units page. Availability itself stays a
-                  database query — the model only fills in the filters.
+                  Answers across the app while OpenAI is the AI provider, and always handles voice notes.
                 </div>
               </div>
               <span className={integrations?.openai?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
@@ -642,7 +643,7 @@ export default function Settings() {
               {integrations?.openai?.configured && (
                 <Button size="sm" variant="outline" disabled={aiBusy}
                   onClick={async () => {
-                    if (!confirm('Remove the OpenAI key? Plain-English search will stop working.')) return
+                    if (!confirm('Remove the OpenAI key? Voice notes will stop working, and Claude will answer everything else if it is connected.')) return
                     setAiBusy(true); setAiMsg(null)
                     try {
                       await api.post('/integrations/openai/disconnect')

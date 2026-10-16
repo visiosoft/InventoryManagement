@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
 import { AiBotThread, User, WhatsAppMessage } from '../models/index.js';
 import { getAiBotConfig, generateReply, decideAction, runAiBotTick, aiBotState, pauseBotForHuman, speakAsConfigured, DEFAULT_PROMPT } from '../services/aiBot.js';
-import { openaiConfigured, openaiModel, synthesizeSpeech } from '../services/openai.js';
+import { openaiConfigured, openaiModel, synthesizeSpeech, aiProvider } from '../services/openai.js';
 import { sendWhatsAppMedia, uploadWhatsAppMedia, whatsappSendConfigured } from '../services/whatsapp.js';
 import { understandMedia } from '../services/mediaUnderstanding.js';
 import { mediaFromRaw } from './whatsappMedia.js';
@@ -106,6 +106,29 @@ const MODELS = [
         // this prompt, and not yet run through the eval questions above.
         note: 'Not yet evaluated against the real instructions and price list — try it and see.',
     },
+    /* Claude. Used only while Claude is the AI provider (Settings →
+       Integrations); with OpenAI selected these fall back to the OpenAI
+       default, and the GPT entries above do the same the other way round.
+       Not yet run through the eval questions; cost is list price per token
+       against gpt-4o-mini, not a measured multiple on this prompt. */
+    {
+        id: 'claude-opus-5-5',
+        label: 'Claude Opus 5.5',
+        cost: '~27×',
+        note: 'Anthropic\'s strongest. Not yet evaluated here — try it and see.',
+    },
+    {
+        id: 'claude-sonnet-5-5',
+        label: 'Claude Sonnet 5.5',
+        cost: '~13×',
+        note: 'Faster and cheaper than Opus. Not yet evaluated here.',
+    },
+    {
+        id: 'claude-haiku-5-5',
+        label: 'Claude Haiku 5.5',
+        cost: '~0.7×',
+        note: 'Cheapest Claude. Not yet evaluated here.',
+    },
 ];
 const MODEL_IDS = MODELS.map((m) => m.id);
 
@@ -135,6 +158,8 @@ const shape = (config) => ({
     // So the page can show the real ceiling rather than a number copied by hand.
     promptLimit: PROMPT_LIMIT,
     openai: { configured: openaiConfigured(), model: openaiModel() },
+    // Which provider answers right now, so the page can say so.
+    provider: aiProvider(),
 });
 
 router.get('/config', requireAdmin, async (_req, res) => {
@@ -214,7 +239,7 @@ router.put('/config', requireAdmin, async (req, res) => {
         return res.status(400).json({ error: 'Choose who receives escalations before turning the assistant on' });
     }
     if (config.enabled && !openaiConfigured()) {
-        return res.status(400).json({ error: 'Connect an OpenAI key in Settings → Integrations first' });
+        return res.status(400).json({ error: 'Connect an OpenAI or Claude key in Settings → Integrations first' });
     }
 
     await config.save();
@@ -226,7 +251,7 @@ router.put('/config', requireAdmin, async (req, res) => {
 router.post('/test', requireAdmin, async (req, res) => {
     const text = String(req.body?.text || '').trim();
     if (!text) return res.status(400).json({ error: 'Type a customer message to test' });
-    if (!openaiConfigured()) return res.status(501).json({ error: 'OpenAI is not configured' });
+    if (!openaiConfigured()) return res.status(501).json({ error: 'No AI provider is configured' });
 
     const config = await getAiBotConfig();
     // Any unsaved prompt from the editor, so the box tests what is on screen.
@@ -261,7 +286,7 @@ router.post('/test', requireAdmin, async (req, res) => {
         });
         res.json({ ...result, decidedBy: 'model' });
     } catch (err) {
-        res.status(502).json({ error: err?.message || 'Could not reach OpenAI' });
+        res.status(502).json({ error: err?.message || 'Could not reach the AI provider' });
     }
 });
 
@@ -298,7 +323,7 @@ router.post('/threads/:phone/suggest', async (req, res) => {
     try {
         const phoneNormalized = String(req.params.phone).replace(/\D/g, '');
         const config = await getAiBotConfig();
-        if (!openaiConfigured()) return res.status(400).json({ error: 'OpenAI is not configured' });
+        if (!openaiConfigured()) return res.status(400).json({ error: 'No AI provider is configured' });
 
         const thread = await AiBotThread.findOne({ phoneNormalized });
         // The last thing they actually said, which is what a reply answers.
