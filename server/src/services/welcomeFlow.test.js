@@ -23,7 +23,7 @@ test('answers are read into lead values', () => {
 test('inbox line and thank-you', () => {
     assert.equal(welcomeSummary(reply({ flow: 'welcome', size: '50', start_date: '2026-11-01' })), 'Welcome form · 50 sq ft · from 1 Nov 2026');
     assert.match(thankYouText({ size: 50, startDate: new Date('2026-10-31T20:00:00Z') }), /a 50 sq ft unit from 1 Nov 2026/);
-    assert.match(thankYouText({ size: -1, startDate: null }), /help choosing the right size\./);
+    assert.match(thankYouText({ size: -1, startDate: null }), /https:\/\/purplebox\.ae\/estimator\.html/);
 });
 
 test('the flow JSON offers every size and hands both answers back', () => {

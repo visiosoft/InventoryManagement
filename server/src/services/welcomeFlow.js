@@ -66,9 +66,16 @@ export function welcomeSummary(raw) {
     return `Welcome form · ${sizeText} · from ${startDate ? dayLabel(startDate) : 'date not given'}`;
 }
 
+export const ESTIMATOR_URL = 'https://purplebox.ae/estimator.html';
+
 export function thankYouText({ size, startDate }) {
-    const what = size === -1 ? 'help choosing the right size' : size ? `a ${size} sq ft unit` : 'a storage unit';
     const when = startDate ? ` from ${dayLabel(startDate)}` : '';
+    // Not sure of the size: point them at the estimator, which works it out
+    // from what they are storing.
+    if (size === -1) {
+        return `Thank you! We have noted that you need storage${when}. Not sure of the size? Our estimator works it out from what you are storing: ${ESTIMATOR_URL}\n\nTell us the size it suggests, or one of our team will reply here shortly to help.`;
+    }
+    const what = size ? `a ${size} sq ft unit` : 'a storage unit';
     return `Thank you! We have noted ${what}${when}. One of our team will reply here shortly with availability and prices.`;
 }
 
