@@ -612,7 +612,7 @@ export async function sendWhatsAppInteractiveList({ to, bodyText, buttonLabel, r
  * WhatsApp Manager (Business Settings → Flows) — there is no API in this
  * codebase that creates one, the JSON is authored there directly.
  */
-export async function sendWhatsAppInteractiveFlow({ to, bodyText, flowId, flowCta, screenId, flowToken, data, flowAction = 'navigate' }) {
+export async function sendWhatsAppInteractiveFlow({ to, bodyText, flowId, flowCta, screenId, flowToken, data, flowAction = 'navigate', formName = 'Form', record = true, sentByAi = false, sentBy = null, rawExtra = {} }) {
     if (!whatsappSendConfigured()) {
         throw new Error('WhatsApp is not configured');
     }
@@ -662,6 +662,29 @@ export async function sendWhatsAppInteractiveFlow({ to, bodyText, flowId, flowCt
     if (!response.ok) {
         const detail = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
         throw new Error(`WhatsApp send failed: ${detail}`);
+    }
+
+    /* Kept in the chat, so the inbox shows the form went out — with its
+       button — the same as any other message we send. */
+    if (record) {
+        try {
+            const { WhatsAppMessage } = await import('../models/index.js');
+            await WhatsAppMessage.create({
+                messageId: payload?.messages?.[0]?.id || '',
+                phone: String(to),
+                phoneNormalized: normalizedTo,
+                direction: 'outbound',
+                type: 'interactive',
+                text: String(bodyText || '').trim(),
+                status: 'sent',
+                occurredAt: new Date(),
+                sentByAi: Boolean(sentByAi),
+                sentBy: sentBy || null,
+                raw: { ...rawExtra, flowForm: { name: formName, cta: String(flowCta || 'Choose Dates').slice(0, 30), flowId: String(flowId), screen: screenId || '' }, sendResult: payload },
+            });
+        } catch (e) {
+            console.error('[WhatsApp] could not record flow message:', e.message);
+        }
     }
 
     return payload;

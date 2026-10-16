@@ -63,14 +63,17 @@ export async function sendClientInfoFlow({ phone, name = '' }) {
         text = `Hi${first ? ` ${first}` : ''}, to prepare your storage agreement please share your details and a photo of your Emirates ID or passport. It takes a minute and is kept confidential.`;
         await sendWhatsAppInteractiveFlow({
             to: phoneNormalized, bodyText: text, flowId, flowCta: 'Share details', flowToken: token, flowAction: 'data_exchange',
+            record: false,
         });
         via = 'flow';
     }
 
     await WhatsAppMessage.create({
         phone: phoneNormalized, phoneNormalized, direction: 'outbound', type: via === 'template' ? 'template' : 'interactive',
-        text: `${text}\n[Form: ID & details]`,
+        text,
         status: 'sent', occurredAt: new Date(), sentByAi: false,
+        // The inbox draws the form's button under the message.
+        raw: { flowForm: { name: 'Client details', cta: 'Share details' } },
     }).catch(() => { });
 
     return { sent: true, via, phone: phoneNormalized, template: tpl?.name || null };

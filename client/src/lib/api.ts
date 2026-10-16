@@ -519,6 +519,10 @@ export type WhatsAppMsg = {
   occurredAt: string
   // Written by the AI assistant rather than a colleague.
   sentByAi?: boolean
+  /** A WhatsApp form (Flow) we sent: the button the customer sees. */
+  form?: { name: string; cta: string }
+  /** A WhatsApp form the customer submitted, field by field. */
+  formAnswers?: { name: string; answers: { label: string; value: string }[] }
   // Set when the sender edited, deleted or reacted to this message afterwards.
   editedAt?: string | null
   deletedAt?: string | null

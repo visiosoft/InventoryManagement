@@ -169,6 +169,8 @@ async function startDateRange({ thread, to, phoneNormalized, step }) {
             flowCta: 'Choose Dates',
             screenId: 'DATES',
             flowToken: `mvst.${phoneNormalized}`,
+            formName: 'Booking dates',
+            sentByAi: true,
         });
     } else {
         thread.dateSubStep = 'awaiting_from';

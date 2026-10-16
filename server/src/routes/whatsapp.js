@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { syncFollowUpTask } from '../services/followUps.js';
 import { mediaFromRaw } from './whatsappMedia.js';
+import { withFormView } from '../services/flowView.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
 import { WhatsAppMessage, Lead, Customer, User, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate, Task, Contract } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate, windowOpenFor } from '../services/whatsapp.js';
@@ -99,7 +100,8 @@ router.get('/customer-thread/:customerId', async (req, res) => {
         numbersTried: unique,
         messages: messages.map((m) => {
             const media = mediaFromRaw(m.raw);
-            const { raw, ...rest } = m;
+            const { raw, ...base } = m;
+            const rest = withFormView(base, raw);
             return media
                 ? { ...rest, media: { kind: media.kind, mimeType: media.mimeType, filename: media.filename, caption: media.caption, link: media.link ?? '' } }
                 : rest;
@@ -221,7 +223,9 @@ router.get('/messages', async (req, res) => {
     // shipping the whole raw payload to the browser.
     res.json(messages.map((m) => {
         const media = mediaFromRaw(m.raw);
-        const { raw, ...rest } = m;
+        const { raw, ...base } = m;
+        // A form we sent shows its button; one they filled in shows the answers.
+        const rest = withFormView(base, raw);
         return media
             ? { ...rest, media: { kind: media.kind, mimeType: media.mimeType, filename: media.filename, caption: media.caption, link: media.link ?? '' } }
             : rest;

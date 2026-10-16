@@ -469,6 +469,29 @@ function IconButton({
  * suggestion action. `msg` is the only prop, and it's a stable reference from
  * the parent's memoized `sorted` array, so this actually skips work rather
  * than comparing props that always differ. */
+/* What the customer filled in on one of our WhatsApp forms, field by field. */
+function FormAnswers({ form, fallback }: { form: NonNullable<WaMsg['formAnswers']>; fallback?: string }) {
+  return (
+    <div style={{ minWidth: 200 }}>
+      <div className="flex items-center gap-1.5" style={{ fontSize: 11.5, fontWeight: 700, color: '#4A1FA0', marginBottom: 4 }}>
+        <ClipboardList size={13} /> {form.name} · submitted
+      </div>
+      {form.answers.length ? (
+        <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 10, rowGap: 2, fontSize: 13 }}>
+          {form.answers.map((a, i) => (
+            <div key={i} style={{ display: 'contents' }}>
+              <dt style={{ color: '#667781' }}>{a.label}</dt>
+              <dd className="break-words" style={{ fontWeight: 600, margin: 0 }}>{a.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="whitespace-pre-wrap break-words">{fallback || 'Submitted with no answers'}</p>
+      )}
+    </div>
+  )
+}
+
 function MessageBubbleImpl({ msg, onCorrected, onDeleted }: {
   msg: WaMsg
   // The recent-window query's own invalidate-and-refetch (below) only ever
@@ -565,6 +588,8 @@ function MessageBubbleImpl({ msg, onCorrected, onDeleted }: {
           <p className="italic opacity-60">This message was deleted</p>
         ) : msg.media ? (
           <Attachment messageId={msg.messageId} media={msg.media} />
+        ) : msg.formAnswers ? (
+          <FormAnswers form={msg.formAnswers} fallback={msg.text} />
         ) : (
           <p className="whitespace-pre-wrap break-words">
             {msg.text || (
@@ -582,6 +607,16 @@ function MessageBubbleImpl({ msg, onCorrected, onDeleted }: {
         )}
         {!msg.deletedAt && msg.media && msg.text && !msg.media.caption && (
           <p className="whitespace-pre-wrap break-words mt-1">{msg.text}</p>
+        )}
+
+        {/* A form we sent: the button exactly as the customer sees it. */}
+        {!msg.deletedAt && msg.form && (
+          <div className="mt-2" style={{ borderTop: '1px solid rgba(20,8,31,.12)', paddingTop: 6 }}>
+            <div className="flex items-center justify-center gap-1.5" style={{ color: '#027EB5', fontWeight: 600, fontSize: 13.5, padding: '2px 0' }}>
+              <ClipboardList size={14} /> {msg.form.cta}
+            </div>
+            <p style={{ fontSize: 10.5, color: '#667781', textAlign: 'center', marginTop: 2 }}>WhatsApp form · {msg.form.name}</p>
+          </div>
         )}
 
         {/* The customer still has this wording on their phone — nothing can

@@ -319,11 +319,19 @@ export async function sendExitSurvey({ contractId, phone }) {
             flowCta: 'Give feedback',
             screenId: 'EXIT_SURVEY',
             flowToken,
+            formName: 'Exit survey',
         });
         via = 'flow';
     } else if (template) {
-        await sendWhatsAppTemplate({ to, name: template, language: process.env.WHATSAPP_EXIT_SURVEY_TEMPLATE_LANG || 'en', flowToken });
+        const sent = await sendWhatsAppTemplate({ to, name: template, language: process.env.WHATSAPP_EXIT_SURVEY_TEMPLATE_LANG || 'en', flowToken });
         via = 'template';
+        // Recorded so the inbox shows the survey went out.
+        await WhatsAppMessage.create({
+            messageId: sent?.messages?.[0]?.id || '',
+            phone: to, phoneNormalized: normalizeLeadPhone(to), direction: 'outbound', type: 'template',
+            text: `Template: ${template}`, status: 'sent', occurredAt: new Date(), sentByAi: false,
+            raw: { flowForm: { name: 'Exit survey', cta: 'Give feedback' }, sendResult: sent },
+        }).catch(() => { });
     } else {
         throw Object.assign(new Error(
             'The customer has not written in the last 24 hours, so WhatsApp only allows a template. '

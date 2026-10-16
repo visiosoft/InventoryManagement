@@ -91,7 +91,7 @@ export async function sendWelcomeFlow({ phoneNormalized, phone, wasNewLead }) {
             return { sent: false, reason: 'already sent' };
         }
 
-        const result = await sendWhatsAppInteractiveFlow({
+        await sendWhatsAppInteractiveFlow({
             to: phone || phoneNormalized,
             bodyText: WELCOME_BODY,
             flowId,
@@ -99,19 +99,10 @@ export async function sendWelcomeFlow({ phoneNormalized, phone, wasNewLead }) {
             screenId: 'SIZE',
             flowToken: `${WELCOME_TOKEN_PREFIX}${phoneNormalized}`,
             data: { min_date: dubaiToday() },
-        });
-        await WhatsAppMessage.create({
-            messageId: result?.messages?.[0]?.id || '',
-            phone: phone || phoneNormalized,
-            phoneNormalized,
-            direction: 'outbound',
-            type: 'interactive',
-            text: WELCOME_BODY,
-            status: 'sent',
-            occurredAt: new Date(),
+            formName: 'Welcome form',
             // The system speaking, not a colleague: must not pause the assistant.
             sentByAi: true,
-            raw: { welcomeFlow: true, flowId, sendResult: result },
+            rawExtra: { welcomeFlow: true },
         });
         return { sent: true };
     } catch (e) {
