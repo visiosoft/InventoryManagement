@@ -79,6 +79,27 @@ export function formAnswersFromRaw(raw) {
     return { name: formNameFor(data), answers };
 }
 
+/** A template's buttons, from Meta's template components: [{ type, text }]. */
+export function templateButtons(components) {
+    const buttons = (components || []).find((c) => c.type === 'BUTTONS')?.buttons || [];
+    return buttons.map((b) => ({
+        type: String(b.type || ''),
+        text: String(b.text || ''),
+        ...(b.flow_id ? { flowId: String(b.flow_id) } : {}),
+    })).filter((b) => b.text);
+}
+
+/** Which of our forms a flow id is, by the ids configured on the server. */
+export function formNameForFlowId(flowId) {
+    const id = String(flowId || '');
+    if (!id) return 'Form';
+    if (id === String(process.env.WHATSAPP_WELCOME_FLOW_ID || '')) return 'Welcome form';
+    if (id === String(process.env.WHATSAPP_EXIT_SURVEY_FLOW_ID || '')) return 'Exit survey';
+    if (id === String(process.env.WHATSAPP_CLIENT_INFO_FLOW_ID || '')) return 'Client details';
+    if (id === String(process.env.WHATSAPP_BOOKING_DATES_FLOW_ID || '')) return 'Booking dates';
+    return 'Form';
+}
+
 /** The form we sent with this message, or null. */
 export function formFromRaw(raw) {
     const f = raw?.flowForm;
@@ -86,9 +107,34 @@ export function formFromRaw(raw) {
     return { name: String(f.name || 'Form'), cta: String(f.cta || 'Open form') };
 }
 
-/** Adds `form` / `formAnswers` to a stored message for the inbox. */
-export function withFormView(message, raw) {
-    const form = message.direction === 'outbound' ? formFromRaw(raw) : null;
-    const formAnswers = message.direction === 'inbound' ? formAnswersFromRaw(raw) : null;
-    return { ...message, ...(form ? { form } : {}), ...(formAnswers ? { formAnswers } : {}) };
+/**
+ * Adds `form` / `buttons` / `formAnswers` to a stored message for the inbox.
+ * `templatesByName` (name -> Meta template) fills in buttons for template
+ * messages saved before their buttons were recorded.
+ */
+export function withFormView(message, raw, templatesByName = null) {
+    const out = { ...message };
+    if (message.direction === 'outbound') {
+        let buttons = raw?.template?.buttons;
+        if (!buttons && message.type === 'template' && raw?.template?.name && templatesByName) {
+            buttons = templateButtons(templatesByName.get(raw.template.name)?.components);
+        }
+        const flowButton = (buttons || []).find((b) => b.type === 'FLOW');
+        const form = formFromRaw(raw) || (flowButton ? { name: formNameForFlowId(flowButton.flowId), cta: flowButton.text } : null);
+        const others = (buttons || []).filter((b) => b.type !== 'FLOW');
+        if (form) out.form = form;
+        if (others.length) out.buttons = others.map(({ type, text }) => ({ type, text }));
+    } else {
+        const formAnswers = formAnswersFromRaw(raw);
+        if (formAnswers) out.formAnswers = formAnswers;
+    }
+    return out;
+}
+
+/** Template name -> Meta template, for the messages in a page that need it. */
+export async function templatesFor(messages, listTemplates) {
+    const needed = messages.some((m) => m.direction === 'outbound' && m.type === 'template' && m.raw?.template?.name && !m.raw?.template?.buttons);
+    if (!needed) return null;
+    const list = await listTemplates().catch(() => null);
+    return new Map((list?.templates || []).map((t) => [t.name, t]));
 }

@@ -521,6 +521,8 @@ export type WhatsAppMsg = {
   sentByAi?: boolean
   /** A WhatsApp form (Flow) we sent: the button the customer sees. */
   form?: { name: string; cta: string }
+  /** A template's other buttons (quick replies, links, call), as the customer sees them. */
+  buttons?: { type: string; text: string }[]
   /** A WhatsApp form the customer submitted, field by field. */
   formAnswers?: { name: string; answers: { label: string; value: string }[] }
   // Set when the sender edited, deleted or reacted to this message afterwards.

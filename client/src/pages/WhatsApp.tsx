@@ -6,7 +6,7 @@ import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
   Bot, Tag, Check, ClipboardList, Sparkles, Shuffle, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2, Ban,
-  Video as VideoIcon, Play,
+  Video as VideoIcon, Play, ExternalLink, Phone, Reply,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel, type LeadScore } from '../lib/api'
@@ -607,6 +607,18 @@ function MessageBubbleImpl({ msg, onCorrected, onDeleted }: {
         )}
         {!msg.deletedAt && msg.media && msg.text && !msg.media.caption && (
           <p className="whitespace-pre-wrap break-words mt-1">{msg.text}</p>
+        )}
+
+        {/* A template's buttons, as the customer sees them under the message. */}
+        {!msg.deletedAt && msg.buttons && msg.buttons.length > 0 && (
+          <div className="mt-2" style={{ borderTop: '1px solid rgba(20,8,31,.12)' }}>
+            {msg.buttons.map((b, i) => (
+              <div key={i} className="flex items-center justify-center gap-1.5"
+                style={{ color: '#027EB5', fontWeight: 600, fontSize: 13.5, padding: '5px 0', borderTop: i ? '1px solid rgba(20,8,31,.08)' : undefined }}>
+                {b.type === 'URL' ? <ExternalLink size={13} /> : b.type === 'PHONE_NUMBER' ? <Phone size={13} /> : <Reply size={13} />} {b.text}
+              </div>
+            ))}
+          </div>
         )}
 
         {/* A form we sent: the button exactly as the customer sees it. */}

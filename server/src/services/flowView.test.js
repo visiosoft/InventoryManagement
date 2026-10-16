@@ -30,3 +30,17 @@ test('a form we sent carries its button; ordinary messages carry nothing', () =>
     assert.deepEqual(withFormView({ direction: 'inbound', text: 'hi' }, { text: { body: 'hi' } }), { direction: 'inbound', text: 'hi' });
     assert.equal(formAnswersFromRaw({ interactive: { type: 'nfm_reply', nfm_reply: { response_json: 'nope' } } }), null);
 });
+
+test('a template shows its buttons; a Flow button shows as the form', async () => {
+    const { withFormView, templatesFor } = await import('./flowView.js');
+    process.env.WHATSAPP_WELCOME_FLOW_ID = '123';
+    const meta = { name: 'welcome', components: [{ type: 'BODY', text: 'Hi' }, { type: 'BUTTONS', buttons: [
+        { type: 'FLOW', text: 'Choose size', flow_id: 123 }, { type: 'QUICK_REPLY', text: 'Call me' }, { type: 'URL', text: 'Website', url: 'https://x' },
+    ] }] };
+    const msgs = [{ direction: 'outbound', type: 'template', raw: { template: { name: 'welcome' } } }];
+    const byName = await templatesFor(msgs, async () => ({ templates: [meta] }));
+    const v = withFormView({ direction: 'outbound', type: 'template', text: 'Hi' }, msgs[0].raw, byName);
+    assert.deepEqual(v.form, { name: 'Welcome form', cta: 'Choose size' });
+    assert.deepEqual(v.buttons, [{ type: 'QUICK_REPLY', text: 'Call me' }, { type: 'URL', text: 'Website' }]);
+    assert.equal(await templatesFor([{ direction: 'inbound', type: 'text' }], async () => { throw new Error('not called'); }), null);
+});

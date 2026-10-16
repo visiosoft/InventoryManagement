@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { syncFollowUpTask } from '../services/followUps.js';
 import { mediaFromRaw } from './whatsappMedia.js';
-import { withFormView } from '../services/flowView.js';
+import { withFormView, templatesFor, templateButtons } from '../services/flowView.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
 import { WhatsAppMessage, Lead, Customer, User, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate, Task, Contract } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate, windowOpenFor } from '../services/whatsapp.js';
@@ -95,13 +95,14 @@ router.get('/customer-thread/:customerId', async (req, res) => {
         .limit(limit)
         .lean();
 
+    const templatesByName = await templatesFor(messages, listWhatsAppTemplates);
     res.json({
         phoneNormalized: newest.phoneNormalized,
         numbersTried: unique,
         messages: messages.map((m) => {
             const media = mediaFromRaw(m.raw);
             const { raw, ...base } = m;
-            const rest = withFormView(base, raw);
+            const rest = withFormView(base, raw, templatesByName);
             return media
                 ? { ...rest, media: { kind: media.kind, mimeType: media.mimeType, filename: media.filename, caption: media.caption, link: media.link ?? '' } }
                 : rest;
@@ -221,11 +222,12 @@ router.get('/messages', async (req, res) => {
     // Attachments are described inside the stored webhook payload. Surface a
     // small descriptor so the client can render the right element without
     // shipping the whole raw payload to the browser.
+    const templatesByName = await templatesFor(messages, listWhatsAppTemplates);
     res.json(messages.map((m) => {
         const media = mediaFromRaw(m.raw);
         const { raw, ...base } = m;
         // A form we sent shows its button; one they filled in shows the answers.
-        const rest = withFormView(base, raw);
+        const rest = withFormView(base, raw, templatesByName);
         return media
             ? { ...rest, media: { kind: media.kind, mimeType: media.mimeType, filename: media.filename, caption: media.caption, link: media.link ?? '' } }
             : rest;
@@ -1279,7 +1281,8 @@ router.post('/send-template', async (req, res) => {
             occurredAt: new Date(),
             sentByAi: false,
             sentBy: req.user?.id || null,
-            raw: { template: { name, language, variables }, sendResult: result },
+            // Its buttons too, so the thread shows them as the customer sees them.
+            raw: { template: { name, language, variables, buttons: templateButtons(meta?.components) }, sendResult: result },
         });
 
         // A person has taken this conversation on, the same as any typed send.
