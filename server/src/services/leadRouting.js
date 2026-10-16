@@ -357,23 +357,25 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
    const config = await LeadRoutingConfig.findOne().lean();
    if (!config?.enabled) return { assigned: 0, reason: 'distribution is off' };
 
-   // A day, not three: after distribution had been off or broken, three days
-   // of old chats (including bookkeeping contacts) were all handed out at once.
-   const since = new Date(at.getTime() - 86400000);
+   /* Every lead nobody owns gets one — whatever its age or where it came
+      from. This used to look back one day only, so a lead that arrived when
+      nobody was on shift and was not picked up by the next morning stayed
+      unassigned for good (16 of them, 7 Sep – 3 Oct). Closed leads (won,
+      lost) and existing customers are not handed out. Batches of `limit`
+      per run, oldest first, so a backlog spreads over a few runs instead of
+      landing on the reps at once. */
    const waiting = await Lead.find({
-      source: 'whatsapp',
       owner: null,
-      createdAt: { $gte: since },
       status: { $nin: ['won', 'lost', 'already_customer'] },
    }).sort({ createdAt: 1 }).limit(limit).lean();
-   if (!waiting.length) return { assigned: 0, reason: 'nothing waiting' };
 
    let assigned = 0;
+   let nobodyOnShift = false;
    for (const lead of waiting) {
       /* Re-read the tally each time, so a sweep of twenty respects the shares
          rather than giving them all to whoever was furthest behind first. */
       const decision = await routeInboundLead({ phoneNormalized: lead.phoneNormalized, at });
-      if (!decision.ownerId) break;   // still nobody on shift; try again later
+      if (!decision.ownerId) { nobodyOnShift = true; break; }   // try again later
 
       // owner: null in the filter too — a lead somebody was given in the meantime
       // is never overwritten, even in a race with this sweep.
@@ -395,5 +397,47 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
          .catch((e) => console.error('[LeadRouting] notify failed:', e.message));
    }
 
-   return { assigned, waiting: waiting.length };
+   // Chats with no lead at all (one of ours that the customer never answered,
+   // from before outbound chats created leads): give them one, distributed.
+   const created = nobodyOnShift ? 0 : await leadsForChatsWithoutOne({ at, limit: Math.max(0, limit - assigned) })
+      .catch((e) => { console.error('[LeadRouting] leadless chats:', e.message); return 0; });
+
+   return { assigned: assigned + created, waiting: waiting.length, created };
+}
+
+/**
+ * WhatsApp chats from the last 30 days that have no lead behind them, turned
+ * into leads the distribution rules assign. Tenants are left out: a signed
+ * customer writing about an invoice is not a sales lead, and the inbox does
+ * not count them as unassigned either.
+ */
+async function leadsForChatsWithoutOne({ at = new Date(), limit = 25 } = {}) {
+   if (limit <= 0) return 0;
+   const { WhatsAppMessage, WhatsAppBlockedNumber } = await import('../models/index.js');
+   const since = new Date(at.getTime() - 30 * 86400000);
+   const phones = await WhatsAppMessage.distinct('phoneNormalized', { occurredAt: { $gte: since } });
+   if (!phones.length) return 0;
+   const withLead = new Set(await Lead.find({ phoneNormalized: { $in: phones } }, null, { includeDeleted: true }).distinct('phoneNormalized'));
+   const blocked = new Set(WhatsAppBlockedNumber ? await WhatsAppBlockedNumber.distinct('phoneNormalized').catch(() => []) : []);
+   const { isExistingCustomerPhone } = await import('./customerLeads.js');
+   const { createLeadFromWhatsAppPhone } = await import('./whatsappLeadSync.js');
+
+   let created = 0;
+   for (const phone of phones) {
+      if (created >= limit) break;
+      if (!phone || withLead.has(phone) || blocked.has(phone)) continue;
+      if (await isExistingCustomerPhone(phone).catch(() => false)) continue;
+      const sample = await WhatsAppMessage.findOne({ phoneNormalized: phone }).sort({ occurredAt: -1 }).select('phone direction').lean();
+      const lead = await createLeadFromWhatsAppPhone({
+         phone: sample?.phone || phone,
+         phoneNormalized: phone,
+         status: 'new',
+         timelineText: 'Lead created for a WhatsApp chat that had none, so it could be assigned',
+      }).catch((e) => { console.error('[LeadRouting] create for chat:', e.message); return null; });
+      if (!lead) break;            // nobody on shift, or distribution off
+      if (!lead.owner) break;      // created but nobody available: stop, retry later
+      await WhatsAppMessage.updateMany({ phoneNormalized: phone, lead: null }, { $set: { lead: lead._id } });
+      created += 1;
+   }
+   return created;
 }

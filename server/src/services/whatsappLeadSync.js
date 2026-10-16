@@ -458,6 +458,20 @@ async function persistMessages(messages) {
                 timelineText: 'Lead auto-created from inbound WhatsApp chat',
                 profileName: msg.profileName,
             });
+        } else if (!lead && msg.direction === 'outbound' && !(await isExistingCustomerPhone(msg.phoneNormalized).catch(() => false))) {
+            /* A rep started this chat from the WhatsApp Business app — a
+             * referral, someone who rang. No customer message has arrived, so
+             * nothing created a lead and the chat sat in "Unassigned" with
+             * nobody on it. Every chat gets an owner: create the lead now and
+             * let the distribution rules give it to someone. (Messages we send
+             * through the API were stored when sent and never reach here; a
+             * signed tenant being messaged is not a sales lead.) */
+            lead = await createLeadFromWhatsAppPhone({
+                phone: msg.phone,
+                phoneNormalized: msg.phoneNormalized,
+                status: 'new',
+                timelineText: 'Lead created from a chat our team started on WhatsApp (no reply from the customer yet)',
+            }).catch((e) => { console.error('[WhatsAppLeadSync] outbound lead:', e.message); return null; });
         } else if (lead && msg.profileName && lead.whatsappProfileName !== msg.profileName) {
             // People rename themselves. Kept current, and never allowed to
             // overwrite a name somebody here typed.
