@@ -775,6 +775,24 @@ export async function resolveAction(actionId, { resolution, text = '', user, alr
     action.resolvedBy = user?.id || null;
     await action.save();
 
+    /* A new suggestion is written each time the customer writes, and older
+     * ones were never cleared. The inbox shows the newest, so answering it
+     * (Dismiss, Send, Edit) only brought the next older one into view —
+     * often near-identical, which read as "Dismiss does nothing". Answering a
+     * draft retires every earlier draft still pending on the same
+     * conversation, marked skipped (not used) rather than dismissed. Later
+     * drafts are left alone. */
+    if (action.kind === 'reply_drafted' && action.leadFile) {
+        try {
+            await AgentAction.updateMany(
+                { leadFile: action.leadFile, kind: 'reply_drafted', resolution: null, _id: { $ne: action._id }, at: { $lte: action.at || now } },
+                { $set: { resolution: 'skipped', resolvedAt: now, resolvedBy: user?.id || null } },
+            );
+        } catch (e) {
+            console.error(`[Agents] resolveAction ${actionId}: could not retire older drafts:`, e.message);
+        }
+    }
+
     const label = action.kind === 'reply_drafted' ? 'draft' : action.kind === 'email_drafted' ? 'email' : 'follow-up';
     try {
         await record({

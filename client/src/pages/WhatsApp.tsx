@@ -3352,7 +3352,14 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
   const dismissDraft = useMutation({
     mutationFn: (v: { phone: string; actionId: string }) => agentsApi.resolve(v.actionId, 'dismissed'),
     onSuccess: (_data, v) => { setSendErr(''); clearDraftInCache(v.phone); onSent() },
-    onError: (e) => setSendErr(apiError(e)),
+    // Answered already (by a colleague, or an earlier click): that is what
+    // Dismiss wanted, so clear it rather than show an error and leave the
+    // card stuck. Anything else is shown, and the chat re-read either way.
+    onError: (e, v) => {
+      const msg = apiError(e)
+      if (/already answered/i.test(msg)) { setSendErr(''); clearDraftInCache(v.phone) } else setSendErr(msg)
+      onSent()
+    },
   })
 
   // Handing a thread over mutes the agent on it. Without a way back the mute
