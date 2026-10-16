@@ -15,7 +15,7 @@ import { buttonReplyText, handleRenewalButtonReply } from './renewalReply.js';
 import { parseFormMessage, ingestMetaLead } from './metaLead.js';
 import { handleMovingStorageFlow } from './movingStorageFlow.js';
 import { handleExitSurveyReply, exitSurveySummary } from './exitSurvey.js';
-import { starterOfChat } from './chatStarter.js';
+import { starterOfChat, keptNote } from './chatStarter.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
@@ -304,7 +304,7 @@ export function extractMessagesFromPayload(payload) {
    Falling back to the first user on the system put leads on admins who were
    never in the rotation. */
 
-export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status: statusIn = 'new', timelineText, fullName, ownerId: ownerOverride, ownerNote = '', profileName = '' }) {
+export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status: statusIn = 'new', timelineText, fullName, ownerId: ownerOverride, ownerNote = '', notify = true, profileName = '' }) {
     /* Who this belongs to.
      *
      * An explicit owner wins — somebody saving a chat as a lead has already
@@ -381,7 +381,7 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
        somebody happens to look, which for a WhatsApp enquiry is far too late.
        Deliberately not awaited into the caller's failure path — a webhook must
        not fail because a mail server is slow. */
-    if (routingNote && ownerId) {
+    if (notify && routingNote && ownerId) {
         notifyLeadAssigned({ lead, ownerId, reason: routingNote.replace(/^Assigned by distribution rules — /, '') })
             .catch((e) => console.error('[WhatsAppLeadSync] notify failed:', e.message));
     }
@@ -470,16 +470,16 @@ async function persistMessages(messages) {
              * let the distribution rules give it to someone. (Messages we send
              * through the API were stored when sent and never reach here; a
              * signed tenant being messaged is not a sales lead.) */
-            /* Whoever started it keeps it — known from their introduction
-             * ("This is Emad from PurpleBox"). Only a chat whose starter we
-             * cannot tell goes to the distribution rules. */
+            /* Sent from somebody's CRM login earlier: it stays with them. A
+             * chat started on the Business app phone has no login behind it,
+             * so the distribution rules place it. */
             const starter = await starterOfChat(msg.phoneNormalized, { pending: [msg] }).catch(() => null);
             lead = await createLeadFromWhatsAppPhone({
                 phone: msg.phone,
                 phoneNormalized: msg.phoneNormalized,
                 status: 'new',
                 timelineText: 'Lead created from a chat our team started on WhatsApp (no reply from the customer yet)',
-                ...(starter ? { ownerId: starter._id, ownerNote: `Kept with ${starter.name}, who started this chat` } : {}),
+                ...(starter ? { ownerId: starter._id, ownerNote: keptNote(starter.name) } : {}),
             }).catch((e) => { console.error('[WhatsAppLeadSync] outbound lead:', e.message); return null; });
         } else if (lead && msg.profileName && lead.whatsappProfileName !== msg.profileName) {
             // People rename themselves. Kept current, and never allowed to

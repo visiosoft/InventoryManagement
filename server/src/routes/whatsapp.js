@@ -24,6 +24,20 @@ import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 
 const router = Router();
 
+/* The logged-in colleague who messages a chat nobody owns becomes its owner.
+   Run once the send has gone through (so a failed send claims nothing), and
+   never allowed to fail it. A chat that already has an owner keeps them. */
+const CRM_SENDS = ['/send', '/send-template', '/send-hosted-video', '/send-quick-reply', '/send-media'];
+router.use(CRM_SENDS, (req, res, next) => {
+    res.on('finish', () => {
+        if (res.statusCode >= 300 || req.method !== 'POST') return;
+        const to = String(req.body?.to || '').trim();
+        keepChatWithSender({ phone: to, phoneNormalized: to.replace(/\D/g, ''), userId: req.user?.id })
+            .catch((e) => console.error('[WhatsApp] keep chat with sender:', e.message));
+    });
+    next();
+});
+
 /** A name the sync invented, not one a person gave us. */
 const isPlaceholderLeadName = (n) => !n || /^whatsapp\s*contact/i.test(String(n).trim());
 
@@ -393,6 +407,7 @@ router.post('/messages/:id/correct', async (req, res) => {
             status: 'sent',
             occurredAt: new Date(),
             sentByAi: false,
+            sentBy: req.user?.id || null,
             replyToMessageId: original.messageId || '',
             raw: result,
         });
@@ -1106,11 +1121,6 @@ router.post('/send', async (req, res) => {
         raw: result,
     });
 
-    // First message to a number with no lead: whoever sent it started the
-    // chat and keeps it. Never allowed to fail the send.
-    await keepChatWithSender({ phone: to, phoneNormalized, userId: req.user?.id })
-        .catch((e) => console.error('[WhatsApp] keep chat with sender:', e.message));
-
     // A colleague has taken the conversation, so the assistant steps back and
     // its pending suggestion — now stale — is dropped.
     await pauseBotForHuman(phoneNormalized);
@@ -1268,11 +1278,6 @@ router.post('/send-template', async (req, res) => {
             raw: { template: { name, language, variables }, sendResult: result },
         });
 
-        // First message to a number with no lead: whoever sent it started the
-        // chat and keeps it. Never allowed to fail the send.
-        await keepChatWithSender({ phone: to, phoneNormalized, userId: req.user?.id })
-            .catch((e) => console.error('[WhatsApp] keep chat with sender:', e.message));
-
         // A person has taken this conversation on, the same as any typed send.
         await pauseBotForHuman(phoneNormalized);
         await markFirstResponse(phoneNormalized);
@@ -1290,7 +1295,7 @@ router.post('/send-template', async (req, res) => {
  * attach-and-send, which both arrive at the same "I have an uploaded
  * video's URLs, send it now" moment from different starting points.
  */
-async function sendHostedVideo({ to, phoneNormalized, videoUrl, thumbnailUrl, caption: bodyText, title }) {
+async function sendHostedVideo({ to, phoneNormalized, videoUrl, thumbnailUrl, caption: bodyText, title, sentBy = null }) {
     const watchUrl = quickReplyWatchLink({ videoUrl, posterUrl: thumbnailUrl, title });
     const caption = [bodyText, `▶️ Watch: ${watchUrl}`].filter(Boolean).join('\n\n');
     const result = await sendWhatsAppMedia({ to, link: thumbnailUrl, kind: 'image', caption });
@@ -1304,6 +1309,7 @@ async function sendHostedVideo({ to, phoneNormalized, videoUrl, thumbnailUrl, ca
         status: 'sent',
         occurredAt: new Date(),
         sentByAi: false,
+        sentBy,
         raw: {
             image: { link: thumbnailUrl, caption },
             // The actual video this bubble stands in for, kept on the
@@ -1337,7 +1343,7 @@ router.post('/send-hosted-video', async (req, res) => {
 
         const phoneNormalized = String(to).replace(/\D/g, '');
         const caption = String(req.body?.caption || '').trim();
-        await sendHostedVideo({ to, phoneNormalized, videoUrl, thumbnailUrl, caption });
+        await sendHostedVideo({ to, phoneNormalized, videoUrl, thumbnailUrl, caption, sentBy: req.user?.id || null });
 
         await pauseBotForHuman(phoneNormalized);
         await markFirstResponse(phoneNormalized);
@@ -1389,6 +1395,7 @@ router.post('/send-quick-reply', async (req, res) => {
                 status: 'sent',
                 occurredAt: new Date(),
                 sentByAi: false,
+                sentBy: req.user?.id || null,
                 raw: {
                     location: { latitude: template.locationLat, longitude: template.locationLng, name: template.locationName, address: template.locationAddress },
                     sendResult: result,
@@ -1411,7 +1418,7 @@ router.post('/send-quick-reply', async (req, res) => {
             if (!template.mediaThumbnailUrl) {
                 return res.status(400).json({ error: 'This video has no poster image yet — re-upload it under Settings → Message Templates.' });
             }
-            await sendHostedVideo({ to, phoneNormalized, videoUrl: template.mediaUrl, thumbnailUrl: template.mediaThumbnailUrl, caption: body, title: template.label });
+            await sendHostedVideo({ to, phoneNormalized, videoUrl: template.mediaUrl, thumbnailUrl: template.mediaThumbnailUrl, caption: body, title: template.label, sentBy: req.user?.id || null });
             sent.push('video');
             sent.push('text');
         }
@@ -1438,6 +1445,7 @@ router.post('/send-quick-reply', async (req, res) => {
                 status: 'sent',
                 occurredAt: new Date(),
                 sentByAi: false,
+                sentBy: req.user?.id || null,
                 // Same shape the inbound webhook produces, so the thread renders
                 // it and the media proxy can serve it back.
                 raw: { [template.mediaKind]: { link: template.mediaUrl, caption, filename: template.mediaFilename || '' }, sendResult: result },
@@ -1460,6 +1468,7 @@ router.post('/send-quick-reply', async (req, res) => {
                 status: 'sent',
                 occurredAt: new Date(),
                 sentByAi: false,
+                sentBy: req.user?.id || null,
                 raw: result,
             });
             sent.push('text');
@@ -1581,11 +1590,6 @@ router.post('/send-media', uploadOne, async (req, res) => {
             // same proxy serves it back into the thread.
             raw: { [kind]: { id: mediaId, mime_type: mimeType, filename, caption }, sendResult: result },
         });
-
-        // First message to a number with no lead: whoever sent it started the
-        // chat and keeps it. Never allowed to fail the send.
-        await keepChatWithSender({ phone: to, phoneNormalized: String(to).replace(/\D/g, ''), userId: req.user?.id })
-            .catch((e) => console.error('[WhatsApp] keep chat with sender:', e.message));
 
         await pauseBotForHuman(String(to).replace(/\D/g, ''));
 
