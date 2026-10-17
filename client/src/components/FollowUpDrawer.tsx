@@ -254,17 +254,9 @@ export default function FollowUpDrawer({ leadId, nextLeadId, position, snapshotA
             </div>
           )}
 
-          {/* ── The conversation ─────────────────────────────────────────── */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-[11px] font-semibold uppercase" style={{ letterSpacing: '.08em', color: MUTED }}>Last {Math.min(thread.length, THREAD_LENGTH) || ''} messages</div>
-              <Link to={`/whatsapp?phone=${lead.phoneNormalized}`} className="text-xs font-semibold" style={{ color: PURPLE_DEEP }}>Open full chat →</Link>
-            </div>
-            <div className="rounded-xl p-3 space-y-2" style={{ background: '#ECE5DD' }}>
-              {thread.length === 0 ? (
-                <p className="text-xs text-center py-3" style={{ color: MUTED }}>No messages on record yet.</p>
-              ) : thread.map((t, i) => <ThreadRow key={i} t={t} />)}
-            </div>
+          {/* The chat itself lives in the WhatsApp inbox; here, just the way there. */}
+          <div className="flex justify-end">
+            <Link to={`/whatsapp?phone=${lead.phoneNormalized}`} className="text-xs font-semibold" style={{ color: PURPLE_DEEP }}>Open the WhatsApp chat →</Link>
           </div>
 
           {/* ── Message ──────────────────────────────────────────────────── */}
@@ -463,28 +455,6 @@ export default function FollowUpDrawer({ leadId, nextLeadId, position, snapshotA
   )
 }
 
-function ThreadRow({ t }: { t: FollowUpTimelineEntry }) {
-  const when = new Date(t.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-  if (t.kind === 'send') {
-    return (
-      <div className="text-center">
-        <span className="inline-block text-[11px] px-2.5 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,.75)', color: t.status === 'sent' ? '#4A4357' : '#B91C1C' }}>
-          Follow-up {t.status === 'sent' ? 'sent' : 'failed'}: {t.label}{t.by ? ` · ${t.by}` : ''} · {when}
-        </span>
-      </div>
-    )
-  }
-  if (t.kind !== 'message') return null
-  const inbound = t.direction === 'inbound'
-  return (
-    <div className={`flex ${inbound ? 'justify-start' : 'justify-end'}`}>
-      <div style={{ maxWidth: '85%', background: inbound ? '#fff' : '#DCF8C6', borderRadius: inbound ? '10px 10px 10px 2px' : '10px 10px 2px 10px', padding: '7px 10px', boxShadow: '0 1px 1px rgba(0,0,0,.06)' }}>
-        <p className="text-[13px] whitespace-pre-wrap" style={{ color: INK, lineHeight: 1.45 }}>{t.text || '—'}</p>
-        <div className="text-[10px] mt-0.5 text-right" style={{ color: '#6B7B60' }}>{when}{!inbound && t.status ? ` · ${t.status}` : ''}</div>
-      </div>
-    </div>
-  )
-}
 
 function TimelineRow({ t }: { t: FollowUpTimelineEntry }) {
   const when = new Date(t.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
