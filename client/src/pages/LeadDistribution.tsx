@@ -99,14 +99,16 @@ export default function LeadDistribution() {
   })
 
   /* The whole roster at once: one save per rep, in turn. */
+  const [rosterSavedAt, setRosterSavedAt] = useState(0)
+  const [rosterErr, setRosterErr] = useState('')
   const saveRoster = useMutation({
     mutationFn: async (changes: { userId: string; color: string; weeklyShifts: Shift[] }[]) => {
       for (const c of changes) {
         await api.put(`/lead-routing/rules/${c.userId}`, { color: c.color, weeklyShifts: c.weeklyShifts })
       }
     },
-    onSuccess: () => { setErr(''); invalidate() },
-    onError: (e) => setErr(apiError(e)),
+    onSuccess: () => { setRosterErr(''); setRosterSavedAt(Date.now()); invalidate() },
+    onError: (e) => { setRosterErr(apiError(e)); invalidate() },
   })
 
   const removeRule = useMutation({
@@ -228,6 +230,10 @@ export default function LeadDistribution() {
             </div>
           )}
 
+          {data.rules.length > 0 && (
+            <CoverageCalendar rules={data.rules} saving={saveRoster.isPending} saveError={rosterErr} savedAt={rosterSavedAt} onSave={(changes) => saveRoster.mutate(changes)} />
+          )}
+
           {/* The reps */}
           <Card>
             <CardHeader
@@ -285,10 +291,6 @@ export default function LeadDistribution() {
               </CardBody>
             )}
           </Card>
-
-          {data.rules.length > 0 && (
-            <CoverageCalendar rules={data.rules} saving={saveRoster.isPending} onSave={(changes) => saveRoster.mutate(changes)} />
-          )}
 
           {/* The rest */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -565,7 +567,7 @@ function RuleRow({ rule, busy, onSave, onRemove }: {
               Weekly roster
             </span>
             <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>
-              {rule.weeklyShifts.length} day{rule.weeklyShifts.length === 1 ? '' : 's'} · edit on the calendar below
+              {rule.weeklyShifts.length} shift{rule.weeklyShifts.length === 1 ? '' : 's'} a week · edit on the calendar above
             </div>
           </div>
         ) : (<>

@@ -94,7 +94,7 @@ export function cleanWeeklyShifts(input) {
    return input
       .map((sh) => ({ day: Number(sh?.day), start: String(sh?.start || '').trim(), end: String(sh?.end || '').trim() }))
       .filter((sh) => Number.isInteger(sh.day) && sh.day >= 0 && sh.day <= 6 && parseClock(sh.start) != null && parseClock(sh.end) != null && sh.start !== sh.end)
-      .slice(0, 21);
+      .slice(0, 60);
 }
 
 /** Absent for a stretch of dates, so nobody has to remember to switch it back. */
