@@ -29,9 +29,28 @@ test('inbox line and thank-you', () => {
 test('the flow JSON offers every size and hands both answers back', () => {
     const flow = JSON.parse(readFileSync(new URL('../../../docs/whatsapp-flows/welcome-size-date.json', import.meta.url)));
     const radios = flow.screens[0].layout.children.find((c) => c.type === 'RadioButtonsGroup');
-    assert.deepEqual(radios['data-source'].map((o) => o.id).slice(0, 4), ['10', '25', '35', '40']);
+    assert.deepEqual(radios['data-source'].map((o) => o.id), ['10', '25', '35', '50', '75', '100', '150', '200', 'not_sure']);
     assert.ok(radios['data-source'].every((o) => o.title.length <= 30));
-    const done = flow.screens[1].layout.children.find((c) => c.type === 'Footer')['on-click-action'];
-    assert.deepEqual(Object.keys(done.payload), ['flow', 'size', 'start_date']);
+    const done = flow.screens.find((x) => x.id === 'START_DATE').layout.children.find((c) => c.type === 'Footer')['on-click-action'];
+    assert.deepEqual(Object.keys(done.payload), ['flow', 'size', 'start_date', 'via']);
     assert.match(dubaiToday(new Date('2026-10-16T21:00:00Z')), /^2026-10-17$/);
+});
+
+test('"Not sure" goes to the estimator screen; the size picked there reaches sales with the date', async () => {
+    const flow = JSON.parse(readFileSync(new URL('../../../docs/whatsapp-flows/welcome-size-date.json', import.meta.url)));
+    const size = flow.screens.find((s) => s.id === 'SIZE');
+    const branch = size.layout.children.find((c) => c.type === 'If');
+    assert.equal(branch.condition, "${form.size} == 'not_sure'");
+    assert.equal(branch.then[0]['on-click-action'].next.name, 'ESTIMATOR');
+    assert.equal(branch.else[0]['on-click-action'].next.name, 'START_DATE');
+    const est = flow.screens.find((s) => s.id === 'ESTIMATOR');
+    assert.ok(est.layout.children.some((c) => c.type === 'EmbeddedLink' && c['on-click-action'].url === 'https://purplebox.ae/estimator.html'));
+    assert.equal(est.layout.children.find((c) => c.type === 'Footer')['on-click-action'].payload.via, 'estimator');
+    const done = flow.screens.find((s) => s.id === 'START_DATE').layout.children.find((c) => c.type === 'Footer')['on-click-action'].payload;
+    assert.deepEqual(Object.keys(done), ['flow', 'size', 'start_date', 'via']);
+
+    const r = reply({ flow: 'welcome', size: '75', start_date: '2026-11-01', via: 'estimator' });
+    assert.equal(welcomeSummary(r), 'Welcome form · 75 sq ft (via size estimator) · from 1 Nov 2026');
+    assert.match(thankYouText({ size: -1, startDate: null, viaEstimator: true }), /help you choose/);
+    assert.doesNotMatch(thankYouText({ size: -1, startDate: null, viaEstimator: true }), /estimator\.html/);
 });

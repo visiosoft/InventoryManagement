@@ -53,7 +53,9 @@ export function readWelcome(raw) {
     if (/^\d{4}-\d{2}-\d{2}$/.test(String(v || ''))) startDate = new Date(`${v}T00:00:00+04:00`);
     else if (/^\d{10,13}$/.test(String(v || ''))) startDate = new Date(Number(String(v).padEnd(13, '0')));
     if (startDate && Number.isNaN(startDate.getTime())) startDate = null;
-    return { size, startDate };
+    // Chose "Not sure" first and picked the size on the estimator screen.
+    const viaEstimator = String(d.via || '') === 'estimator';
+    return { size, startDate, viaEstimator };
 }
 
 const dayLabel = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Dubai' });
@@ -61,17 +63,21 @@ const dayLabel = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: '
 /** One line for the inbox and the lead timeline. */
 export function welcomeSummary(raw) {
     if (!isWelcomeReply(raw)) return '';
-    const { size, startDate } = readWelcome(raw);
-    const sizeText = size === -1 ? 'size: not sure' : size ? `${size} sq ft` : 'size not given';
+    const { size, startDate, viaEstimator } = readWelcome(raw);
+    const sizeText = (size === -1 ? 'size: not sure' : size ? `${size} sq ft` : 'size not given')
+        + (viaEstimator ? ' (via size estimator)' : '');
     return `Welcome form · ${sizeText} · from ${startDate ? dayLabel(startDate) : 'date not given'}`;
 }
 
 export const ESTIMATOR_URL = 'https://purplebox.ae/estimator.html';
 
-export function thankYouText({ size, startDate }) {
+export function thankYouText({ size, startDate, viaEstimator = false }) {
     const when = startDate ? ` from ${dayLabel(startDate)}` : '';
-    // Not sure of the size: point them at the estimator, which works it out
-    // from what they are storing.
+    // Tried the estimator in the form and still not sure: a person helps.
+    if (size === -1 && viaEstimator) {
+        return `Thank you! We have noted that you need storage${when}. One of our team will reply here shortly to help you choose the right size.`;
+    }
+    // Not sure, without the estimator (an older form): point them at it.
     if (size === -1) {
         return `Thank you! We have noted that you need storage${when}. Not sure of the size? Our estimator works it out from what you are storing: ${ESTIMATOR_URL}\n\nTell us the size it suggests, or one of our team will reply here shortly to help.`;
     }

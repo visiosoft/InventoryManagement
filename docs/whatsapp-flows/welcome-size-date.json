@@ -5,108 +5,100 @@
       "id": "SIZE",
       "title": "Storage size",
       "data": {
-        "min_date": {
-          "type": "string",
-          "__example__": "2026-10-17"
-        }
+        "min_date": { "type": "string", "__example__": "2026-10-17" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Welcome to PurpleBox Storage"
-          },
-          {
-            "type": "TextBody",
-            "text": "What size of storage unit are you looking for?"
-          },
+          { "type": "TextHeading", "text": "Welcome to PurpleBox Storage" },
+          { "type": "TextBody", "text": "What size of storage unit are you looking for?" },
           {
             "type": "RadioButtonsGroup",
             "name": "size",
             "label": "Unit size",
             "required": true,
             "data-source": [
-              {
-                "id": "10",
-                "title": "10 sq ft"
-              },
-              {
-                "id": "25",
-                "title": "25 sq ft"
-              },
-              {
-                "id": "35",
-                "title": "35 sq ft"
-              },
-              {
-                "id": "40",
-                "title": "40 sq ft"
-              },
-              {
-                "id": "50",
-                "title": "50 sq ft"
-              },
-              {
-                "id": "75",
-                "title": "75 sq ft"
-              },
-              {
-                "id": "80",
-                "title": "80 sq ft"
-              },
-              {
-                "id": "85",
-                "title": "85 sq ft"
-              },
-              {
-                "id": "100",
-                "title": "100 sq ft"
-              },
-              {
-                "id": "110",
-                "title": "110 sq ft"
-              },
-              {
-                "id": "150",
-                "title": "150 sq ft"
-              },
-              {
-                "id": "180",
-                "title": "180 sq ft"
-              },
-              {
-                "id": "200",
-                "title": "200 sq ft"
-              },
-              {
-                "id": "not_sure",
-                "title": "Not sure",
-                "description": "Help me choose the right size"
-              }
+              { "id": "10", "title": "10 sq ft" },
+              { "id": "25", "title": "25 sq ft" },
+              { "id": "35", "title": "35 sq ft" },
+              { "id": "50", "title": "50 sq ft" },
+              { "id": "75", "title": "75 sq ft" },
+              { "id": "100", "title": "100 sq ft" },
+              { "id": "150", "title": "150 sq ft" },
+              { "id": "200", "title": "200 sq ft" },
+              { "id": "not_sure", "title": "Not sure", "description": "Help me choose the right size" }
             ]
           },
           {
+            "type": "If",
+            "condition": "${form.size} == 'not_sure'",
+            "then": [
+              {
+                "type": "Footer",
+                "label": "Find my size",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "ESTIMATOR" },
+                  "payload": { "min_date": "${data.min_date}" }
+                }
+              }
+            ],
+            "else": [
+              {
+                "type": "Footer",
+                "label": "Next",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "START_DATE" },
+                  "payload": { "size": "${form.size}", "min_date": "${data.min_date}", "via": "picked" }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ESTIMATOR",
+      "title": "Find your size",
+      "data": {
+        "min_date": { "type": "string", "__example__": "2026-10-17" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          { "type": "TextHeading", "text": "Find your size" },
+          { "type": "TextBody", "text": "1. Tap the link and add what you want to store." },
+          { "type": "TextBody", "text": "2. Come back here and pick the size it recommends." },
+          {
             "type": "EmbeddedLink",
-            "text": "Not sure? Size estimator",
-            "on-click-action": {
-              "name": "open_url",
-              "url": "https://purplebox.ae/estimator.html"
-            }
+            "text": "Open size estimator",
+            "on-click-action": { "name": "open_url", "url": "https://purplebox.ae/estimator.html" }
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "size",
+            "label": "Size from the estimator",
+            "required": true,
+            "data-source": [
+              { "id": "10", "title": "10 sq ft" },
+              { "id": "25", "title": "25 sq ft" },
+              { "id": "35", "title": "35 sq ft" },
+              { "id": "50", "title": "50 sq ft" },
+              { "id": "75", "title": "75 sq ft" },
+              { "id": "100", "title": "100 sq ft" },
+              { "id": "150", "title": "150 sq ft" },
+              { "id": "200", "title": "200 sq ft" },
+              { "id": "not_sure", "title": "Still not sure", "description": "Our team will help you choose" }
+            ]
           },
           {
             "type": "Footer",
             "label": "Next",
             "on-click-action": {
               "name": "navigate",
-              "next": {
-                "type": "screen",
-                "name": "START_DATE"
-              },
-              "payload": {
-                "size": "${form.size}",
-                "min_date": "${data.min_date}"
-              }
+              "next": { "type": "screen", "name": "START_DATE" },
+              "payload": { "size": "${form.size}", "min_date": "${data.min_date}", "via": "estimator" }
             }
           }
         ]
@@ -118,22 +110,14 @@
       "terminal": true,
       "success": true,
       "data": {
-        "size": {
-          "type": "string",
-          "__example__": "50"
-        },
-        "min_date": {
-          "type": "string",
-          "__example__": "2026-10-17"
-        }
+        "size": { "type": "string", "__example__": "50" },
+        "min_date": { "type": "string", "__example__": "2026-10-17" },
+        "via": { "type": "string", "__example__": "picked" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextBody",
-            "text": "From what date would you like the storage?"
-          },
+          { "type": "TextBody", "text": "From what date would you like the storage?" },
           {
             "type": "DatePicker",
             "name": "start_date",
@@ -150,7 +134,8 @@
               "payload": {
                 "flow": "welcome",
                 "size": "${data.size}",
-                "start_date": "${form.start_date}"
+                "start_date": "${form.start_date}",
+                "via": "${data.via}"
               }
             }
           }

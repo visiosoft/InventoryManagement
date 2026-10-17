@@ -15,6 +15,7 @@ const SKIP = new Set(['flow_token', 'flow', 'error_message', 'show_error']);
 // Field names whose plain humanised form would read badly.
 const LABELS = {
     size: 'Unit size',
+    via: 'Size chosen',
     start_date: 'Start date',
     from_date: 'Start date',
     to_date: 'End date',
@@ -48,6 +49,7 @@ export function formatAnswer(key, value) {
     if (typeof value === 'boolean') return value ? 'Yes' : 'No';
     if (typeof value === 'object') return '';
     const s = String(value).trim();
+    if (key === 'via') return s === 'estimator' ? 'With the size estimator' : s === 'picked' ? 'Picked directly' : s;
     if (key === 'size' && /^\d+$/.test(s)) return `${s} sq ft`;
     if (s === 'not_sure') return 'Not sure';
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return dayLabel(s);
