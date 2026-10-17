@@ -31,13 +31,33 @@ const LINE = '#E5E7EB'
 const BRAND = '#6D28D9'
 const WA_GREEN = '#16A34A'
 
-type Tab = 'reply' | 'today' | 'later' | 'sent'
+type Tab = 'reply' | 'missed' | 'today' | 'later' | 'sent'
 
-function tabOf(it: FollowUpQueueItem): Exclude<Tab, 'sent'> {
-  if (it.reason === 'sales_response_overdue') return 'reply'
-  if (it.window === 'now' || it.window === 'today' || it.window === 'exhausted') return 'today'
-  return 'later'
+/* A list nobody can finish is a list nobody opens. Each rep gets today's best
+   DAILY_TARGET due follow-ups; the rest wait under Later, best first. Leads
+   silent for STALE_DAYS+ stop being "due" and become a clean-up decision. */
+const DAILY_TARGET = 30
+const STALE_DAYS = 60
+
+/** Where a lead sits, before the daily target is applied. */
+type Base = 'reply' | 'missed' | 'due' | 'coming'
+function baseOf(it: FollowUpQueueItem): Base {
+  if (it.reason === 'sales_response_overdue') return it.windowOpen ? 'reply' : 'missed'
+  if (it.window === 'now' || it.window === 'today' || it.window === 'exhausted') return 'due'
+  return 'coming'
 }
+/** The final place: today's list, the backlog over the target, stale, or coming up. */
+type Bucket = 'reply' | 'missed' | 'today' | 'backlog' | 'stale' | 'coming'
+const LATER_SECTIONS: { key: Bucket; title: string }[] = [
+  { key: 'backlog', title: `Due, but over today's ${DAILY_TARGET} — best first` },
+  { key: 'stale', title: `Silent ${STALE_DAYS}+ days — close or nurture` },
+  { key: 'coming', title: 'Coming up — nothing to do yet' },
+]
+/** Best first: the intent score when the chat has been read, else hot/warm/cold. */
+function rank(it: FollowUpQueueItem) {
+  return it.intent?.score ?? ({ hot: 70, warm: 50, cold: 30 } as const)[heat(it)]
+}
+const byBest = (a: FollowUpQueueItem, b: FollowUpQueueItem) => rank(b) - rank(a) || a.daysWaiting - b.daysWaiting
 
 /** Hot, warm or cold — the AI's read of the chat; unread counts as warm. */
 function heat(it: FollowUpQueueItem): 'hot' | 'warm' | 'cold' {
@@ -49,14 +69,16 @@ const HEAT = {
   warm: { label: 'Warm', bg: '#FEF3C7', fg: '#B45309' },
   cold: { label: 'Cold', bg: '#E0F2FE', fg: '#0369A1' },
 } as const
-const HEAT_ORDER = { hot: 0, warm: 1, cold: 2 }
 
 /** One plain line: what to do and why. */
 function whatToDo(it: FollowUpQueueItem) {
   if (it.reason === 'sales_response_overdue') {
-    return `They wrote ${agoText(it.lastInboundAt || it.since)} — waiting for your reply`
+    return it.windowOpen
+      ? `They wrote ${agoText(it.lastInboundAt || it.since)} — waiting for your reply`
+      : `They wrote ${agoText(it.lastInboundAt || it.since)} and nobody answered — over 24 hours, send a template`
   }
   if (it.window === 'exhausted') return 'All follow-ups sent, no reply — keep, nurture or close?'
+  if (it.daysWaiting >= STALE_DAYS) return `Silent for ${it.daysWaiting} days — close it, or move it to nurture`
   if (it.reason === 'manual_followup_due') return 'The follow-up you scheduled is due'
   const step = it.quietStage.total ? ` (follow-up ${Math.min(it.quietStage.next, it.quietStage.total)} of ${it.quietStage.total})` : ''
   return `Quiet for ${it.daysWaiting} day${it.daysWaiting === 1 ? '' : 's'}${step}`
@@ -107,33 +129,60 @@ export default function FollowUps() {
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]))
   }, [items])
 
+  // Every lead's place: due follow-ups are ranked per rep, the best
+  // DAILY_TARGET make today's list, the rest go to Later.
+  const bucketOf = useMemo(() => {
+    const m = new Map<string, Bucket>()
+    const dueByOwner = new Map<string, FollowUpQueueItem[]>()
+    for (const it of items) {
+      const b = baseOf(it)
+      if (b !== 'due') { m.set(it.leadId, b); continue }
+      if (it.daysWaiting >= STALE_DAYS) { m.set(it.leadId, 'stale'); continue }
+      const k = it.ownerId || '-'
+      if (!dueByOwner.has(k)) dueByOwner.set(k, [])
+      dueByOwner.get(k)!.push(it)
+    }
+    for (const list of dueByOwner.values()) {
+      list.sort(byBest).forEach((it, i) => m.set(it.leadId, i < DAILY_TARGET ? 'today' : 'backlog'))
+    }
+    return m
+  }, [items])
+  const inTab = (it: FollowUpQueueItem, t: Tab) => {
+    const b = bucketOf.get(it.leadId)
+    if (t === 'later') return b === 'backlog' || b === 'stale' || b === 'coming'
+    return b === t
+  }
+
   const counts = useMemo(() => ({
-    reply: items.filter((it) => tabOf(it) === 'reply').length,
-    today: items.filter((it) => tabOf(it) === 'today').length,
-    later: items.filter((it) => tabOf(it) === 'later').length,
-  }), [items])
+    reply: items.filter((it) => bucketOf.get(it.leadId) === 'reply').length,
+    missed: items.filter((it) => bucketOf.get(it.leadId) === 'missed').length,
+    today: items.filter((it) => bucketOf.get(it.leadId) === 'today').length,
+    later: items.filter((it) => ['backlog', 'stale', 'coming'].includes(bucketOf.get(it.leadId) || '')).length,
+  }), [items, bucketOf])
 
   // Start on the first tab that has something in it.
   const [picked, setPicked] = useState(false)
   useEffect(() => {
     if (picked || isLoading) return
     setPicked(true)
-    if (!counts.reply) setTab(counts.today ? 'today' : 'later')
+    setTab(counts.reply ? 'reply' : counts.missed ? 'missed' : counts.today ? 'today' : 'later')
   }, [picked, isLoading, counts])
 
   const visible = useMemo(() => {
     if (tab === 'sent') return []
     const q = search.trim().toLowerCase()
     const qDigits = q.replace(/\D/g, '')
+    const order = (it: FollowUpQueueItem) => LATER_SECTIONS.findIndex((x) => x.key === bucketOf.get(it.leadId))
     return items
-      .filter((it) => tabOf(it) === tab)
+      .filter((it) => inTab(it, tab))
       .filter((it) => !q || it.name.toLowerCase().includes(q) || (qDigits.length >= 4 && (it.phoneNormalized || '').includes(qDigits)))
-      .sort((a, b) => HEAT_ORDER[heat(a)] - HEAT_ORDER[heat(b)] || b.daysWaiting - a.daysWaiting)
-  }, [items, tab, search])
+      .sort((a, b) => (tab === 'later' ? order(a) - order(b) : 0) || byBest(a, b))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, tab, search, bucketOf])
 
   const openIndex = openId ? visible.findIndex((it) => it.leadId === openId) : -1
   const nextId = openIndex >= 0 && openIndex + 1 < visible.length ? visible[openIndex + 1].leadId : null
-  const toDo = counts.reply + counts.today
+  const toDo = counts.reply + counts.missed + counts.today
   const doneToday = data?.doneToday ?? 0
 
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
@@ -141,10 +190,11 @@ export default function FollowUps() {
   const toggleAll = () => setSelected((s) => { const n = new Set(s); visible.forEach((it) => (allOn ? n.delete(it.leadId) : n.add(it.leadId))); return n })
   const leaveSelect = () => { setSelecting(false); setSelected(new Set()) }
 
-  const TABS: { key: Tab; label: string; count?: number; hint: string }[] = [
-    { key: 'reply', label: 'Reply now', count: counts.reply, hint: 'Customer is waiting for us' },
-    { key: 'today', label: 'Due today', count: counts.today, hint: 'Send their follow-up' },
-    { key: 'later', label: 'Coming up', count: counts.later, hint: 'Nothing to do yet' },
+  const TABS: { key: Tab; label: string; count?: number; hint: string; alert?: boolean }[] = [
+    { key: 'reply', label: 'Reply now', count: counts.reply, hint: 'They wrote in the last 24 hours — reply in the chat', alert: true },
+    { key: 'missed', label: 'Missed', count: counts.missed, hint: 'They wrote over 24 hours ago and nobody answered — WhatsApp only allows a template now', alert: true },
+    { key: 'today', label: 'Today', count: counts.today, hint: `Today's follow-ups — up to ${DAILY_TARGET} per rep, most promising first` },
+    { key: 'later', label: 'Later', count: counts.later, hint: 'Over today\'s target, gone silent, or not due yet' },
     { key: 'sent', label: 'Sent', hint: 'Follow-ups sent, last 30 days' },
   ]
 
@@ -182,9 +232,10 @@ export default function FollowUps() {
         <div className="mt-3 rounded-xl border p-4 text-[13.5px] leading-relaxed" style={{ borderColor: '#DDD6FE', background: '#F5F3FF' }}>
           <div className="font-bold mb-1.5">How follow-ups work</div>
           <ol className="list-decimal pl-5 space-y-1">
-            <li><b>Reply now</b> — the customer sent the last message and is waiting for us. Reply in the chat; the lead leaves this list.</li>
-            <li><b>Due today</b> — we sent the last message and they went quiet, so a follow-up is due. Quiet leads get up to 3 follow-ups: by default 3 days after our last message, then 7 days after that, then 14 days after that. A follow-up date you set on a lead also lands here on that day.</li>
-            <li><b>Coming up</b> — the next follow-up is on a later day. Nothing to do yet.</li>
+            <li><b>Reply now</b> — they wrote in the last 24 hours and are waiting for us. Reply in the chat.</li>
+            <li><b>Missed</b> — they wrote more than 24 hours ago and nobody answered. WhatsApp now only allows an approved template, so send one. Keep this tab empty.</li>
+            <li><b>Today</b> — follow-ups due today, up to {DAILY_TARGET} per rep, most promising first. Quiet leads get up to 3 follow-ups: by default 3 days after our last message, then 7 days after that, then 14. A follow-up date you set on a lead also lands here on that day.</li>
+            <li><b>Later</b> — follow-ups over today&rsquo;s {DAILY_TARGET} (best first), leads silent {STALE_DAYS}+ days that need a decision (close or nurture), and follow-ups not due yet.</li>
             <li>After the last follow-up with no reply, the lead asks you to <b>decide</b>: keep chasing, nurture, or close it.</li>
           </ol>
           <p className="mt-2" style={{ color: SUB }}>
@@ -206,7 +257,7 @@ export default function FollowUps() {
                 {t.label}
                 {t.count !== undefined && t.count > 0 && (
                   <span className="inline-flex items-center justify-center min-w-[22px] h-[20px] px-1.5 rounded-md text-[11.5px] font-bold"
-                    style={{ background: t.key === 'reply' ? '#FEE2E2' : '#EDE9FE', color: t.key === 'reply' ? '#B91C1C' : BRAND }}>{t.count}</span>
+                    style={{ background: t.alert ? '#FEE2E2' : '#EDE9FE', color: t.alert ? '#B91C1C' : BRAND }}>{t.count}</span>
                 )}
               </button>
             )
@@ -266,15 +317,24 @@ export default function FollowUps() {
                 </button>
               </div>
             )}
-            {visible.map((it) => {
+            {visible.map((it, idx) => {
               const h = HEAT[heat(it)]
               const on = selected.has(it.leadId)
               const badge = customerBadge(it.customer)
-              const t = tabOf(it)
+              const b = bucketOf.get(it.leadId)
+              // In Later, a small heading where each section starts.
+              const section = tab === 'later' && (idx === 0 || bucketOf.get(visible[idx - 1].leadId) !== b)
+                ? LATER_SECTIONS.find((x) => x.key === b)?.title : null
               return (
-                <div key={it.leadId}
+                <div key={it.leadId}>
+                {section && (
+                  <div className={`px-4 py-2 text-[11.5px] font-bold uppercase ${idx === 0 ? '' : 'border-t'}`} style={{ color: SUB, background: '#F9FAFB', borderColor: LINE, letterSpacing: '.05em' }}>
+                    {section} · {visible.filter((x) => bucketOf.get(x.leadId) === b).length}
+                  </div>
+                )}
+                <div
                   onClick={() => (selecting ? toggle(it.leadId) : setOpenId(it.leadId))}
-                  className="flex items-center gap-3 px-4 py-3 border-t first:border-t-0 hover:bg-gray-50 cursor-pointer"
+                  className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer ${idx === 0 && !section ? '' : 'border-t'}`}
                   style={{ borderColor: LINE, background: on ? '#F5F3FF' : undefined }}>
                   {selecting && (
                     <span style={{ color: on ? BRAND : '#D1D5DB' }}>{on ? <CheckSquare size={17} /> : <Square size={17} />}</span>
@@ -292,21 +352,22 @@ export default function FollowUps() {
                   </div>
                   {!selecting && (
                     <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                      {t === 'reply' && it.windowOpen ? (
+                      {b === 'reply' ? (
                         <Link to={`/whatsapp?phone=${it.phoneNormalized}`} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold text-white" style={{ background: WA_GREEN }}>
                           <MessageCircle size={14} /> Reply
                         </Link>
-                      ) : t === 'later' ? (
+                      ) : b === 'coming' ? (
                         <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium" style={{ color: SUB }}>
                           <Clock size={13} /> {it.nextContactAt ? fmtDay(it.nextContactAt) : 'Later'}
                         </span>
                       ) : (
                         <button type="button" onClick={() => setOpenId(it.leadId)} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold text-white cursor-pointer" style={{ background: WA_GREEN }}>
-                          <MessageCircle size={14} /> {it.window === 'exhausted' ? 'Decide' : 'Follow up'}
+                          <MessageCircle size={14} /> {it.window === 'exhausted' || b === 'stale' ? 'Decide' : 'Follow up'}
                         </button>
                       )}
                     </div>
                   )}
+                </div>
                 </div>
               )
             })}
