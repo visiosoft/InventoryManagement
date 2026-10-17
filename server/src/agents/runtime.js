@@ -18,6 +18,7 @@ import { listWhatsAppTemplates } from '../services/whatsapp.js';
 import { agentTools, toOpenAiTools } from './tools.js';
 import { transition, describeStage, DEFAULT_CADENCE, BUCKETS } from './buckets.js';
 import { record, snapshotOf } from './log.js';
+import { AgentAction } from './models.js';
 import { windowOpen, customerWritesArabic, templatesForLanguage } from './guards.js';
 
 const HISTORY_DAYS = 90;
@@ -344,6 +345,16 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
             detail, bucketBefore: before.bucket, bucketAfter: after.bucket, revertible: false, at: now,
         });
     } else {
+        /* One suggestion per conversation: a newer draft replaces the ones
+           still waiting, rather than stacking up four replies to the same
+           chat for somebody to wade through. Retired as 'skipped', the same
+           way answering the chat retires them. */
+        if (reply && leadFile?._id) {
+            await AgentAction.updateMany(
+                { leadFile: leadFile._id, kind: 'reply_drafted', resolution: null },
+                { $set: { resolution: 'skipped', resolvedAt: now, resolvedBy: null } },
+            ).catch((e) => console.error('[agents] retiring old drafts:', e.message));
+        }
         await record({
             agent, lead, leadFile, kind: 'reply_drafted',
             summary: reply ? `(shadow) ${isFollowup ? 'Follow-up due: would send' : 'Would reply'}: "${reply.slice(0, 120)}${reply.length > 120 ? '…' : ''}"` : `(shadow) No reply drafted: ${reason}`,

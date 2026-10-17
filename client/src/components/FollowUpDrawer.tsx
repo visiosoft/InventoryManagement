@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, Check, ChevronDown, ChevronUp, MessageCircle, Phone } from 'lucide-react'
 import { api, apiError, followUpQueueApi, whatsappApi, type FollowUpTimelineEntry } from '../lib/api'
 import { SlideOver, Skeleton } from './ui'
-import { AgentDraftCard } from './AgentDraftCard'
 import { LOST_REASONS } from '../lib/types'
 import {
   INK, MUTED, PURPLE, PURPLE_DEEP, PURPLE_TINT, HAIRLINE, CREAM, DISPLAY,
@@ -46,13 +45,14 @@ export default function FollowUpDrawer({ leadId, nextLeadId, position, snapshotA
   const [extraVars, setExtraVars] = useState<string[]>([])
   const [confirmResend, setConfirmResend] = useState(false)
   const [allowCustomers, setAllowCustomers] = useState(false)
-  const [showTemplate, setShowTemplate] = useState(false)
+  // Templates first, always: a follow-up is an approved template.
+  const [showTemplate, setShowTemplate] = useState(true)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [error, setError] = useState('')
   const [lostOpen, setLostOpen] = useState(false)
   const [sentTo, setSentTo] = useState('')
 
-  useEffect(() => { setError(''); setSentTo(''); setConfirmResend(false); setAllowCustomers(false); setShowTemplate(false); setPickerOpen(false); setHistoryOpen(false) }, [leadId])
+  useEffect(() => { setError(''); setSentTo(''); setConfirmResend(false); setAllowCustomers(false); setShowTemplate(true); setPickerOpen(false); setHistoryOpen(false) }, [leadId])
 
   const tenant = lead?.customer?.status === 'active' ? lead.customer : null
   const badge = customerBadge(lead?.customer)
@@ -219,7 +219,8 @@ export default function FollowUpDrawer({ leadId, nextLeadId, position, snapshotA
             </div>
           </div>
 
-          <AgentDraftCard leadId={leadId} onChanged={onChanged} />
+          {/* No AI drafts here: a follow-up is an approved WhatsApp template.
+              The assistant's suggested replies live in the WhatsApp chat. */}
 
           {item && (
             <div className="grid grid-cols-3 gap-2 text-center">
@@ -301,6 +302,12 @@ export default function FollowUpDrawer({ leadId, nextLeadId, position, snapshotA
                 </div>
               ) : (
                 <div className="p-4 space-y-3">
+                  {canReplyInChat && (
+                    <p className="text-xs rounded-lg px-3 py-2" style={{ background: '#F0FDF4', color: '#166534' }}>
+                      They wrote {agoText(item.since)} — you can also{' '}
+                      <Link to={`/whatsapp?phone=${lead.phoneNormalized}`} className="font-semibold underline">reply in the chat</Link> instead.
+                    </p>
+                  )}
                   {/* Template: one row, expandable */}
                   {templatesLoading ? <Skeleton className="h-[40px]" /> : templates.length === 0 ? (
                     <p className="text-xs rounded-lg px-3 py-2" style={{ background: '#FFF7E6', color: '#8A5A00' }}>{waData?.error || 'No approved WhatsApp templates found.'}</p>
