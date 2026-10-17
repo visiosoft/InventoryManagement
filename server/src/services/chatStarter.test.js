@@ -44,3 +44,29 @@ test('a lead someone already owns, or a closed one, is left alone', async () => 
     assert.equal(await keepChatWithSender({ phoneNormalized: '971', userId: 'u1' }), null);
     assert.equal(touched, false);
 });
+
+test('a CRM reply moves New on: Contacted if they wrote, Contact attempted if not', async () => {
+    const { advanceStageOnReply } = await import('./chatStarter.js');
+    const make = (status) => {
+        const doc = new Lead({ fullName: 'X', phone: '971500000001', phoneNormalized: '971500000001', unitsNeeded: 1, status });
+        doc.isNew = false;
+        let saved = false;
+        doc.save = async function () { saved = true; return this; };
+        return { doc, saved: () => saved };
+    };
+    let lead = make('new');
+    Lead.findOne = async () => lead.doc;
+    WhatsAppMessage.exists = async () => ({ _id: 'm1' });
+    assert.equal(await advanceStageOnReply('971500000001'), 'contacted');
+    assert.equal(lead.doc.status, 'contacted');
+    assert.ok(lead.saved());
+
+    lead = make('new');
+    WhatsAppMessage.exists = async () => null;
+    assert.equal(await advanceStageOnReply('971500000001'), 'contact_attempted');
+
+    lead = make('quotation_sent');
+    assert.equal(await advanceStageOnReply('971500000001'), null);
+    assert.equal(lead.doc.status, 'quotation_sent');
+    assert.equal(lead.saved(), false);
+});

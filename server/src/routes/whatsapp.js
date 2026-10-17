@@ -10,7 +10,7 @@ import { agentStatusForLeads } from '../agents/service.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
-import { keepChatWithSender } from '../services/chatStarter.js';
+import { keepChatWithSender, advanceStageOnReply } from '../services/chatStarter.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 import { deleteCustomerCascade } from './customers.js';
 import { promotePlaceholderName } from '../services/leadNames.js';
@@ -33,8 +33,13 @@ router.use(CRM_SENDS, (req, res, next) => {
     res.on('finish', () => {
         if (res.statusCode >= 300 || req.method !== 'POST') return;
         const to = String(req.body?.to || '').trim();
-        keepChatWithSender({ phone: to, phoneNormalized: to.replace(/\D/g, ''), userId: req.user?.id })
-            .catch((e) => console.error('[WhatsApp] keep chat with sender:', e.message));
+        const phoneNormalized = to.replace(/\D/g, '');
+        // Ownership first (it may create the lead), then the stage moves on:
+        // a reply is contact, so nobody has to set "Contacted" by hand.
+        keepChatWithSender({ phone: to, phoneNormalized, userId: req.user?.id })
+            .catch((e) => console.error('[WhatsApp] keep chat with sender:', e.message))
+            .then(() => advanceStageOnReply(phoneNormalized))
+            .catch((e) => console.error('[WhatsApp] advance stage on reply:', e.message));
     });
     next();
 });

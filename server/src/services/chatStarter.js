@@ -72,3 +72,27 @@ export async function keepChatWithSender({ phone, phoneNormalized, userId }) {
 }
 
 export { keptNote };
+
+/**
+ * A colleague replied on WhatsApp from the CRM, so the stage catches up by
+ * itself — the same way logging a call attempt already moves New on.
+ *
+ *   they have written to us  -> Contacted (we are in a conversation)
+ *   they never have          -> Contact attempted (we reached out, no answer yet)
+ *
+ * Only moves a lead forward from New (or from Contact attempted to Contacted
+ * once they have written); anything further along is left exactly as it is.
+ * Saved through the document so stageHistory records the move.
+ */
+export async function advanceStageOnReply(phoneNormalized) {
+    if (!phoneNormalized) return null;
+    const lead = await Lead.findOne({ phoneNormalized });
+    if (!lead || !['new', 'contact_attempted'].includes(lead.status)) return null;
+    const theyWrote = await WhatsAppMessage.exists({ phoneNormalized, direction: 'inbound' });
+    const next = theyWrote ? 'contacted' : 'contact_attempted';
+    if (lead.status === next) return null;
+    lead.status = next;
+    lead.timeline.push({ type: 'note', text: `Moved to ${next === 'contacted' ? 'Contacted' : 'Contact attempted'} — replied on WhatsApp` });
+    await lead.save();
+    return next;
+}

@@ -255,10 +255,14 @@ export default function NewQuote() {
     enabled: Boolean(contractId),
   })
 
+  // After asking for the ID on WhatsApp, look for it every 15 s so it shows
+  // up here (and unblocks the contract) without a reload.
+  const [awaitingId, setAwaitingId] = useState(false)
   const { data: customerDocsData } = useQuery({
     queryKey: ['customer-docs', customerId],
     queryFn: () => api.get(`/documents?customer=${customerId}`).then((r) => r.data),
     enabled: Boolean(customerId),
+    refetchInterval: awaitingId ? 15000 : false,
   })
   useEffect(() => {
     if (customerDocsData) setCustomerDocs(customerDocsData)
@@ -399,6 +403,30 @@ export default function NewQuote() {
     quoteApi.updateFlowStep(quoteId, step, done).catch(() => { })
   }, [quoteId, step])
 
+  /* What the lead already told us, so the rep does not type it again: the
+     date they need it from, how long (only once a rep has confirmed it — the
+     duration fields always carry a default), and the size. New quotes only;
+     a resumed quote keeps its own values. Done once, so a change the rep
+     makes afterwards is never undone. */
+  const leadPrefilledRef = useRef(false)
+  useEffect(() => {
+    if (!lead || quoteId || leadPrefilledRef.current) return
+    leadPrefilledRef.current = true
+    const today = new Date().toISOString().slice(0, 10)
+    const wanted = String(lead.storageStartAt || lead.intendedStartDate || '').slice(0, 10)
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(wanted) && wanted >= today ? wanted : dateRangeFrom
+    if (from !== dateRangeFrom) setDateRangeFrom(from)
+    const n = Number(lead.durationValue) || 0
+    if (lead.lengthOfStayConfirmedAt && n > 0) {
+      if (lead.durationUnit === 'week') setDateRangeTo(addWeeksISO(from, n))
+      else {
+        const [y, m, d] = from.split('-').map(Number)
+        setDateRangeTo(new Date(Date.UTC(y, m - 1 + n, d)).toISOString().slice(0, 10))
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead, quoteId])
+
   // Auto-match customer from lead phone (new flows only)
   const { data: leadCustomerMatch } = useQuery<{ data: Customer[] }>({
     queryKey: ['customer-by-lead-phone', lead?.phone],
@@ -455,6 +483,15 @@ export default function NewQuote() {
   })
 
   const sizeOptions = [...new Set((allUnits || []).map((u) => u.sizeSqf))].sort((a, b) => a - b)
+  // The size the lead asked for, once the units are in — only if we have that size.
+  const sizePrefilledRef = useRef(false)
+  useEffect(() => {
+    if (sizePrefilledRef.current || !lead || quoteId || !allUnits?.length) return
+    sizePrefilledRef.current = true
+    const want = Number(lead.storageSizeValue) || 0
+    if (want > 0 && !sizeFilter && allUnits.some((u) => u.sizeSqf === want)) setSizeFilter(String(want))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allUnits, lead, quoteId])
   const floorOptions = [...new Set([...(allUnits || []).map((u) => u.floor).filter(Boolean), 'F1', 'F2', 'F3', 'Shed'])].sort()
 
   const filteredUnits = (allUnits || []).filter((u) => {
@@ -701,6 +738,47 @@ export default function NewQuote() {
 
   const [sentMsg, setSentMsg] = useState('')
 
+  /* Sending on WhatsApp from here, through our own WhatsApp number — so the
+     message lands in the CRM chat and the rep never leaves this page. Only
+     when WhatsApp refuses a typed message (they have not written in 24 hours)
+     or there is no number does it fall back to a link that opens WhatsApp on
+     the rep's phone, shown as a button so the browser does not block it. */
+  const [waNote, setWaNote] = useState<{ ok: boolean; text: string; url?: string } | null>(null)
+  const waPhone = () => {
+    const d = customerPhone.replace(/\D/g, '').replace(/^00/, '')
+    return /^0\d{9}$/.test(d) ? `971${d.slice(1)}` : d   // 050… is a UAE mobile
+  }
+  const sendOnWhatsApp = async (text: string, what: string): Promise<boolean> => {
+    const phone = waPhone()
+    const url = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`
+    if (!phone) { setWaNote({ ok: false, text: `No phone number for ${customerName || 'this customer'} — send the ${what} from WhatsApp instead.`, url }); return false }
+    try {
+      await api.post('/whatsapp/send', { to: phone, body: text })
+      setWaNote({ ok: true, text: `${what.charAt(0).toUpperCase()}${what.slice(1)} sent on WhatsApp — it is in the chat.` })
+      return true
+    } catch (e) {
+      const closed = Boolean((e as { response?: { data?: { windowClosed?: boolean } } })?.response?.data?.windowClosed)
+      setWaNote({
+        ok: false,
+        text: closed
+          ? `They have not written in the last 24 hours, so WhatsApp will only take the ${what} from your phone.`
+          : `Could not send the ${what}: ${apiError(e)}`,
+        url,
+      })
+      return false
+    }
+  }
+
+  /* The ID form, sent right from the step that needs the ID — rather than a
+     trip back to the chat menu, a confirm and an alert. */
+  const requestId = useMutation({
+    mutationFn: () => api.post('/client-info/send', { phone: waPhone(), name: customerName }).then((r) => r.data),
+    onSuccess: () => { setAwaitingId(true); setWaNote({ ok: true, text: `ID & details form sent to ${customerName || 'the customer'} on WhatsApp. Their ID appears here once they submit it.` }) },
+    onError: (e) => setWaNote({ ok: false, text: `Could not send the ID form: ${apiError(e)}` }),
+  })
+
+  // Set by "Send on WhatsApp & continue": move on once the quote has gone.
+  const advanceAfterSendRef = useRef(false)
   const sendQuote = useMutation({
     mutationFn: async (channel: 'whatsapp' | 'email') => {
       // Save first (unless locked)
@@ -727,8 +805,10 @@ export default function NewQuote() {
         `View the quote here: ${url}\n\n` +
         `Thank you — PurpleBox`
       if (channel === 'whatsapp') {
-        const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
-        window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
+        sendOnWhatsApp(text, 'quotation').then((ok) => {
+          if (ok && advanceAfterSendRef.current) setStep(3)
+          advanceAfterSendRef.current = false
+        })
       } else {
         setQuoteEmailModal({
           to: customerEmail,
@@ -1505,9 +1585,8 @@ export default function NewQuote() {
                           <button
                             type="button"
                             onClick={() => {
-                              const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
                               const msg = `Hello ${customerName},\n\nYour storage quotation is ready — ${formatMoney(payLinkResult.total)} AED${payLinkResult.feePct > 0 ? ` (+ ${payLinkResult.feePct}% card fee, ${formatMoney(payLinkResult.totalCharged)} AED total)` : ''}.\n\nPay online: ${payLinkResult.payUrl}\n\nThank you — PurpleBox`
-                              window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+                              sendOnWhatsApp(msg, 'payment link')
                             }}
                             className="px-3 py-1.5 rounded-lg text-xs font-medium text-white"
                             style={{ background: '#25D366' }}
@@ -1746,7 +1825,7 @@ export default function NewQuote() {
                       </div>
                     </div>
 
-                    {/* Share bar — visible after Save Quote & Send */}
+                    {/* Share bar — visible once the quote is saved */}
                     {showShareBar && (
                       <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
                         <div className="px-4 py-3" style={{ background: CHIP_BG }}>
@@ -1844,6 +1923,16 @@ export default function NewQuote() {
                           >
                             {uploadingDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => requestId.mutate()}
+                            disabled={requestId.isPending || !customerPhone}
+                            title={customerPhone ? 'Send the WhatsApp form that collects their ID and details' : 'No phone number for this customer'}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-white disabled:opacity-60"
+                            style={{ background: '#25D366' }}
+                          >
+                            {requestId.isPending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Request on WhatsApp
+                          </button>
                         </div>
                       </div>
                       {/* What the customer sent through the WhatsApp ID form, and
@@ -1894,6 +1983,15 @@ export default function NewQuote() {
                           <Upload size={20} style={{ color: MUTED }} />
                           <p className="text-xs mt-1.5 font-medium" style={{ color: MUTED }}>Click to upload Emirates ID / Passport</p>
                           <p className="text-[10px] mt-0.5" style={{ color: MUTED }}>PDF, JPG, PNG up to 15 MB</p>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); requestId.mutate() }}
+                            disabled={requestId.isPending || !customerPhone}
+                            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60"
+                            style={{ background: '#25D366' }}
+                          >
+                            {requestId.isPending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Or ask them for it on WhatsApp
+                          </button>
                         </div>
                       )}
                     </div>
@@ -2016,9 +2114,8 @@ export default function NewQuote() {
                           <button
                             type="button"
                             onClick={() => {
-                              const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
                               const msg = `Hello ${customerName},\n\nPlease review and sign your storage contract ${contract.contractNo}:\n${signingLink}\n\nThank you — PurpleBox`
-                              window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+                              sendOnWhatsApp(msg, 'signing link')
                             }}
                             className="px-3 py-1.5 rounded-lg text-xs font-medium text-white"
                             style={{ background: '#25D366' }}
@@ -2273,6 +2370,21 @@ export default function NewQuote() {
               </div>
             )}
 
+            {waNote && (
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-sm px-3 py-2 rounded-lg"
+                style={{ color: waNote.ok ? GREEN : '#92400E', background: waNote.ok ? '#D1FAE5' : '#FEF3C7' }}>
+                {waNote.ok ? <CheckCircle2 size={15} /> : null}
+                <span className="flex-1">{waNote.text}</span>
+                {waNote.url && (
+                  <a href={waNote.url} target="_blank" rel="noreferrer" onClick={() => setWaNote(null)}
+                    className="px-3 py-1 rounded-lg text-xs font-semibold text-white" style={{ background: '#25D366' }}>
+                    Open WhatsApp
+                  </a>
+                )}
+                <button type="button" onClick={() => setWaNote(null)} className="text-xs" style={{ color: MUTED }}>Dismiss</button>
+              </div>
+            )}
+
             {err && (
               <p className="mt-4 text-sm px-3 py-2 rounded-lg" style={{ color: '#b91c1c', background: '#fef2f2' }}>
                 {err}
@@ -2328,20 +2440,32 @@ export default function NewQuote() {
                       <button
                         type="button"
                         onClick={() => { if (validateQuote()) saveQuote.mutate() }}
-                        disabled={saveQuote.isPending}
-                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold border hover:opacity-90 disabled:opacity-60"
-                        style={{ borderColor: PURPLE, color: PURPLE }}
+                        disabled={saveQuote.isPending || sendQuote.isPending}
+                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold border hover:opacity-90 disabled:opacity-60"
+                        style={{ borderColor: 'rgba(20,8,31,0.15)', color: MUTED }}
+                        title="Save without sending — share by email or PDF from the bar above"
                       >
-                        {saveQuote.isPending ? 'Saving…' : 'Save Quote & Send'}
+                        {saveQuote.isPending ? 'Saving…' : 'Save only'}
                       </button>
+                      {quoteId && (
+                        <button
+                          type="button"
+                          onClick={() => setStep(3)}
+                          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold border hover:opacity-90"
+                          style={{ borderColor: PURPLE, color: PURPLE }}
+                        >
+                          Continue <ChevronRight size={16} />
+                        </button>
+                      )}
                       <button
                         type="button"
-                        disabled={!quoteId}
-                        onClick={() => setStep(3)}
-                        className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
-                        style={{ background: PURPLE, cursor: quoteId ? 'pointer' : 'not-allowed' }}
+                        onClick={() => { if (validateQuote()) { advanceAfterSendRef.current = true; sendQuote.mutate('whatsapp') } }}
+                        disabled={sendQuote.isPending || saveQuote.isPending}
+                        className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                        style={{ background: PURPLE }}
                       >
-                        Continue <ChevronRight size={16} />
+                        {sendQuote.isPending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                        Send on WhatsApp &amp; continue
                       </button>
                     </div>
                   )

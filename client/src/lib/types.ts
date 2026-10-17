@@ -109,6 +109,9 @@ export interface Lead {
   storageSizeUnit: 'sqft'
   durationValue: number
   durationUnit: DurationUnit
+  /** Set when a rep actually confirmed the length of stay; the duration fields always carry a default. */
+  lengthOfStayConfirmedAt?: string | null
+  intendedStartDate?: string | null
   owner: { _id: string; name: string; email: string }
   /** True when the distribution rules chose the owner, not a person. */
   autoAssigned?: boolean
