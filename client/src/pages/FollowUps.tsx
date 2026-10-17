@@ -1,171 +1,82 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { IntentReportCard } from '../components/IntentReportCard'
 import { LostReasonsCard } from '../components/LostReasonsCard'
 import { SourceReportCard } from '../components/SourceReportCard'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import {
-  AlertTriangle, CalendarDays, CheckSquare, Eye, Filter, MessageCircle,
-  Search, Square, X, Clock,
-} from 'lucide-react'
-import { followUpQueueApi, leadFollowUpApi, type FollowUpPriority, type FollowUpQueueItem, type FollowUpReason, type FollowUpWindow } from '../lib/api'
+import { CheckSquare, ChevronDown, Clock, HelpCircle, MessageCircle, Search, Square, X } from 'lucide-react'
+import { followUpQueueApi, leadFollowUpApi, type FollowUpQueueItem } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Skeleton } from '../components/ui'
 import FollowUpDrawer from '../components/FollowUpDrawer'
 import FollowUpBulkModal from '../components/FollowUpBulkModal'
 import PipelineFunnel from '../components/PipelineFunnel'
-import { whyFor, agoText, initialsOf, customerBadge } from '../lib/followUpUi'
+import { agoText, customerBadge, whyFor } from '../lib/followUpUi'
 
-/* ── The design reference's palette, copied ──────────────────────────────── */
+/**
+ * Follow-Ups — who to contact next, and nothing else.
+ *
+ * Three tabs, by what the rep has to do:
+ *   Reply now  — the customer wrote and is waiting for us
+ *   Due today  — a follow-up is due (they went quiet, or a date we set came up)
+ *   Coming up  — due on a later day; nothing to do yet
+ * Hot leads (the AI's read of the chat) sort first inside each tab. Opening a
+ * row shows the chat and the follow-up to send.
+ */
+
 const FONT = "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif"
 const TEXT = '#111827'
 const SUB = '#6B7280'
 const LINE = '#E5E7EB'
 const BRAND = '#6D28D9'
-const BRAND_DARK = '#5B21B6'
 const WA_GREEN = '#16A34A'
-const WA_ICON = '#22C55E'
 
-/* Urgency (how soon to act — waiting-on-us, days elapsed, cadence stage)
- * and Intent (how promising the AI reads them — hot/warm/cold) are two
- * genuinely independent scores, and a lead can land High on one and
- * Medium on the other. Both used to say "High/Medium/Low", which read as
- * a contradiction the moment the Intent tab and this pill disagreed —
- * these labels exist so they're never the same word. */
-const PRIORITY: Record<FollowUpPriority, { label: string; bg: string; fg: string; dot: string }> = {
-  high: { label: 'Urgent', bg: '#FEE2E2', fg: '#B91C1C', dot: '#EF4444' },
-  medium: { label: 'Soon', bg: '#FEF3C7', fg: '#B45309', dot: '#F59E0B' },
-  low: { label: 'Whenever', bg: '#DCFCE7', fg: '#15803D', dot: '#22C55E' },
+type Tab = 'reply' | 'today' | 'later' | 'sent'
+
+function tabOf(it: FollowUpQueueItem): Exclude<Tab, 'sent'> {
+  if (it.reason === 'sales_response_overdue') return 'reply'
+  if (it.window === 'now' || it.window === 'today' || it.window === 'exhausted') return 'today'
+  return 'later'
 }
 
-const WINDOW_LABEL: Record<FollowUpWindow, { label: string; bg: string; fg: string }> = {
-  now: { label: 'Now', bg: '#FEE2E2', fg: '#B91C1C' },
-  today: { label: 'Today', bg: '#FFEDD5', fg: '#C2410C' },
-  tomorrow: { label: 'Tomorrow', bg: '#DBEAFE', fg: '#1D4ED8' },
-  in_3_days: { label: 'In 3 days', bg: '#EDE9FE', fg: '#6D28D9' },
-  in_7_days: { label: 'In 7 days', bg: '#DCFCE7', fg: '#15803D' },
-  later: { label: 'Later', bg: '#CCFBF1', fg: '#0F766E' },
-  exhausted: { label: 'Decide', bg: '#F3F4F6', fg: '#374151' },
-}
-
-/** Within a day: which intent bucket. High is a rep's first stop —
- *  a hot lead due today is worth more than a cold one due today, so it
- *  gets its own tab rather than being sorted somewhere inside "All". */
-type Tab = 'high' | 'medium' | 'low' | 'completed'
-const TABS: { key: Tab; label: string; tone?: string }[] = [
-  { key: 'high', label: 'High Intent', tone: '#B91C1C' },
-  { key: 'medium', label: 'Medium Intent', tone: '#B45309' },
-  { key: 'low', label: 'Low Intent' },
-  { key: 'completed', label: 'Completed' },
-]
-/** No AI read yet defaults to the middle bucket — an unscored lead is not
- *  the same claim as a cold one, and it should not hide in "Low" where
- *  nobody is looking for it. */
-function intentOf(it: FollowUpQueueItem): 'hot' | 'warm' | 'cold' {
-  // The one intent score, when the conversation has been read: it sees the
-  // stage, the move-in date and how long they have been silent. Otherwise the
-  // AI's bare temperature, otherwise the middle.
+/** Hot, warm or cold — the AI's read of the chat; unread counts as warm. */
+function heat(it: FollowUpQueueItem): 'hot' | 'warm' | 'cold' {
   if (it.intent) return it.intent.band === 'high' ? 'hot' : it.intent.band === 'low' ? 'cold' : 'warm'
   return it.temperature ?? 'warm'
 }
+const HEAT = {
+  hot: { label: 'Hot', bg: '#FEE2E2', fg: '#B91C1C' },
+  warm: { label: 'Warm', bg: '#FEF3C7', fg: '#B45309' },
+  cold: { label: 'Cold', bg: '#E0F2FE', fg: '#0369A1' },
+} as const
+const HEAT_ORDER = { hot: 0, warm: 1, cold: 2 }
 
-type LogRow = Awaited<ReturnType<typeof leadFollowUpApi.log>>['rows'][number]
-
-function inTab(it: FollowUpQueueItem, tab: Tab) {
-  if (tab === 'completed') return true
-  const t = intentOf(it)
-  if (tab === 'high') return t === 'hot'
-  if (tab === 'medium') return t === 'warm'
-  return t === 'cold'
-}
-/** Within High Intent specifically: a customer waiting on our reply, or a
- *  lead due right now, outranks one merely due today or later — "follow up
- *  right away" means the ones actually owed a reply surface first. */
-function urgencyRank(it: FollowUpQueueItem): number {
-  if (it.reason === 'sales_response_overdue') return 0
-  if (it.window === 'now') return 1
-  if (it.window === 'today') return 2
-  if (it.window === 'exhausted') return 3
-  return 4
-}
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-}
-/** The bold line of the AI Recommendation cell: the AI's next action when
- *  it has one, else the honest fallback for where the lead sits. */
-function recommendationFor(it: FollowUpQueueItem) {
-  if (it.reason === 'sales_response_overdue') return 'Reply now'
-  if (it.reasonDetail === 'no_next_step') return 'Set a next step'
-  if (it.window === 'exhausted') return 'Decide: keep, nurture or close'
-  if (it.nextAction) return it.nextAction
-  if (it.reason === 'manual_followup_due') return 'Follow up as scheduled'
-  if (it.quietStage.next >= it.quietStage.total) return 'Final follow-up'
-  return it.temperature === 'hot' ? 'Follow up now' : 'Check interest'
-}
-/** The line under it: the AI's read of the conversation on every tab -
- *  Needs reply included, where it says what the customer is waiting for. */
-function recommendationDetail(it: FollowUpQueueItem) {
+/** One plain line: what to do and why. */
+function whatToDo(it: FollowUpQueueItem) {
   if (it.reason === 'sales_response_overdue') {
-    return (it.nextAction || it.aiSummary || 'Customer is waiting on us').slice(0, 70)
+    return `They wrote ${agoText(it.lastInboundAt || it.since)} — waiting for your reply`
   }
-  return (it.aiSummary || it.aiReason || whyFor(it)).slice(0, 70)
-}
-/** "Follow-up 2 of 3 · last sent 4d ago" — where they are in the cadence. */
-function cadenceText(it: FollowUpQueueItem) {
-  if (it.reason === 'sales_response_overdue') return 'Awaiting our reply'
-  const sent = it.lastSentAt ? ` · last sent ${agoText(it.lastSentAt)}` : ''
-  if (it.reasonDetail === 'no_next_step') return 'No next step booked'
-  if (it.reason === 'manual_followup_due') return `${it.reasonDetail === 'exhausted' ? 'Chase exhausted' : 'Scheduled'}${sent}`
-  return `${it.quietStage.label}${sent}`
+  if (it.window === 'exhausted') return 'All follow-ups sent, no reply — keep, nurture or close?'
+  if (it.reason === 'manual_followup_due') return 'The follow-up you scheduled is due'
+  const step = it.quietStage.total ? ` (follow-up ${Math.min(it.quietStage.next, it.quietStage.total)} of ${it.quietStage.total})` : ''
+  return `Quiet for ${it.daysWaiting} day${it.daysWaiting === 1 ? '' : 's'}${step}`
 }
 
-/** Where a lead stands on having a next step — the same three-colour idea
- *  Pipedrive uses on its deal cards: red it is owed or overdue, amber nothing
- *  is planned, green a date is booked. */
-function nextStepDot(it: FollowUpQueueItem): { color: string; label: string } {
-  if (it.reason === 'sales_response_overdue') return { color: '#DC2626', label: 'Waiting on you' }
-  if (it.reasonDetail === 'no_next_step') return { color: '#D97706', label: 'No next step booked' }
-  if (it.reasonDetail === 'overdue_date') return { color: '#DC2626', label: 'Follow-up due or overdue' }
-  if (it.reasonDetail === 'exhausted') return { color: '#D97706', label: 'Chase finished — decide' }
-  if (it.reasonDetail === 'scheduled') return { color: '#16A34A', label: 'Follow-up booked' }
-  return { color: '#D97706', label: 'No date set — going quiet' }
-}
+const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 
-/**
- * The follow-up queue: who to contact, grouped by how promising they are.
- *
- * "Needs reply" (a customer we owe an answer) still outranks everything
- * within its bucket via urgencyRank — see below — even without a separate
- * card for it; a send before a lead's actual due day is still refused by
- * the server regardless of what's on screen.
- */
 export default function FollowUps() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
-  // High Intent first: it is the bucket that actually needs a follow-up
-  // right away, not a neutral starting point like the old "All" tab was.
-  const [tab, setTab] = useState<Tab>('high')
+  const [tab, setTab] = useState<Tab>('reply')
   const [search, setSearch] = useState('')
-  const [priority, setPriority] = useState<'' | FollowUpPriority>('')
-  const [reasonF, setReasonF] = useState<'' | FollowUpReason>('')
-  const [customerF, setCustomerF] = useState<'' | 'tenant' | 'not_customer'>('')
   const [owner, setOwner] = useState('')
-  const [filterOpen, setFilterOpen] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkOpen, setBulkOpen] = useState(false)
-  const filterRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    const away = (e: MouseEvent) => { if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false) }
-    document.addEventListener('mousedown', away)
-    return () => document.removeEventListener('mousedown', away)
-  }, [])
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [reportsOpen, setReportsOpen] = useState(false)
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['follow-up-queue', isAdmin ? owner : 'mine'],
@@ -175,8 +86,7 @@ export default function FollowUps() {
   })
   const items = data?.items ?? []
 
-  // AI reads still being written on the server: come back for them once,
-  // rather than polling — a queue of 300 stale threads takes a few minutes.
+  // AI reads still being written on the server: come back for them once.
   useEffect(() => {
     if (!data?.aiPending) return
     const t = window.setTimeout(() => refetch(), 20_000)
@@ -187,9 +97,9 @@ export default function FollowUps() {
     queryKey: ['follow-up-completed', isAdmin ? owner : 'mine'],
     queryFn: () => leadFollowUpApi.log(isAdmin && owner ? { owner } : undefined),
     staleTime: 60_000,
-    enabled: tab === 'completed',
+    enabled: tab === 'sent',
   })
-  const completed = (log?.rows ?? []).filter((r) => r.status === 'sent')
+  const sent = (log?.rows ?? []).filter((r) => r.status === 'sent')
 
   const owners = useMemo(() => {
     const m = new Map<string, string>()
@@ -197,345 +107,240 @@ export default function FollowUps() {
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]))
   }, [items])
 
-  const tabCounts = useMemo<Record<Tab, number>>(() => ({
-    high: items.filter((it) => intentOf(it) === 'hot').length,
-    medium: items.filter((it) => intentOf(it) === 'warm').length,
-    low: items.filter((it) => intentOf(it) === 'cold').length,
-    completed: completed.length,
-  }), [items, completed])
+  const counts = useMemo(() => ({
+    reply: items.filter((it) => tabOf(it) === 'reply').length,
+    today: items.filter((it) => tabOf(it) === 'today').length,
+    later: items.filter((it) => tabOf(it) === 'later').length,
+  }), [items])
+
+  // Start on the first tab that has something in it.
+  const [picked, setPicked] = useState(false)
+  useEffect(() => {
+    if (picked || isLoading) return
+    setPicked(true)
+    if (!counts.reply) setTab(counts.today ? 'today' : 'later')
+  }, [picked, isLoading, counts])
 
   const visible = useMemo(() => {
+    if (tab === 'sent') return []
     const q = search.trim().toLowerCase()
     const qDigits = q.replace(/\D/g, '')
-    const filtered = items.filter((it) => {
-      if (!inTab(it, tab)) return false
-      if (priority && it.priority !== priority) return false
-      if (reasonF && it.reason !== reasonF) return false
-      if (customerF === 'tenant' && it.customer?.status !== 'active') return false
-      if (customerF === 'not_customer' && it.customer) return false
-      if (q) {
-        const nameHit = it.name.toLowerCase().includes(q)
-        const phoneHit = qDigits.length >= 4 && (it.phoneNormalized || '').includes(qDigits)
-        if (!nameHit && !phoneHit) return false
-      }
-      return true
-    })
-    // High Intent only: surface who's actually owed a reply, or due right
-    // now, ahead of the rest of the bucket — "follow up right away" is a
-    // sort order, not just a filter.
-    return tab === 'high' ? [...filtered].sort((a, b) => urgencyRank(a) - urgencyRank(b)) : filtered
-  }, [items, tab, priority, reasonF, customerF, search])
+    return items
+      .filter((it) => tabOf(it) === tab)
+      .filter((it) => !q || it.name.toLowerCase().includes(q) || (qDigits.length >= 4 && (it.phoneNormalized || '').includes(qDigits)))
+      .sort((a, b) => HEAT_ORDER[heat(a)] - HEAT_ORDER[heat(b)] || b.daysWaiting - a.daysWaiting)
+  }, [items, tab, search])
 
   const openIndex = openId ? visible.findIndex((it) => it.leadId === openId) : -1
   const nextId = openIndex >= 0 && openIndex + 1 < visible.length ? visible[openIndex + 1].leadId : null
-  const activeFilters = [priority, reasonF, customerF, owner].filter(Boolean).length
-  const tenantsInView = visible.filter((it) => it.customer?.status === 'active').length
-
-  // Progress through today's work: what is already done against what is still
-  // due now, so the list visibly shrinks as it is worked.
-  const dueNow = items.filter((it) => it.window === 'now' || it.window === 'today' || it.window === 'exhausted').length
+  const toDo = counts.reply + counts.today
   const doneToday = data?.doneToday ?? 0
-  const progress = doneToday + dueNow > 0 ? Math.round((doneToday / (doneToday + dueNow)) * 100) : 0
-  const firstToWork = visible.find((it) => it.window === 'now' || it.window === 'today' || it.window === 'exhausted') ?? visible[0]
 
-  function toggle(id: string) {
-    setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
-  }
-  const allShownOn = visible.length > 0 && visible.every((it) => selected.has(it.leadId))
-  function toggleAllShown() {
-    setSelected((s) => { const n = new Set(s); visible.forEach((it) => allShownOn ? n.delete(it.leadId) : n.add(it.leadId)); return n })
-  }
-  function leaveSelectMode() { setSelecting(false); setSelected(new Set()) }
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const allOn = visible.length > 0 && visible.every((it) => selected.has(it.leadId))
+  const toggleAll = () => setSelected((s) => { const n = new Set(s); visible.forEach((it) => (allOn ? n.delete(it.leadId) : n.add(it.leadId))); return n })
+  const leaveSelect = () => { setSelecting(false); setSelected(new Set()) }
 
-  const pill = (bg: string, fg: string, text: string, dot?: string) => (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold whitespace-nowrap" style={{ background: bg, color: fg }}>
-      {dot && <span className="rounded-full" style={{ width: 6, height: 6, background: dot }} />}{text}
-    </span>
-  )
-  const avatar = (name: string, size = 30) => (
-    <span className="grid place-items-center rounded-full shrink-0 text-[11px] font-bold" style={{ width: size, height: size, background: '#EDE9FE', color: BRAND_DARK }}>{initialsOf(name)}</span>
-  )
+  const TABS: { key: Tab; label: string; count?: number; hint: string }[] = [
+    { key: 'reply', label: 'Reply now', count: counts.reply, hint: 'Customer is waiting for us' },
+    { key: 'today', label: 'Due today', count: counts.today, hint: 'Send their follow-up' },
+    { key: 'later', label: 'Coming up', count: counts.later, hint: 'Nothing to do yet' },
+    { key: 'sent', label: 'Sent', hint: 'Follow-ups sent, last 30 days' },
+  ]
 
   return (
     <div className="px-1 py-3" style={{ fontFamily: FONT, color: TEXT }}>
-      {/* ── Header ───────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1.1 }}>Follow-Ups</h1>
-          <p className="text-[14px] mt-1" style={{ color: SUB }}>Reach out at the right time. Turn quiet leads into new opportunities.</p>
+          <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em' }}>Follow-Ups</h1>
+          <p className="text-[14px] mt-1" style={{ color: SUB }}>
+            {toDo === 0 ? 'All caught up for today.' : <><b style={{ color: TEXT }}>{toDo}</b> to do today</>}
+            {doneToday > 0 && <> · {doneToday} done</>}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="inline-flex items-center gap-2 h-10 px-4 rounded-lg border text-[14px] font-medium bg-white" style={{ borderColor: LINE }}>
-            <CalendarDays size={16} style={{ color: SUB }} />
-            {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-          </span>
-          {!selecting && firstToWork && (
-            <button type="button" onClick={() => setOpenId(firstToWork.leadId)}
-              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg border text-[14px] font-semibold cursor-pointer bg-white" style={{ borderColor: BRAND, color: BRAND }}>
-              Start working
-            </button>
-          )}
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setHelpOpen((v) => !v)}
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-medium cursor-pointer bg-white" style={{ borderColor: LINE, color: SUB }}>
+            <HelpCircle size={15} /> How it works
+          </button>
           {selecting ? (
-            <button type="button" onClick={leaveSelectMode}
-              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg border text-[14px] font-semibold cursor-pointer bg-white" style={{ borderColor: LINE }}>
-              <X size={15} /> Cancel
+            <button type="button" onClick={leaveSelect}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-semibold cursor-pointer bg-white" style={{ borderColor: LINE }}>
+              <X size={14} /> Cancel
             </button>
-          ) : (
-            <button type="button" onClick={() => setSelecting(true)} disabled={!items.length}
-              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg text-[14px] font-semibold cursor-pointer disabled:opacity-40 text-white" style={{ background: BRAND }}>
-              <span style={{ fontSize: 18, lineHeight: 1 }}>+</span> Send Follow-Up (Bulk)
+          ) : tab !== 'sent' && visible.length > 0 && (
+            <button type="button" onClick={() => setSelecting(true)}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-semibold cursor-pointer bg-white" style={{ borderColor: LINE, color: BRAND }}>
+              Send to several
             </button>
           )}
         </div>
       </div>
 
-      {(dueNow > 0 || doneToday > 0) && (
-        <div className="mt-4 rounded-xl border px-4 py-3 bg-white" style={{ borderColor: LINE }}>
-          <div className="flex items-center justify-between text-[13px]">
-            <span className="font-semibold">{dueNow === 0 ? 'Everything due today is done 🎉' : `${dueNow} to do now`}</span>
-            <span style={{ color: SUB }}>{doneToday} done today</span>
-          </div>
-          <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: '#EEE9F6' }}>
-            <div className="h-full rounded-full" style={{ width: `${progress}%`, background: BRAND, transition: 'width .3s' }} />
-          </div>
+      {helpOpen && (
+        <div className="mt-3 rounded-xl border p-4 text-[13.5px] leading-relaxed" style={{ borderColor: '#DDD6FE', background: '#F5F3FF' }}>
+          <div className="font-bold mb-1.5">How follow-ups work</div>
+          <ol className="list-decimal pl-5 space-y-1">
+            <li><b>Reply now</b> — the customer sent the last message and is waiting for us. Reply in the chat; the lead leaves this list.</li>
+            <li><b>Due today</b> — we sent the last message and they went quiet, so a follow-up is due. Quiet leads get up to 3 follow-ups: by default 3 days after our last message, then 7 days after that, then 14 days after that. A follow-up date you set on a lead also lands here on that day.</li>
+            <li><b>Coming up</b> — the next follow-up is on a later day. Nothing to do yet.</li>
+            <li>After the last follow-up with no reply, the lead asks you to <b>decide</b>: keep chasing, nurture, or close it.</li>
+          </ol>
+          <p className="mt-2" style={{ color: SUB }}>
+            <b style={{ color: TEXT }}>Hot / Warm / Cold</b> is the AI&rsquo;s read of the chat — hot leads are listed first.
+            Tap any row to see the chat and send the follow-up. When they reply, the follow-ups stop by themselves.
+          </p>
         </div>
       )}
 
-      <PipelineFunnel />
-
-      {/* ── Tabs: what kind ──────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3 mt-6 border-b" style={{ borderColor: LINE }}>
+      {/* Tabs + search */}
+      <div className="flex flex-wrap items-end gap-3 mt-5 border-b" style={{ borderColor: LINE }}>
         <div className="flex gap-1 overflow-x-auto flex-1 min-w-0">
           {TABS.map((t) => {
             const on = tab === t.key
-            const n = tabCounts[t.key]
             return (
-              <button key={t.key} type="button" onClick={() => setTab(t.key)}
+              <button key={t.key} type="button" onClick={() => { setTab(t.key); leaveSelect() }} title={t.hint}
                 className="flex items-center gap-2 px-3 pb-3 pt-1 text-[14px] font-semibold cursor-pointer -mb-px whitespace-nowrap"
                 style={{ color: on ? BRAND : SUB, borderBottom: `2px solid ${on ? BRAND : 'transparent'}` }}>
                 {t.label}
-                {(n > 0 || on) && t.key !== 'completed' && (
+                {t.count !== undefined && t.count > 0 && (
                   <span className="inline-flex items-center justify-center min-w-[22px] h-[20px] px-1.5 rounded-md text-[11.5px] font-bold"
-                    style={{ background: t.tone ? '#FEE2E2' : '#EDE9FE', color: t.tone || BRAND }}>{n}</span>
+                    style={{ background: t.key === 'reply' ? '#FEE2E2' : '#EDE9FE', color: t.key === 'reply' ? '#B91C1C' : BRAND }}>{t.count}</span>
                 )}
               </button>
             )
           })}
         </div>
         <div className="flex items-center gap-2 pb-2">
-          <div className="relative" ref={filterRef}>
-            <button type="button" onClick={() => setFilterOpen((v) => !v)}
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-medium cursor-pointer bg-white" style={{ borderColor: LINE, color: activeFilters ? BRAND : TEXT }}>
-              <Filter size={14} /> Filter{activeFilters ? ` (${activeFilters})` : ''}
-            </button>
-            {filterOpen && (
-              <div className="absolute right-0 mt-1 w-64 rounded-lg border bg-white shadow-lg z-20 p-3 space-y-2.5" style={{ borderColor: LINE }}>
-                <label className="block text-[11px] font-semibold uppercase" style={{ color: SUB, letterSpacing: '.06em' }}>Urgency
-                  <select value={priority} onChange={(e) => setPriority(e.target.value as '' | FollowUpPriority)} className="mt-1 w-full h-9 border rounded-lg px-2 text-[13px] font-normal normal-case bg-white" style={{ borderColor: LINE }}>
-                    <option value="">Any</option><option value="high">Urgent</option><option value="medium">Soon</option><option value="low">Whenever</option>
-                  </select>
-                </label>
-                <label className="block text-[11px] font-semibold uppercase" style={{ color: SUB, letterSpacing: '.06em' }}>Reason
-                  <select value={reasonF} onChange={(e) => setReasonF(e.target.value as '' | FollowUpReason)} className="mt-1 w-full h-9 border rounded-lg px-2 text-[13px] font-normal normal-case bg-white" style={{ borderColor: LINE }}>
-                    <option value="">Any</option>
-                    <option value="sales_response_overdue">Customer waiting on us</option>
-                    <option value="customer_quiet">Customer went quiet</option>
-                    <option value="manual_followup_due">Scheduled follow-up</option>
-                  </select>
-                </label>
-                <label className="block text-[11px] font-semibold uppercase" style={{ color: SUB, letterSpacing: '.06em' }}>In our system
-                  <select value={customerF} onChange={(e) => setCustomerF(e.target.value as '' | 'tenant' | 'not_customer')} className="mt-1 w-full h-9 border rounded-lg px-2 text-[13px] font-normal normal-case bg-white" style={{ borderColor: LINE }}>
-                    <option value="">Anyone</option>
-                    <option value="tenant">Active tenants only</option>
-                    <option value="not_customer">Not a customer yet</option>
-                  </select>
-                </label>
-                {isAdmin && (
-                  <label className="block text-[11px] font-semibold uppercase" style={{ color: SUB, letterSpacing: '.06em' }}>Salesperson
-                    <select value={owner} onChange={(e) => setOwner(e.target.value)} className="mt-1 w-full h-9 border rounded-lg px-2 text-[13px] font-normal normal-case bg-white" style={{ borderColor: LINE }}>
-                      <option value="">All</option>
-                      {owners.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                    </select>
-                  </label>
-                )}
-                {activeFilters > 0 && (
-                  <button type="button" onClick={() => { setPriority(''); setReasonF(''); setCustomerF(''); setOwner('') }} className="text-[12px] font-semibold cursor-pointer" style={{ color: BRAND }}>Clear filters</button>
-                )}
-              </div>
-            )}
-          </div>
+          {isAdmin && (
+            <select value={owner} onChange={(e) => setOwner(e.target.value)} className="h-9 border rounded-lg px-2 text-[13px] bg-white" style={{ borderColor: LINE }}>
+              <option value="">Everyone</option>
+              {owners.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          )}
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: SUB }} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search follow-ups…"
-              className="h-9 w-[200px] border rounded-lg pl-9 pr-3 text-[13px] bg-white" style={{ borderColor: LINE }} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name or phone"
+              className="h-9 w-[170px] border rounded-lg pl-9 pr-3 text-[13px] bg-white" style={{ borderColor: LINE }} />
           </div>
         </div>
       </div>
-      {tab === 'high' && tabCounts.high > 0 && (
-        <p className="text-[12.5px] mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
-          <AlertTriangle size={13} />
-          <b>{tabCounts.high}</b> high-intent {tabCounts.high === 1 ? 'lead needs' : 'leads need'} a follow-up right away — the ones actually owed a reply are listed first.
-        </p>
-      )}
-      {tenantsInView > 0 && tab !== 'completed' && (
-        <p className="text-[12.5px] mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ background: '#DCFCE7', color: '#15803D' }}>
-          <b>{tenantsInView}</b> of these {tenantsInView === 1 ? 'is an active tenant' : 'are active tenants'} — marked in green. A lead template would be wrong for them; they are left out of bulk sends unless you include them deliberately.
-        </p>
-      )}
+      <p className="text-[12.5px] mt-2" style={{ color: SUB }}>{TABS.find((t) => t.key === tab)?.hint}</p>
 
-      {/* ── Table ────────────────────────────────────────────────────────── */}
-      <div className="mt-4 rounded-xl border bg-white overflow-hidden" style={{ borderColor: LINE }}>
-        {tab === 'completed' ? (
-          completed.length === 0 ? (
-            <div className="p-12 text-center"><p className="text-[14px] font-semibold">No follow-ups sent in the last 30 days.</p></div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1020px]" style={{ borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr className="text-left text-[12px] font-semibold" style={{ color: SUB, background: '#F9FAFB' }}>
-                    <th className="pl-4 px-2 py-3">Customer</th><th className="px-2 py-3">Template</th><th className="px-2 py-3">Sent By</th><th className="px-2 py-3">Sent</th><th className="px-2 py-3">Reason</th><th className="px-2 py-3">AI Recommendation</th><th className="px-2 py-3 pr-4">Outcome</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {completed.map((r: LogRow) => (
-                    <tr key={r.id} className="border-t hover:bg-gray-50 cursor-pointer" style={{ borderColor: LINE }} onClick={() => r.leadId && setOpenId(r.leadId)}>
-                      <td className="pl-4 px-2 py-3"><div className="text-[13.5px] font-bold">{r.leadName || '—'}</div><div className="text-[12px]" style={{ color: SUB }}>{r.phone}</div></td>
-                      <td className="px-2 py-3 text-[13px]">{r.templateLabel}</td>
-                      <td className="px-2 py-3 whitespace-nowrap"><span className="inline-flex items-center gap-2 text-[13px]">{avatar(r.sentByName || '—')}{r.sentByName || '—'}</span></td>
-                      <td className="px-2 py-3 whitespace-nowrap text-[13px]"><div>{fmtDate(r.sentAt)}</div><div className="text-[12px]" style={{ color: SUB }}>{fmtTime(r.sentAt)}</div></td>
-                      <td className="px-2 py-3 text-[12.5px] max-w-[220px] truncate" style={{ color: SUB }} title={r.reason}>{r.reason || '—'}</td>
-                      <td className="px-2 py-3 min-w-[200px]">
-                        <div className="text-[13px] font-bold">{r.aiNext || (r.repliedAt ? 'They replied — continue in chat' : 'Wait for the next cadence day')}</div>
-                        {r.aiSummary && <div className="text-[12px] mt-0.5 max-w-[260px] truncate" style={{ color: SUB }} title={r.aiSummary}>{r.aiSummary}</div>}
-                      </td>
-                      <td className="px-2 py-3 pr-4">{r.repliedAt ? pill('#DCFCE7', '#15803D', `Replied ${agoText(r.repliedAt)}`) : pill('#F3F4F6', '#6B7280', 'No reply yet')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
+      {/* List */}
+      <div className="mt-2 rounded-xl border bg-white overflow-hidden" style={{ borderColor: LINE }}>
+        {tab === 'sent' ? (
+          sent.length === 0 ? (
+            <div className="p-10 text-center text-[14px] font-semibold">No follow-ups sent in the last 30 days.</div>
+          ) : sent.map((r) => (
+            <button key={r.id} type="button" onClick={() => r.leadId && setOpenId(r.leadId)}
+              className="w-full text-left flex items-center gap-3 px-4 py-3 border-t first:border-t-0 hover:bg-gray-50 cursor-pointer" style={{ borderColor: LINE }}>
+              <div className="flex-1 min-w-0">
+                <div className="text-[14px] font-bold truncate">{r.leadName || r.phone}</div>
+                <div className="text-[12.5px] truncate" style={{ color: SUB }}>{r.templateLabel} · sent {agoText(r.sentAt)}{r.sentByName ? ` by ${r.sentByName}` : ''}</div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold whitespace-nowrap"
+                style={r.repliedAt ? { background: '#DCFCE7', color: '#15803D' } : { background: '#F3F4F6', color: SUB }}>
+                {r.repliedAt ? `Replied ${agoText(r.repliedAt)}` : 'No reply yet'}
+              </span>
+            </button>
+          ))
         ) : isLoading ? (
-          <div className="p-4 space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-[60px]" />)}</div>
+          <div className="p-4 space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-[56px]" />)}</div>
         ) : isError ? (
           <div className="p-8 text-center">
-            <p className="text-[14px] font-semibold">Couldn&rsquo;t load the queue.</p>
-            <button type="button" onClick={() => refetch()} className="mt-2 text-[13px] font-semibold cursor-pointer" style={{ color: BRAND }}>Retry</button>
+            <p className="text-[14px] font-semibold">Couldn&rsquo;t load follow-ups.</p>
+            <button type="button" onClick={() => refetch()} className="mt-2 text-[13px] font-semibold cursor-pointer" style={{ color: BRAND }}>Try again</button>
           </div>
         ) : visible.length === 0 ? (
-          <div className="p-12 text-center">
-            <p className="text-[14px] font-semibold">
-              {!items.length
-                ? 'Nobody needs a follow-up right now. Great work — you’re all caught up.'
-                : tabCounts[tab] === 0
-                  ? `No ${TABS.find((t) => t.key === tab)?.label.toLowerCase()} follow-ups right now.`
-                  : 'Nothing matches those filters.'}
-            </p>
-            {!items.length && <p className="text-[12.5px] mt-1" style={{ color: SUB }}>Leads appear here the moment a customer is waiting on you, has gone quiet, or a follow-up you scheduled arrives.</p>}
+          <div className="p-10 text-center text-[14px] font-semibold">
+            {search ? 'Nobody matches that search.' : tab === 'reply' ? 'Nobody is waiting for a reply. 👍' : tab === 'today' ? 'No follow-ups due today. 👍' : 'Nothing coming up.'}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px]" style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr className="text-left text-[12px] font-semibold" style={{ color: SUB, background: '#F9FAFB' }}>
-                  <th className="pl-4 pr-2 py-3 w-10">
-                    {selecting
-                      ? <button type="button" onClick={toggleAllShown} className="cursor-pointer align-middle" style={{ color: allShownOn ? BRAND : '#9CA3AF' }}>{allShownOn ? <CheckSquare size={16} /> : <Square size={16} />}</button>
-                      : <Square size={16} style={{ color: '#D1D5DB' }} />}
-                  </th>
-                  <th className="px-2 py-3">Urgency</th>
-                  <th className="px-2 py-3">Customer</th>
-                  <th className="px-2 py-3">Assigned To</th>
-                  <th className="px-2 py-3">Next Contact</th>
-                  <th className="px-2 py-3">AI Recommendation</th>
-                  <th className="px-2 py-3 pr-4">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((it) => {
-                  const p = PRIORITY[it.priority]
-                  const w = WINDOW_LABEL[it.window]
-                  const on = selected.has(it.leadId)
-                  const waiting = it.reason === 'sales_response_overdue'
-                  const due = it.window === 'now' || it.window === 'today'
-                  return (
-                    <tr key={it.leadId} className="border-t hover:bg-gray-50 cursor-pointer" style={{ borderColor: LINE, background: on ? '#F5F3FF' : undefined }}
-                      onClick={() => (selecting ? toggle(it.leadId) : setOpenId(it.leadId))}>
-                      <td className="pl-4 pr-2 py-3" onClick={(e) => e.stopPropagation()}>
-                        <button type="button" onClick={() => { if (!selecting) setSelecting(true); toggle(it.leadId) }} className="cursor-pointer align-middle" style={{ color: on ? BRAND : '#D1D5DB' }}>{on ? <CheckSquare size={16} /> : <Square size={16} />}</button>
-                      </td>
-                      <td className="px-2 py-3">{pill(p.bg, p.fg, p.label, p.dot)}</td>
-                      <td className="px-2 py-3 min-w-[190px]">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {(() => { const d = nextStepDot(it); return <span title={d.label} aria-label={d.label} className="rounded-full shrink-0" style={{ width: 8, height: 8, background: d.color }} /> })()}
-                          <span className="text-[13.5px] font-bold">{it.name}</span>
-                          {(() => { const b = customerBadge(it.customer); return b ? <span title={b.title} className="px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap" style={{ background: b.bg, color: b.fg }}>{b.label}</span> : null })()}
-                        </div>
-                        <span className="inline-flex items-center gap-1.5 text-[12px] mt-0.5" style={{ color: SUB }}>
-                          <MessageCircle size={12} style={{ color: WA_ICON }} />{it.phone}
+          <>
+            {selecting && (
+              <div className="flex items-center gap-2 px-4 py-2 border-b text-[13px]" style={{ borderColor: LINE, background: '#F9FAFB' }}>
+                <button type="button" onClick={toggleAll} className="inline-flex items-center gap-1.5 cursor-pointer font-semibold" style={{ color: BRAND }}>
+                  {allOn ? <CheckSquare size={16} /> : <Square size={16} />} Select all {visible.length}
+                </button>
+              </div>
+            )}
+            {visible.map((it) => {
+              const h = HEAT[heat(it)]
+              const on = selected.has(it.leadId)
+              const badge = customerBadge(it.customer)
+              const t = tabOf(it)
+              return (
+                <div key={it.leadId}
+                  onClick={() => (selecting ? toggle(it.leadId) : setOpenId(it.leadId))}
+                  className="flex items-center gap-3 px-4 py-3 border-t first:border-t-0 hover:bg-gray-50 cursor-pointer"
+                  style={{ borderColor: LINE, background: on ? '#F5F3FF' : undefined }}>
+                  {selecting && (
+                    <span style={{ color: on ? BRAND : '#D1D5DB' }}>{on ? <CheckSquare size={17} /> : <Square size={17} />}</span>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[14.5px] font-bold">{it.name}</span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: h.bg, color: h.fg }}>{h.label}</span>
+                      {badge && <span title={badge.title} className="px-1.5 py-0.5 rounded text-[10.5px] font-bold" style={{ background: badge.bg, color: badge.fg }}>{badge.label}</span>}
+                    </div>
+                    <div className="text-[13px] mt-0.5 truncate" style={{ color: SUB }} title={whyFor(it)}>
+                      {whatToDo(it)}
+                      {isAdmin && !owner && it.ownerName ? ` · ${it.ownerName}` : ''}
+                    </div>
+                  </div>
+                  {!selecting && (
+                    <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                      {t === 'reply' && it.windowOpen ? (
+                        <Link to={`/whatsapp?phone=${it.phoneNormalized}`} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold text-white" style={{ background: WA_GREEN }}>
+                          <MessageCircle size={14} /> Reply
+                        </Link>
+                      ) : t === 'later' ? (
+                        <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium" style={{ color: SUB }}>
+                          <Clock size={13} /> {it.nextContactAt ? fmtDay(it.nextContactAt) : 'Later'}
                         </span>
-                      </td>
-                      <td className="px-2 py-3 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-2 text-[13px]">{avatar(it.ownerName)}{it.ownerName}</span>
-                      </td>
-                      <td className="px-2 py-3 min-w-[150px]">
-                        {pill(w.bg, w.fg, it.nextContactAt && !due && it.window !== 'now' ? `${w.label} · ${fmtDate(it.nextContactAt)}` : w.label)}
-                        <div className="text-[11.5px] mt-1" style={{ color: SUB }}>{cadenceText(it)}</div>
-                      </td>
-                      <td className="px-2 py-3 min-w-[200px]">
-                        <div className="text-[13px] font-bold">{recommendationFor(it)}</div>
-                        <div className="text-[12px] mt-0.5" style={{ color: SUB }} title={whyFor(it)}>
-                          {recommendationDetail(it)}
-                        </div>
-                        {it.intent && (
-                          <div className="text-[11px] mt-1" style={{ color: SUB }} title={`Intent score ${it.intent.score}/100`}>
-                            <strong>{it.intent.band === 'high' ? 'Hot' : it.intent.band === 'low' ? 'Cold' : 'Warm'}</strong> · {it.intent.reason}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-2 py-3 pr-4" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1.5">
-                          {waiting && it.windowOpen ? (
-                            <Link to={`/whatsapp?phone=${it.phoneNormalized}`} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold text-white" style={{ background: WA_GREEN }}>
-                              <MessageCircle size={14} /> Reply
-                            </Link>
-                          ) : due || it.window === 'exhausted' ? (
-                            <button type="button" onClick={() => setOpenId(it.leadId)} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold text-white cursor-pointer" style={{ background: WA_GREEN }}>
-                              <MessageCircle size={14} /> {it.window === 'exhausted' ? 'Decide' : 'Send'}
-                            </button>
-                          ) : (
-                            <button type="button" onClick={() => setOpenId(it.leadId)} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg border text-[13px] font-semibold cursor-pointer" style={{ borderColor: LINE, color: SUB }} title="Not due yet — open to override">
-                              <Clock size={14} /> {w.label}
-                            </button>
-                          )}
-                          <button type="button" onClick={() => setOpenId(it.leadId)} title="View" className="grid place-items-center rounded-lg border cursor-pointer hover:bg-gray-50 shrink-0" style={{ width: 36, height: 36, borderColor: LINE, color: SUB }}>
-                            <Eye size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                      ) : (
+                        <button type="button" onClick={() => setOpenId(it.leadId)} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold text-white cursor-pointer" style={{ background: WA_GREEN }}>
+                          <MessageCircle size={14} /> {it.window === 'exhausted' ? 'Decide' : 'Follow up'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </>
         )}
       </div>
 
-      {/* ── Sticky bulk bar ──────────────────────────────────────────────── */}
       {selecting && (
-        <div className="sticky bottom-0 mt-4 -mx-1 px-4 py-3 flex items-center justify-between gap-3 flex-wrap rounded-t-xl border-t bg-white/95 backdrop-blur" style={{ borderColor: LINE }}>
-          <span className="text-[13px]" style={{ color: SUB }}>{selected.size === 0 ? 'Select the leads to follow up.' : `${selected.size} selected.`}</span>
+        <div className="sticky bottom-0 mt-3 px-4 py-3 flex items-center justify-between gap-3 flex-wrap rounded-xl border bg-white/95 backdrop-blur" style={{ borderColor: LINE }}>
+          <span className="text-[13px]" style={{ color: SUB }}>{selected.size === 0 ? 'Tap the leads to include.' : `${selected.size} selected`}</span>
           <button type="button" disabled={selected.size === 0} onClick={() => setBulkOpen(true)}
             className="h-10 px-5 rounded-lg text-[14px] font-semibold text-white cursor-pointer disabled:opacity-40" style={{ background: BRAND }}>
-            Review {selected.size ? `${selected.size} ` : ''}message{selected.size === 1 ? '' : 's'}
+            Review {selected.size || ''} message{selected.size === 1 ? '' : 's'}
           </button>
         </div>
       )}
 
-      {isAdmin && <IntentReportCard />}
-      {isAdmin && <LostReasonsCard />}
-      {isAdmin && <SourceReportCard />}
+      {/* Reports, out of the way */}
+      {isAdmin && (
+        <div className="mt-6">
+          <button type="button" onClick={() => setReportsOpen((v) => !v)} className="inline-flex items-center gap-1.5 text-[13px] font-semibold cursor-pointer" style={{ color: SUB }}>
+            <ChevronDown size={15} style={{ transform: reportsOpen ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }} />
+            {reportsOpen ? 'Hide' : 'Show'} pipeline &amp; reports
+          </button>
+          {reportsOpen && (
+            <div className="mt-2">
+              <PipelineFunnel />
+              <IntentReportCard />
+              <LostReasonsCard />
+              <SourceReportCard />
+            </div>
+          )}
+        </div>
+      )}
 
       {openId && (
         <FollowUpDrawer
@@ -553,7 +358,7 @@ export default function FollowUps() {
           items={items.filter((it) => selected.has(it.leadId))}
           snapshotAt={data?.snapshotAt}
           onClose={() => setBulkOpen(false)}
-          onDone={() => { setBulkOpen(false); leaveSelectMode(); refetch() }}
+          onDone={() => { setBulkOpen(false); leaveSelect(); refetch() }}
         />
       )}
     </div>
