@@ -46,7 +46,10 @@ export async function isExistingCustomerPhone(phoneNormalized) {
 export async function markCustomerLeads() {
    const tails = await customerTails();
    if (!tails.size) return 0;
-   const leads = await Lead.find({ status: 'new' }).select('phoneNormalized phone').lean();
+   /* A lead tagged existing_customer was put back in New on purpose — a
+      tenant filling in a website form (services/websiteLead.js) — and must
+      not be closed again on the next restart. */
+   const leads = await Lead.find({ status: 'new', tags: { $ne: 'existing_customer' } }).select('phoneNormalized phone').lean();
    const ids = leads.filter((l) => tails.has(digitTail(l.phoneNormalized || l.phone))).map((l) => l._id);
    if (!ids.length) return 0;
    const r = await Lead.updateMany(

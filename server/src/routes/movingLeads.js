@@ -2,7 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { MovingLead, MovingJob, Customer, Lead, nextMovingJobNo } from '../models/index.js';
 import { softDelete } from '../utils/softDelete.js';
-import { normalizeLeadPhone } from './leads.js';
+import { ingestWebsiteLead } from '../services/websiteLead.js';
 
 const router = Router();
 
@@ -34,68 +34,20 @@ const landingLeadLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === 'test',
 });
 
-/** "Zulfiqar Ali" -> { firstName: 'Zulfiqar', lastName: 'Ali' }; a single
- *  word (very common on a quick mobile form) leaves lastName blank rather
- *  than guessing. */
-function splitName(fullName) {
-  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
-  return { firstName: parts[0] || '', lastName: parts.slice(1).join(' ') };
-}
-
+/* What it does, for a new number and for one we already have, lives in
+   services/websiteLead.js: either way the enquiry surfaces as a New lead at
+   the top of the list and goes through the distribution rules. */
 publicLeadRouter.post('/', landingLeadLimiter, async (req, res) => {
   try {
-    const b = req.body || {};
-    const fullName = String(b.full_name || '').trim();
-    const phoneNormalized = normalizeLeadPhone(b.mobile);
-    if (!fullName) return res.status(400).json({ error: 'full_name is required' });
-    if (!phoneNormalized) return res.status(400).json({ error: 'mobile must contain a phone number' });
-
-    // Everything the form captures that doesn't have a structured home on
-    // Lead (a size *category* like "locker" isn't a sqft number, and
-    // "this-week" isn't a parseable date) — kept as text so a rep sees it
-    // rather than it being silently dropped or forced into the wrong field.
-    const notes = [
-      b.summary_text,
-      b.storing_for ? `Enquiry: ${b.storing_for}` : '',
-      b.unit_size ? `Requested size: ${b.unit_size}` : '',
-      b.unit_label ? `Label: ${b.unit_label}` : '',
-      b.emirate ? `Emirate: ${b.emirate}` : '',
-      b.move_in_date ? `Timing: ${b.move_in_date}` : '',
-      b.promo_code ? `Promo code: ${b.promo_code}` : '',
-      b.monthly_rent && Number(b.monthly_rent) ? `Monthly rent: AED ${b.monthly_rent}` : '',
-      b.supplies_text && b.supplies_text !== 'No supplies selected' ? `Supplies: ${b.supplies_text}` : '',
-      b.due_today && Number(b.due_today) ? `Due today: AED ${b.due_today}` : '',
-    ].filter(Boolean).join('\n');
-    const pageNote = `Landing page: ${b.source_page_name || 'Website'}${b.source_page ? ` (${b.source_page})` : ''}`;
-
-    // Same person filling the form twice (or the page firing the request
-    // twice) must never create a second Lead against the unique
-    // phoneNormalized index — reuse the existing one and just note the
-    // repeat visit, matching the find-or-reuse pattern the public booking
-    // API already uses.
-    const existing = await Lead.findOne({ phoneNormalized });
-    if (existing) {
-      existing.timeline.push({ type: 'note', text: `${pageNote}\n${notes}`.trim() });
-      await existing.save();
-      return res.json({ ok: true, id: existing._id, merged: true });
-    }
-
-    const { firstName, lastName } = splitName(fullName);
-    const lead = await Lead.create({
-      firstName, lastName, fullName,
-      phone: String(b.mobile || '').trim(), phoneNormalized,
-      email: String(b.email || '').trim(),
-      source: 'website',
-      status: 'new',
-      unitsNeeded: 1,
-      tags: ['website'],
-      notes,
-      timeline: [{ type: 'created', text: pageNote }],
+    const out = await ingestWebsiteLead(req.body || {});
+    res.status(out.created ? 201 : 200).json({
+      ok: true,
+      id: out.id,
+      // `merged` kept for the website's own script, which read it before.
+      ...(out.reopened ? { reopened: true, merged: true } : {}),
     });
-
-    res.status(201).json({ ok: true, id: lead._id });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status || 400).json({ error: err.message });
   }
 });
 // ─────────────────────────────────────────────────────────────────────────────
