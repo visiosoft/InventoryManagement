@@ -13,6 +13,7 @@ import { quietNudgeConfig, setQuietNudgeConfig } from '../services/quietNudge.js
 import { cachedSummaries } from '../services/conversationSummary.js';
 import { customersByTail } from '../services/followUpQueue.js';
 import { displayNameFor, phoneTail } from '../services/leadNames.js';
+import { tallyTeam } from '../services/followUpTeam.js';
 
 const router = Router();
 
@@ -151,6 +152,18 @@ router.post('/send', async (req, res) => {
             })
             : { sent: [], failed: [] };
         res.json({ ...out, failed: [...(out.failed || []), ...screened] });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/** Admin only: each rep's follow-ups sent today, and sent / replied over seven days. */
+router.get('/team', requireAdmin, async (_req, res) => {
+    try {
+        const since = new Date(Date.now() - 7 * 86400000);
+        const rows = await LeadFollowUp.find({ status: 'sent', sentAt: { $gte: since } })
+            .select('sentBy sentByName status sentAt repliedAt').lean();
+        res.json({ reps: tallyTeam(rows) });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

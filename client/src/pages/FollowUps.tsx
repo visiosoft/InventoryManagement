@@ -10,6 +10,7 @@ import { useAuth } from '../lib/auth'
 import { Skeleton } from '../components/ui'
 import FollowUpDrawer from '../components/FollowUpDrawer'
 import FollowUpBulkModal from '../components/FollowUpBulkModal'
+import FollowUpTeamTable from '../components/FollowUpTeamTable'
 import PipelineFunnel from '../components/PipelineFunnel'
 import { agoText, customerBadge, whyFor } from '../lib/followUpUi'
 
@@ -243,6 +244,11 @@ export default function FollowUps() {
             Tap any row to see the chat and send the follow-up. When they reply, the follow-ups stop by themselves.
           </p>
         </div>
+      )}
+
+      {/* Who is behind — admin, looking at everyone */}
+      {isAdmin && !owner && (
+        <FollowUpTeamTable items={items} bucketOf={bucketOf} target={DAILY_TARGET} onPick={setOwner} />
       )}
 
       {/* Tabs + search */}

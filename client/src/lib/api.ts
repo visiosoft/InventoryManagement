@@ -775,6 +775,9 @@ export interface QuietLead {
 }
 
 export const leadFollowUpApi = {
+  /** Admin: per rep, follow-ups sent today and sent / replied over seven days. */
+  team: () =>
+    api.get<{ reps: { ownerId: string; name: string; sentToday: number; sentWeek: number; repliedWeek: number }[] }>('/lead-follow-up/team').then((r) => r.data),
   config: () => api.get<{ quietFollowUpDays: number }>('/lead-follow-up/config').then((r) => r.data),
   setConfig: (quietFollowUpDays: number) =>
     api.put<{ quietFollowUpDays: number }>('/lead-follow-up/config', { quietFollowUpDays }).then((r) => r.data),
