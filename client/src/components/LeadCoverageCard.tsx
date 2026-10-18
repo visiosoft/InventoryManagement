@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { Skeleton } from './ui'
 import TrafficLight, { type Signal } from './TrafficLight'
+import LiveCounter, { LiveCounterStyles } from './LiveCounter'
 
 /**
  * Admin dashboard: who takes new leads right now (by the roster), whether
@@ -16,6 +17,7 @@ type Rep = {
 }
 type Coverage = {
   enabled: boolean; outOfHoursMode: string; nobodyOn: boolean; reps: Rep[]
+  live?: { waitingForReply: number; newLeadsToday: number; repliesToday: number }
   signal?: Signal; ai?: { enabled: boolean; mode: string; answering: boolean }
   handovers: { label: string; joins: string[]; leaves: string[]; onAfter: string[] }[]
 }
@@ -47,7 +49,8 @@ export default function LeadCoverageCard() {
   const { data, isLoading } = useQuery<Coverage>({
     queryKey: ['lead-coverage-now'],
     queryFn: () => api.get('/lead-routing/now').then((r) => r.data),
-    refetchInterval: 60_000,
+    // Live: every 10 seconds while the page is open (paused in a background tab).
+    refetchInterval: 10_000,
   })
   if (isLoading || !data) return <Skeleton className="h-[180px]" />
 
@@ -96,6 +99,21 @@ export default function LeadCoverageCard() {
           )}
         </div>
       </div>
+
+      {/* Live counters */}
+      {data.live && (
+        <div>
+          <LiveCounterStyles />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, letterSpacing: '.08em', color: '#B91C1C', marginBottom: 6 }}>
+            <span className="lc-live-dot" style={{ width: 8, height: 8, borderRadius: 99, background: '#EF4444' }} /> LIVE
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+            <LiveCounter label="Waiting for a reply" value={data.live.waitingForReply} upIsBad hint="customers whose last message is unanswered" />
+            <LiveCounter label="New leads today" value={data.live.newLeadsToday} hint="came in since midnight" />
+            <LiveCounter label="Replies sent today" value={data.live.repliesToday} hint="by the team, from the CRM" />
+          </div>
+        </div>
+      )}
 
       {!data.enabled && (
         <div className="text-xs" style={{ background: '#FFF7E6', color: '#7A4B00', padding: '8px 10px', borderRadius: 10 }}>

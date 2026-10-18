@@ -131,6 +131,9 @@ router.get('/now', async (_req, res) => {
             { $match: { direction: 'inbound' } },
          ]),
       ]);
+      // The live counters: every customer whose latest message (last 24h) is
+      // still unanswered, owned or not, and the leads that arrived today.
+      const newLeadsToday = await Lead.countDocuments({ leadDateTime: { $gte: dayStart } });
       const waitingLeads = lastMessages.length
          ? await Lead.find({ phoneNormalized: { $in: lastMessages.map((m) => m._id) }, owner: { $in: ids } }).select('owner').lean()
          : [];
@@ -151,6 +154,11 @@ router.get('/now', async (_req, res) => {
          outOfHoursMode: config.outOfHoursMode,
          ai: { enabled: !!bot?.enabled, mode: bot?.mode || 'draft', answering: aiAnswering },
          signal: coverageSignal({ nobodyOn: cover.nobodyOn, aiAnswering }),
+         live: {
+            waitingForReply: lastMessages.length,
+            newLeadsToday,
+            repliesToday: replies.reduce((n, r) => n + (r.today || 0), 0),
+         },
          ...cover,
          handovers: cover.handovers.map((h) => ({
             label: h.label,

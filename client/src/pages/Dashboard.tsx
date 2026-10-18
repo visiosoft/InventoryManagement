@@ -430,7 +430,7 @@ export default function Dashboard() {
           </div>
         ),
         'lead-coverage': !isAdmin ? null : (
-          <WidgetShell id="lead-coverage" title="Who is on now" subtitle="New leads go only to reps on the roster at this hour. Refreshes every minute." {...dragHandlers}>
+          <WidgetShell id="lead-coverage" title="Who is on now" subtitle="New leads go only to reps on the roster at this hour. Live — updates every 10 seconds." {...dragHandlers}>
             <LeadCoverageCard />
           </WidgetShell>
         ),
