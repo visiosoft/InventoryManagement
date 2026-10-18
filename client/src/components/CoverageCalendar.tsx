@@ -19,6 +19,7 @@ export type RosterRule = {
   color?: string
   weeklyShifts?: Shift[]
   workingHours?: { days?: number[]; start?: string; end?: string }
+  rosterManaged?: boolean
 }
 
 const NAVY = '#1B2238'
@@ -57,7 +58,8 @@ const emptyGrid = (): Grid => Array.from({ length: 7 }, () => Array(24).fill(fal
 
 function onShiftAt(rule: RosterRule, day: number, minute: number) {
   const shifts = rule.weeklyShifts ?? []
-  if (shifts.length) {
+  // On the roster with no shifts is off — the server reads it the same way.
+  if (shifts.length || rule.rosterManaged) {
     return shifts.some((sh) => {
       const s = clock(sh.start)
       const e = clock(sh.end)
@@ -241,6 +243,14 @@ export default function CoverageCalendar({ rules, saving, saveError, savedAt, on
     setVersion((v) => v + 1)
   }
 
+  const clearEveryone = () => {
+    setDraft((prev) => Object.fromEntries(Object.entries(prev).map(([id, d]) => [id, { ...d, grid: emptyGrid() }])))
+    setDirty(true)
+    setVersion((v) => v + 1)
+  }
+
+  const undo = () => { setDraft(draftFrom(rules)); setDirty(false); setVersion((v) => v + 1) }
+
   const save = () => {
     onSave(rules.filter((r) => draft[r.user._id]).map((r) => ({
       userId: r.user._id,
@@ -260,13 +270,21 @@ export default function CoverageCalendar({ rules, saving, saveError, savedAt, on
           <div>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#111827' }}>Weekly Lead Coverage Calendar</div>
             <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>
-              New leads only go to whoever is on here at that hour. Pink GAP hours follow the out-of-hours setting.
+              New leads only go to whoever is on here at that hour — a rep with no hours gets none. Pink GAP hours follow the out-of-hours setting. New sales reps appear here by themselves, with no hours.
             </div>
           </div>
-          <button type="button" onClick={applyPreset} disabled={saving}
-            style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 12px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', cursor: 'pointer' }}>
-            Fill from coverage calendar
-          </button>
+          {/* Reset: nothing is saved until "Save roster", and "Undo changes"
+              in the save bar goes back to what was saved. */}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={applyPreset} disabled={saving}
+              style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 12px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', cursor: 'pointer' }}>
+              Reset to coverage calendar
+            </button>
+            <button type="button" onClick={() => { if (confirm('Clear every rep\'s hours? Nothing is saved until you press Save roster.')) clearEveryone() }} disabled={saving}
+              style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 12px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', color: '#B91C1C', cursor: 'pointer' }}>
+              Clear everyone
+            </button>
+          </div>
         </div>
 
         {/* Step 1: who you are editing */}
@@ -380,9 +398,9 @@ export default function CoverageCalendar({ rules, saving, saveError, savedAt, on
           </span>
           <span className="flex-1" />
           {dirty && (
-            <button type="button" disabled={saving} onClick={() => { setDraft(draftFrom(rules)); setDirty(false) }}
+            <button type="button" disabled={saving} onClick={undo}
               style={{ fontSize: 13, fontWeight: 600, padding: '8px 14px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', cursor: 'pointer' }}>
-              Discard
+              Undo changes
             </button>
           )}
           <button type="button" disabled={!dirty || saving} onClick={save}
@@ -471,7 +489,7 @@ function QuickShift({ rule, d, onChange }: {
         </button>
         <button type="button" onClick={() => onChange((x) => ({ ...x, grid: emptyGrid() }))}
           style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${LINE}`, background: '#fff', color: GAP_FG, fontWeight: 600, cursor: 'pointer' }}>
-          Clear all
+          Clear hours
         </button>
       </div>
       <div style={{ fontSize: 11.5, color: MUTED }}>

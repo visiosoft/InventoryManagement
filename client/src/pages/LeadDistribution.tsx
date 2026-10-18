@@ -35,6 +35,7 @@ type Rule = {
   dailyCap: number
   workingHours?: { days?: number[]; start?: string; end?: string }
   weeklyShifts?: Shift[]
+  rosterManaged?: boolean
   color?: string
   fallbackMode: 'pool' | 'user'
   fallbackUser?: { _id: string; name: string } | null
@@ -569,6 +570,11 @@ function RuleRow({ rule, busy, onSave, onRemove }: {
             <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>
               {rule.weeklyShifts.length} shift{rule.weeklyShifts.length === 1 ? '' : 's'} a week · edit on the calendar above
             </div>
+          </div>
+        ) : rule.rosterManaged ? (
+          <div style={{ fontSize: 12.5 }}>
+            <span style={{ fontWeight: 600, color: '#B91C1C' }}>Off — no hours yet</span>
+            <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>Give them shifts on the calendar above</div>
           </div>
         ) : (<>
         <Select

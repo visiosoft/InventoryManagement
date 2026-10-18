@@ -2590,6 +2590,11 @@ const leadRoutingRuleSchema = new Schema({
     }],
     default: [],
   },
+  /* Hours come from the weekly roster alone: no shifts means off, never
+     "always on". Set once the calendar has been saved for this rep, and on
+     anybody added after the roster is in use, so a newcomer or a cleared
+     row cannot silently take every lead around the clock. */
+  rosterManaged: { type: Boolean, default: false },
   // The rep's colour on the coverage calendar.
   color: { type: String, default: '' },
   // Where this rep's share goes while they are away: spread across whoever is

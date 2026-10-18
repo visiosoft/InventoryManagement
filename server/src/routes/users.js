@@ -4,6 +4,7 @@ import { User, ALL_MODULES } from '../models/index.js';
 import { requireAdmin, signToken } from '../middleware/auth.js';
 import { registerExpoPushToken, unregisterExpoPushToken } from '../services/expoPush.js';
 import { softDelete } from '../utils/softDelete.js';
+import { addRepToRotation } from '../services/leadRouting.js';
 
 const router = Router();
 
@@ -101,6 +102,8 @@ router.post('/', requireAdmin, async (req, res) => {
     ),
     isActive: true,
   });
+  // A new sales rep is on the lead rotation straight away — off, until given hours on the roster.
+  if (user.role === 'sales_rep') await addRepToRotation(user._id).catch((e) => console.error('[users] rotation:', e.message));
   res.status(201).json({ id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions, isActive: user.isActive });
 });
 
@@ -137,7 +140,9 @@ router.put('/:id', requireAdmin, async (req, res) => {
   if (user.role === 'accounts_admin') user.permissions = [];
   if (isActive !== undefined) user.isActive = Boolean(isActive);
 
+  const becameRep = user.isModified('role') && user.role === 'sales_rep';
   await user.save();
+  if (becameRep) await addRepToRotation(user._id).catch((e) => console.error('[users] rotation:', e.message));
   res.json({ id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions, isActive: user.isActive });
 });
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-   availability, isAbsent, minutesInDay, parseClock, pickOwner, targetShares, weekdayIn, withinWorkingHours,
+   addRepToRotation, availability, isAbsent, minutesInDay, parseClock, pickOwner, targetShares, weekdayIn, withinWorkingHours,
 } from './leadRouting.js';
 
 const rep = (id, sharePct, extra = {}) => ({ user: id, sharePct, status: 'active', dailyCap: 0, ...extra });
@@ -294,4 +294,35 @@ test('weekly roster: the coverage calendar decides who is on', async () => {
    assert.equal(onRosterShift([{ day: 6, start: '22:00', end: '06:00' }], 0, 120), true);   // past midnight
    assert.deepEqual(cleanWeeklyShifts([{ day: 1, start: '08:00', end: '16:00' }, { day: 9, start: '08:00', end: '16:00' }, { day: 2, start: 'x', end: '16:00' }]),
       [{ day: 1, start: '08:00', end: '16:00' }]);
+});
+
+test('a rep run by the roster with no shifts is off, not always on', () => {
+   const at = new Date('2026-09-02T06:00:00Z');
+   // Cleared on the calendar: the old hours underneath no longer count.
+   assert.equal(withinWorkingHours({ rosterManaged: true, weeklyShifts: [], workingHours: { start: '00:00', end: '23:59' } }, at), false);
+   assert.equal(withinWorkingHours({ rosterManaged: true }, at), false);
+   // Not on the roster yet: the old behaviour stands.
+   assert.equal(withinWorkingHours({ weeklyShifts: [] }, at), true);
+});
+
+test('a new sales rep joins the rotation off, at the team\'s usual share', async () => {
+   const created = [];
+   const Rule = {
+      findOne: () => ({ select: () => ({ lean: async () => null }) }),
+      find: () => ({ select: () => ({ lean: async () => [{ sharePct: 40 }, { sharePct: 30 }, { sharePct: 30 }, { sharePct: 0 }] }) }),
+      create: async (doc) => { created.push(doc); return doc; },
+   };
+   const rule = await addRepToRotation('u1', { Rule });
+   assert.deepEqual(created, [{ user: 'u1', sharePct: 30, status: 'active', rosterManaged: true, weeklyShifts: [] }]);
+   assert.equal(withinWorkingHours(rule, new Date('2026-09-02T06:00:00Z')), false);
+});
+
+test('somebody already in the rotation, or taken out of it, is left alone', async () => {
+   let made = false;
+   const Rule = {
+      findOne: () => ({ select: () => ({ lean: async () => ({ _id: 'r1' }) }) }),
+      create: async () => { made = true; },
+   };
+   assert.equal(await addRepToRotation('u1', { Rule }), null);
+   assert.equal(made, false);
 });

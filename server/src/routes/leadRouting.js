@@ -8,7 +8,7 @@ import { Router } from 'express';
 import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, PushSubscription, User, WhatsAppMessage } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { softDelete } from '../utils/softDelete.js';
-import { availability, cleanWeeklyShifts, countsForToday, digitTail, pickOwner, targetShares } from '../services/leadRouting.js';
+import { availability, cleanWeeklyShifts, countsForToday, digitTail, pickOwner, rosterInUse, targetShares } from '../services/leadRouting.js';
 import { runLeadSla } from '../services/leadSla.js';
 
 const router = Router();
@@ -124,6 +124,8 @@ router.put('/rules/:userId', async (req, res) => {
       if (update.dailyCap !== undefined) update.dailyCap = Math.max(0, Number(update.dailyCap) || 0);
       if (update.fallbackUser === '') update.fallbackUser = null;
       if (update.weeklyShifts !== undefined) update.weeklyShifts = cleanWeeklyShifts(update.weeklyShifts);
+      // Saved from the calendar: from now on the roster alone decides their hours.
+      if (update.weeklyShifts !== undefined) update.rosterManaged = true;
       if (update.color !== undefined) update.color = /^#[0-9a-f]{6}$/i.test(String(update.color)) ? String(update.color) : '';
       // A stand-in cannot be the person they are standing in for.
       if (update.fallbackUser && String(update.fallbackUser) === String(user._id)) {
@@ -134,8 +136,12 @@ router.put('/rules/:userId', async (req, res) => {
       // hides it, so a plain upsert inserted a second row and collided with
       // the unique index on `user` (E11000). includeDeleted finds that row and
       // the deletedAt reset brings it back instead.
+      // Somebody new joining once the roster is in use starts off it, not on
+      // around the clock, until they are given hours on the calendar.
+      const onInsert = { user: user._id };
+      if (update.rosterManaged === undefined && await rosterInUse()) onInsert.rosterManaged = true;
       const rule = await LeadRoutingRule.findOneAndUpdate(
-         { user: user._id }, { $set: { ...update, deletedAt: null, deletedBy: null }, $setOnInsert: { user: user._id } },
+         { user: user._id }, { $set: { ...update, deletedAt: null, deletedBy: null }, $setOnInsert: onInsert },
          { new: true, upsert: true, runValidators: true, includeDeleted: true },
       ).populate('user', 'name email role').populate('fallbackUser', 'name');
       res.json(rule);

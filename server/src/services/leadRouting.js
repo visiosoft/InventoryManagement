@@ -49,8 +49,9 @@ export function parseClock(v) {
  * midnight, which is how a night shift is written.
  */
 export function withinWorkingHours(rule, at, timeZone = 'Asia/Dubai') {
-   // The weekly roster, when there is one, is the whole answer.
-   if (Array.isArray(rule?.weeklyShifts) && rule.weeklyShifts.length) {
+   // The weekly roster, when there is one, is the whole answer — and on a
+   // rep run by the roster, no shifts means off.
+   if (rule?.rosterManaged || (Array.isArray(rule?.weeklyShifts) && rule.weeklyShifts.length)) {
       return onRosterShift(rule.weeklyShifts, weekdayIn(at, timeZone), minutesInDay(at, timeZone));
    }
    const hours = rule?.workingHours;
@@ -483,4 +484,26 @@ async function leadsForChatsWithoutOne({ at = new Date(), limit = 25 } = {}) {
       created += 1;
    }
    return created;
+}
+
+/** Whether the coverage calendar has been saved for anybody yet. */
+export async function rosterInUse() {
+   return !!(await LeadRoutingRule.exists({ rosterManaged: true }));
+}
+
+/**
+ * A new sales rep joins the rotation by themselves — but off: no hours on the
+ * roster, so no leads until an admin paints their shifts on the calendar.
+ * Their share starts at the team's usual one, so hours are all it takes.
+ *
+ * Somebody an admin took out of the rotation earlier (a soft-deleted row) is
+ * not put back: that was a decision.
+ */
+export async function addRepToRotation(userId, { Rule = LeadRoutingRule } = {}) {
+   if (!userId) return null;
+   if (await Rule.findOne({ user: userId }, null, { includeDeleted: true }).select('_id').lean()) return null;
+   const shares = (await Rule.find({ status: 'active' }).select('sharePct').lean())
+      .map((r) => Number(r.sharePct) || 0).filter((n) => n > 0).sort((a, b) => a - b);
+   const sharePct = shares.length ? shares[Math.floor(shares.length / 2)] : 1;
+   return Rule.create({ user: userId, sharePct, status: 'active', rosterManaged: true, weeklyShifts: [] });
 }
