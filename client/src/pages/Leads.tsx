@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRightLeft, CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
+import { ArrowRightLeft, CalendarPlus, Columns3, List as ListIcon, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { fromDubaiDatetimeLocal, toDubaiDatetimeLocal } from '../lib/timezone'
 import WaitingStrip from '../components/WaitingStrip'
+import LeadBoard from '../components/LeadBoard'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
 import { LOST_REASONS } from '../lib/types'
 import { ExportButtons } from '../components/ExportButtons'
@@ -896,6 +897,15 @@ export default function Leads() {
         onError: (e) => { setReassignError(apiError(e)); setReassignResult('') },
     })
 
+    // List or board — a per-person preference, kept across visits.
+    const [view, setView] = useState<'list' | 'board'>(() => {
+        try { return localStorage.getItem('leadsViewMode') === 'board' ? 'board' : 'list' } catch { return 'list' }
+    })
+    const switchView = (v: 'list' | 'board') => {
+        setView(v)
+        try { localStorage.setItem('leadsViewMode', v) } catch { /* not remembered, still switches */ }
+    }
+
     const [page, setPage] = useState(saved.page ?? 1)
     const [limit, setLimit] = useState(saved.limit ?? 25)
     // 'newest' is the long-standing order. 'needFrom' puts whoever wants storage
@@ -1338,6 +1348,19 @@ export default function Leads() {
 
                 {/* ── Filter bar ── */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+                    <div role="tablist" aria-label="View" style={{ display: 'inline-flex', height: 40, padding: 3, borderRadius: 999, background: '#fff', border: '1px solid rgba(20,8,31,.12)' }}>
+                        {([['list', 'List', ListIcon], ['board', 'Board', Columns3]] as const).map(([v, label, Icon]) => (
+                            <button
+                                key={v}
+                                role="tab"
+                                aria-selected={view === v}
+                                onClick={() => switchView(v)}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 14px', borderRadius: 999, border: 0, cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', background: view === v ? PURPLE : 'transparent', color: view === v ? '#fff' : '#4A4357' }}
+                            >
+                                <Icon size={15} /> {label}
+                            </button>
+                        ))}
+                    </div>
                     <div style={{ flex: '1 1 220px', minWidth: 220, display: 'flex', alignItems: 'center', gap: 10, height: 40, padding: '0 16px', background: '#fff', border: '1px solid rgba(20,8,31,.12)', borderRadius: 999 }}>
                         <Search size={16} style={{ color: MUTED_COLOR, flexShrink: 0 }} />
                         <input
@@ -1483,6 +1506,13 @@ export default function Leads() {
                     </div>
                 )}
 
+                {view === 'board' ? (
+                    <LeadBoard
+                        filters={{ ...navFilterParams, intent: '1' }}
+                        onMove={(lead, to) => setPendingChange({ lead, newStatus: to })}
+                        onSeeAll={(st) => { setStatus(st); switchView('list') }}
+                    />
+                ) : (<>
                 {/* ── Table ── */}
                 {/* The column headers are hidden on a phone, and the sort lives in
                     one of them — so a phone gets the same switch here. */}
@@ -1756,6 +1786,7 @@ export default function Leads() {
                         </div>
                     </div>
                 )}
+                </>)}
 
                 </div>
 
