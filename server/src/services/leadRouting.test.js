@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-   addRepToRotation, availability, coverageNow, isAbsent, minutesInDay, parseClock, pickOwner, targetShares, weekdayIn, withinWorkingHours,
+   addRepToRotation, availability, coverageNow, coverageSignal, isAbsent, minutesInDay, parseClock, pickOwner, targetShares, weekdayIn, withinWorkingHours,
 } from './leadRouting.js';
 
 const rep = (id, sharePct, extra = {}) => ({ user: id, sharePct, status: 'active', dailyCap: 0, ...extra });
@@ -347,4 +347,11 @@ test('coverage now: who is on, until when, and who comes on next', () => {
    assert.equal(c.reps[0].name, 'Emad');
    assert.deepEqual(c.handovers.slice(0, 2).map((h) => [h.label, h.joins, h.leaves]), [['15:00', ['m'], []], ['16:00', [], ['e']]]);
    assert.equal(c.nobodyOn, false);
+});
+
+test('the traffic light: green with a rep on, amber when only the AI answers, red when nobody does', () => {
+   assert.equal(coverageSignal({ nobodyOn: false, aiAnswering: true }), 'green');
+   assert.equal(coverageSignal({ nobodyOn: false, aiAnswering: false }), 'green');
+   assert.equal(coverageSignal({ nobodyOn: true, aiAnswering: true }), 'amber');
+   assert.equal(coverageSignal({ nobodyOn: true, aiAnswering: false }), 'red');
 });

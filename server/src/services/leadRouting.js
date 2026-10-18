@@ -568,3 +568,13 @@ export function coverageNow({ rules = [], counts = {}, at = new Date(), timeZone
 
    return { reps, handovers, nobodyOn: nowIds.size === 0 };
 }
+
+/**
+ * The dashboard's traffic light. Green: a rep is on shift to take new leads.
+ * Amber: nobody is, but the AI assistant is answering customers by itself.
+ * Red: nobody is on and nothing is answering.
+ */
+export function coverageSignal({ nobodyOn, aiAnswering }) {
+   if (!nobodyOn) return 'green';
+   return aiAnswering ? 'amber' : 'red';
+}

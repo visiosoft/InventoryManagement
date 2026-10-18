@@ -8,8 +8,10 @@ import { Router } from 'express';
 import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, PushSubscription, User, WhatsAppMessage } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { softDelete } from '../utils/softDelete.js';
-import { availability, cleanWeeklyShifts, countsForToday, coverageNow, digitTail, pickOwner, rosterInUse, startOfDayIn, targetShares } from '../services/leadRouting.js';
+import { availability, cleanWeeklyShifts, countsForToday, coverageNow, coverageSignal, digitTail, pickOwner, rosterInUse, startOfDayIn, targetShares } from '../services/leadRouting.js';
 import { runLeadSla } from '../services/leadSla.js';
+import { getAiBotConfig } from '../services/aiBot.js';
+import { openaiConfigured } from '../services/openai.js';
 
 const router = Router();
 router.use(requireAdmin);
@@ -139,10 +141,16 @@ router.get('/now', async (_req, res) => {
       for (const l of waitingLeads) of(l.owner).waiting = (of(l.owner).waiting || 0) + 1;
 
       const cover = coverageNow({ rules: live, counts, at, timeZone: config.timeZone, activity });
+      // The assistant only covers anybody when it sends replies by itself:
+      // in draft mode it suggests, and a person still has to press send.
+      const bot = await getAiBotConfig().catch(() => null);
+      const aiAnswering = !!(bot?.enabled && bot.mode === 'auto' && openaiConfigured());
       const nameOf = Object.fromEntries(cover.reps.map((r) => [r.id, r.name]));
       res.json({
          enabled: config.enabled,
          outOfHoursMode: config.outOfHoursMode,
+         ai: { enabled: !!bot?.enabled, mode: bot?.mode || 'draft', answering: aiAnswering },
+         signal: coverageSignal({ nobodyOn: cover.nobodyOn, aiAnswering }),
          ...cover,
          handovers: cover.handovers.map((h) => ({
             label: h.label,

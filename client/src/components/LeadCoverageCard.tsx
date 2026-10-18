@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { Skeleton } from './ui'
+import TrafficLight, { type Signal } from './TrafficLight'
 
 /**
  * Admin dashboard: who takes new leads right now (by the roster), whether
@@ -15,6 +16,7 @@ type Rep = {
 }
 type Coverage = {
   enabled: boolean; outOfHoursMode: string; nobodyOn: boolean; reps: Rep[]
+  signal?: Signal; ai?: { enabled: boolean; mode: string; answering: boolean }
   handovers: { label: string; joins: string[]; leaves: string[]; onAfter: string[] }[]
 }
 
@@ -53,16 +55,56 @@ export default function LeadCoverageCard() {
   const off = data.reps.filter((r) => !r.on)
   const dot = (c: string) => <span style={{ width: 10, height: 10, borderRadius: 3, background: c || '#5B2BC9', flex: '0 0 auto' }} />
 
+  const signal: Signal = data.signal ?? (data.nobodyOn ? 'red' : 'green')
+  const SIGNAL_TEXT: Record<Signal, { title: string; line: string; color: string; bg: string }> = {
+    green: {
+      title: `Sales team on — ${on.length} rep${on.length === 1 ? '' : 's'} taking leads`,
+      line: on.map((r) => r.name).join(', ') + (on.some((r) => replyState(r).label === 'Not replying') ? ' · someone is not replying, see below' : ''),
+      color: '#15803D', bg: '#F0FDF4',
+    },
+    amber: {
+      title: 'Nobody on shift — the AI assistant is answering',
+      line: 'Customers get replies from the assistant; new leads wait for the next rep on shift.',
+      color: '#B45309', bg: '#FFFBEB',
+    },
+    red: {
+      title: 'Nobody is on — customers are not being answered',
+      line: data.ai?.enabled && data.ai.mode !== 'auto'
+        ? 'The AI assistant is only drafting, not sending. Put a rep on the roster or switch the assistant to auto-send.'
+        : 'No rep on the roster and the AI assistant is off. Put somebody on shift or switch the assistant on.',
+      color: '#B91C1C', bg: '#FEF2F2',
+    },
+  }
+  const sig = SIGNAL_TEXT[signal]
+  const nextChange = data.handovers[0]
+
   return (
     <div style={{ display: 'grid', gap: 14 }}>
+      {/* The signal */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 26, padding: '16px 24px', borderRadius: 18, background: sig.bg, border: `1px solid ${sig.color}22` }}>
+        <TrafficLight signal={signal} size={130} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: sig.color }}>
+            {signal === 'green' ? 'Green' : signal === 'amber' ? 'Amber' : 'Red'}
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: INK, lineHeight: 1.25, marginTop: 2 }}>{sig.title}</div>
+          <div style={{ fontSize: 13, color: '#4A4357', marginTop: 4 }}>{sig.line}</div>
+          {nextChange && (
+            <div style={{ fontSize: 12.5, color: MUTED, marginTop: 8 }}>
+              Next change <b style={{ color: INK }}>{nextChange.label}</b> — {nextChange.onAfter.length ? `${nextChange.onAfter.join(', ')} on` : 'nobody on'}
+            </div>
+          )}
+        </div>
+      </div>
+
       {!data.enabled && (
         <div className="text-xs" style={{ background: '#FFF7E6', color: '#7A4B00', padding: '8px 10px', borderRadius: 10 }}>
           Distribution is switched off — new leads are not handed out by the roster. Turn it on in <Link to="/settings/lead-distribution" style={{ fontWeight: 700, textDecoration: 'underline' }}>Lead distribution</Link>.
         </div>
       )}
-      {data.nobodyOn && (
-        <div className="text-xs" style={{ background: '#FEF2F2', color: '#991B1B', padding: '8px 10px', borderRadius: 10 }}>
-          Nobody is on shift right now — {OUT_OF_HOURS[data.outOfHoursMode] || 'out-of-hours rules apply'}.
+      {data.nobodyOn && data.outOfHoursMode !== 'ai' && (
+        <div className="text-xs" style={{ color: MUTED }}>
+          New leads now: {OUT_OF_HOURS[data.outOfHoursMode] || 'out-of-hours rules apply'}.
         </div>
       )}
 
