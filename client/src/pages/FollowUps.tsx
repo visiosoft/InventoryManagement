@@ -4,13 +4,14 @@ import { LostReasonsCard } from '../components/LostReasonsCard'
 import { SourceReportCard } from '../components/SourceReportCard'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { CheckSquare, ChevronDown, Clock, HelpCircle, MessageCircle, Search, Square, X } from 'lucide-react'
+import { CheckSquare, ChevronDown, Clock, Columns3, HelpCircle, List as ListIcon, MessageCircle, Search, Square, X } from 'lucide-react'
 import { followUpQueueApi, leadFollowUpApi, type FollowUpQueueItem } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Skeleton } from '../components/ui'
 import FollowUpDrawer from '../components/FollowUpDrawer'
 import FollowUpBulkModal from '../components/FollowUpBulkModal'
 import FollowUpTeamTable from '../components/FollowUpTeamTable'
+import FollowUpBoard from '../components/FollowUpBoard'
 import PipelineFunnel from '../components/PipelineFunnel'
 import { agoText, customerBadge, whyFor } from '../lib/followUpUi'
 
@@ -92,6 +93,14 @@ export default function FollowUps() {
   const isAdmin = user?.role === 'admin'
 
   const [tab, setTab] = useState<Tab>('reply')
+  // List or board — kept per person.
+  const [view, setView] = useState<'list' | 'board'>(() => {
+    try { return localStorage.getItem('followUpsView') === 'board' ? 'board' : 'list' } catch { return 'list' }
+  })
+  const switchView = (v: 'list' | 'board') => {
+    setView(v)
+    try { localStorage.setItem('followUpsView', v) } catch { /* still switches */ }
+  }
   const [search, setSearch] = useState('')
   const [owner, setOwner] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
@@ -181,6 +190,12 @@ export default function FollowUps() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, tab, search, bucketOf])
 
+  const boardItems = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    const qDigits = q.replace(/\D/g, '')
+    return items.filter((it) => !q || it.name.toLowerCase().includes(q) || (qDigits.length >= 4 && (it.phoneNormalized || '').includes(qDigits)))
+  }, [items, search])
+
   const openIndex = openId ? visible.findIndex((it) => it.leadId === openId) : -1
   const nextId = openIndex >= 0 && openIndex + 1 < visible.length ? visible[openIndex + 1].leadId : null
   const toDo = counts.reply + counts.missed + counts.today
@@ -211,6 +226,15 @@ export default function FollowUps() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div role="tablist" aria-label="View" className="inline-flex h-9 p-[3px] rounded-lg border bg-white" style={{ borderColor: LINE }}>
+            {([['list', 'List', ListIcon], ['board', 'Board', Columns3]] as const).map(([v, label, Icon]) => (
+              <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => { switchView(v); leaveSelect() }}
+                className="inline-flex items-center gap-1.5 px-3 rounded-md text-[13px] font-semibold cursor-pointer"
+                style={{ background: view === v ? BRAND : 'transparent', color: view === v ? '#fff' : SUB }}>
+                <Icon size={14} /> {label}
+              </button>
+            ))}
+          </div>
           <button type="button" onClick={() => setHelpOpen((v) => !v)}
             className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-medium cursor-pointer bg-white" style={{ borderColor: LINE, color: SUB }}>
             <HelpCircle size={15} /> How it works
@@ -220,7 +244,7 @@ export default function FollowUps() {
               className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-semibold cursor-pointer bg-white" style={{ borderColor: LINE }}>
               <X size={14} /> Cancel
             </button>
-          ) : tab !== 'sent' && visible.length > 0 && (
+          ) : view === 'list' && tab !== 'sent' && visible.length > 0 && (
             <button type="button" onClick={() => setSelecting(true)}
               className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-semibold cursor-pointer bg-white" style={{ borderColor: LINE, color: BRAND }}>
               Send to several
@@ -254,7 +278,7 @@ export default function FollowUps() {
       {/* Tabs + search */}
       <div className="flex flex-wrap items-end gap-3 mt-5 border-b" style={{ borderColor: LINE }}>
         <div className="flex gap-1 overflow-x-auto flex-1 min-w-0">
-          {TABS.map((t) => {
+          {view === 'list' && TABS.map((t) => {
             const on = tab === t.key
             return (
               <button key={t.key} type="button" onClick={() => { setTab(t.key); leaveSelect() }} title={t.hint}
@@ -283,6 +307,10 @@ export default function FollowUps() {
           </div>
         </div>
       </div>
+      {view === 'board' ? (
+        isLoading ? <div className="mt-3 flex gap-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[300px] w-[260px]" />)}</div>
+          : <FollowUpBoard items={boardItems} isAdmin={isAdmin} heatOf={heat} byBest={byBest} onOpen={setOpenId} />
+      ) : (<>
       <p className="text-[12.5px] mt-2" style={{ color: SUB }}>{TABS.find((t) => t.key === tab)?.hint}</p>
 
       {/* List */}
@@ -380,6 +408,7 @@ export default function FollowUps() {
           </>
         )}
       </div>
+      </>)}
 
       {selecting && (
         <div className="sticky bottom-0 mt-3 px-4 py-3 flex items-center justify-between gap-3 flex-wrap rounded-xl border bg-white/95 backdrop-blur" style={{ borderColor: LINE }}>
@@ -412,8 +441,8 @@ export default function FollowUps() {
       {openId && (
         <FollowUpDrawer
           leadId={openId}
-          nextLeadId={nextId}
-          position={openIndex >= 0 ? { index: openIndex + 1, total: visible.length } : undefined}
+          nextLeadId={view === 'list' ? nextId : null}
+          position={view === 'list' && openIndex >= 0 ? { index: openIndex + 1, total: visible.length } : undefined}
           snapshotAt={data?.snapshotAt}
           onClose={() => setOpenId(null)}
           onAdvance={(id) => setOpenId(id)}
