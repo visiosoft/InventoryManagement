@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-   addRepToRotation, availability, isAbsent, minutesInDay, parseClock, pickOwner, targetShares, weekdayIn, withinWorkingHours,
+   addRepToRotation, availability, coverageNow, isAbsent, minutesInDay, parseClock, pickOwner, targetShares, weekdayIn, withinWorkingHours,
 } from './leadRouting.js';
 
 const rep = (id, sharePct, extra = {}) => ({ user: id, sharePct, status: 'active', dailyCap: 0, ...extra });
@@ -325,4 +325,26 @@ test('somebody already in the rotation, or taken out of it, is left alone', asyn
    };
    assert.equal(await addRepToRotation('u1', { Rule }), null);
    assert.equal(made, false);
+});
+
+test('coverage now: who is on, until when, and who comes on next', () => {
+   // Wednesday 2026-09-02, 12:00 in Dubai (08:00 UTC).
+   const at = new Date('2026-09-02T08:00:00Z');
+   const shifts = (start, end) => [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, start, end }));
+   const rules = [
+      rep('e', 1, { user: { _id: 'e', name: 'Emad' }, rosterManaged: true, weeklyShifts: shifts('08:00', '16:00') }),
+      rep('m', 1, { user: { _id: 'm', name: 'Mahmoud' }, rosterManaged: true, weeklyShifts: shifts('15:00', '22:00') }),
+      rep('x', 1, { user: { _id: 'x', name: 'Xena' }, rosterManaged: true, weeklyShifts: [] }),
+   ];
+   const c = coverageNow({ rules, at, activity: { e: { repliesToday: 4, waiting: 1 } } });
+   const by = Object.fromEntries(c.reps.map((r) => [r.name, r]));
+   assert.equal(by.Emad.on, true);
+   assert.equal(by.Emad.until, '16:00');
+   assert.equal(by.Emad.repliesToday, 4);
+   assert.equal(by.Mahmoud.on, false);
+   assert.equal(by.Mahmoud.nextOn, '15:00');
+   assert.equal(by.Xena.nextOn, null);
+   assert.equal(c.reps[0].name, 'Emad');
+   assert.deepEqual(c.handovers.slice(0, 2).map((h) => [h.label, h.joins, h.leaves]), [['15:00', ['m'], []], ['16:00', [], ['e']]]);
+   assert.equal(c.nobodyOn, false);
 });

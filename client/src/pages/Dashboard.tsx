@@ -10,6 +10,7 @@ import { CHART_STYLE } from './reports/shared'
 import { formatDate, formatMoney } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
 import CustomerFeedbackCard from '../components/CustomerFeedbackCard'
+import LeadCoverageCard from '../components/LeadCoverageCard'
 import ClientInfoSubmissionsCard from '../components/ClientInfoSubmissionsCard'
 import AccountsDashboard from './AccountsDashboard'
 import ZohoBooksOverview, { ZohoReceivablesCard } from '../components/ZohoBooksOverview'
@@ -23,6 +24,7 @@ const PURPLE_LIGHT = '#F7F3FF'
 type WidgetId =
   | 'stats'
   | 'lead-distribution'
+  | 'lead-coverage'
   | 'high-intent-leads'
   | 'website-leads-today'
   | 'lead-funnel'
@@ -41,7 +43,7 @@ type WidgetId =
  * dashboard itself, not a copy of it. */
 type TabKey = 'overview' | 'sales' | 'leads' | 'finance' | 'feedback'
 const TABS: { key: TabKey; label: string; widgets: WidgetId[]; adminOnly?: boolean }[] = [
-  { key: 'overview', label: 'Overview', widgets: ['stats', 'zoho-receivables', 'units-by-size', 'floor-occupancy', 'team-tasks'] },
+  { key: 'overview', label: 'Overview', widgets: ['stats', 'lead-coverage', 'zoho-receivables', 'units-by-size', 'floor-occupancy', 'team-tasks'] },
   { key: 'sales', label: 'Sales', widgets: ['lead-funnel', 'high-intent-leads', 'expiring-contracts'] },
   { key: 'leads', label: 'Leads', widgets: ['lead-distribution', 'website-leads-today', 'website-analytics'] },
   { key: 'finance', label: 'Finance', widgets: [], adminOnly: true },
@@ -53,6 +55,7 @@ const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
 const DEFAULT_LAYOUT: WidgetId[] = [
   'stats',
+  'lead-coverage',
   'zoho-receivables',
   'lead-funnel',
   'lead-distribution',
@@ -197,7 +200,7 @@ export default function Dashboard() {
   const tabs = TABS.filter((t) => !t.adminOnly || isAdmin)
   const tab: TabKey = tabs.some((t) => t.key === searchParams.get('tab')) ? (searchParams.get('tab') as TabKey) : 'overview'
   const chooseTab = (key: TabKey) => setSearchParams((p) => { const n = new URLSearchParams(p); if (key === 'overview') n.delete('tab'); else n.set('tab', key); return n }, { replace: true })
-  const visible = layout.filter((id) => (id !== 'lead-distribution' || isAdmin) && tabOf(id) === tab)
+  const visible = layout.filter((id) => (!['lead-distribution', 'lead-coverage'].includes(id) || isAdmin) && tabOf(id) === tab)
   const [, setDragged] = useState<WidgetId | null>(null)
   const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
   const [sizeFilter, setSizeFilter] = useState<number | null>(null)
@@ -425,6 +428,11 @@ export default function Dashboard() {
             />
 
           </div>
+        ),
+        'lead-coverage': !isAdmin ? null : (
+          <WidgetShell id="lead-coverage" title="Who is on now" subtitle="New leads go only to reps on the roster at this hour. Refreshes every minute." {...dragHandlers}>
+            <LeadCoverageCard />
+          </WidgetShell>
         ),
         'lead-distribution': !isAdmin ? null : (
           <WidgetShell id="lead-distribution" title="Lead distribution — today" subtitle="Leads that came in today: how many the rules handed out, and how many each rep has contacted" {...dragHandlers}>

@@ -8,7 +8,7 @@ import { Router } from 'express';
 import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, PushSubscription, User, WhatsAppMessage } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { softDelete } from '../utils/softDelete.js';
-import { availability, cleanWeeklyShifts, countsForToday, digitTail, pickOwner, rosterInUse, targetShares } from '../services/leadRouting.js';
+import { availability, cleanWeeklyShifts, countsForToday, coverageNow, digitTail, pickOwner, rosterInUse, startOfDayIn, targetShares } from '../services/leadRouting.js';
 import { runLeadSla } from '../services/leadSla.js';
 
 const router = Router();
@@ -96,6 +96,63 @@ router.put('/config', async (req, res) => {
       res.json(config);
    } catch (e) {
       res.status(400).json({ error: e.message });
+   }
+});
+
+/**
+ * The dashboard's "who is on now": who takes new leads at this moment, until
+ * when, who comes on next, and whether each rep is actually answering —
+ * replies sent from the CRM today, the last one, and customers whose latest
+ * message (last 24 hours) is still waiting for us.
+ */
+router.get('/now', async (_req, res) => {
+   try {
+      const at = new Date();
+      const [config, rules, counts] = await Promise.all([
+         loadConfig(),
+         LeadRoutingRule.find({}).populate('user', 'name isActive').lean(),
+         countsForToday({ at }),
+      ]);
+      const live = rules.filter((r) => r.user && r.user.isActive !== false);
+      const ids = live.map((r) => r.user._id);
+      const dayStart = startOfDayIn(at, config.timeZone);
+
+      const [replies, lastMessages] = await Promise.all([
+         WhatsAppMessage.aggregate([
+            { $match: { direction: 'outbound', sentBy: { $in: ids }, occurredAt: { $gte: new Date(at - 7 * 86400000) } } },
+            { $group: { _id: '$sentBy', lastReplyAt: { $max: '$occurredAt' }, today: { $sum: { $cond: [{ $gte: ['$occurredAt', dayStart] }, 1, 0] } } } },
+         ]),
+         WhatsAppMessage.aggregate([
+            { $match: { occurredAt: { $gte: new Date(at - 86400000) }, phoneNormalized: { $nin: [null, ''] } } },
+            { $sort: { occurredAt: -1 } },
+            { $group: { _id: '$phoneNormalized', direction: { $first: '$direction' } } },
+            { $match: { direction: 'inbound' } },
+         ]),
+      ]);
+      const waitingLeads = lastMessages.length
+         ? await Lead.find({ phoneNormalized: { $in: lastMessages.map((m) => m._id) }, owner: { $in: ids } }).select('owner').lean()
+         : [];
+
+      const activity = {};
+      const of = (id) => (activity[String(id)] ||= {});
+      for (const r of replies) Object.assign(of(r._id), { lastReplyAt: r.lastReplyAt, repliesToday: r.today });
+      for (const l of waitingLeads) of(l.owner).waiting = (of(l.owner).waiting || 0) + 1;
+
+      const cover = coverageNow({ rules: live, counts, at, timeZone: config.timeZone, activity });
+      const nameOf = Object.fromEntries(cover.reps.map((r) => [r.id, r.name]));
+      res.json({
+         enabled: config.enabled,
+         outOfHoursMode: config.outOfHoursMode,
+         ...cover,
+         handovers: cover.handovers.map((h) => ({
+            label: h.label,
+            joins: h.joins.map((id) => nameOf[id]),
+            leaves: h.leaves.map((id) => nameOf[id]),
+            onAfter: h.onAfter.map((id) => nameOf[id]),
+         })),
+      });
+   } catch (e) {
+      res.status(500).json({ error: e.message });
    }
 });
 

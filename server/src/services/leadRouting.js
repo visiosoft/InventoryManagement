@@ -507,3 +507,64 @@ export async function addRepToRotation(userId, { Rule = LeadRoutingRule } = {}) 
    const sharePct = shares.length ? shares[Math.floor(shares.length / 2)] : 1;
    return Rule.create({ user: userId, sharePct, status: 'active', rosterManaged: true, weeklyShifts: [] });
 }
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const STEP_MIN = 15;
+
+/** "14:00", or "Mon 08:00" when it is not today. */
+function whenLabel(t, at, timeZone) {
+   const m = minutesInDay(t, timeZone);
+   const hhmm = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+   return weekdayIn(t, timeZone) === weekdayIn(at, timeZone) && t - at < 86400000 ? hhmm : `${DAY_NAMES[weekdayIn(t, timeZone)]} ${hhmm}`;
+}
+
+/**
+ * Who takes new leads right now, until when, and who comes on next — the
+ * roster read forward for the coming week in 15-minute steps. Daily caps are
+ * left out of the look-ahead (they reset), absences and pauses are not.
+ *
+ * activity: { [userId]: { lastReplyAt, repliesToday, waiting } }
+ */
+export function coverageNow({ rules = [], counts = {}, at = new Date(), timeZone = 'Asia/Dubai', activity = {} } = {}) {
+   const onAt = (t) => new Set(availability({ rules: rules.map((r) => ({ ...r, dailyCap: 0 })), at: t, timeZone }).available.map((a) => a.id));
+   const { available, excluded } = availability({ rules, counts, at, timeZone });
+   const nowIds = new Set(available.map((a) => a.id));
+
+   // Step forward: when each rep next changes, and the handovers in the next 24h.
+   const changeAt = {};
+   const handovers = [];
+   let prev = onAt(at);
+   const start = new Date(Math.ceil(at.getTime() / (STEP_MIN * 60000)) * STEP_MIN * 60000);
+   for (let t = start; t - at <= 7 * 86400000; t = new Date(t.getTime() + STEP_MIN * 60000)) {
+      const cur = onAt(t);
+      const joins = [...cur].filter((id) => !prev.has(id));
+      const leaves = [...prev].filter((id) => !cur.has(id));
+      for (const id of [...joins, ...leaves]) if (!changeAt[id]) changeAt[id] = t;
+      if ((joins.length || leaves.length) && t - at <= 86400000 && handovers.length < 8) {
+         handovers.push({ at: t, label: whenLabel(t, at, timeZone), joins, leaves, onAfter: [...cur] });
+      }
+      prev = cur;
+   }
+
+   const reps = rules.map((r) => {
+      const id = String(r.user?._id ?? r.user);
+      const on = nowIds.has(id);
+      const next = changeAt[id];
+      const a = activity[id] || {};
+      return {
+         id,
+         name: r.user?.name || '',
+         color: r.color || '',
+         on,
+         why: on ? null : excluded.find((e) => e.id === id)?.reason || 'off shift',
+         until: on && next ? whenLabel(next, at, timeZone) : null,
+         nextOn: !on && next ? whenLabel(next, at, timeZone) : null,
+         leadsToday: Number(counts[id] || 0),
+         lastReplyAt: a.lastReplyAt || null,
+         repliesToday: a.repliesToday || 0,
+         waiting: a.waiting || 0,
+      };
+   }).sort((x, y) => (Number(y.on) - Number(x.on)) || x.name.localeCompare(y.name));
+
+   return { reps, handovers, nobodyOn: nowIds.size === 0 };
+}
