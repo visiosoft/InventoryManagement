@@ -80,6 +80,9 @@ const EVENT_STYLE: Record<string, { icon: typeof Pencil; bg: string; color: stri
 
 type Owner = { _id: string; name: string; email: string }
 type Lead = {
+  whenNeeded?: string
+  storingWhat?: string
+  spaceNeeded?: string
   _id: string; fullName: string; email: string; phone: string; whatsappNo: string
   phoneNormalized: string; status: string; owner: Owner | null; notes: string
   leadDateTime: string; source: string
@@ -1381,6 +1384,18 @@ export default function PersonProfile() {
               )}
             </Card>
               </div>
+              {(lead.whenNeeded || lead.storingWhat || lead.spaceNeeded) && (
+                <Card title="Their enquiry">
+                  <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 14px', fontSize: 13, margin: 0 }}>
+                    {([['When', lead.whenNeeded], ['Storing', lead.storingWhat], ['Space', lead.spaceNeeded]] as const).filter(([, v]) => v).map(([k, v]) => (
+                      <div key={k} style={{ display: 'contents' }}>
+                        <dt style={{ color: FAINT }}>{k}</dt>
+                        <dd style={{ margin: 0, color: INK, fontWeight: 600 }}>{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </Card>
+              )}
               <Card title="Needs storage from">
               <div className="flex flex-col" style={{ gap: 12 }}>
                 <span style={{ color: FAINT, fontSize: 13 }}>

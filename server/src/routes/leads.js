@@ -84,6 +84,9 @@ function cleanBody(body) {
         followUpNote: String(body.followUpNote || '').slice(0, 500),
         siteVisitAt: body.siteVisitAt ? parseDate(body.siteVisitAt) : null,
         storageStartAt: body.storageStartAt ? parseDate(body.storageStartAt) : null,
+        whenNeeded: String(body.whenNeeded || '').trim().slice(0, 120),
+        storingWhat: String(body.storingWhat || '').trim().slice(0, 200),
+        spaceNeeded: String(body.spaceNeeded || '').trim().slice(0, 120),
     };
 }
 

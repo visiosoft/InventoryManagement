@@ -125,6 +125,31 @@ function fromDatetimeLocal(input: FormDataEntryValue | null) {
     return fromDubaiDatetimeLocal(String(input)) || undefined
 }
 
+/* The website form's answers, as they arrive in a WhatsApp message or an
+   email ("Full name: …", "When do you need it: …"), read into the add-lead
+   form so nobody retypes them. */
+const WHEN_OPTIONS = ['As soon as possible', 'Within a week', 'Within a month', 'In 1–3 months', 'Just planning ahead']
+const STORING_OPTIONS = ['Household items', 'Furniture', 'Business stock', 'Documents / archives', 'Vehicle', 'Other']
+const SPACE_OPTIONS = ['A few boxes', 'Small room', 'Studio / 1 bedroom', '2 bedrooms', '3+ bedrooms', 'Not sure']
+
+function parseEnquiry(text: string) {
+    const out: { fullName?: string; phone?: string; email?: string; whenNeeded?: string; storingWhat?: string; spaceNeeded?: string; fromWebsite?: boolean } = {}
+    for (const raw of text.split(/\r?\n/)) {
+        const m = raw.match(/^\s*([^:]{2,60}):\s*(.+?)\s*$/)
+        if (!m) continue
+        const key = m[1].toLowerCase()
+        const val = m[2]
+        if (/full name|^name$/.test(key)) out.fullName = val
+        else if (/phone|mobile|whatsapp|contact number/.test(key)) out.phone = val
+        else if (/e-?mail/.test(key)) out.email = val.match(/[^\s@]+@[^\s@]+\.[a-z]{2,}/i)?.[0] ?? val
+        else if (/when/.test(key)) out.whenNeeded = val
+        else if (/what.*stor|storing/.test(key)) out.storingWhat = val
+        else if (/space|how much|size/.test(key)) out.spaceNeeded = val
+    }
+    if (/your form|website/i.test(text)) out.fromWebsite = true
+    return out
+}
+
 function LeadForm({
     initial,
     busy,
@@ -163,11 +188,54 @@ function LeadForm({
             owner: String(f.get('owner') || ''),
             unitsNeeded: Number(f.get('unitsNeeded') || 1),
             notes: String(f.get('notes') || ''),
+            whenNeeded: String(f.get('whenNeeded') || ''),
+            storingWhat: String(f.get('storingWhat') || ''),
+            spaceNeeded: String(f.get('spaceNeeded') || ''),
         })
     }
 
+    const formRef = useRef<HTMLFormElement>(null)
+    const [pasted, setPasted] = useState('')
+    const [filled, setFilled] = useState('')
+    function fillFromPaste() {
+        const form = formRef.current
+        if (!form) return
+        const p = parseEnquiry(pasted)
+        const set = (name: string, value?: string) => {
+            const el = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null
+            if (el && value) el.value = value
+        }
+        if (p.fullName) {
+            const parts = p.fullName.trim().split(/\s+/)
+            set('firstName', parts[0])
+            set('lastName', parts.slice(1).join(' '))
+        }
+        set('phone', p.phone)
+        set('email', p.email)
+        set('whenNeeded', p.whenNeeded)
+        set('storingWhat', p.storingWhat)
+        set('spaceNeeded', p.spaceNeeded)
+        if (p.fromWebsite) set('source', 'website')
+        const notes = form.elements.namedItem('notes') as HTMLTextAreaElement | null
+        if (notes && !notes.value.trim()) notes.value = pasted.trim()
+        const n = Object.values(p).filter((v) => typeof v === 'string').length
+        setFilled(n ? `Filled ${n} field${n === 1 ? '' : 's'} — check them below.` : 'Nothing recognised — lines should look like "Full name: …".')
+    }
+
     return (
-        <form onSubmit={submit} className="space-y-4">
+        <form ref={formRef} onSubmit={submit} className="space-y-4">
+            {!initial?._id && (
+                <div className="rounded-lg p-3 space-y-2" style={{ background: '#F7F3FF', border: '1px solid #E4D9FF' }}>
+                    <Field label="Paste the enquiry (optional)">
+                        <Textarea value={pasted} onChange={(e) => { setPasted(e.target.value); setFilled('') }} rows={3}
+                            placeholder={'Full name: …\nWhen do you need it: …\nWhat are you looking to store?: …\nRoughly how much space do you need?: …\nPhone number: …\nEmail: …'} />
+                    </Field>
+                    <div className="flex items-center gap-3">
+                        <Button type="button" variant="outline" disabled={!pasted.trim()} onClick={fillFromPaste}>Fill in the form</Button>
+                        {filled && <span style={{ fontSize: 12.5, color: '#4A1FA0' }}>{filled}</span>}
+                    </div>
+                </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
                 <Field label="First name">
                     <Input name="firstName" defaultValue={initial?.firstName || initial?.fullName?.split(' ')[0]} required />
@@ -259,6 +327,21 @@ function LeadForm({
                 <Field label="Units needed">
                     <Input name="unitsNeeded" type="number" min={1} step="1" defaultValue={initial?.unitsNeeded ?? 1} required />
                 </Field>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+                <Field label="When do they need it?">
+                    <Input name="whenNeeded" list="lead-when-options" defaultValue={initial?.whenNeeded} placeholder="e.g. Just planning ahead" />
+                </Field>
+                <Field label="What are they storing?">
+                    <Input name="storingWhat" list="lead-storing-options" defaultValue={initial?.storingWhat} placeholder="e.g. Business stock" />
+                </Field>
+                <Field label="Roughly how much space?">
+                    <Input name="spaceNeeded" list="lead-space-options" defaultValue={initial?.spaceNeeded} placeholder="e.g. A few boxes" />
+                </Field>
+                <datalist id="lead-when-options">{WHEN_OPTIONS.map((o) => <option key={o} value={o} />)}</datalist>
+                <datalist id="lead-storing-options">{STORING_OPTIONS.map((o) => <option key={o} value={o} />)}</datalist>
+                <datalist id="lead-space-options">{SPACE_OPTIONS.map((o) => <option key={o} value={o} />)}</datalist>
             </div>
 
             <Field label="Needs storage from">

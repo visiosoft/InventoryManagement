@@ -500,6 +500,12 @@ const leadSchema = new Schema(
        services/leadScore.js so "not ready right now" scores as a real,
        future-dated lead rather than as a cold, vague one. */
     intendedStartDate: { type: Date, default: null },
+    /* The enquiry in the customer's own words, as the website form asks it:
+       when ("Just planning ahead"), what ("Business stock") and how much
+       ("A few boxes"). Free text — a rep types what they were told. */
+    whenNeeded: { type: String, default: '' },
+    storingWhat: { type: String, default: '' },
+    spaceNeeded: { type: String, default: '' },
     /* The other end of intendedStartDate — set only by the WhatsApp
        moving/storage booking flow once a customer gives both ends of a
        date range, alongside selectedUnit below. Nothing else writes this. */
