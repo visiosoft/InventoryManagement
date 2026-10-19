@@ -16,6 +16,7 @@ import { scoreForLead, highIntentToday, intakeChecklist, intentForLeads, snapsho
 import { summariseConversation } from '../services/conversationSummary.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { dubaiDayRange } from '../services/automationEngine.js';
+import { describeChanges, handOverText } from '../services/leadActivity.js';
 
 const router = Router();
 
@@ -1502,7 +1503,8 @@ router.put('/:id', async (req, res) => {
         return res.status(403).json({ error: 'Only an admin can change the notes on a lead' });
     }
 
-    const body = cleanBody({ ...lead.toObject(), ...req.body });
+    const prev = lead.toObject();
+    const body = cleanBody({ ...prev, ...req.body });
     if (!body.firstName && !body.fullName) return res.status(400).json({ error: 'First name is required' });
     if (!body.phone) return res.status(400).json({ error: 'Phone is required' });
     if (!ALLOWED_STATUS.has(body.status)) return res.status(400).json({ error: 'Invalid lead status' });
@@ -1576,6 +1578,9 @@ router.put('/:id', async (req, res) => {
     lead.notes = body.notes;
     lead.temperature = body.temperature;
     lead.tags = body.tags;
+    lead.whenNeeded = body.whenNeeded;
+    lead.storingWhat = body.storingWhat;
+    lead.spaceNeeded = body.spaceNeeded;
     const before = { followUpAt: lead.followUpAt };
 
     // Moving a follow-up re-arms it. Without this a lead reminded once in
@@ -1624,8 +1629,22 @@ router.put('/:id', async (req, res) => {
         });
     }
     lead.storageStartAt = body.storageStartAt;
+    /* The activity log: what changed, old to new, and any change of hands —
+       rather than a bare "Lead updated", which told nobody anything. */
     const userName = req.user.name || req.user.email || 'user';
-    lead.timeline.push({ type: 'updated', text: `Lead updated by ${userName}`, user: req.user.id });
+    const changed = describeChanges(prev, lead.toObject());
+    if (changed) lead.timeline.push({ type: 'updated', text: `${userName} changed ${changed}`, user: req.user.id });
+    if (handedOver) {
+        const [fromUser, toUser] = await Promise.all([
+            prev.owner ? User.findById(prev.owner).select('name').lean() : null,
+            ownerId ? User.findById(ownerId).select('name').lean() : null,
+        ]);
+        lead.timeline.push({
+            type: 'assigned',
+            text: handOverText({ byName: userName, toName: toUser?.name || '', fromName: fromUser?.name || '', note: req.body.handOverNote }),
+            user: req.user.id,
+        });
+    }
 
     // Both tasks stand for their dates from the moment they are set, so the
     // rep can see what is coming rather than being told on the day.
@@ -1778,6 +1797,41 @@ router.patch('/:id/status', async (req, res) => {
  * This is for everything in between: what was said, what was promised, why
  * they went quiet — the running account of working somebody.
  */
+/**
+ * Pass a lead on to somebody else, with a reason — the one change of owner a
+ * rep may make themselves ("customer wants a corporate quote, over to you").
+ * An admin can do the same from here. The trail records who, to whom and why;
+ * the new owner is told, and a rep who passes a lead on no longer sees it.
+ */
+router.post('/:id/hand-over', async (req, res) => {
+    try {
+        const lead = await Lead.findById(req.params.id);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+        const to = String(req.body?.to || '');
+        const note = String(req.body?.note || '').trim().slice(0, 500);
+        if (!to) return res.status(400).json({ error: 'Choose who to send it to' });
+        if (String(lead.owner || '') === to) return res.status(400).json({ error: 'They already have it' });
+        const target = await User.findById(to).select('name isActive').lean();
+        if (!target || target.isActive === false) return res.status(400).json({ error: 'That person is not active' });
+
+        const fromUser = lead.owner ? await User.findById(lead.owner).select('name').lean() : null;
+        const byName = req.user.name || req.user.email || 'user';
+        const now = new Date();
+        await Lead.updateOne({ _id: lead._id }, {
+            $set: { owner: target._id, ownerSeenAt: null, assignedAt: now, firstResponseAt: null, assignedBy: req.user.id, autoAssigned: false },
+            $push: { timeline: { type: 'assigned', text: handOverText({ byName, toName: target.name, fromName: fromUser?.name || '', note }), user: req.user.id, at: now } },
+        });
+        if (String(target._id) !== String(req.user?.id || '')) {
+            notifyLeadAssigned({ lead, ownerId: target._id, assignedByName: note ? `${byName} — "${note}"` : byName })
+                .catch((e) => console.error('[Leads] hand-over notify failed:', e.message));
+        }
+        res.json({ ok: true, owner: { _id: String(target._id), name: target.name } });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.post('/:id/notes', async (req, res) => {
     try {
         const text = String(req.body?.text || '').trim();

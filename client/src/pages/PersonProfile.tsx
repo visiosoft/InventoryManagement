@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Calendar, Clock, FileText, MessageCircle, MessageSquare,
-  ClipboardList, PackageCheck, Pencil, Phone, Trash2, Plus, Repeat, UserCheck, UserPlus,
+  ClipboardList, PackageCheck, Pencil, Phone, Send, Trash2, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
@@ -76,6 +76,8 @@ const EVENT_STYLE: Record<string, { icon: typeof Pencil; bg: string; color: stri
   note: { icon: MessageSquare, bg: 'rgba(217,119,6,.09)', color: WARM },
   comment: { icon: MessageSquare, bg: 'rgba(217,119,6,.09)', color: WARM },
   updated: { icon: Pencil, bg: CREAM_2, color: INK_2 },
+  // Changed hands: sent on by a rep, or reassigned by an admin.
+  assigned: { icon: Send, bg: 'rgba(37,99,235,.09)', color: '#1D4ED8' },
 }
 
 type Owner = { _id: string; name: string; email: string }
@@ -268,6 +270,10 @@ export default function PersonProfile() {
   }, [])
   const [chatPanelOpen, setChatPanelOpen] = useState(false)
   const [note, setNote] = useState('')
+  // Passing the lead on to somebody else, with a reason.
+  const [passing, setPassing] = useState(false)
+  const [passTo, setPassTo] = useState('')
+  const [passNote, setPassNote] = useState('')
   // A stage picked but not yet committed, and the note going with it.
   const [pendingStage, setPendingStage] = useState('')
   // The follow-up being set: which preset, at what time, and what it is for.
@@ -446,6 +452,17 @@ export default function PersonProfile() {
   const addNote = useMutation({
     mutationFn: () => api.post(`/leads/${data!.lead!._id}/notes`, { text: note.trim() }),
     onSuccess: () => { setNote(''); setErr(''); refresh() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const passOn = useMutation({
+    mutationFn: () => api.post(`/leads/${data!.lead!._id}/hand-over`, { to: passTo, note: passNote.trim() }),
+    onSuccess: () => {
+      setPassing(false); setPassTo(''); setPassNote(''); setErr('')
+      // A rep who passes a lead on no longer has it: back to their list.
+      if (!isAdmin) navigate('/leads')
+      else refresh()
+    },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -803,6 +820,10 @@ export default function PersonProfile() {
                   ) : (
                     <span style={{ fontSize: 13, fontWeight: 600 }}>{lead.owner?.name || 'Nobody'}</span>
                   )}
+                  <button type="button" onClick={() => setPassing((v) => !v)} className="cursor-pointer"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, border: 0, background: 'none', padding: 0, color: PURPLE, fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit' }}>
+                    <Send size={12} /> Pass on
+                  </button>
                   {lead.owner && (lead.autoAssigned || lead.assignedBy?.name) && (
                     <span style={{ display: 'block', fontSize: 11, color: FAINT, marginTop: 3 }}>
                       Assigned {lead.autoAssigned ? 'by the rota' : `by ${lead.assignedBy?.name}`}
@@ -811,6 +832,29 @@ export default function PersonProfile() {
                   )}
                 </dd>
               </div>
+              {passing && (
+                <div style={{ padding: '10px 12px', margin: '0 0 10px', borderRadius: 12, background: '#F7F3FF', border: '1px solid #E4D9FF' }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: INK, marginBottom: 6 }}>Pass this lead on</div>
+                  <select value={passTo} onChange={(e) => setPassTo(e.target.value)} aria-label="Send to"
+                    style={{ width: '100%', height: 34, padding: '0 8px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 13, fontFamily: 'inherit' }}>
+                    <option value="">Send to…</option>
+                    {assignable.filter((u) => u._id !== lead.owner?._id).map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
+                  </select>
+                  <textarea value={passNote} onChange={(e) => setPassNote(e.target.value)} rows={2} placeholder="Why? e.g. wants a corporate quote, please redistribute"
+                    style={{ width: '100%', marginTop: 6, padding: '6px 8px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }} />
+                  <div className="flex items-center" style={{ gap: 8, marginTop: 6 }}>
+                    <button type="button" disabled={!passTo || passOn.isPending} onClick={() => passOn.mutate()} className="cursor-pointer disabled:opacity-50"
+                      style={{ height: 32, padding: '0 14px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit' }}>
+                      {passOn.isPending ? 'Sending…' : 'Send'}
+                    </button>
+                    <button type="button" onClick={() => setPassing(false)} className="cursor-pointer"
+                      style={{ height: 32, padding: '0 12px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}>
+                      Cancel
+                    </button>
+                    {!isAdmin && <span style={{ fontSize: 11.5, color: FAINT }}>It leaves your list once sent.</span>}
+                  </div>
+                </div>
+              )}
               <div className="flex items-center" style={{ gap: 8, padding: '9px 0', borderTop: `1px solid ${LINE}` }}>
                 <dt style={{ color: FAINT, flexGrow: 1, fontSize: 13 }}>Came in</dt>
                 <dd style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{lead.leadDateTime ? formatDateTime(lead.leadDateTime) : '—'}</dd>
