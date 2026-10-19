@@ -410,7 +410,9 @@ const leadSchema = new Schema(
     ],
     source: {
       type: String,
-      enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'meta_ads', 'other'],
+      // 'mobile_app': somebody who signed up in the customer app, turned into a
+      // lead from the staff Client Requests inbox (services/clientRequests.js).
+      enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'meta_ads', 'mobile_app', 'other'],
       default: 'manual',
     },
     leadDateTime: { type: Date, default: Date.now },
@@ -1813,6 +1815,17 @@ const documentSchema = new Schema(
     storage: { type: String, enum: ['drive', 'local'], default: 'local' },
     driveFileId: { type: String, default: '' },
     url: { type: String, default: '' },
+    /* Has a colleague looked at an ID the customer uploaded from the app?
+       'pending' when it arrives; staff verify or reject it from the Client
+       Requests inbox (a rejection asks the customer to upload again). Null on
+       anything staff filed themselves — there is nothing to check. */
+    verification: {
+      state: { type: String, enum: ['pending', 'verified', 'rejected', null], default: null },
+      by: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+      byName: { type: String, default: '' },
+      at: { type: Date, default: null },
+      reason: { type: String, default: '' },
+    },
   },
   { timestamps: true }
 );

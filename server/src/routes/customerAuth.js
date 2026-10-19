@@ -5,6 +5,7 @@ import { Customer } from '../models/index.js';
 import { checkOtp, issueOtp, normalizePhone } from '../services/customerOtp.js';
 import { findCustomersByContact, maskEmail, parseContact } from '../services/customerLookup.js';
 import { isExpoPushToken } from '../services/expoPush.js';
+import { onNewSignup } from '../services/clientRequests.js';
 
 const router = Router();
 
@@ -125,6 +126,7 @@ router.post('/verify-otp', otpLimiter, async (req, res) => {
        * they arrived on the tenant list as a customer. They are promoted when
        * a contract exists, like everybody else — services/customerStage.js. */
       customer = await Customer.create({ fullName: fullName || e164, phone: e164, phones: [e164], stage: 'prospect' });
+      await onNewSignup(customer); // sales Client Requests inbox; never throws
     }
 
     // Entering a code sent to this phone proves they hold it; "Complete your profile" shows that as done.
@@ -160,6 +162,7 @@ router.post('/google', async (req, res) => {
         // Signing in with Google is not renting either.
         stage: 'prospect',
       });
+      await onNewSignup(customer);
     } else if (!customer.googleId) {
       customer.googleId = gUser.sub;
       if (!customer.fullName || customer.fullName === customer.phone) customer.fullName = gUser.name || customer.fullName;

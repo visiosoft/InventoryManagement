@@ -124,7 +124,7 @@ async function raiseRenewalInvoice(renewal, contract, unitNo) {
  * that has already been paid for — the money is in, the contract is extended,
  * and a bounced email is a support problem, not a reason to roll back.
  */
-export async function notifyRenewalApplied({ contract, customer, renewal, invoice, signingUrl = '' }) {
+export async function notifyRenewalApplied({ contract, customer, renewal, invoice, signingUrl = '', paid = true }) {
     const results = { email: 'skipped', whatsapp: 'skipped' };
     const name = customer?.fullName || 'there';
     const endsOn = fmtDate(renewal.newEndDate);
@@ -168,7 +168,7 @@ export async function notifyRenewalApplied({ contract, customer, renewal, invoic
                 text: [
                     `Hi ${name},`,
                     `Your storage contract ${contract.contractNo} has been renewed and now runs until ${endsOn}.`,
-                    `Total paid: AED ${money(renewal.total)}`,
+                    `${paid ? 'Total paid' : 'Total due'}: AED ${money(renewal.total)}`,
                     `Invoice: ${invoice.invoiceNo}`,
                     signingUrl ? `Please re-sign your agreement for the renewed term: ${signingUrl}` : '',
                     'Thank you for staying with PurpleBox.',
@@ -243,7 +243,10 @@ export function decideExtension({ contractEndDate, quotedEndDate, newEndDate }) 
  * it true and the invoice is marked settled; a bank transfer confirmed by a
  * colleague also arrives true, because that is what they are confirming.
  */
-export async function applyRenewal(renewalId, { byName = '', paid = true } = {}) {
+/* `viaAppRequest`: a colleague approving an extension the tenant asked for in
+ * the app (services/clientRequests.js). Nothing is paid yet — the invoice is
+ * raised as owed — so the feed must not say "paid by bank transfer". */
+export async function applyRenewal(renewalId, { byName = '', paid = true, viaAppRequest = false } = {}) {
     const renewal = await ContractRenewal.findById(renewalId);
     if (!renewal) return { ok: false, error: 'Renewal not found' };
 
@@ -306,9 +309,11 @@ export async function applyRenewal(renewalId, { byName = '', paid = true } = {})
     /* Who the activity feed credits. A card renewal was genuinely done by the
      * tenant with nobody involved; a bank transfer was done by them and then
      * confirmed by a named colleague, and the feed should say both. */
-    const author = renewal.method === 'card'
-        ? 'Tenant (online renewal)'
-        : `${byName || 'Staff'} (confirmed tenant transfer)`;
+    const author = viaAppRequest
+        ? `${byName || 'Staff'} (approved tenant's app request)`
+        : renewal.method === 'card'
+            ? 'Tenant (online renewal)'
+            : `${byName || 'Staff'} (confirmed tenant transfer)`;
 
     contract.renewalIntent = 'renewing';
 
@@ -319,7 +324,13 @@ export async function applyRenewal(renewalId, { byName = '', paid = true } = {})
     contract.timeline.push({
         at: new Date(),
         author,
-        text: [
+        text: viaAppRequest ? [
+            `Extended to ${fmtDate(newEnd)} on the tenant's app request`,
+            `— ${renewal.weeks} week${renewal.weeks === 1 ? '' : 's'},`,
+            `AED ${money(renewal.subTotal)} + AED ${money(renewal.vatAmount)} VAT`,
+            `= AED ${money(renewal.total)},`,
+            paid ? 'paid.' : 'invoiced, payment due.',
+        ].join(' ') : [
             `Renewed online to ${fmtDate(newEnd)}`,
             `— ${renewal.weeks} week${renewal.weeks === 1 ? '' : 's'},`,
             `AED ${money(renewal.subTotal)} + AED ${money(renewal.vatAmount)} VAT`,
@@ -373,6 +384,7 @@ export async function applyRenewal(renewalId, { byName = '', paid = true } = {})
         renewal,
         invoice,
         signingUrl,
+        paid,
     });
 
     /* Record where the invoice actually went, after the fact.

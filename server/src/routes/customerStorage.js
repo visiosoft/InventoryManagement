@@ -4,6 +4,7 @@ import { requireCustomer, otpLimiter, signCustomerToken, customerPayload } from 
 import customerValetRouter from './customerValet.js';
 import customerInboxRouter from './customerInbox.js';
 import { nextPaymentDueDate } from '../services/billingCycle.js';
+import { onCustomerRequest } from '../services/clientRequests.js';
 import { buildContractPdf } from '../services/contractDocument.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
 import { renderReceiptPdf } from '../services/receiptPdf.js';
@@ -181,6 +182,8 @@ async function fileRequest(req, contract, type, payload, summary, pendingMsg) {
   const request = await CustomerRequest.create({ customer: req.customer.customerId, contract: contract._id, type, payload });
   contract.timeline.push({ text: `Tenant requested via app: ${summary}`, author: 'customer app' });
   await contract.save();
+  // Into the staff Client Requests inbox (sales or accounts). Never throws.
+  await onCustomerRequest(request, contract);
   return request;
 }
 

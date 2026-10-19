@@ -7,6 +7,7 @@ import { applyInvoicePayment, syncLinkedPayment } from './invoicePayments.js';
 import { candidatesFor, claimFirstAvailable } from '../routes/publicBooking.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { retrieveCheckoutSession, retrievePaymentIntent, stripeConfigured } from './stripe.js';
+import { onBookingNeedsReview } from './clientRequests.js';
 
 /**
  * Self-serve unit booking for the customer app.
@@ -165,6 +166,8 @@ const flag = async (quote, reason) => {
   quote.appBooking.reviewReason = reason;
   quote.timeline.push({ type: 'updated', text: `NEEDS STAFF: ${reason}` });
   await quote.save();
+  // So somebody actually sees it: the sales Client Requests inbox. Never throws.
+  await onBookingNeedsReview(quote, reason);
 };
 
 /**

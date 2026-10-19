@@ -107,5 +107,9 @@ export async function settleServiceRequestPayment({ serviceRequestId, sessionId 
       .catch((e) => console.error('[ServicePayments] timeline:', e.message));
   }
   await notifyDeliveryPaid(r);
+  // Paid, so now it is a job: into the warehouse's Client Requests inbox.
+  // Imported here, not at the top — that module imports this one.
+  await import('./clientRequests.js').then((m) => m.syncFromSource('ServiceRequest', r._id))
+    .catch((e) => console.error('[ServicePayments] client request:', e.message));
   return { settled: true, late };
 }

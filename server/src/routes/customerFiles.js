@@ -8,6 +8,7 @@ import { normalizePhone } from '../services/customerOtp.js';
 import { UPLOADS_DIR, downloadFile, driveConfigured, uploadFile } from '../services/drive.js';
 import { ALLOWED_MIME, ID_SIDES, ID_TYPES, docName, extensionFor, idComplete, latestPerSlot } from '../services/identityDocs.js';
 import { customerDocumentFilter, linkIdentityToCustomerContracts } from '../services/customerIdentity.js';
+import { onIdentityUpload } from '../services/clientRequests.js';
 
 /**
  * A tenant's own files and the people allowed into their unit.
@@ -85,7 +86,9 @@ router.post('/identity', otpLimiter, upload.single('file'), wrap(async (req, res
   const doc = await Document.create({
     customer: customer._id, name: docName(type, side), type, side, source: 'customer_app', mime,
     storage: stored.storage, driveFileId: stored.driveFileId || '', url: stored.url || '',
+    verification: { state: 'pending' },
   });
+  await onIdentityUpload(doc); // a staff ID check; never throws
   const linked = await linkIdentityToCustomerContracts(customer._id).catch((e) => { console.error('[customerFiles] could not link to contracts:', e.message); return { contracts: 0, linked: 0 }; });
   const all = await Document.find({ customer: customer._id, type: { $in: ID_TYPES } }).lean();
   res.status(201).json({ document: docView(doc.toObject()), complete: idComplete(all), attachedToContracts: linked.contracts });

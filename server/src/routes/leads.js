@@ -33,8 +33,9 @@ const ALLOWED_TAGS = new Set([
     'personal_storage', 'business_storage',
     'urgent', 'site_visit_required', 'price_sensitive', 'unresponsive',
 ]);
-// The same list the Lead model allows — meta_ads was missing, so a Meta Ads lead could not be added or edited.
-const ALLOWED_SOURCE = new Set(['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'meta_ads', 'other']);
+// The same list the Lead model allows. meta_ads was missing, so a Meta Ads lead could not be added or edited;
+// 'mobile_app' leads are made from the Client Requests inbox, listed so editing one does not fail.
+const ALLOWED_SOURCE = new Set(['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'meta_ads', 'mobile_app', 'other']);
 const ALLOWED_DURATION_UNIT = new Set(['week', 'month']);
 
 // The one shape for stored numbers (9715…), however it was typed — see services/phone.js.

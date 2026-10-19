@@ -9,6 +9,7 @@ import { Contract, Counter, Customer, CustomerOtp, Site, Unit, User } from '../s
 import { StoredContainer, ScanEvent, ItemPhoto, WarehouseLocation } from '../src/models/warehouse.js';
 import { ServiceRequest } from '../src/models/serviceRequest.js';
 import { CustomerNotification } from '../src/models/customerNotification.js';
+import { ClientRequest } from '../src/models/clientRequest.js';
 import { paymentExpired, paymentView, settleServiceRequestPayment } from '../src/services/servicePayments.js';
 import { addDays, dubaiToday, weekday } from '../src/services/servicePricing.js';
 import customerAuthRouter from '../src/routes/customerAuth.js';
@@ -18,7 +19,7 @@ import serviceRequestRouter from '../src/routes/serviceRequests.js';
 let mongod, app, site, staff, outsider;
 const base = '/api/customer-portal/storage';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=', 'base64');
-const models = [Contract, Counter, Customer, CustomerOtp, Site, Unit, User, StoredContainer, ScanEvent, ItemPhoto, ServiceRequest, WarehouseLocation, CustomerNotification];
+const models = [Contract, Counter, Customer, CustomerOtp, Site, Unit, User, StoredContainer, ScanEvent, ItemPhoto, ServiceRequest, WarehouseLocation, CustomerNotification, ClientRequest];
 
 // The first day from tomorrow that matches — so a test never lands on a
 // Sunday (or misses one) depending on when it runs.

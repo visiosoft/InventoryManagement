@@ -4,6 +4,7 @@ import { ServiceRequest, SERVICE_TYPES, SERVICE_STATUSES } from '../models/servi
 import { operationalPermission } from '../services/warehouse.js';
 import { notifyServiceStatus } from '../services/customerNotify.js';
 import { expireStale } from '../services/servicePayments.js';
+import { syncFromSource } from '../services/clientRequests.js';
 
 /**
  * Staff side of the valet jobs customers book in the app: see what's waiting,
@@ -81,6 +82,8 @@ router.patch('/:id', asyncRoute(async (req, res) => {
   // After the save, so the customer is never told about a change that didn't
   // stick. Keyed per status, so flicking back and forth announces each once.
   if (statusChanged) await notifyServiceStatus(r);
+  // Keeps the Client Requests inbox row in step; never throws.
+  if (statusChanged) await syncFromSource('ServiceRequest', r._id);
   await r.populate('customer', 'fullName phone clientId');
   res.json(r.toObject());
 }));

@@ -3,6 +3,7 @@ import { Contract, Customer, Site } from '../models/index.js';
 import { StoredContainer, ScanEvent, ItemPhoto, WarehouseJob } from '../models/warehouse.js';
 import { ServiceRequest, SERVICE_TYPES, nextServiceRequestNo } from '../models/serviceRequest.js';
 import { requireCustomer } from './customerAuth.js';
+import { onServiceRequestCreated, syncFromSource } from '../services/clientRequests.js';
 import {
   SERVICE_PRICES, CAPACITY, SLOTS, WORKER_HOURS, SERVICE_CATALOG, DISPOSAL_LOADS, slotById, estimateFor,
   workerStartTimes, workerEndTime, toMinutes, dubaiToday, addDays, isDateString, workerClosed, hoursLabel,
@@ -489,6 +490,9 @@ router.post('/services', wrap(async (req, res) => {
     contract.timeline.push({ text: `Tenant requested via app: ${describeRequest(created)}`, author: 'customer app' });
     await contract.save();
   }
+  // Into the warehouse's Client Requests inbox. A delivery waits until it is
+  // paid (servicePayments.js). The hook never throws.
+  if (!paying) await onServiceRequestCreated(created);
   const [request] = await requestViews(customerId, [created.toObject()]);
   res.status(201).json({ request });
 }));
@@ -625,6 +629,7 @@ router.post('/services/:id/cancel', wrap(async (req, res) => {
     const refunded = r.payment?.state === 'refunded' ? ' (card payment refunded)' : '';
     await Contract.updateOne({ _id: r.contract }, { $push: { timeline: { text: `Tenant cancelled via app: ${r.ref}${refunded}`, author: 'customer app' } } });
   }
+  await syncFromSource('ServiceRequest', r._id); // never throws
   const [request] = await requestViews(req.customer.customerId, [r.toObject()]);
   res.json({ request });
 }));

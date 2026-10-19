@@ -30,6 +30,8 @@ import authRoutes from './routes/auth.js';
 import unitRoutes from './routes/units.js';
 import warehouseRoutes from './routes/warehouse.js';
 import serviceRequestRoutes from './routes/serviceRequests.js';
+import clientRequestRoutes from './routes/clientRequests.js';
+import { escalateOverdue } from './services/clientRequests.js';
 import shopifyMerchantRoutes from './routes/shopifyMerchants.js';
 import shopifyWebhookRoutes from './routes/shopifyWebhook.js';
 import { retryFailedFulfillmentPushes, runInventorySync, runOrderPull } from './services/shopifyFulfillment.js';
@@ -305,6 +307,8 @@ app.use('/api/integrations/whatsapp/webhook', (req, _res, next) => next());
 app.use('/api/units', requireAuth, unitRoutes);
 app.use('/api/warehouse', requireAuth, warehouseRoutes);
 app.use('/api/service-requests', requireAuth, serviceRequestRoutes);
+// Staff inbox for what customers do in the app; team visibility inside the router.
+app.use('/api/client-requests', requireAuth, clientRequestRoutes);
 // Pushes to customers' phones: promotions, inspections, what went out.
 app.use('/api/customer-notifications', requireAuth, customerNotificationRoutes);
 // Merchants, SKUs, stock and fulfillment jobs. The order webhook is mounted
@@ -643,6 +647,18 @@ async function start() {
       console.error('[PaymentDueDigest]', e.message);
     }
   }, 60_000);
+
+  /* Client requests nobody picked up or finished in time: the team leads and
+     the assignee are told once (services/clientRequests.js). Every 10 minutes
+     against SLAs of 2 hours and more. */
+  setTimeout(() => setInterval(async () => {
+    try {
+      const out = await escalateOverdue();
+      if (out.escalated) console.log(`[ClientRequests] escalated ${out.escalated} overdue request(s)`);
+    } catch (e) {
+      console.error('[ClientRequests]', e.message);
+    }
+  }, 10 * 60_000), 75_000);
 
   /* Customer app: payments coming due and agreements coming to an end, as
      pushes to the tenant's phone. Mid-morning rather than at dawn — it lands
