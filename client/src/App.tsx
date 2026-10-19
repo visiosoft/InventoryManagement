@@ -111,6 +111,7 @@ import CampaignStudio from './pages/CampaignStudio'
 import SentEmails from './pages/SentEmails'
 import Backup from './pages/Backup'
 import AgentInbox from './pages/agents/AgentInbox'
+import SalesDesk from './pages/agents/SalesDesk'
 import AgentPipeline from './pages/agents/AgentPipeline'
 import AgentLead from './pages/agents/AgentLead'
 import AgentTeam from './pages/agents/AgentTeam'
@@ -243,6 +244,8 @@ export default function App() {
       <Route path="/watch" element={<WatchVideo />} />
       <Route path="/field/login" element={<Navigate to="/field" replace />} />
       <Route path="/field/*" element={<FieldApp />} />
+      {/* The AI Sales Desk: its own screen, no CRM sidebar, its own link. */}
+      <Route path="/sales-desk" element={<AdminGuard><SalesDesk /></AdminGuard>} />
       <Route element={<Layout />}>
         <Route path="/" element={<SmartHome />} />
         <Route path="/units" element={<Units />} />

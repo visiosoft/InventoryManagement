@@ -26,7 +26,7 @@ export interface AgentProfile {
   systemPrompt: string
   promptVersion: number
   model: string
-  mode: 'off' | 'shadow'
+  mode: 'off' | 'shadow' | 'auto'
   enabledTools: string[]
   ownsBuckets: OwnableBucket[]
   languages: string[]
@@ -38,6 +38,7 @@ export interface AgentProfile {
   isDefault: boolean
   dailyBudgetAed: number
   dailyTouchCap: number
+  autoSend?: { startHour: number; endHour: number; maxPerLead: number }
   avatarColor: string
   isActive: boolean
 }
@@ -52,7 +53,7 @@ export interface ProfilesResponse {
 }
 
 export interface TeamAgent {
-  _id: string; name: string; role: string; mode: 'off' | 'shadow'; promptVersion: number; model: string
+  _id: string; name: string; role: string; mode: 'off' | 'shadow' | 'auto'; promptVersion: number; model: string
   kind: AgentKind; schedule: Schedule | null; scheduleText: string; lastRunAt: string | null
   ownsBuckets: OwnableBucket[]; languages: string[]; escalateTo: { _id: string; name: string } | string | null
   isDefault: boolean; dailyBudgetAed: number; avatarColor: string; isActive: boolean; leads: number

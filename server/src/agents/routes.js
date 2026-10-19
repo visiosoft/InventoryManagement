@@ -9,7 +9,7 @@ import { AgentProfile, AgentLeadFile, AgentAction, AGENT_MODES, AGENT_TOOLS, AGE
 import { runJob, describeSchedule } from './jobs.js';
 import { BUCKETS, BUCKET_ORDER, describeStage, DEFAULT_CADENCE, nextTouchFor } from './buckets.js';
 import { runAgent, findLead, cadenceFor } from './runtime.js';
-import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads, reassignTenantsToOwner, agentPlan, agentBoard } from './service.js';
+import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads, reassignTenantsToOwner, agentPlan, agentBoard, deskStats } from './service.js';
 import { record, revert, snapshotOf } from './log.js';
 import { seedStarterTeam } from './seed.js';
 import { agentStats, startRehearsal, reviewAgent, teachFromRehearsal } from './insights.js';
@@ -154,6 +154,15 @@ router.post('/:id/run', admin, wrap(async (req, res) => {
     if (agent.mode === 'off') throw new Error(`${agent.name} is off duty`);
     res.json(await runJob({ agent, reason: 'request' }));
 }));
+
+/** The standalone AI Sales Desk's numbers across the top. */
+router.get('/desk', async (_req, res) => {
+    try {
+        res.json(await deskStats());
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
 router.get('/inbox', wrap(async (req, res) => {
     res.json(await inbox({ agentId: req.query.agent || null }));

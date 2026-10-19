@@ -74,7 +74,7 @@ const EMAIL_CAPS: { tool: string; name: string; hint: string }[] = [
 type Draft = {
   name: string; role: string; avatarColor: string; model: string; job: JobParts; enabledTools: string[]
   kind: AgentKind; schedule: Schedule; task: string
-  ownsBuckets: OwnableBucket[]; languages: string; whatsappNumbers: string; escalateTo: string; dailyBudgetAed: number; dailyTouchCap: number; mode: 'off' | 'shadow'; syncLeadStatus: boolean; isDefault: boolean
+  ownsBuckets: OwnableBucket[]; languages: string; whatsappNumbers: string; escalateTo: string; dailyBudgetAed: number; dailyTouchCap: number; mode: 'off' | 'shadow' | 'auto'; autoSend: { startHour: number; endHour: number; maxPerLead: number }; syncLeadStatus: boolean; isDefault: boolean
 }
 const MODELS = [['', 'Same as the server'], ['gpt-4o-mini', 'gpt-4o-mini — cheapest'], ['gpt-4.1-mini', 'gpt-4.1-mini'], ['gpt-4.1', 'gpt-4.1'], ['gpt-6-luna', 'gpt-6-luna — cheaper than gpt-4o-mini, untested here'], ['gpt-6-sol', 'gpt-6-sol — newer, untested here'], ['gpt-6-astra', 'gpt-6-astra — untested here'], ['claude-opus-5-5', 'Claude Opus 5.5 (Claude provider)'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 (Claude provider)'], ['claude-haiku-5-5', 'Claude Haiku 5.5 (Claude provider)']]
 const BUCKET_OPTIONS: { key: OwnableBucket; label: string }[] = [['new', 'New'], ['engaged', 'Engaged'], ['quoted', 'Quoted'], ['booking', 'Booking'], ['quiet', 'Quiet'], ['dormant', 'Dormant'], ['tenant', 'Existing customers']].map(([key, label]) => ({ key: key as OwnableBucket, label }))
@@ -85,7 +85,7 @@ const toDraft = (p: AgentProfile | null, tools: string[]): Draft => ({
   job: p?.systemPrompt ? parse(p.systemPrompt) : STARTER, enabledTools: p ? p.enabledTools : tools.filter((t) => t !== 'propose_quotation'),
   ownsBuckets: p?.ownsBuckets || [], languages: (p?.languages || []).join(', '), whatsappNumbers: (p?.whatsappNumbers || []).join(', '),
   escalateTo: typeof p?.escalateTo === 'object' && p?.escalateTo ? p.escalateTo._id : (p?.escalateTo as string) || '', dailyBudgetAed: p?.dailyBudgetAed || 0, dailyTouchCap: p?.dailyTouchCap ?? 20,
-  mode: p?.mode || 'shadow', syncLeadStatus: p?.syncLeadStatus ?? false, isDefault: p?.isDefault ?? false,
+  mode: p?.mode || 'shadow', autoSend: { startHour: p?.autoSend?.startHour ?? 9, endHour: p?.autoSend?.endHour ?? 21, maxPerLead: p?.autoSend?.maxPerLead ?? 4 }, syncLeadStatus: p?.syncLeadStatus ?? false, isDefault: p?.isDefault ?? false,
 })
 const list = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean)
 
@@ -109,7 +109,7 @@ export default function AgentOnboarding() {
     name: d.name, role: d.role, avatarColor: d.avatarColor, model: d.model, systemPrompt: compose(d.job), enabledTools: d.enabledTools,
     kind: d.kind, schedule: d.schedule, task: d.task,
     ownsBuckets: d.ownsBuckets, languages: list(d.languages), whatsappNumbers: list(d.whatsappNumbers), escalateTo: d.escalateTo || null,
-    dailyBudgetAed: d.dailyBudgetAed, dailyTouchCap: d.dailyTouchCap, mode: d.mode, syncLeadStatus: d.syncLeadStatus, isDefault: d.isDefault,
+    dailyBudgetAed: d.dailyBudgetAed, dailyTouchCap: d.dailyTouchCap, mode: d.mode, autoSend: d.autoSend, syncLeadStatus: d.syncLeadStatus, isDefault: d.isDefault,
   })
   const save = useMutation({
     mutationFn: () => (isNew ? agentsApi.createProfile(body(draft!)) : agentsApi.updateProfile(id, body(draft!))),
@@ -317,8 +317,19 @@ export default function AgentOnboarding() {
               <Field label="Hands over to"><Select value={draft.escalateTo} onChange={(e) => set({ escalateTo: e.target.value })}><option value="">— nobody yet —</option>{data.users.map((u) => <option key={u._id} value={u._id}>{u.name} ({u.role})</option>)}</Select></Field>
               <Field label="Daily budget, AED (0 = no cap)"><Input type="number" min={0} value={draft.dailyBudgetAed} onChange={(e) => set({ dailyBudgetAed: Number(e.target.value) || 0 })} /></Field>
               <Field label="Daily real sends, follow-ups (0 = no cap)"><Input type="number" min={0} value={draft.dailyTouchCap} onChange={(e) => set({ dailyTouchCap: Number(e.target.value) || 0 })} /></Field>
-              <Field label="Mode"><Select value={draft.mode} onChange={(e) => set({ mode: e.target.value as Draft['mode'] })}><option value="shadow">On duty — drafts, you approve every send</option><option value="off">Off duty</option></Select></Field>
+              <Field label="Mode"><Select value={draft.mode} onChange={(e) => set({ mode: e.target.value as Draft['mode'] })}><option value="shadow">On duty — drafts, you approve every send</option><option value="auto">Auto-send — sends approved templates by itself, within the limits</option><option value="off">Off duty</option></Select></Field>
             </div>
+            {draft.mode === 'auto' && (
+              <div style={{ border: `1px solid ${C.purple}`, background: C.purpleSoft, borderRadius: 12, padding: 12 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>Auto-send limits</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+                  <Field label="Send from (hour, Dubai)"><Input type="number" min={0} max={23} value={draft.autoSend.startHour} onChange={(e) => set({ autoSend: { ...draft.autoSend, startHour: Number(e.target.value) } })} /></Field>
+                  <Field label="Until (hour, Dubai)"><Input type="number" min={1} max={24} value={draft.autoSend.endHour} onChange={(e) => set({ autoSend: { ...draft.autoSend, endHour: Number(e.target.value) } })} /></Field>
+                  <Field label="Most messages per lead (until they reply)"><Input type="number" min={1} max={10} value={draft.autoSend.maxPerLead} onChange={(e) => set({ autoSend: { ...draft.autoSend, maxPerLead: Number(e.target.value) } })} /></Field>
+                </div>
+                <Note>Only Meta-approved templates go out on their own — free-text replies are still drafted for a person. Also capped by "Daily real sends" above and one message per lead per day. "Stop" or a reply ends the follow-ups; a lead at its limit is handed to a person; when the schedule runs out the lead is closed as Lost with the reason.</Note>
+              </div>
+            )}
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}><input type="checkbox" checked={draft.isDefault} onChange={(e) => set({ isDefault: e.target.checked })} /> Default agent — takes any lead no rule matches</label>
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}><input type="checkbox" checked={draft.syncLeadStatus} onChange={(e) => set({ syncLeadStatus: e.target.checked })} /> Let bucket moves update the lead's sales status <span style={{ color: C.muted }}>— off while shadowing, so the team's statuses stay theirs</span></label>
             <Note>Shadow only means nothing is sent on its own: it drafts every reply and picks every follow-up template, but each one waits in Needs you until a person clicks Send. Clicking Send there is real — it goes out over WhatsApp to the actual customer. The daily follow-up cap above limits how many of those real sends can go out in one day, so an "approve all" click can't reach more people than you meant it to.</Note>

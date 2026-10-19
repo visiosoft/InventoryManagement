@@ -1033,3 +1033,50 @@ export async function conversationFor(phoneNormalized, { limit = 60 } = {}) {
         .sort({ occurredAt: -1 }).limit(limit).select('direction text transcript type occurredAt sentByAi').lean();
     return rows.reverse().map((m) => ({ direction: m.direction, text: m.text || m.transcript, type: m.type, at: m.occurredAt, byAi: Boolean(m.sentByAi) }));
 }
+
+/* ---------- the Sales Desk: the numbers across the top ---------- */
+
+/**
+ * Today at a glance for the standalone AI Sales Desk: who was answered,
+ * who is waiting, how fast first replies are, how often a draft went out as
+ * written, quotations, and what the agents did on their own.
+ */
+export async function deskStats(now = new Date()) {
+    const { Quote } = await import('../models/index.js');
+    const dayStart = dubaiDayStart(now);
+    const weekAgo = new Date(now.getTime() - 7 * 86400000);
+    const [replied, lastMessages, firsts, judged, quotations, dueToday, autoSent, handedToday] = await Promise.all([
+        WhatsAppMessage.distinct('phoneNormalized', { direction: 'outbound', occurredAt: { $gte: dayStart } }),
+        WhatsAppMessage.aggregate([
+            { $match: { occurredAt: { $gte: new Date(now.getTime() - 86400000) }, phoneNormalized: { $nin: [null, ''] } } },
+            { $sort: { occurredAt: -1 } },
+            { $group: { _id: '$phoneNormalized', direction: { $first: '$direction' } } },
+            { $match: { direction: 'inbound' } },
+            { $count: 'n' },
+        ]),
+        Lead.find({ firstResponseAt: { $gte: weekAgo } }).select('firstResponseAt assignedAt leadDateTime').lean(),
+        AgentAction.aggregate([
+            { $match: { kind: { $in: ['approved', 'edited'] }, at: { $gte: weekAgo } } },
+            { $group: { _id: '$kind', n: { $sum: 1 } } },
+        ]),
+        Quote.countDocuments({ createdAt: { $gte: dayStart } }),
+        AgentLeadFile.countDocuments({ nextTouchAt: { $lte: new Date(dayStart.getTime() + 86400000) }, frozenAt: null }),
+        AgentAction.countDocuments({ kind: 'touch_proposed', resolution: 'approved', resolvedBy: null, resolvedAt: { $gte: dayStart } }),
+        AgentAction.countDocuments({ kind: 'escalated', at: { $gte: dayStart } }),
+    ]);
+    const mins = firsts
+        .map((l) => (new Date(l.firstResponseAt) - new Date(l.assignedAt || l.leadDateTime)) / 60000)
+        .filter((m) => Number.isFinite(m) && m >= 0 && m < 7 * 1440);
+    const approved = judged.find((j) => j._id === 'approved')?.n || 0;
+    const edited = judged.find((j) => j._id === 'edited')?.n || 0;
+    return {
+        repliedToday: replied.length,
+        waiting: lastMessages[0]?.n || 0,
+        avgFirstReplyMin: mins.length ? Math.round((mins.reduce((a, b) => a + b, 0) / mins.length) * 10) / 10 : null,
+        sentAsWrittenPct: approved + edited ? Math.round((approved / (approved + edited)) * 100) : null,
+        quotationsToday: quotations,
+        followUpsDueToday: dueToday,
+        autoSentToday: autoSent,
+        handedToday,
+    };
+}
