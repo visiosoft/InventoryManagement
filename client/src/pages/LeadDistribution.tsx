@@ -22,7 +22,6 @@ const INK = '#14081F'
 const MUTED = 'rgba(20,8,31,.55)'
 const LINE = 'rgba(20,8,31,.10)'
 
-const DAYS = [['Sun', 0], ['Mon', 1], ['Tue', 2], ['Wed', 3], ['Thu', 4], ['Fri', 5], ['Sat', 6]] as const
 
 type Person = { _id: string; name: string; email: string; role: string }
 type Rule = {
@@ -83,7 +82,6 @@ export default function LeadDistribution() {
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['lead-routing'] })
-    qc.invalidateQueries({ queryKey: ['lead-routing-preview'] })
   }
 
   const saveConfig = useMutation({
@@ -118,57 +116,6 @@ export default function LeadDistribution() {
     onError: (e) => setErr(apiError(e)),
   })
 
-  /* The customer chats already in the inbox, which the setting below does
-     nothing about — it only decides where the next one goes. */
-  const { data: customerChats } = useQuery<{
-    chats: number; withLead: number; withoutLead: number
-    byOwner: { name: string; count: number }[]
-  }>({
-    queryKey: ['lead-routing', 'customer-chats'],
-    queryFn: () => api.get('/lead-routing/customer-chats').then((r) => r.data),
-  })
-
-  const [handTo, setHandTo] = useState('')
-  const [handed, setHanded] = useState('')
-  const handOver = useMutation({
-    mutationFn: (userId: string) => api.post('/lead-routing/customer-chats/assign', { userId }).then((r) => r.data),
-    onSuccess: (d: { moved: number; alreadyTheirs: number; owner: string }) => {
-      setErr('')
-      setHanded(d.moved
-        ? `${d.moved} chat${d.moved === 1 ? '' : 's'} handed to ${d.owner}.`
-        : `They already had all ${d.alreadyTheirs} of them.`)
-      qc.invalidateQueries({ queryKey: ['lead-routing'] })
-    },
-    onError: (e) => setErr(apiError(e)),
-  })
-
-  /* Leads the rules gave somebody that they never touched, handed back to
-     unassigned. Counts first; nothing changes until it is confirmed. */
-  const [takeFrom, setTakeFrom] = useState('')
-  const [takeInfo, setTakeInfo] = useState<{ owner: string; autoAssigned: number; wouldTakeBack: number; keptBecauseWorked: number } | null>(null)
-  const [takeDone, setTakeDone] = useState('')
-  const takeBack = useMutation({
-    mutationFn: (v: { userId: string; confirm: boolean }) => api.post('/lead-routing/take-back', v).then((r) => r.data),
-    onSuccess: (d, v) => {
-      setErr('')
-      if (v.confirm) {
-        setTakeInfo(null)
-        setTakeDone(`${d.takenBack} lead${d.takenBack === 1 ? '' : 's'} taken back from ${d.owner}. ${d.keptBecauseWorked} the ones already worked stayed with them.`)
-        qc.invalidateQueries({ queryKey: ['leads'] })
-      } else {
-        setTakeDone('')
-        setTakeInfo(d)
-      }
-    },
-    onError: (e) => setErr(apiError(e)),
-  })
-
-  const { data: preview } = useQuery<{ order: { name: string | null; reason: string }[]; tallyAfter: { name: string; count: number }[] }>({
-    queryKey: ['lead-routing-preview'],
-    queryFn: () => api.get('/lead-routing/preview?n=20').then((r) => r.data),
-    enabled: Boolean(data?.rules.length),
-  })
-
   const config = data?.config
   const unassigned = (data?.people ?? []).filter((p) => !data?.rules.some((r) => r.user._id === p._id))
 
@@ -176,7 +123,7 @@ export default function LeadDistribution() {
     <div>
       <PageHeader
         title="Lead Distribution"
-        subtitle="Who gets the next WhatsApp lead — by share, by who is on shift, and by what has gone out today"
+        subtitle="Who gets the next WhatsApp lead — whoever is on the weekly roster at that hour, by their share"
       />
 
       {isLoading || !data || !config ? <Spinner /> : (
@@ -199,15 +146,6 @@ export default function LeadDistribution() {
                       : 'Off. Every new chat goes to the first user on the system, as it always has.'}
                   </div>
                 </div>
-                <label className="inline-flex items-center gap-2 cursor-pointer" style={{ fontSize: 12.5, color: MUTED }}>
-                  <input
-                    type="checkbox"
-                    checked={config.randomize !== false}
-                    onChange={(e) => saveConfig.mutate({ randomize: e.target.checked })}
-                    disabled={saveConfig.isPending}
-                  />
-                  Pick at random among reps on shift
-                </label>
                 <Button
                   variant={config.enabled ? 'outline' : 'default'}
                   onClick={() => saveConfig.mutate({ enabled: !config.enabled })}
@@ -249,7 +187,7 @@ export default function LeadDistribution() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${LINE}` }}>
-                    {['Rep', 'Status', 'Share', 'Working hours', ''].map((h) => (
+                    {['Rep', 'Status', 'Share', 'Hours', ''].map((h) => (
                       <th key={h} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: MUTED }}>{h}</th>
                     ))}
                   </tr>
@@ -375,125 +313,16 @@ export default function LeadDistribution() {
                   with a question does not count against anybody's share.
                 </p>
 
-                {/* The setting above is about the next chat. This is about the
-                    ones already sitting in the inbox. */}
-                {customerChats && customerChats.chats > 0 && (
-                  <div className="rounded-lg p-3 space-y-2" style={{ background: '#FBF8F3', border: `1px solid ${LINE}` }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: INK }}>
-                      {customerChats.chats} chats are already from customers
-                    </div>
-                    <div style={{ fontSize: 12, color: MUTED }}>
-                      Currently with {customerChats.byOwner.slice(0, 3).map((o) => `${o.name} (${o.count})`).join(', ')}
-                      {customerChats.byOwner.length > 3 ? ` and ${customerChats.byOwner.length - 3} more` : ''}.
-                      {customerChats.withoutLead > 0 && ` ${customerChats.withoutLead} have no lead behind them yet and cannot be handed over.`}
-                    </div>
-                    <div className="flex flex-wrap items-end gap-2">
-                      <Select value={handTo} onChange={(e) => { setHandTo(e.target.value); setHanded('') }} style={{ minWidth: 190 }}>
-                        <option value="">Hand them all to…</option>
-                        {data.people.map((p) => <option key={p._id} value={p._id}>{p.name} ({p.role})</option>)}
-                      </Select>
-                      <Button
-                        disabled={!handTo || handOver.isPending}
-                        onClick={() => {
-                          const who = data.people.find((p) => p._id === handTo)?.name ?? 'them'
-                          if (confirm(`Hand all ${customerChats.withLead} customer chats to ${who}? Each becomes new to them and starts their response clock.`)) {
-                            handOver.mutate(handTo)
-                          }
-                        }}
-                      >
-                        {handOver.isPending ? 'Handing over…' : `Hand over ${customerChats.withLead}`}
-                      </Button>
-                    </div>
-                    {handed && <div style={{ fontSize: 12, color: '#047857', fontWeight: 600 }}>{handed}</div>}
-                  </div>
-                )}
               </CardBody>
             </Card>
           </div>
 
-          <Card>
-            <CardHeader
-              title="Take back leads the system assigned"
-              subtitle="Only leads the rules gave somebody that are still new, unopened and never replied to. Anything they have worked stays theirs."
-            />
-            <CardBody className="space-y-3">
-              <div className="flex flex-wrap items-end gap-2">
-                <Select value={takeFrom} onChange={(e) => { setTakeFrom(e.target.value); setTakeInfo(null); setTakeDone('') }} style={{ minWidth: 220 }}>
-                  <option value="">Take back from…</option>
-                  {data.people.map((p) => <option key={p._id} value={p._id}>{p.name} ({p.role})</option>)}
-                </Select>
-                <Button disabled={!takeFrom || takeBack.isPending} onClick={() => takeBack.mutate({ userId: takeFrom, confirm: false })}>
-                  Check
-                </Button>
-              </div>
-              {takeInfo && (
-                <div className="rounded-lg p-3 space-y-2" style={{ background: '#FBF8F3', border: `1px solid ${LINE}`, fontSize: 13 }}>
-                  <div>
-                    {takeInfo.owner} has <strong>{takeInfo.autoAssigned}</strong> system-assigned leads;{' '}
-                    <strong>{takeInfo.wouldTakeBack}</strong> are untouched and would go back to unassigned.
-                  </div>
-                  <Button
-                    disabled={!takeInfo.wouldTakeBack || takeBack.isPending}
-                    onClick={() => {
-                      if (confirm(`Take ${takeInfo.wouldTakeBack} untouched leads back from ${takeInfo.owner}? They become unassigned.`)) {
-                        takeBack.mutate({ userId: takeFrom, confirm: true })
-                      }
-                    }}
-                  >
-                    {takeBack.isPending ? 'Working…' : `Take back ${takeInfo.wouldTakeBack}`}
-                  </Button>
-                </div>
-              )}
-              {takeDone && <div style={{ fontSize: 12.5, color: '#047857', fontWeight: 600 }}>{takeDone}</div>}
-            </CardBody>
-          </Card>
-
-          {/* Proof */}
-          {preview && (
-            <Card>
-              <CardHeader
-                title="What would happen next"
-                subtitle="The next twenty leads, from where today already stands. Nothing is saved."
-              />
-              <CardBody className="space-y-3">
-                <div className="flex flex-wrap gap-1.5">
-                  {preview.order.map((o, i) => (
-                    <span
-                      key={i}
-                      title={o.reason}
-                      className="rounded-full px-2.5 py-1"
-                      style={{
-                        fontSize: 11.5, fontWeight: 600,
-                        background: o.name ? '#F3EDFF' : '#FEF3C7',
-                        color: o.name ? PURPLE : '#B45309',
-                      }}
-                    >
-                      {i + 1}. {o.name ?? 'nobody available'}
-                    </span>
-                  ))}
-                </div>
-                <div style={{ fontSize: 12.5, color: MUTED }}>
-                  Leaving today at: {preview.tallyAfter.map((t) => `${t.name} ${t.count}`).join(' · ')}
-                </div>
-              </CardBody>
-            </Card>
-          )}
         </div>
       )}
     </div>
   )
 }
 
-/* Common shifts as one click each, because that is what people actually work.
-   Custom is there for the exception rather than being the only way in — two
-   time fields and seven day toggles on every row was a lot of furniture for
-   "she works normal hours". */
-const SHIFTS = [
-  { key: 'any', label: 'Any time', start: '', end: '' },
-  { key: 'day', label: '9am - 6pm', start: '09:00', end: '18:00' },
-  { key: 'early', label: '8am - 5pm', start: '08:00', end: '17:00' },
-  { key: 'late', label: '12pm - 9pm', start: '12:00', end: '21:00' },
-] as const
 
 function RuleRow({ rule, busy, onSave, onRemove }: {
   rule: Rule
@@ -504,11 +333,6 @@ function RuleRow({ rule, busy, onSave, onRemove }: {
   const [share, setShare] = useState(String(rule.sharePct))
   const cell = { padding: '12px', fontSize: 13, verticalAlign: 'middle' as const }
   const tone = STATUS_TONE[rule.status] ?? STATUS_TONE.active
-  const hours = rule.workingHours ?? {}
-
-  const matched = SHIFTS.find((sh) => sh.start === (hours.start ?? '') && sh.end === (hours.end ?? ''))
-  const [custom, setCustom] = useState(!matched)
-  const days = hours.days?.length ? hours.days : DAYS.map(([, d]) => d)
 
   return (
     <tr style={{ borderBottom: `1px solid ${LINE}` }}>
@@ -571,61 +395,17 @@ function RuleRow({ rule, busy, onSave, onRemove }: {
               {rule.weeklyShifts.length} shift{rule.weeklyShifts.length === 1 ? '' : 's'} a week · edit on the calendar above
             </div>
           </div>
-        ) : rule.rosterManaged ? (
+        ) : !rule.rosterManaged ? (
+          <div style={{ fontSize: 12.5 }}>
+            <span style={{ fontWeight: 600, color: '#B45309' }}>Not on the roster yet</span>
+            <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>Press Save roster on the calendar above</div>
+          </div>
+        ) : (
           <div style={{ fontSize: 12.5 }}>
             <span style={{ fontWeight: 600, color: '#B91C1C' }}>Off — no hours yet</span>
             <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>Give them shifts on the calendar above</div>
           </div>
-        ) : (<>
-        <Select
-          value={custom ? 'custom' : (matched ? matched.key : 'any')}
-          onChange={(e) => {
-            if (e.target.value === 'custom') { setCustom(true); return }
-            setCustom(false)
-            const sh = SHIFTS.find((x) => x.key === e.target.value)
-            if (sh) onSave({ workingHours: { days: [], start: sh.start, end: sh.end } })
-          }}
-          style={{ minWidth: 132 }}
-        >
-          {SHIFTS.map((sh) => <option key={sh.key} value={sh.key}>{sh.label}</option>)}
-          <option value="custom">Custom...</option>
-        </Select>
-
-        {custom && (
-          <div className="mt-1.5 space-y-1.5">
-            <div className="flex items-center gap-1">
-              <Input type="time" value={hours.start ?? ''} onChange={(e) => onSave({ workingHours: { ...hours, start: e.target.value } })} style={{ fontSize: 12, padding: '3px 6px' }} />
-              <span style={{ fontSize: 11, color: MUTED }}>to</span>
-              <Input type="time" value={hours.end ?? ''} onChange={(e) => onSave({ workingHours: { ...hours, end: e.target.value } })} style={{ fontSize: 12, padding: '3px 6px' }} />
-            </div>
-            <div className="flex gap-1">
-              {DAYS.map(([label, n]) => {
-                const on = days.includes(n)
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    title={label}
-                    onClick={() => {
-                      const next = on ? days.filter((d) => d !== n) : [...days, n]
-                      // All seven is the same as no restriction, and stores smaller.
-                      onSave({ workingHours: { ...hours, days: next.length === 7 ? [] : next } })
-                    }}
-                    style={{
-                      width: 26, height: 26, fontSize: 11, fontWeight: 700, borderRadius: 6, cursor: 'pointer',
-                      border: `1px solid ${on ? PURPLE : LINE}`,
-                      background: on ? PURPLE : 'transparent',
-                      color: on ? '#fff' : MUTED,
-                    }}
-                  >
-                    {label[0]}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
         )}
-        </>)}
       </td>
 
       <td style={{ ...cell, textAlign: 'right' }}>
