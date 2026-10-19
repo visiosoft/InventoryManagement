@@ -82,6 +82,7 @@ import ExitSurveys from './pages/ExitSurveys'
 import Units from './pages/Units'
 import StoredInventory from './pages/warehouse/StoredInventory'
 import ServiceRequests from './pages/warehouse/ServiceRequests'
+import ClientRequests from './pages/ClientRequests'
 import CustomerNotifications from './pages/warehouse/CustomerNotifications'
 import ShopifyMerchants from './pages/shopify/Merchants'
 import ShopifySkuInventory from './pages/shopify/SkuInventory'
@@ -251,6 +252,9 @@ export default function App() {
         <Route path="/" element={<SmartHome />} />
         <Route path="/units" element={<Units />} />
         <Route path="/warehouse" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><StoredInventory /></PermGuard>} />
+        {/* Every staff role: the server decides which requests each team sees. */}
+        <Route path="/client-requests" element={<ClientRequests />} />
+        <Route path="/client-requests/:id" element={<ClientRequests />} />
         <Route path="/service-requests" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><ServiceRequests /></PermGuard>} />
         {/* Promotions are Campaign Studio's, inspections the warehouse's; the page shows each to whoever may send it. */}
         <Route path="/customer-notifications" element={<PermGuard module={['warehouse', 'warehouse_supervisor', 'campaign_studio']}><CustomerNotifications /></PermGuard>} />

@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import {
-  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing } from 'lucide-react'
+  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -12,8 +12,18 @@ import AppFooter from './AppFooter'
 import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
 import { ViewAsSwitcher, ViewAsBanner } from './ViewAsSwitcher'
+import { useClientRequestCounts } from '../lib/clientRequests'
 
-const navTop = [
+/** Which live count a nav item carries, if any. */
+type NavBadgeKey = 'clientRequests'
+
+/* Everyone who works a client request: warehouse, sales and accounts (and
+   admins, who pass every check). The server decides which requests each of
+   them sees; this only decides who gets the menu entry. */
+const CLIENT_REQUEST_PERMS = ['dashboard', 'warehouse', 'warehouse_supervisor', 'sales_board', 'leads', 'contracts', 'invoices', 'customers']
+
+const navTop: { to: string; label: string; icon: typeof Package; perm?: string | string[]; badgeKey?: NavBadgeKey }[] = [
+  { to: '/client-requests', label: 'Client requests', icon: Inbox, perm: CLIENT_REQUEST_PERMS, badgeKey: 'clientRequests' },
   { to: '/warehouse', label: 'Stored Inventory', icon: Package, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/service-requests', label: 'Service requests', icon: Truck, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/customer-notifications', label: 'Customer notifications', icon: BellRing, perm: ['warehouse', 'warehouse_supervisor', 'campaign_studio'] },
@@ -22,7 +32,7 @@ const navTop = [
   { to: '/shopify/inventory', label: 'Shopify inventory', icon: ShoppingBag, perm: ['warehouse', 'warehouse_supervisor'] },
   // Shopify merchants (onboarding a store) lives under Settings → Integrations:
   // it is configuration, not a page anyone works from day to day.
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' as string | undefined },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' },
   { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'dashboard' },
 ]
 
@@ -126,7 +136,11 @@ const navBottom: { to: string; label: string; icon: any; perm: string | string[]
 // what the day starts on, not a category of work.
 // Nothing above the first heading: leads, the tasks they raise and the
 // conversations they arrive in are one job, so they sit together under Sales.
-const salesRepNavTop: { key: string; to: string; label: string; icon: typeof UserPlus; perm?: string }[] = []
+// The one exception: client requests are the customers' own asks, and they
+// come before the pipeline.
+const salesRepNavTop: { key: string; to: string; label: string; icon: typeof UserPlus; perm?: string; badgeKey?: NavBadgeKey }[] = [
+  { key: 'client-requests', to: '/client-requests', label: 'Client requests', icon: Inbox, badgeKey: 'clientRequests' },
+]
 
 const salesRepNavGroups = [
   {
@@ -313,6 +327,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/reports/ask': 'Ask for a report',
   '/reports/rates': 'Actual vs Leased',
   '/whatsapp': 'WhatsApp Inbox',
+  '/client-requests': 'Client requests',
 }
 
 function getPageTitle(pathname: string): string {
@@ -327,6 +342,23 @@ function getPageTitle(pathname: string): string {
     if (PAGE_TITLES[parent]) return PAGE_TITLES[parent]
   }
   return ''
+}
+
+type NavBadgeValue = { count: number; alert: boolean; overdue: number }
+
+/** A count pill on a nav item; red while anything is overdue. Collapsed,
+ *  the sidebar has no room for a number, so it shows a dot. */
+function NavBadge({ badge, collapsed }: { badge: NavBadgeValue; collapsed: boolean }) {
+  if (!badge.count && !badge.alert) return null
+  if (collapsed) {
+    return <span className={cn('absolute top-1 right-1 h-2 w-2 rounded-full ring-2 ring-sidebar', badge.alert ? 'bg-red-500' : 'bg-[#FFF799]')} />
+  }
+  return (
+    <span className={cn('ml-auto min-w-[20px] rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold leading-none',
+      badge.alert ? 'bg-red-500 text-white' : 'bg-current/15')}>
+      {badge.count > 99 ? '99+' : badge.count || '!'}
+    </span>
+  )
 }
 
 export default function Layout() {
@@ -345,6 +377,16 @@ export default function Layout() {
   const profileRef = useRef<HTMLDivElement>(null)
   const isAdmin = user?.role === 'admin'
   const isSalesRepUser = isSalesRepRole(user?.role)
+  // Live counts for nav badges. Fetched for every signed-in user; a server
+  // without the feature answers zeros, so the badge simply stays hidden.
+  const { data: crCounts } = useClientRequestCounts()
+  const badges: Record<NavBadgeKey, NavBadgeValue> = {
+    clientRequests: { count: crCounts?.team ?? 0, alert: (crCounts?.overdue ?? 0) > 0, overdue: crCounts?.overdue ?? 0 },
+  }
+  const badgeTitle = (key: NavBadgeKey, label: string) => {
+    const b = badges[key]
+    return b.count || b.overdue ? `${label}: ${b.count} open · ${b.overdue} overdue` : label
+  }
   const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard') && !hasPermission(['warehouse', 'warehouse_supervisor'])
 
   // ── Business switcher ──────────────────────────────────────────
@@ -495,11 +537,12 @@ export default function Layout() {
       {/* Nav */}
       <nav className={cn("flex-1 overflow-y-auto py-3 space-y-0.5", isCollapsed ? 'px-1.5' : 'px-2.5')}>
         {isSalesRepUser && (() => {
-          const link = ({ key, to, label, icon: Icon }: { key: string; to: string; label: string; icon: any }) => (
+          const link = ({ key, to, label, icon: Icon, badgeKey }: { key: string; to: string; label: string; icon: typeof UserPlus; badgeKey?: NavBadgeKey }) => (
             <NavLink key={key} to={to}
-              className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
-              title={isCollapsed ? label : undefined}>
+              className={({ isActive }) => cn(isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive), badgeKey && 'relative')}
+              title={badgeKey ? badgeTitle(badgeKey, label) : isCollapsed ? label : undefined}>
               <Icon size={isCollapsed ? 18 : 15} />{!isCollapsed && label}
+              {badgeKey && <NavBadge badge={badges[badgeKey]} collapsed={isCollapsed} />}
             </NavLink>
           )
           return (
@@ -528,11 +571,12 @@ export default function Layout() {
           )
         })()}
 
-        {showStorageNav && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
+        {showStorageNav && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon, badgeKey }) => (
           <NavLink key={to} to={to} end={to === '/'}
-            className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
-            title={isCollapsed ? label : undefined}>
+            className={({ isActive }) => cn(isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive), badgeKey && 'relative')}
+            title={badgeKey ? badgeTitle(badgeKey, label) : isCollapsed ? label : undefined}>
             <Icon size={isCollapsed ? 18 : 15} />{!isCollapsed && label}
+            {badgeKey && <NavBadge badge={badges[badgeKey]} collapsed={isCollapsed} />}
           </NavLink>
         ))}
 
