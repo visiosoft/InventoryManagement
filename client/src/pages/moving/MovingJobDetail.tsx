@@ -10,7 +10,7 @@ const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing
 const INK = '#14081F'
 
 type MovingItemOption = { _id: string; name: string; sku?: string; onHand: number; retailPrice: number }
-import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, InfoGrid, InfoItem, movingJobStatusLabel } from '../../components/ui'
+import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, Select, SlideOver, Spinner, Textarea, InfoGrid, InfoItem, movingJobStatusLabel } from '../../components/ui'
 import { useAuth } from '../../lib/auth'
 import { cn } from '../../lib/utils'
 
@@ -425,56 +425,48 @@ function MovingNoticesCard({ job }: { job: MovingJob }) {
       </CardBody>
 
       {/* ── Notice slide-over: edit, then send — same pattern as the storage side ── */}
-      {open && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setOpen(null)} />
-          <div className="absolute right-0 top-0 h-full w-full max-w-2xl bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right flex flex-col">
-            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
-              <div>
-                <h2 className="text-lg font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em', color: '#14081F' }}>
-                  {open.name} — {job.jobNo}
-                </h2>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Prefilled for {job.customer?.fullName || 'the customer'} — edit freely, then send.
-                </p>
-              </div>
-              <button onClick={() => setOpen(null)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
-            </div>
-            <div className="p-5 flex-1 flex flex-col gap-3">
-              <div
-                ref={(el) => {
-                  noticeRef.current = el
-                  if (el && noticeInitial.current) { el.innerHTML = noticeInitial.current; noticeInitial.current = '' }
-                }}
-                contentEditable
-                suppressContentEditableWarning
-                spellCheck={false}
-                className="agreement-editor w-full flex-1 rounded-lg border bg-white p-6 text-[13px] leading-relaxed outline-none focus:border-primary"
-                style={{ minHeight: 440, overflowY: 'auto' }}
-              />
-              {sent && <p className="text-xs text-emerald-600 font-medium">{sent}</p>}
-              {signUrl && <p className="text-[11px] break-all text-muted-foreground">Signing link: {signUrl}</p>}
-              {error && <p className="text-xs text-destructive">{error}</p>}
-              <div className="flex justify-end gap-2 pt-2 border-t flex-wrap">
-                <Button type="button" variant="outline" onClick={downloadPdf} disabled={busy === 'pdf'}>
-                  <Download size={14} /> {busy === 'pdf' ? 'Preparing…' : 'PDF'}
+      <SlideOver
+        open={!!open}
+        onClose={() => setOpen(null)}
+        title={`${open?.name} — ${job.jobNo}`}
+        subtitle={`Prefilled for ${job.customer?.fullName || 'the customer'} — edit freely, then send.`}
+        width="max-w-2xl"
+      >
+        {open && (
+          <div className="flex flex-col gap-3 h-full">
+            <div
+              ref={(el) => {
+                noticeRef.current = el
+                if (el && noticeInitial.current) { el.innerHTML = noticeInitial.current; noticeInitial.current = '' }
+              }}
+              contentEditable
+              suppressContentEditableWarning
+              spellCheck={false}
+              className="agreement-editor w-full flex-1 rounded-lg border bg-white p-6 text-[13px] leading-relaxed outline-none focus:border-primary"
+              style={{ minHeight: 440, overflowY: 'auto' }}
+            />
+            {sent && <p className="text-xs text-emerald-600 font-medium">{sent}</p>}
+            {signUrl && <p className="text-[11px] break-all text-muted-foreground">Signing link: {signUrl}</p>}
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <div className="flex justify-end gap-2 pt-2 border-t flex-wrap">
+              <Button type="button" variant="outline" onClick={downloadPdf} disabled={busy === 'pdf'}>
+                <Download size={14} /> {busy === 'pdf' ? 'Preparing…' : 'PDF'}
+              </Button>
+              <Button type="button" variant="outline" className="text-emerald-700 border-emerald-300" onClick={sendWhatsapp}>
+                <MessageSquare size={14} /> WhatsApp
+              </Button>
+              {open.isDefault && (
+                <Button type="button" disabled={busy === 'sign'} className="bg-emerald-600 hover:bg-emerald-700" onClick={sendForSigning}>
+                  {busy === 'sign' ? 'Preparing…' : 'Send for signing'}
                 </Button>
-                <Button type="button" variant="outline" className="text-emerald-700 border-emerald-300" onClick={sendWhatsapp}>
-                  <MessageSquare size={14} /> WhatsApp
-                </Button>
-                {open.isDefault && (
-                  <Button type="button" disabled={busy === 'sign'} className="bg-emerald-600 hover:bg-emerald-700" onClick={sendForSigning}>
-                    {busy === 'sign' ? 'Preparing…' : 'Send for signing'}
-                  </Button>
-                )}
-                <Button type="button" disabled={sendEmail.isPending} onClick={() => sendEmail.mutate()}>
-                  {sendEmail.isPending ? 'Sending…' : 'Send via Email'}
-                </Button>
-              </div>
+              )}
+              <Button type="button" disabled={sendEmail.isPending} onClick={() => sendEmail.mutate()}>
+                {sendEmail.isPending ? 'Sending…' : 'Send via Email'}
+              </Button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </SlideOver>
     </Card>
   )
 }

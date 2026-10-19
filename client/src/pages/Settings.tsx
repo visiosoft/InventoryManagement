@@ -206,6 +206,7 @@ export default function Settings() {
   const activeTab = isAdmin && (requestedTab === 'pricing' || requestedTab === 'bulk-pricing') ? requestedTab : 'general'
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [gmailMsg, setGmailMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [analyticsMsg, setAnalyticsMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [stripeMsg, setStripeMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [stripeSecretKey, setStripeSecretKey] = useState('')
   const [stripeWebhookSecret, setStripeWebhookSecret] = useState('')
@@ -258,6 +259,14 @@ export default function Settings() {
       qc.invalidateQueries({ queryKey: ['integrations-status'] })
     } else if (params.get('gmailError')) {
       setGmailMsg({ ok: false, text: `Gmail connection failed: ${params.get('gmailError')}` })
+      window.history.replaceState({}, '', '/settings')
+    }
+    if (params.get('analyticsConnected')) {
+      setAnalyticsMsg({ ok: true, text: "Google Analytics connected! Make sure this account has Viewer access on the GA4 property under Analytics Admin > Property Access Management, or the dashboard widget will stay empty." })
+      window.history.replaceState({}, '', '/settings')
+      qc.invalidateQueries({ queryKey: ['integrations-status'] })
+    } else if (params.get('analyticsError')) {
+      setAnalyticsMsg({ ok: false, text: `Google Analytics connection failed: ${params.get('analyticsError')}` })
       window.history.replaceState({}, '', '/settings')
     }
   }, [location.search, qc])
@@ -400,6 +409,51 @@ export default function Settings() {
             {!integrations?.gmail?.configured && (
               <p className="text-xs text-muted-foreground">
                 Add <code className="bg-muted px-1 rounded">{window.location.origin.replace(/:\d+$/, ':5010')}/api/integrations/gmail/callback</code> to your OAuth client's authorized redirect URIs in Google Cloud Console.
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border px-4 py-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Google Analytics (Website visits)</div>
+                <div className="text-xs text-muted-foreground">
+                  Shows today's website visits, top countries and a 30-day trend on the Dashboard
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={integrations?.analytics?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+                  {integrations?.analytics?.configured ? 'Connected' : 'Not connected'}
+                </span>
+                <Button
+                  size="sm"
+                  variant={integrations?.analytics?.configured ? 'outline' : 'default'}
+                  onClick={async () => {
+                    try {
+                      const { url } = await integrationApi.connectAnalytics()
+                      window.location.href = url
+                    } catch (e) {
+                      setAnalyticsMsg({ ok: false, text: apiError(e) })
+                    }
+                  }}
+                >
+                  {integrations?.analytics?.configured ? 'Reconnect Analytics' : 'Connect Google Analytics'}
+                </Button>
+              </div>
+            </div>
+            {integrations?.analytics?.configured && integrations.analytics.propertyId && (
+              <div className="text-xs text-muted-foreground border-t pt-2">
+                Property ID: <code className="bg-muted px-1 rounded">{integrations.analytics.propertyId}</code>
+                {integrations.analytics.method && <span className="ml-2">· Auth: {integrations.analytics.method === 'service_account' ? 'Service Account' : 'OAuth'}</span>}
+              </div>
+            )}
+            {analyticsMsg && (
+              <p className={`text-xs ${analyticsMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                {analyticsMsg.text}
+              </p>
+            )}
+            {!integrations?.analytics?.configured && (
+              <p className="text-xs text-muted-foreground">
+                Set <code className="bg-muted px-1 rounded">GA4_PROPERTY_ID</code> in .env first (Analytics Admin &gt; Property details), then Connect — the account you sign in with also needs Viewer access added directly on that property under Property Access Management.
               </p>
             )}
           </div>
@@ -577,6 +631,9 @@ export default function Settings() {
                   <option value="gpt-4.1-mini">gpt-4.1-mini</option>
                   <option value="gpt-4.1">gpt-4.1</option>
                   <option value="gpt-4o">gpt-4o</option>
+                  <option value="gpt-6-luna">gpt-6-luna — cheaper than gpt-4o-mini, untested here</option>
+                  <option value="gpt-6-sol">gpt-6-sol — newer, untested here</option>
+                  <option value="gpt-6-astra">gpt-6-astra — untested here</option>
                 </Select>
               </Field>
             </div>

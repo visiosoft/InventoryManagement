@@ -29,7 +29,7 @@ router.post('/login', async (req, res) => {
   const attempt = async (org) => {
     const user = await User.findOne({ email: String(email).toLowerCase() });
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) return null;
-    if (user.isActive === false) return null;
+    if (org && user.isActive === false) return null;
     return {
       token: signToken(user, org),
       user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions ?? [], isActive: user.isActive ?? true },

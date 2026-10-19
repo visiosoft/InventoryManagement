@@ -1,25 +1,20 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import { Customer } from '../models/index.js';
+import { checkOtp, issueOtp, normalizePhone, phoneVariants } from '../services/customerOtp.js';
 
 const router = Router();
 
-const otpStore = new Map();
+// Sending a code costs money and texts a stranger, so this is per-IP on top of
+// the per-phone cooldown in services/customerOtp.js.
+export const otpLimiter = rateLimit({
+  windowMs: 60_000, max: 10, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many requests — please wait a minute and try again.' },
+  skip: () => process.env.NODE_ENV === 'test',
+});
 
-function generateOtp() {
-  return String(Math.floor(1000 + Math.random() * 9000));
-}
-
-// Entries are otherwise only removed on successful verification, so codes that
-// are never used would stay in memory for the life of the process.
-function pruneExpiredOtps() {
-  const now = Date.now();
-  for (const [phone, entry] of otpStore) {
-    if (now > entry.expiresAt) otpStore.delete(phone);
-  }
-}
-
-function signCustomerToken(customer) {
+export function signCustomerToken(customer) {
   return jwt.sign(
     { customerId: customer._id, phone: customer.phone, type: 'customer' },
     process.env.JWT_SECRET,
@@ -27,7 +22,7 @@ function signCustomerToken(customer) {
   );
 }
 
-function customerPayload(customer) {
+export function customerPayload(customer) {
   return { id: customer._id, fullName: customer.fullName, phone: customer.phone, email: customer.email };
 }
 
@@ -45,44 +40,42 @@ export function requireCustomer(req, res, next) {
   }
 }
 
-router.post('/request-otp', async (req, res) => {
+router.post('/request-otp', otpLimiter, async (req, res) => {
   try {
-    const { phone } = req.body;
-    if (!phone) return res.status(400).json({ error: 'Phone number is required' });
-    pruneExpiredOtps();
-    const code = generateOtp();
-    otpStore.set(phone, { code, expiresAt: Date.now() + 5 * 60 * 1000 });
-    res.json({ message: 'OTP sent', code });
+    const phone = normalizePhone(req.body?.phone);
+    if (phone.length < 9) return res.status(400).json({ error: 'A valid phone number is required' });
+    const sent = await issueOtp({ key: phone, phone });
+    res.json({ message: 'OTP sent', ...(sent.devCode ? { code: sent.devCode } : {}) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
-router.post('/verify-otp', async (req, res) => {
+router.post('/verify-otp', otpLimiter, async (req, res) => {
   try {
-    const { phone, code } = req.body;
+    const phone = normalizePhone(req.body?.phone);
+    const code = String(req.body?.code || '').trim();
     if (!phone || !code) return res.status(400).json({ error: 'Phone and code are required' });
-    const stored = otpStore.get(phone);
-    if (!stored || stored.code !== code) return res.status(401).json({ error: 'Invalid OTP' });
-    if (Date.now() > stored.expiresAt) { otpStore.delete(phone); return res.status(401).json({ error: 'OTP expired' }); }
-    otpStore.delete(phone);
 
-    let customer = await Customer.findOne({ $or: [{ phone }, { phones: phone }] });
+    await checkOtp({ key: phone, code });
+
+    let customer = await Customer.findOne({ $or: [{ phone: { $in: phoneVariants(phone) } }, { phones: { $in: phoneVariants(phone) } }] });
     const isNew = !customer;
     if (!customer) {
       const { fullName } = req.body;
+      const e164 = `+${phone}`;
       /* Signing in is not renting.
        *
        * Anybody can reach the portal and get themselves a record; before this
        * they arrived on the tenant list as a customer. They are promoted when
        * a contract exists, like everybody else — services/customerStage.js. */
-      customer = await Customer.create({ fullName: fullName || phone, phone, phones: [phone], stage: 'prospect' });
+      customer = await Customer.create({ fullName: fullName || e164, phone: e164, phones: [e164], stage: 'prospect' });
     }
 
     const token = signCustomerToken(customer);
     res.json({ token, customer: customerPayload(customer), isNew });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

@@ -1,9 +1,18 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ChevronLeft, Mail, MessageSquare, Plus, RotateCcw, Save, Trash2, Upload } from 'lucide-react'
+import { ChevronLeft, Image as ImageIcon, Mail, MessageSquare, Plus, RotateCcw, Save, Trash2, Upload } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { Button, Card, CardBody, CardHeader, PageHeader, Spinner, Textarea, Field, Input, Select } from '../components/ui'
+
+// A whole-block [image: URL] placeholder — mirrors services/emailLayout.js's
+// IMAGE_BLOCK regex on the server, which is what actually turns this into a
+// real <img> when the email sends. Kept in sync deliberately: the server
+// never accepts raw HTML in a template body (a past incident, per that
+// file's own comment), so this narrow, validated placeholder is the one way
+// in for a picture, and the preview here needs to recognise the exact same
+// shape or it would look right in the editor and wrong in the inbox.
+const IMAGE_BLOCK_RE = /^\[image:\s*(https?:\/\/[^\s\]]+)\s*\]$/gim
 
 type Template = {
   _id: string
@@ -11,6 +20,10 @@ type Template = {
   label: string
   subject: string
   emailBody: string
+  // Extra recipients for this one automated email, comma-separated. Only
+  // meaningful for an internal template like the accounts payment-due
+  // digest — a tenant-facing template has no reason to set it.
+  cc?: string
   whatsappBody: string
   /* The name Meta approved this under, if it has one. Without it a reminder
      can only reach somebody who wrote to us in the last 24 hours. */
@@ -72,6 +85,7 @@ export default function MessageTemplates() {
   const [tab, setTab] = useState<'email' | 'whatsapp'>('email')
   const [subject, setSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
+  const [cc, setCc] = useState('')
   const [whatsappBody, setWhatsappBody] = useState('')
   const [waTemplate, setWaTemplate] = useState('')
   const [waLang, setWaLang] = useState('en')
@@ -81,6 +95,41 @@ export default function MessageTemplates() {
   const [creating, setCreating] = useState(false)
   const [newLabel, setNewLabel] = useState('')
   const [newKey, setNewKey] = useState('')
+  const [imageUploading, setImageUploading] = useState(false)
+  const [imageError, setImageError] = useState('')
+  const emailBodyRef = useRef<HTMLTextAreaElement>(null)
+  const imageFileRef = useRef<HTMLInputElement>(null)
+
+  /* Uploads the picked file, then drops [image: URL] in as its own
+     paragraph at the cursor — blank lines on both sides so it lands as a
+     standalone block (services/emailLayout.js only renders it as a real
+     <img> when it's alone on its line, not typed mid-sentence). Falls back
+     to appending at the end if the textarea has no tracked cursor. */
+  async function insertImage(file: File) {
+    setImageUploading(true); setImageError('')
+    try {
+      const form = new FormData()
+      form.append('image', file)
+      const { data } = await api.post<{ url: string }>('/message-templates/email-image', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const placeholder = `[image: ${data.url}]`
+      const el = emailBodyRef.current
+      if (el && document.activeElement === el) {
+        const start = el.selectionStart ?? emailBody.length
+        const end = el.selectionEnd ?? emailBody.length
+        const before = emailBody.slice(0, start).replace(/\n*$/, '')
+        const after = emailBody.slice(end).replace(/^\n*/, '')
+        const next = [before, placeholder, after].filter(Boolean).join('\n\n')
+        setEmailBody(next)
+      } else {
+        setEmailBody((prev) => [prev.replace(/\n*$/, ''), placeholder].filter(Boolean).join('\n\n'))
+      }
+    } catch (e) {
+      setImageError(apiError(e))
+    } finally {
+      setImageUploading(false)
+      if (imageFileRef.current) imageFileRef.current.value = ''
+    }
+  }
 
   const { data: templates = [], isLoading } = useQuery<Template[]>({
     queryKey: ['message-templates'],
@@ -246,6 +295,7 @@ export default function MessageTemplates() {
     setSelected(t)
     setSubject(t.subject)
     setEmailBody(t.emailBody)
+    setCc(t.cc || '')
     setWhatsappBody(t.whatsappBody)
     setError(''); setSuccess('')
   }
@@ -613,7 +663,7 @@ export default function MessageTemplates() {
                     </Button>
                   )}
                   <Button size="sm" onClick={() => updateMut.mutate({
-                    subject, emailBody, whatsappBody,
+                    subject, emailBody, cc: cc.trim(), whatsappBody,
                     whatsappTemplate: waTemplate.trim(),
                     whatsappTemplateLang: waLang.trim() || 'en',
                     whatsappTemplateVars: waVars,
@@ -654,9 +704,29 @@ export default function MessageTemplates() {
                   <Field label="Subject">
                     <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Email subject line..." />
                   </Field>
-                  <Field label="Body">
-                    <Textarea value={emailBody} onChange={e => setEmailBody(e.target.value)} rows={12} className="font-mono text-sm" placeholder="Email body..." />
+                  <Field label="Cc (optional)">
+                    <Input value={cc} onChange={e => setCc(e.target.value)} placeholder="e.g. manager@purplebox.ae, owner@purplebox.ae" />
                   </Field>
+                  <p className="text-xs text-muted-foreground -mt-2">
+                    Comma-separated. Copied on every send of this template, in addition to its usual recipients.
+                  </p>
+                  <Field label="Body">
+                    <Textarea ref={emailBodyRef} value={emailBody} onChange={e => setEmailBody(e.target.value)} rows={12} className="font-mono text-sm" placeholder="Email body..." />
+                  </Field>
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={imageFileRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) insertImage(f) }}
+                    />
+                    <Button variant="outline" disabled={imageUploading} onClick={() => imageFileRef.current?.click()}>
+                      <ImageIcon size={13} /> {imageUploading ? 'Uploading…' : 'Insert image'}
+                    </Button>
+                    <span className="text-xs text-muted-foreground">Drops in as its own [image: …] line — leave it on a line by itself.</span>
+                  </div>
+                  {imageError && <p className="text-xs text-destructive">{imageError}</p>}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -705,7 +775,11 @@ export default function MessageTemplates() {
                 {tab === 'email' ? (
                   <div>
                     <div className="text-sm font-medium mb-1">{subject.replace(/@\w+/g, '<span class="text-primary">$&</span>')}</div>
-                    <div className="text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: emailBody.replace(/@\w+/g, '<span style="color:#5B2BC9;font-weight:600">$&</span>') }} />
+                    <div className="text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{
+                      __html: emailBody
+                        .replace(IMAGE_BLOCK_RE, '<img src="$1" alt="" style="max-width:100%;display:block;margin:8px 0;" />')
+                        .replace(/@\w+/g, '<span style="color:#5B2BC9;font-weight:600">$&</span>'),
+                    }} />
                   </div>
                 ) : (
                   <div className="text-sm whitespace-pre-wrap bg-emerald-50 dark:bg-emerald-950/20 rounded-lg p-3 border border-emerald-200 dark:border-emerald-900"

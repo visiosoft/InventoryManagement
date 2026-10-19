@@ -124,6 +124,21 @@ export function buildLeadNotice({ lead, assignedByName, reason, firstMessage, ap
 }
 
 /**
+ * One rep's whole book moved to another in a single action (see
+ * routes/leads.js POST /reassign) gets one push, not one per lead — the
+ * same "34 messages in a day" problem notifyLeadAssigned's per-lead email
+ * already avoids, just at a scale where it would otherwise be much worse.
+ */
+export async function notifyBulkReassignment({ toOwner, count, fromOwnerName = '' }) {
+   if (!toOwner || !count) return;
+   const title = `${count} lead${count === 1 ? '' : 's'} reassigned to you`;
+   const body = fromOwnerName ? `From ${fromOwnerName}'s book.` : 'Check your board for the new leads.';
+   const payload = { title, body, url: '/leads', tag: `lead-bulk-reassign-${toOwner}-${Date.now()}`, data: { type: 'leads_bulk_reassigned', count } };
+   if (pushConfigured()) await pushToUser(toOwner, payload).catch((e) => console.error('[LeadNotify] bulk push failed:', e.message));
+   if (expoPushConfigured()) await pushExpoToUser(toOwner, payload).catch((e) => console.error('[LeadNotify] bulk expo push failed:', e.message));
+}
+
+/**
  * A rep has just replied — the "you were given a lead" push is no longer
  * relevant, whatever the OS notification tray still shows.
  *

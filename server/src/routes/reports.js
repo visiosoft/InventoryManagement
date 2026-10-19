@@ -3,6 +3,7 @@ import { Unit, Contract, Payment, Expense } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
 import { unitRow, totals, byFloor, monthlyRate, monthlySeries, pickPerUnit, CYCLES_PER_YEAR } from '../services/rateRealisation.js';
 import { buildRatesWorkbook } from '../services/ratesWorkbook.js';
+import { websiteAnalytics } from '../services/googleAnalytics.js';
 
 const router = Router();
 
@@ -242,6 +243,21 @@ router.get('/stats', async (req, res) => {
     moveOutsList: moveOutsThisMonthList,
     availableUnitsList: availableUnits.map(u => ({ _id: u._id, unitNumber: u.unitNumber, floor: u.floor, sizeSqf: u.sizeSqf, monthlyRent: u.price || 0 })),
   });
+});
+
+/** Today's website visits, the last N days by country, and the last N days'
+ *  trend — its own card, own load, same reasoning as floor-occupancy below:
+ *  a slow or failing GA4 call should never hold up the rest of the
+ *  dashboard. Returns { configured: false, missing } instead of an error
+ *  when the service account key or property ID aren't set yet, so the
+ *  widget can show a "connect Google Analytics" state rather than break. */
+router.get('/website-analytics', async (req, res) => {
+  try {
+    const days = Math.min(90, Math.max(1, Number(req.query.days) || 30));
+    res.json(await websiteAnalytics({ days }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 /** Floor-by-floor occupancy, on its own so it renders independently of the

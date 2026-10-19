@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { MovingInvoice, Invoice, Quote, MovingQuote, Customer, ContractRenewal } from '../models/index.js';
 import { applyRenewal } from '../services/renewalApply.js';
+import { finalizePaidBooking } from '../services/appBooking.js';
 import { constructWebhookEvent, stripeWebhookConfigured } from '../services/stripe.js';
 import { applyMovingInvoicePayment } from '../services/movingInvoicePayments.js';
 import { applyInvoicePayment, syncLinkedPayment } from '../services/invoicePayments.js';
@@ -112,6 +113,12 @@ router.post('/', aw(async (req, res) => {
         await quote.save();
         thankYouEmail({ to: quote.customer?.email, name: quote.customer?.fullName || 'there', docNo: `Quotation ${quote.quoteNo}`, amount });
       }
+      /* A booking made in the customer app is the exception to the rule above:
+       * the customer is signed in and signs the agreement next, so there is
+       * nothing a staff member needs to supply. Re-read unpopulated, because the
+       * conversion saves this document. Idempotent — a repeat delivery is a no-op. */
+      const appQuote = quote?.appBooking?.active ? await Quote.findById(meta.storageQuoteId) : null;
+      if (appQuote) await finalizePaidBooking(appQuote, { sessionId: session.id, amount });
     }
 
     /* A tenant renewing their own contract from the expiry message.

@@ -95,6 +95,13 @@ import SentEmails from './pages/SentEmails'
 import Walkthroughs from './pages/Walkthroughs'
 import ZohoComparison from './pages/ZohoComparison'
 import Backup from './pages/Backup'
+import AgentInbox from './pages/agents/AgentInbox'
+import AgentPipeline from './pages/agents/AgentPipeline'
+import AgentLead from './pages/agents/AgentLead'
+import AgentTeam from './pages/agents/AgentTeam'
+import AgentOnboarding from './pages/agents/AgentOnboarding'
+import AgentPage from './pages/agents/AgentPage'
+import AgentGuide from './pages/agents/AgentGuide'
 import AuditLogReport from './pages/AuditLogReport'
 import Leads from './pages/Leads'
 import SalesBoard from './pages/SalesBoard'
@@ -231,7 +238,7 @@ export default function App() {
         <Route path="/units" element={<Units />} />
         <Route path="/floor-map" element={<PermGuard module="units"><FloorMap /></PermGuard>} />
         <Route path="/sites" element={<PermGuard module="units"><Sites /></PermGuard>} />
-        <Route path="/customers" element={<Customers />} />
+        <Route path="/customers" element={<PermGuard module="customers"><Customers /></PermGuard>} />
         <Route path="/customers/:id" element={<PersonProfile />} />
         <Route path="/people/:id" element={<PersonProfile />} />
         {/* Accounts do not work leads, so the page is not theirs — hiding the
@@ -284,11 +291,18 @@ export default function App() {
         <Route path="/tasks" element={<TasksGuard><Tasks /></TasksGuard>} />
         <Route path="/diary" element={<Diary />} />
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />
+        <Route path="/agents" element={<AdminGuard><AgentInbox /></AdminGuard>} />
+        <Route path="/agents/pipeline" element={<AdminGuard><AgentPipeline /></AdminGuard>} />
+        <Route path="/agents/team" element={<AdminGuard><AgentTeam /></AdminGuard>} />
+        <Route path="/agents/guide" element={<AdminGuard><AgentGuide /></AdminGuard>} />
+        <Route path="/agents/leads/:leadId" element={<AdminGuard><AgentLead /></AdminGuard>} />
+        <Route path="/agents/profiles/:id" element={<AdminGuard><AgentOnboarding /></AdminGuard>} />
+        <Route path="/agents/:agentId" element={<AdminGuard><AgentPage /></AdminGuard>} />
         <Route path="/audit-log" element={<AdminGuard><AuditLogReport /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/templates" element={<AdminGuard><MessageTemplates /></AdminGuard>} />
         <Route path="/settings/whatsapp-debug" element={<AdminGuard><WhatsAppDebug /></AdminGuard>} />
-        <Route path="/settings/agreement" element={<AdminGuard><AgreementTemplate /></AdminGuard>} />
+        <Route path="/settings/agreement" element={<PermGuard module={['settings', 'agreement_templates']}><AgreementTemplate /></PermGuard>} />
         <Route path="/zoho-comparison" element={<AdminGuard><ZohoComparison /></AdminGuard>} />
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
         <Route path="/settings/automation" element={<AdminGuard><AutomationRules /></AdminGuard>} />

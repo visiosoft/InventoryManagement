@@ -12,12 +12,16 @@ const PURPLE_DEEP = '#4A1FA0'
 const PURPLE_TINT = '#F7F3FF'
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 
-type Segment = 'all' | 'has_email' | 'active'
+type Segment = 'all' | 'has_email' | 'active' | 'former'
 
 const SEGMENTS: { value: Segment; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'has_email', label: 'Has email' },
   { value: 'active', label: 'Active tenants' },
+  // Contracts that ran their course, not ones cancelled before move-in or
+  // still being drafted — a win-back email to someone who never actually
+  // moved in reads oddly.
+  { value: 'former', label: 'Old customers' },
 ]
 
 type SendResult = {
@@ -31,12 +35,24 @@ function initialsOf(name: string) {
   return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?'
 }
 
+// A whole-block [image: URL] placeholder — matches services/emailLayout.js's
+// IMAGE_BLOCK on the server (used by the automation-engine send path) and
+// MessageTemplates.tsx's own preview. This composer sends its `html` field
+// to the server as-is with no further processing, so — unlike the
+// automation path — the conversion into a real <img> has to happen here,
+// client-side, at the point a template's plain body is loaded in.
+const IMAGE_BLOCK_RE = /^\[image:\s*(https?:\/\/[^\s\]]+)\s*\]$/i
+
 /** Plain-text template body into paragraphs, so the editor has real markup
  *  to work with rather than one run-on block. */
 function textToHtml(text: string) {
   return text
     .split(/\n{2,}/)
-    .map((para) => `<p>${para.replace(/\n/g, '<br/>')}</p>`)
+    .map((para) => {
+      const imageMatch = para.trim().match(IMAGE_BLOCK_RE)
+      if (imageMatch) return `<p style="text-align:center"><img src="${imageMatch[1]}" alt="" style="max-width:100%;height:auto;" /></p>`
+      return `<p>${para.replace(/\n/g, '<br/>')}</p>`
+    })
     .join('')
 }
 
@@ -96,6 +112,19 @@ export default function EmailCustomersModal({
     return new Set(rows.map((c) => c.customer?._id).filter(Boolean) as string[])
   }, [activeContracts])
 
+  // Only fetched when the Old-customers segment is actually used. 'ended'
+  // only — 'cancelled'/'draft'/'pending_signature' never actually housed
+  // anyone, so they are not a former tenant to win back.
+  const { data: formerContracts } = useQuery<{ data?: { customer?: { _id: string } }[] }>({
+    queryKey: ['customers-email-former-contracts'],
+    queryFn: () => api.get('/contracts', { params: { status: 'ended', limit: 2000 } }).then((r) => r.data),
+    enabled: segment === 'former',
+  })
+  const formerIds = useMemo(() => {
+    const rows = formerContracts?.data ?? []
+    return new Set(rows.map((c) => c.customer?._id).filter(Boolean) as string[])
+  }, [formerContracts])
+
   const { data: status } = useQuery<{ email?: { configured: boolean; from: string } }>({
     queryKey: ['integrations-status'],
     queryFn: () => api.get('/integrations/status').then((r) => r.data),
@@ -107,10 +136,11 @@ export default function EmailCustomersModal({
     return customers.filter((c) => {
       if (segment === 'has_email' && !c.email) return false
       if (segment === 'active' && !activeIds.has(c._id)) return false
+      if (segment === 'former' && !formerIds.has(c._id)) return false
       if (!q) return true
       return (c.fullName || '').toLowerCase().includes(q) || (c.email || '').toLowerCase().includes(q)
     })
-  }, [customers, query, segment, activeIds])
+  }, [customers, query, segment, activeIds, formerIds])
 
   // Only customers with an email can ever be selected. `mailable` is scoped to
   // the current filter (that's what select-all acts on), while the counter uses
@@ -120,7 +150,7 @@ export default function EmailCustomersModal({
   const allMailableSelected = mailable.length > 0 && mailable.every((c) => selected.has(c._id))
   const selectedCount = selected.size
   const filtering = query.trim() !== '' || segment !== 'has_email'
-  const loadingSegment = segment === 'active' && !activeContracts
+  const loadingSegment = (segment === 'active' && !activeContracts) || (segment === 'former' && !formerContracts)
 
   function toggleAll() {
     setSelected((s) => {

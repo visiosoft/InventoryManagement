@@ -28,7 +28,13 @@ const SALES_REP_DEFAULT_PERMISSIONS = ['sales_board', 'units', 'customers', 'con
  * client so it does not wait for the next login to take effect.
  */
 const ROLE_FLOOR = {
-    sales_rep: ['sales_board', 'units'],
+    // Tenants (the /contracts list) was only a default, not a floor — a rep
+    // created before it was added to the default set, or whose permissions
+    // an admin had otherwise customized, could end up without it and no
+    // visible way to get it back until the permission grid was unhidden for
+    // this role. A rep's own booked customers are exactly units/leads: not
+    // a privilege to grant, it is the job.
+    sales_rep: ['sales_board', 'units', 'contracts'],
     // Accounts invoice against contracts, so they need the tenant, the unit
     // and the contract to be reachable. Mirrored in client/src/lib/auth.tsx.
     accounts: ['dashboard', 'units', 'customers', 'contracts'],

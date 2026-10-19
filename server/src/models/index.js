@@ -45,6 +45,7 @@ function tenantModel(name) {
 
 const ALL_MODULES = [
   'dashboard', 'units', 'moving_inventory', 'contracts', 'documents',
+  'agreement_templates',
   'customers', 'quotes', 'invoices', 'vendors', 'expenses',
   'leads', 'purchases', 'payments',
   // The WhatsApp console. Historically reached through 'leads', which is why
@@ -369,7 +370,7 @@ const leadSchema = new Schema(
     leadScoreOverrideForLeadType: { type: String, default: '' },
     source: {
       type: String,
-      enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'other'],
+      enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other'],
       default: 'manual',
     },
     leadDateTime: { type: Date, default: Date.now },
@@ -431,8 +432,9 @@ const leadSchema = new Schema(
        and it deserves an answer on the record rather than in a timeline note
        somebody has to go and read. */
     assignedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
-    /* The first recorded contact attempt or successful outbound contact.
-       Written once per assignment so later contact cannot shift the clock. */
+    /* The first thing the rep did about it: an attempt logged, or the stage
+       moved. Written once and never moved, so a later action cannot make the
+       response look slower than it was. */
     firstResponseAt: { type: Date, default: null },
     /* 0 means "not asked yet" rather than a unit of no size. It is set when
        somebody actually speaks to the lead, at the Contacted stage — before
@@ -696,6 +698,11 @@ const contractSchema = new Schema(
     // Reminders are opt-in: new contracts start muted, enable per contract
     // from its Reminders tab
     remindersMuted: { type: Boolean, default: true },
+    // Which computed nextPaymentDueDate() this contract was last mentioned
+    // in the accounts payment-due digest for — compared against the current
+    // computed date so a cycle is only mentioned once, without needing a
+    // per-cycle Payment record. See services/paymentDueDigest.js.
+    lastDueSoonNotifiedFor: { type: Date, default: null },
     reminderOverrides: [
       {
         rule: { type: Schema.Types.ObjectId, ref: 'AutomationRule' },
@@ -844,6 +851,32 @@ const quoteSchema = new Schema(
     notes: { type: String, default: '' },
     status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },
     shareToken: { type: String, default: null },
+    /* A booking made through the public, no-login API for the marketing
+     * website (server/src/routes/publicBooking.js) — the other system's
+     * Stripe checkout is what actually charges the card; this only records
+     * that it told us payment succeeded. `token` is a one-time value scoped
+     * to this single quote, handed back when the hold was created, and is
+     * how confirm-payment proves it is the same caller — not a login. */
+    publicBooking: {
+      token: { type: String, default: null },
+      confirmedAt: { type: Date, default: null },
+      externalReference: { type: String, default: '' },
+    },
+    /* A booking made by a signed-in customer in the mobile app. Unlike a staff
+     * quote, paying it converts it to a contract with no one in between (see
+     * services/quoteConversion.js). `needsReview` is set instead when payment
+     * arrives but the contract cannot be made, so staff are told rather than the
+     * customer being left with a payment and nothing. */
+    appBooking: {
+      active: { type: Boolean, default: false },
+      checkoutStartedAt: { type: Date, default: null },
+      // Set atomically by whichever of the webhook or the app's status check
+      // gets to a paid booking first, so only one of them makes the contract.
+      convertingAt: { type: Date, default: null },
+      convertedAt: { type: Date, default: null },
+      needsReview: { type: Boolean, default: false },
+      reviewReason: { type: String, default: '' },
+    },
     // A Stripe Checkout session for paying this quote online, and when it
     // actually cleared — the webhook sets stripePaidAt, nothing else does.
     stripeCheckoutSessionId: { type: String, default: null },
@@ -1171,6 +1204,10 @@ const paymentSchema = new Schema(
     status: { type: String, enum: ['pending', 'paid', 'overdue'], default: 'pending' },
     notes: { type: String, default: '' },
     recordedBy: { type: String, default: '' },
+    // Set once the accounts payment-due digest has told the team this
+    // payment is coming up, so a daily job cannot email the same due date
+    // twice. See services/paymentDueDigest.js.
+    accountsDueSoonNotifiedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
@@ -1807,6 +1844,7 @@ reminderLogSchema.index({ contract: 1, sentAt: -1 });
 // "did we email them?" had no single answer.
 const sentEmailSchema = new Schema({
   to: { type: String, default: '' },
+  cc: { type: String, default: '' },
   // Bulk sends put the list here and the sender in `to`; the count is what
   // matters on a list page, the addresses are for opening one row.
   bcc: { type: String, default: '' },
@@ -2086,15 +2124,19 @@ const assistantConfigSchema = new Schema({
   model: { type: String, default: '' },
   // How many tool rounds one question may take before it has to answer.
   maxToolRounds: { type: Number, default: 4 },
-  // Who may use it. Reports are admin and accounts; this sees the same data.
-  roles: { type: [String], default: ['admin', 'accounts'] },
+  // Who may use it. Reports are admin and accounts, and BayOps (the mobile
+  // command bar) is a rep tool first, so sales_rep is in the default too —
+  // this is only what a brand-new config document gets; an already-existing
+  // one keeps whatever an admin set, same as any other field here.
+  roles: { type: [String], default: ['admin', 'accounts', 'sales_rep'] },
   /* Whether it may do things — create a quotation, send it — as well as
    * answer. Every action is proposed first and runs only when a person
    * confirms it in the widget; this switch decides whether it may even
-   * propose. Admin only by default: an action here reserves a unit and
-   * messages a customer. */
+   * propose. Admin and sales_rep by default — a rep proposing their own
+   * quotation or lead is exactly BayOps' job, still gated by a person
+   * pressing Confirm either way. */
   actionsEnabled: { type: Boolean, default: true },
-  actionRoles: { type: [String], default: ['admin'] },
+  actionRoles: { type: [String], default: ['admin', 'sales_rep'] },
 }, { timestamps: true });
 export const AssistantConfig = tenantModel('AssistantConfig');
 
@@ -2444,6 +2486,30 @@ contractRenewalSchema.index({ contract: 1, createdAt: -1 });
 contractRenewalSchema.index({ stripeCheckoutSessionId: 1 });
 export const ContractRenewal = tenantModel('ContractRenewal');
 
+// One live login code per phone. The code is stored hashed, and Mongo's TTL
+// index removes the row, so a restart or a second server instance can't lose or
+// split a code the way an in-memory Map did.
+const customerOtpSchema = new mongoose.Schema({
+  phone: { type: String, required: true, unique: true },
+  codeHash: { type: String, required: true },
+  attempts: { type: Number, default: 0 },
+  expiresAt: { type: Date, required: true, index: { expireAfterSeconds: 0 } },
+}, { timestamps: true });
+export const CustomerOtp = tenantModel('CustomerOtp');
+
+// Something a tenant asks for from the app that staff must action — a check-out
+// change today. Kept as its own record so it can be listed and answered, and
+// mirrored onto the contract timeline so it is seen where staff already look.
+const customerRequestSchema = new mongoose.Schema({
+  customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
+  contract: { type: mongoose.Schema.Types.ObjectId, ref: 'Contract', required: true },
+  type: { type: String, enum: ['checkout_change'], required: true },
+  payload: { type: mongoose.Schema.Types.Mixed, default: {} },
+  status: { type: String, enum: ['pending', 'approved', 'declined'], default: 'pending' },
+  staffNote: { type: String, default: '' },
+}, { timestamps: true });
+export const CustomerRequest = tenantModel('CustomerRequest');
+
 export const LeadRoutingRule = tenantModel('LeadRoutingRule');
 export const LeadRoutingConfig = tenantModel('LeadRoutingConfig');
 export const Contract = tenantModel('Contract');
@@ -2610,6 +2676,11 @@ const messageTemplateSchema = new Schema({
   label: { type: String, required: true },
   subject: { type: String, default: '' },
   emailBody: { type: String, default: '' },
+  // Extra recipients for this specific automated email, comma-separated —
+  // e.g. copying a manager on the accounts payment-due digest. Empty for
+  // every tenant-facing template; nothing reads this unless the sending
+  // service (like paymentDueDigest.js) explicitly looks for it.
+  cc: { type: String, default: '' },
   // The designed version. When present it is what actually goes out, with
   // emailBody kept as the plain-text part for clients that will not render
   // HTML — a reminder should not arrive blank because someone reads mail in a
@@ -2970,6 +3041,8 @@ export const SCHEMAS = {
    LeadRoutingRule: leadRoutingRuleSchema,
    LeadRoutingConfig: leadRoutingConfigSchema,
    ContractRenewal: contractRenewalSchema,
+   CustomerOtp: customerOtpSchema,
+   CustomerRequest: customerRequestSchema,
    LeadFollowUp: leadFollowUpSchema,
    Contract: contractSchema,
    Quote: quoteSchema,

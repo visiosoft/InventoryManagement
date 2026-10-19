@@ -8,6 +8,7 @@ import { creditFor, markLeadWon } from '../services/dealCredit.js';
 import { contractExportRows } from '../services/contractExportRows.js';
 import { promoteToCustomer } from '../services/customerStage.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
+import { nextPaymentDueDate } from '../services/billingCycle.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { renewLink, moveOutLink } from '../services/renewalLink.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
@@ -185,7 +186,12 @@ router.get('/', async (req, res) => {
   // Contracts predating the field count as undecided, matching the model default.
   const RENEWAL_ORDER = { undecided: 0, not_renewing: 1, renewing: 2 };
   const sortByRenewal = req.query.sort === 'renewal_asc' || req.query.sort === 'renewal_desc';
-  const inMemorySort = sortByOwed || sortByRenewal;
+
+  // Next payment due comes from the Payment aggregate below, computed after
+  // the page is fetched — same reason as owed/renewal, it cannot be part of
+  // the database sort, so the whole filtered set is resolved and paged here.
+  const sortByNextDue = req.query.sort === 'next_due_asc';
+  const inMemorySort = sortByOwed || sortByRenewal || sortByNextDue;
 
   /* Everything except the bulk.
    *
@@ -260,6 +266,10 @@ router.get('/', async (req, res) => {
       totalAmount: pay ? Math.round(pay.total * 100) / 100 : 0,
       contractAmount,
       overdueCount: pay?.overdue ?? 0,
+      // When the next 4-week rent collection falls, computed from the
+      // contract's own dates rather than any Payment record — see
+      // services/billingCycle.js for why.
+      nextPaymentDue: nextPaymentDueDate({ startDate: c.startDate, endDate: c.endDate }),
     };
   });
 
@@ -287,10 +297,18 @@ router.get('/', async (req, res) => {
     if (sortByOwed) {
       const dir = req.query.sort === 'owes_asc' ? 1 : -1;
       data = [...data].sort((a, b) => dir * (Number(a.outstanding || 0) - Number(b.outstanding || 0)));
-    } else {
+    } else if (sortByRenewal) {
       const dir = req.query.sort === 'renewal_desc' ? -1 : 1;
       const rank = (c) => RENEWAL_ORDER[c.renewalIntent || 'undecided'] ?? 0;
       data = [...data].sort((a, b) => dir * (rank(a) - rank(b)));
+    } else {
+      // Soonest due first; nothing due (no nextPaymentDue at all) sorts last
+      // rather than first, where a null would otherwise land.
+      data = [...data].sort((a, b) => {
+        const at = a.nextPaymentDue ? new Date(a.nextPaymentDue).getTime() : Infinity;
+        const bt = b.nextPaymentDue ? new Date(b.nextPaymentDue).getTime() : Infinity;
+        return at - bt;
+      });
     }
     data = data.slice(skip, skip + limit);
   }
@@ -703,9 +721,9 @@ router.post('/', enforceTrialCap(Contract, 50, 'contracts'), async (req, res) =>
   res.status(201).json(populated);
 });
 
-// Generate a unique signing link for the customer.
-// Draft / pending_signature → any authenticated user.
-// Active (re-sign) → admin only.
+// Generate a unique signing link for the customer — any authenticated user,
+// whatever the contract's current status (draft, pending_signature, or
+// re-signing an already-active one).
 router.post('/:id/create-signing-link', async (req, res) => {
   const contract = await Contract.findById(req.params.id);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
@@ -713,11 +731,6 @@ router.post('/:id/create-signing-link', async (req, res) => {
   const allowedStatuses = ['draft', 'pending_signature', 'active'];
   if (!allowedStatuses.includes(contract.status)) {
     return res.status(409).json({ error: `Cannot generate a signing link for a ${contract.status} contract` });
-  }
-
-  // Re-signing an already-active contract requires admin
-  if (contract.status === 'active' && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Only an admin can generate a signing link for an already-signed contract' });
   }
 
   const token = crypto.randomBytes(32).toString('hex');

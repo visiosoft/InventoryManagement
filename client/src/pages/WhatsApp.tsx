@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel, type LeadScore } from '../lib/api'
+import { agentsApi } from '../lib/agentsApi'
 import { isSalesRepRole } from '../lib/roles'
 import { useAuth } from '../lib/auth'
 import { TaskComposer } from '../components/TaskComposer'
@@ -456,7 +457,23 @@ function IconButton({
   )
 }
 
-function MessageBubble({ msg }: { msg: WaMsg }) {
+/* Memoized deliberately: the composer's own state (every keystroke, the
+ * suggested-reply card, Edit/Dismiss) lives in the parent WhatsApp component
+ * alongside the message list, so without this every bubble in the thread —
+ * however long the conversation — re-rendered on every keystroke and every
+ * suggestion action. `msg` is the only prop, and it's a stable reference from
+ * the parent's memoized `sorted` array, so this actually skips work rather
+ * than comparing props that always differ. */
+function MessageBubbleImpl({ msg, onCorrected, onDeleted }: {
+  msg: WaMsg
+  // The recent-window query's own invalidate-and-refetch (below) only ever
+  // refreshes what's in that window — a message sitting further back, paged
+  // in from history, lives in the parent's own `olderMessages` state and
+  // needs patching directly or it won't visibly update. See loadOlder in the
+  // parent for why the two are kept apart.
+  onCorrected?: (id: string) => void
+  onDeleted?: (id: string) => void
+}) {
   const out = msg.direction === 'outbound'
   const qc = useQueryClient()
   const [hovered, setHovered] = useState(false)
@@ -474,6 +491,7 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
       setCorrecting(false)
       setErr('')
       qc.invalidateQueries({ queryKey: ['wa-messages'] })
+      onCorrected?.(msg._id)
     },
     onError: (e) => setErr(apiError(e)),
   })
@@ -484,7 +502,10 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
   // actually said.
   const deleteMsg = useMutation({
     mutationFn: () => whatsappApi.deleteMessage(msg._id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wa-messages'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wa-messages'] })
+      onDeleted?.(msg._id)
+    },
   })
 
   return (
@@ -656,6 +677,7 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
     </div>
   )
 }
+const MessageBubble = memo(MessageBubbleImpl)
 
 // The chat panel's own type and width, from the ChatPanel design: Manrope for
 // a rounder, friendlier list, and a little more room than the 300px it had.
@@ -1690,17 +1712,21 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
       setErr('')
       setOpen(false)
       const ownerName = result.ownerName || choices.find((p) => p._id === result.ownerId)?.name || ''
-      qc.setQueriesData<{ list: WhatsAppConversation[] } | undefined>({ queryKey: ['wa-conversations'] }, (old) => {
-        if (!old) return old
-        return {
-          ...old,
-          list: old.list.map((c) => (c.phoneNormalized !== convo.phoneNormalized ? c : {
-            ...c,
-            lead: result.createdLead
-              ? { _id: result.createdLead._id, fullName: result.createdLead.fullName, status: result.createdLead.status, ownerId: result.ownerId, ownerName, assigned: true }
-              : c.lead ? { ...c.lead, ownerId: result.ownerId, ownerName, assigned: true, autoAssigned: false } : c.lead,
-          })),
-        }
+      const assigned = (c: WhatsAppConversation) => (c.phoneNormalized !== convo.phoneNormalized ? c : {
+        ...c,
+        lead: result.createdLead
+          ? { _id: result.createdLead._id, fullName: result.createdLead.fullName, status: result.createdLead.status, ownerId: result.ownerId, ownerName, assigned: true }
+          : c.lead ? { ...c.lead, ownerId: result.ownerId, ownerName, assigned: true, autoAssigned: false } : c.lead,
+      })
+      // Two shapes live under this prefix: the inbox keeps a paged
+      // { list, total, matched } and the bell keeps a bare array under its
+      // own ['wa-conversations','bell'] key, still prefix-matched here —
+      // patch whichever shape this entry actually is.
+      qc.setQueriesData({ queryKey: ['wa-conversations'] }, (old: unknown) => {
+        if (Array.isArray(old)) return old.map(assigned)
+        const paged = old as { list?: WhatsAppConversation[] } | undefined
+        if (paged && Array.isArray(paged.list)) return { ...paged, list: paged.list.map(assigned) }
+        return old
       })
       onChanged()
     },
@@ -2555,6 +2581,13 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
    */
   const LIVE = { refetchIntervalInBackground: true, refetchOnWindowFocus: true } as const
 
+  // The recent-window page size for an open conversation, and the page size
+  // for paging backward into its history — kept as one explicit constant so
+  // "did that request come back short of a full page" is an exact
+  // comparison rather than a guess at the server's own default (which this
+  // matches — see routes/whatsapp.js).
+  const MESSAGE_PAGE_SIZE = 100
+
   /* How many threads to ask for. Raised by "Show older chats" rather than
      fetching everything up front, so a busy inbox stays quick to open. */
   const [convoLimit, setConvoLimit] = useState(200)
@@ -2594,14 +2627,100 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     ...LIVE,
   })
 
-  const { data: messages, isLoading: loadingMsgs } = useQuery<WaMsg[]>({
+  const { data: recentMessages, isLoading: loadingMsgs } = useQuery<WaMsg[]>({
     queryKey: ['wa-messages', selectedPhone],
-    queryFn: () => whatsappApi.messages(selectedPhone ?? undefined),
+    queryFn: () => whatsappApi.messages(selectedPhone ?? undefined, { limit: MESSAGE_PAGE_SIZE }),
     // The open conversation is the one being watched, so it polls fastest.
+    // Server-capped at a small recent window (see routes/whatsapp.js) — a
+    // long thread used to be fetched (and re-fetched every 5s) whole, up to
+    // 5000 messages, which is what actually made the console feel frozen.
+    // Older history is paged in on demand — see olderMessages below.
     refetchInterval: 5_000,
     enabled: true,
     ...LIVE,
   })
+
+  /* History paged in as someone scrolls up, kept apart from the polled
+   * recent window above — the two are fetched completely differently (one
+   * polls forward for what's new, one is a one-shot page backward) and
+   * merging them into a single query would fight itself. Reset whenever the
+   * open conversation changes: this is a different thread's history, not a
+   * continuation of the last one's. */
+  const [olderMessages, setOlderMessages] = useState<WaMsg[]>([])
+  const [hasMoreOlder, setHasMoreOlder] = useState(true)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const prevScrollMetrics = useRef<{ height: number; top: number } | null>(null)
+
+  useEffect(() => {
+    setOlderMessages([])
+    setHasMoreOlder(true)
+    setLoadingOlder(false)
+  }, [selectedPhone])
+
+  // If the recent window alone came back short of a full page, the whole
+  // conversation fits in it — nothing more to page back into.
+  useEffect(() => {
+    if (olderMessages.length === 0 && recentMessages && recentMessages.length < MESSAGE_PAGE_SIZE) {
+      setHasMoreOlder(false)
+    }
+  }, [recentMessages, olderMessages.length])
+
+  // The recent window plus whatever's been scrolled into, deduplicated at the
+  // seam — a message can legitimately appear in both once the recent
+  // window's own boundary shifts past it on a later poll.
+  const messages = useMemo(() => {
+    if (olderMessages.length === 0) return recentMessages
+    const seen = new Set<string>()
+    const merged: WaMsg[] = []
+    for (const m of [...olderMessages, ...(recentMessages ?? [])]) {
+      if (seen.has(m._id)) continue
+      seen.add(m._id)
+      merged.push(m)
+    }
+    return merged
+  }, [olderMessages, recentMessages])
+
+  const loadOlder = useCallback(async () => {
+    if (loadingOlder || !hasMoreOlder || !selectedPhone) return
+    const current = olderMessages.length ? olderMessages : (recentMessages ?? [])
+    if (current.length === 0) return
+    const oldest = current.reduce((a, m) => (m.occurredAt < a.occurredAt ? m : a), current[0])
+    setLoadingOlder(true)
+    try {
+      const older = await whatsappApi.messages(selectedPhone, { before: oldest._id, limit: MESSAGE_PAGE_SIZE })
+      if (older.length < MESSAGE_PAGE_SIZE) setHasMoreOlder(false)
+      const el = scrollRef.current
+      if (el) prevScrollMetrics.current = { height: el.scrollHeight, top: el.scrollTop }
+      setOlderMessages((prev) => {
+        const seen = new Set(prev.map((m) => m._id))
+        const fresh = older.filter((m) => !seen.has(m._id))
+        return fresh.length ? [...fresh, ...prev] : prev
+      })
+    } catch {
+      // A failed page-back isn't worth surfacing as a send-composer error —
+      // scrolling up again retries it.
+    } finally {
+      setLoadingOlder(false)
+    }
+  }, [loadingOlder, hasMoreOlder, selectedPhone, olderMessages, recentMessages])
+
+  // Prepending older messages pushes everything else down by the height just
+  // added — restore the reader's exact spot rather than letting the view
+  // jump. Runs before paint, so nothing visibly shifts.
+  useLayoutEffect(() => {
+    const metrics = prevScrollMetrics.current
+    const el = scrollRef.current
+    if (!metrics || !el) return
+    prevScrollMetrics.current = null
+    el.scrollTop = el.scrollHeight - metrics.height + metrics.top
+  }, [olderMessages])
+
+  const patchOlderMessageCorrected = useCallback((id: string) => {
+    setOlderMessages((prev) => prev.map((m) => (m._id === id ? { ...m, correctedAt: new Date().toISOString() } : m)))
+  }, [])
+  const removeOlderMessage = useCallback((id: string) => {
+    setOlderMessages((prev) => prev.filter((m) => m._id !== id))
+  }, [])
 
   // The customer's most recent message, used to prefill a task raised from this
   // chat. Capped: a task description should not swallow an essay.
@@ -2993,7 +3112,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     const el = scrollRef.current
     if (!el) return
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60
-  }, [])
+    if (el.scrollTop < 100 && hasMoreOlder && !loadingOlder) loadOlder()
+  }, [hasMoreOlder, loadingOlder, loadOlder])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -3164,32 +3284,42 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     onError: (e) => setSendErr(apiError(e)),
   })
 
-  // The draft lives on the thread, not just in this component, so dismissing
-  // it needs a server round-trip. But waiting for onSent's invalidateQueries
-  // to refetch before the card disappears reads as the button not working —
-  // patched into every cached wa-conversations query immediately instead
-  // (same reasoning as the owner-assign patch above), and invalidated after
-  // for consistency with the poll.
+  // The draft is an AgentAction, not just state in this component, so
+  // resolving it needs a server round-trip (POST /agents/actions/:id/resolve).
+  // But waiting for onSent's invalidateQueries to refetch before the card
+  // disappears reads as the button not working — patched into every cached
+  // wa-conversations query immediately instead (same reasoning as the
+  // owner-assign patch above), and invalidated after for consistency with
+  // the poll.
+  const clearDraftInCache = (phone: string) => {
+    const cleared = (c: WhatsAppConversation) => (c.phoneNormalized !== phone ? c : { ...c, botDraft: '', botActionId: '' })
+    // Two shapes live under this prefix: the inbox keeps a paged
+    // { list, total, matched } and the bell (WhatsAppBell.tsx) keeps a bare
+    // array under its own ['wa-conversations','bell'] key, still prefix-matched
+    // by this query filter — patch whichever shape this entry actually is.
+    qc.setQueriesData({ queryKey: ['wa-conversations'] }, (old: unknown) => {
+      if (Array.isArray(old)) return old.map(cleared)
+      const paged = old as { list?: WhatsAppConversation[] } | undefined
+      if (paged && Array.isArray(paged.list)) return { ...paged, list: paged.list.map(cleared) }
+      return old
+    })
+  }
+  const resolveDraft = useMutation({
+    mutationFn: (payload: { phone: string; actionId: string; resolution: 'approved' | 'edited' | 'dismissed'; text?: string; alreadySent?: boolean }) =>
+      agentsApi.resolve(payload.actionId, payload.resolution, payload.text).then((r) => ({ ...r, phone: payload.phone })),
+    onSuccess: (_data, v) => { setSendErr(''); clearDraftInCache(v.phone); onSent() },
+    onError: (e) => setSendErr(apiError(e)),
+  })
   const dismissDraft = useMutation({
-    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/dismiss-draft`).then((r) => r.data),
-    onSuccess: (_data, phone) => {
-      setSendErr('')
-      qc.setQueriesData<{ list: WhatsAppConversation[] } | undefined>({ queryKey: ['wa-conversations'] }, (old) => {
-        if (!old) return old
-        return {
-          ...old,
-          list: old.list.map((c) => (c.phoneNormalized !== phone ? c : { ...c, botDraft: '' })),
-        }
-      })
-      onSent()
-    },
+    mutationFn: (v: { phone: string; actionId: string }) => agentsApi.resolve(v.actionId, 'dismissed'),
+    onSuccess: (_data, v) => { setSendErr(''); clearDraftInCache(v.phone); onSent() },
     onError: (e) => setSendErr(apiError(e)),
   })
 
-  // Handing a thread over mutes the assistant on it. Without a way back the
-  // mute is permanent, and that customer never gets an automatic reply again.
+  // Handing a thread over mutes the agent on it. Without a way back the mute
+  // is permanent, and that customer never gets an automatic reply again.
   const resumeBot = useMutation({
-    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/resume`).then((r) => r.data),
+    mutationFn: (leadId: string) => agentsApi.handBack(leadId),
     onSuccess: () => { setSendErr(''); onSent() },
     onError: (e) => setSendErr(apiError(e)),
   })
@@ -3243,7 +3373,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
      for another against the same conversation, for one dismissed by accident
      or a wording worth a second try. */
   const suggestAgain = useMutation({
-    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/suggest`),
+    mutationFn: (leadId: string) => agentsApi.suggestAgain(leadId),
     onSuccess: () => { setSendErr(''); refetchConvos() },
     onError: (e) => setSendErr(apiError(e)),
   })
@@ -3257,6 +3387,12 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
   /* Notices somebody has read and put away, by chat. Kept for the session
      only: a thread that escalates again tomorrow should say so again. */
   const [escalationHidden, setEscalationHidden] = useState<Set<string>>(new Set())
+  // Editing a suggested reply in place, rather than the composer — so
+  // "Send edited" resolves the same AgentAction instead of leaving it
+  // pending while a different message went out through the composer.
+  const [editingDraft, setEditingDraft] = useState(false)
+  const [draftEditText, setDraftEditText] = useState('')
+  useEffect(() => setEditingDraft(false), [selectedPhone])
   const [remindOpen, setRemindOpen] = useState(false)
   const [remindDate, setRemindDate] = useState('')
   const remind = useMutation({
@@ -3266,10 +3402,16 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     onError: (e) => setSendErr(apiError(e)),
   })
 
+  // Voice-sends through its own channel (text-to-speech + WhatsApp media),
+  // so the matching agent draft is marked resolved with alreadySent rather
+  // than sent again through resolveDraft's own text-send path.
   const sendVoiceDraft = useMutation({
-    mutationFn: ({ phone, text }: { phone: string; text: string }) =>
-      api.post('/ai-bot/speak-and-send', { phone, text }),
-    onSuccess: () => { setSendErr(''); stickToBottom.current = true; onSent() },
+    mutationFn: async ({ phone, actionId, text }: { phone: string; actionId: string; text: string }) => {
+      const r = await api.post('/ai-bot/speak-and-send', { phone, text })
+      if (actionId) await agentsApi.resolve(actionId, 'approved', '', true).catch(() => null)
+      return r
+    },
+    onSuccess: (_data, v) => { setSendErr(''); stickToBottom.current = true; clearDraftInCache(v.phone); onSent() },
     onError: (e) => setSendErr(apiError(e)),
   })
 
@@ -3770,9 +3912,17 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                           <span
                             className="shrink-0 rounded-full px-1.5 py-0.5"
                             style={{ fontSize: 10, fontWeight: 700, background: '#FFF1CC', color: '#8A5A00' }}
-                            title={c.botEscalationReason || 'The assistant handed this over'}
+                            title={`${c.botEscalationReason || 'Handed this over'}${c.botAgentName ? ` — from ${c.botAgentName}` : ''}`}
                           >
                             Needs you
+                          </span>
+                        ) : c.botStatus === 'bot' && c.botAgentName ? (
+                          <span
+                            className="shrink-0 rounded-full px-1.5 py-0.5"
+                            style={{ fontSize: 10, fontWeight: 700, background: '#F3EEFF', color: c.botAgentColor || '#4A1FA0' }}
+                            title={`${c.botAgentName} has a reply ready for you to review`}
+                          >
+                            {c.botAgentName}
                           </span>
                         ) : null}
 
@@ -4107,7 +4257,14 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 <p className="text-sm">No messages yet.</p>
               </div>
             ) : (
-              sorted.map((m) => <MessageBubble key={m._id} msg={m} />)
+              <>
+                {loadingOlder && (
+                  <p className="text-center text-xs py-1" style={{ color: FAINT_INK }}>Loading earlier messages…</p>
+                )}
+                {sorted.map((m) => (
+                  <MessageBubble key={m._id} msg={m} onCorrected={patchOlderMessageCorrected} onDeleted={removeOlderMessage} />
+                ))}
+              </>
             )}
           </div>
 
@@ -4129,8 +4286,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               <div className="flex items-start gap-2">
                 <UserCheck size={15} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 1 }} />
                 <div className="min-w-0 flex-1" style={{ fontSize: 12.5, color: '#6B4500' }}>
-                  <span style={{ fontWeight: 700 }}>Waiting for a person.</span>{' '}
-                  {selectedConvo.botEscalationReason || 'The assistant could not answer this one.'}
+                  <span style={{ fontWeight: 700 }}>Waiting for a person{selectedConvo.botAgentName ? ` — from ${selectedConvo.botAgentName}` : ''}.</span>{' '}
+                  {selectedConvo.botEscalationReason || 'The agent could not answer this one.'}
                 </div>
                 {/* Out of the way without handing the thread back: reading the
                     reason is usually all somebody needs, and after that the
@@ -4150,11 +4307,11 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               <div className="flex justify-end mt-2">
                 <button
                   type="button"
-                  onClick={() => resumeBot.mutate(selectedConvo.phoneNormalized)}
-                  disabled={resumeBot.isPending}
+                  onClick={() => selectedConvo.lead && resumeBot.mutate(selectedConvo.lead._id)}
+                  disabled={resumeBot.isPending || !selectedConvo.lead}
                   className="shrink-0 rounded-full px-3 py-1 cursor-pointer disabled:opacity-50"
                   style={{ background: '#8A5A00', color: '#fff', fontSize: 11.5, fontWeight: 700 }}
-                  title="The assistant will answer this conversation again"
+                  title="The agent will answer this conversation again"
                 >
                   {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
                 </button>
@@ -4244,15 +4401,15 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               Dismissing removes a suggestion for good, which is what it should
               do — but there was then no way to ask for another until the
               customer wrote again. */}
-          {selectedConvo && !selectedConvo.botDraft && selectedConvo.botStatus !== 'escalated' && (
+          {selectedConvo && selectedConvo.lead && !selectedConvo.botDraft && selectedConvo.botStatus !== 'escalated' && selectedConvo.botStatus !== 'paused' && (
             <div className="shrink-0 mx-6 mb-2">
               <button
                 type="button"
-                onClick={() => suggestAgain.mutate(selectedConvo.phoneNormalized)}
+                onClick={() => suggestAgain.mutate(selectedConvo.lead!._id)}
                 disabled={suggestAgain.isPending}
                 className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
                 style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: '#4A1FA0' }}
-                title="Ask the assistant for a reply to their last message"
+                title="Ask the agent for a reply to their last message"
               >
                 {suggestAgain.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                 {suggestAgain.isPending ? 'Thinking…' : 'Suggest a reply'}
@@ -4261,57 +4418,82 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
           )}
 
           {/* A suggested reply. It is never sent on its own — someone reads it
-              and presses Send, or edits it in the composer first. */}
-          {selectedConvo?.botDraft && (
+              and presses Send, or edits it first. */}
+          {selectedConvo?.botDraft && selectedConvo.botActionId && (
             <div className="shrink-0 mx-6 mb-2 rounded-xl px-3.5 py-3"
               style={{ background: '#F3EEFF', border: '1px solid #D9CBFA' }}>
-              <div className="flex items-center gap-1.5 mb-1.5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#4A1FA0' }}>
-                <Bot size={13} /> Suggested reply
+              <div className="flex items-center gap-1.5 mb-1.5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: selectedConvo.botAgentColor || '#4A1FA0' }}>
+                <Bot size={13} /> {selectedConvo.botAgentName ? `${selectedConvo.botAgentName} suggests` : 'Suggested reply'}
               </div>
-              <div className="whitespace-pre-wrap" style={{ fontSize: 13, color: MUTED_INK }}>
-                {selectedConvo.botDraft}
-              </div>
+              {editingDraft ? (
+                <Textarea rows={3} value={draftEditText} onChange={(e) => setDraftEditText(e.target.value)} />
+              ) : (
+                <div className="whitespace-pre-wrap" style={{ fontSize: 13, color: MUTED_INK }}>
+                  {selectedConvo.botDraft}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 mt-2.5">
-                <button type="button"
-                  onClick={() => sendText(selectedConvo.botDraft!)}
-                  disabled={send.isPending}
-                  className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
-                  style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
-                  Send
-                </button>
-                {/* Hear it, and send the voice — so what the customer gets is
-                    what was approved, and a spoken reply can be judged before
-                    anybody turns automatic replies on. */}
-                <button type="button"
-                  onClick={() => hearDraft(selectedConvo.botDraft!)}
-                  className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5"
-                  style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}
-                  title={hearing === 'playing' ? 'Stop' : 'Hear this read aloud. Nothing is sent.'}>
-                  {hearing === 'loading' ? <Loader2 size={12} className="animate-spin" />
-                    : hearing === 'playing' ? <Square size={11} />
-                      : <Mic size={12} />}
-                  {hearing === 'loading' ? 'Speaking…' : hearing === 'playing' ? 'Stop' : 'Hear it'}
-                </button>
-                <button type="button"
-                  onClick={() => sendVoiceDraft.mutate({ phone: selectedConvo.phoneNormalized, text: selectedConvo.botDraft! })}
-                  disabled={sendVoiceDraft.isPending}
-                  className="h-7 px-3 rounded-full cursor-pointer disabled:opacity-50"
-                  style={{ border: '1px solid #D9CBFA', background: '#fff', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}
-                  title="Send this as a voice note">
-                  {sendVoiceDraft.isPending ? 'Sending…' : 'Send as voice'}
-                </button>
-                <button type="button"
-                  onClick={() => { insertText(selectedConvo.botDraft!); dismissDraft.mutate(selectedConvo.phoneNormalized) }}
-                  className="h-7 px-3 rounded-full cursor-pointer"
-                  style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}>
-                  Edit
-                </button>
-                <button type="button"
-                  onClick={() => dismissDraft.mutate(selectedConvo.phoneNormalized)}
-                  className="h-7 px-2.5 rounded-full cursor-pointer"
-                  style={{ fontSize: 12, fontWeight: 600, color: FAINT_INK }}>
-                  Dismiss
-                </button>
+                {editingDraft ? (
+                  <>
+                    <button type="button"
+                      onClick={() => { resolveDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, resolution: 'edited', text: draftEditText }); setEditingDraft(false) }}
+                      disabled={resolveDraft.isPending || !draftEditText.trim()}
+                      className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
+                      style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
+                      Send edited
+                    </button>
+                    <button type="button"
+                      onClick={() => setEditingDraft(false)}
+                      className="h-7 px-3 rounded-full cursor-pointer"
+                      style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button"
+                      onClick={() => resolveDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, resolution: 'approved' })}
+                      disabled={resolveDraft.isPending}
+                      className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
+                      style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
+                      Send
+                    </button>
+                    {/* Hear it, and send the voice — so what the customer gets is
+                        what was approved, and a spoken reply can be judged before
+                        anybody turns automatic replies on. */}
+                    <button type="button"
+                      onClick={() => hearDraft(selectedConvo.botDraft!)}
+                      className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5"
+                      style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}
+                      title={hearing === 'playing' ? 'Stop' : 'Hear this read aloud. Nothing is sent.'}>
+                      {hearing === 'loading' ? <Loader2 size={12} className="animate-spin" />
+                        : hearing === 'playing' ? <Square size={11} />
+                          : <Mic size={12} />}
+                      {hearing === 'loading' ? 'Speaking…' : hearing === 'playing' ? 'Stop' : 'Hear it'}
+                    </button>
+                    <button type="button"
+                      onClick={() => sendVoiceDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, text: selectedConvo.botDraft! })}
+                      disabled={sendVoiceDraft.isPending}
+                      className="h-7 px-3 rounded-full cursor-pointer disabled:opacity-50"
+                      style={{ border: '1px solid #D9CBFA', background: '#fff', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}
+                      title="Send this as a voice note">
+                      {sendVoiceDraft.isPending ? 'Sending…' : 'Send as voice'}
+                    </button>
+                    <button type="button"
+                      onClick={() => { setDraftEditText(selectedConvo.botDraft!); setEditingDraft(true) }}
+                      className="h-7 px-3 rounded-full cursor-pointer"
+                      style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}>
+                      Edit
+                    </button>
+                    <button type="button"
+                      onClick={() => dismissDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId! })}
+                      disabled={dismissDraft.isPending}
+                      className="h-7 px-2.5 rounded-full cursor-pointer disabled:opacity-50"
+                      style={{ fontSize: 12, fontWeight: 600, color: FAINT_INK }}>
+                      {dismissDraft.isPending ? 'Dismissing…' : 'Dismiss'}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}

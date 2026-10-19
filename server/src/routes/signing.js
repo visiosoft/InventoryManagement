@@ -1,9 +1,7 @@
 import { Router } from 'express';
-import { Contract, Unit, Document, Payment } from '../models/index.js';
-import { syncUnitStatus } from '../utils/unitStatus.js';
-import { uploadFile } from '../services/drive.js';
-import { buildContractPdf, buildSignedContractPdf } from '../services/contractDocument.js';
-import { recordSignature } from '../services/documentSigning.js';
+import { Contract, Payment } from '../models/index.js';
+import { buildContractPdf } from '../services/contractDocument.js';
+import { signContract } from '../services/contractSigning.js';
 
 const router = Router();
 
@@ -69,57 +67,12 @@ router.post('/:token', async (req, res) => {
     const { contract, error, status } = await findByToken(req.params.token);
     if (error) return res.status(status).json({ error });
 
-    if (!['draft', 'pending_signature', 'active'].includes(contract.status)) {
-      return res.status(409).json({ error: 'This contract cannot be signed in its current state' });
-    }
-
-    const { signerName, signatureDataUrl, signMode, initialsText, initialsDataUrl, initialsMode } = req.body;
-    if (!signerName?.trim()) return res.status(400).json({ error: 'Signer name is required' });
-
-    const { finalPdf } = await recordSignature({
-      doc: contract,
-      entityType: 'Contract',
-      documentLabel: `Contract ${contract.contractNo}`,
-      timelineText: `Contract signed remotely by ${signerName}`,
-      req,
-      signerName, signatureDataUrl, signMode, initialsText, initialsDataUrl, initialsMode,
-      buildUnsignedPdf: () => buildContractPdf(contract),
-      buildSignedPdf: (signedAt, sig) => buildSignedContractPdf(contract, signedAt, sig),
-    });
-
-    const stored = await uploadFile({
-      buffer: finalPdf,
-      filename: `${contract.contractNo}-signed.pdf`,
-      mimeType: 'application/pdf',
-      customerName: contract.customer?.fullName,
-    });
-
-    await Document.create({
-      contract: contract._id,
-      customer: contract.customer._id,
-      name: `${contract.contractNo} — signed contract`,
-      type: 'contract',
-      ...stored,
-    });
-
-    // Invalidate the signing token and activate the contract
-    contract.status = 'active';
-    contract.signedDocUrl = stored.url;
-    contract.signingToken = null;
-    contract.signingTokenExpiry = null;
-    await contract.save();
-
-    const unitIds = contract.units?.length
-      ? contract.units.map((u) => u._id ?? u)
-      : [contract.unit._id];
-    await Promise.all(unitIds.map((uid) => syncUnitStatus(uid)));
-
-    console.log(`✅ Contract ${contract.contractNo} signed remotely by ${signerName}`);
-
-    res.json({ ok: true, contractNo: contract.contractNo, signedDocUrl: stored.url });
+    const result = await signContract({ contract, body: req.body, req });
+    console.log(`✅ Contract ${contract.contractNo} signed remotely by ${req.body.signerName}`);
+    res.json({ ok: true, ...result });
   } catch (err) {
-    console.error('Remote sign error:', err);
-    res.status(500).json({ error: err.message });
+    if (!err.status) console.error('Remote sign error:', err);
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

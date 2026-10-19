@@ -128,7 +128,7 @@ export default function PortalLogin() {
                   <input
                     type="text"
                     inputMode="numeric"
-                    maxLength={4}
+                    maxLength={6}
                     value={code}
                     onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
                     placeholder="1234"
