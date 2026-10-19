@@ -5,19 +5,27 @@ import { Badge, Button, EmptyState, Field, Input, Modal, PageHeader, Select, Spi
 
 /** Valet jobs customers booked in the app: boxes & labels, pickups,
  *  drop-offs, workers and the dump truck. Staff confirm them, assign a driver, and record
- *  what was charged once done — nothing is charged at booking. */
+ *  what was charged once done. Deliveries from storage are the exception: the customer
+ *  pays by card as they book, and the job only shows here once paid (unless "Show unpaid"). */
 
-const STATUSES = ['requested', 'confirmed', 'scheduled', 'in_progress', 'completed', 'cancelled'] as const
+const STATUSES = ['awaiting_payment', 'requested', 'confirmed', 'scheduled', 'in_progress', 'completed', 'cancelled'] as const
 type Status = typeof STATUSES[number]
 const FINAL: Status[] = ['completed', 'cancelled']
+// Only the customer app puts a request into awaiting payment, so staff can't pick it.
+const STAFF_STATUSES = STATUSES.filter(s => s !== 'awaiting_payment')
+type PaymentState = 'pending' | 'paid' | 'refunded' | 'expired'
+const PAYMENT_CHIP: Record<PaymentState, { label: string; tone: string }> = {
+  paid: { label: 'Paid', tone: 'green' }, pending: { label: 'Awaiting payment', tone: 'amber' },
+  refunded: { label: 'Refunded', tone: 'purple' }, expired: { label: 'Expired', tone: 'gray' },
+}
 
 const TYPE_LABEL: Record<string, string> = {
   supplies: 'Boxes & labels', pickup: 'Pickup', dropoff: 'Drop-off', both: 'Pickup & drop-off', worker: 'Worker', disposal: 'Dump truck',
 }
 const STATUS_TONE: Record<Status, string> = {
-  requested: 'amber', confirmed: 'blue', scheduled: 'blue', in_progress: 'purple', completed: 'green', cancelled: 'gray',
+  awaiting_payment: 'amber', requested: 'amber', confirmed: 'blue', scheduled: 'blue', in_progress: 'purple', completed: 'green', cancelled: 'gray',
 }
-const statusText = (s: string) => s.replace('_', ' ')
+const statusText = (s: string) => s.replace(/_/g, ' ')
 
 interface ServiceRequest {
   _id: string
@@ -33,11 +41,12 @@ interface ServiceRequest {
   address: { label: string; line: string }
   pickup: { boxes: number; bulky: number; description: string }
   supplies: { boxes: number; extraLabels: number }
-  items: Array<{ _id: string; displayCode: string; description?: string }>
+  items: Array<{ _id: string; displayCode: string; description?: string; type?: string; currentLocation?: { displayCode: string; name: string } | null }>
   job: string
   notes: string
   estimate: { total: number }
   charged: number | null
+  payment: { state: PaymentState; amount: number; cardFee: number; paidAt: string | null } | null
   driverName: string
   driverPhone: string
   staffNote: string
@@ -57,6 +66,30 @@ function what(r: ServiceRequest) {
   if (r.type === 'worker') parts.push(r.job)
   if (r.type === 'disposal' && r.disposal) parts.push(`${r.disposal.load === 'large' ? 'full truck' : 'small load'} — ${r.disposal.description}`)
   return parts.join(' · ')
+}
+
+const itemName = (i: ServiceRequest['items'][number]) => i.description || (i.type ? i.type.charAt(0) + i.type.slice(1).toLowerCase().replace(/_/g, ' ') : 'Item')
+
+/** What to take off the shelves for a drop-off: label, what it is, and where it sits. */
+function PickList({ items }: { items: ServiceRequest['items'] }) {
+  if (!items.length) return null
+  return (
+    <ul className="mt-1 space-y-0.5 text-xs">
+      {items.map(i => (
+        <li key={i._id} className="flex flex-wrap gap-x-2">
+          <span className="font-mono">{i.displayCode}</span>
+          <span className="text-muted-foreground">{itemName(i)}</span>
+          <span className="text-muted-foreground">· {i.currentLocation ? `${i.currentLocation.displayCode} (${i.currentLocation.name})` : 'not on a shelf'}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function PaymentChip({ payment }: { payment: ServiceRequest['payment'] }) {
+  if (!payment) return null
+  const chip = PAYMENT_CHIP[payment.state]
+  return <Badge tone={chip.tone}>{chip.label}</Badge>
 }
 
 function EditModal({ request, onClose, onDone }: { request: ServiceRequest; onClose: () => void; onDone: () => void }) {
@@ -90,9 +123,18 @@ function EditModal({ request, onClose, onDone }: { request: ServiceRequest; onCl
         </p>
         <Field label="Status">
           <Select value={status} onChange={e => setStatus(e.target.value as Status)} disabled={locked}>
-            {STATUSES.map(s => <option key={s} value={s}>{statusText(s)}</option>)}
+            {(status === 'awaiting_payment' ? STATUSES : STAFF_STATUSES).map(s => <option key={s} value={s}>{statusText(s)}</option>)}
           </Select>
         </Field>
+        {request.payment && (
+          <p className="text-sm text-muted-foreground">
+            Card payment: <PaymentChip payment={request.payment} /> AED {request.payment.amount}
+            {request.payment.cardFee > 0 && ` + ${request.payment.cardFee} card fee`}
+          </p>
+        )}
+        {(request.type === 'dropoff' || request.type === 'both') && (
+          <div className="text-sm"><div className="font-medium">Pick list</div><PickList items={request.items} /></div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Driver name"><Input value={driverName} onChange={e => setDriverName(e.target.value)} /></Field>
           <Field label="Driver phone"><Input value={driverPhone} onChange={e => setDriverPhone(e.target.value)} /></Field>
@@ -115,21 +157,28 @@ function EditModal({ request, onClose, onDone }: { request: ServiceRequest; onCl
 
 export default function ServiceRequests() {
   const [status, setStatus] = useState('')
+  const [showUnpaid, setShowUnpaid] = useState(false)
   const [editing, setEditing] = useState<ServiceRequest | null>(null)
   const qc = useQueryClient()
 
   const { data, isLoading } = useQuery<ServiceRequest[]>({
-    queryKey: ['service-requests', status],
-    queryFn: () => api.get('/service-requests', { params: { status: status || undefined } }).then(r => r.data),
+    queryKey: ['service-requests', status, showUnpaid],
+    queryFn: () => api.get('/service-requests', { params: { status: status || undefined, includeUnpaid: showUnpaid ? 1 : undefined } }).then(r => r.data),
   })
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <PageHeader title="Service requests" subtitle="Pickups, drop-offs, boxes, workers and dump trucks booked from the customer app." />
-      <Select value={status} onChange={e => setStatus(e.target.value)} className="max-w-xs">
-        <option value="">All statuses</option>
-        {STATUSES.map(s => <option key={s} value={s}>{statusText(s)}</option>)}
-      </Select>
+      <div className="flex flex-wrap items-center gap-4">
+        <Select value={status} onChange={e => setStatus(e.target.value)} className="max-w-xs">
+          <option value="">All statuses</option>
+          {STATUSES.map(s => <option key={s} value={s}>{statusText(s)}</option>)}
+        </Select>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={showUnpaid} onChange={e => setShowUnpaid(e.target.checked)} />
+          Show unpaid
+        </label>
+      </div>
       {isLoading ? <Spinner /> : !data?.length ? (
         <EmptyState message="No service requests." />
       ) : (
@@ -139,13 +188,21 @@ export default function ServiceRequests() {
             {data.map(r => (
               <tr key={r._id}>
                 <Td className="font-mono text-sm">{r.ref}</Td>
-                <Td>{TYPE_LABEL[r.type]}<div className="text-xs text-muted-foreground">{what(r)}</div></Td>
+                <Td>
+                  {TYPE_LABEL[r.type]}<div className="text-xs text-muted-foreground">{what(r)}</div>
+                  {(r.type === 'dropoff' || r.type === 'both') && <PickList items={r.items} />}
+                </Td>
                 <Td className="whitespace-nowrap">{when(r)}</Td>
                 <Td>{r.customer?.fullName}<div className="text-xs text-muted-foreground">{r.customer?.phone}</div></Td>
                 <Td className="text-sm">{r.address.label}<div className="text-xs text-muted-foreground">{r.address.line}</div></Td>
                 <Td>AED {r.estimate.total}{r.charged != null && <div className="text-xs text-muted-foreground">charged {r.charged}</div>}</Td>
                 <Td className="text-sm">{r.driverName || '—'}</Td>
-                <Td><Badge tone={STATUS_TONE[r.status]}>{statusText(r.status)}</Badge></Td>
+                <Td>
+                  <div className="flex flex-col items-start gap-1">
+                    <Badge tone={STATUS_TONE[r.status]}>{statusText(r.status)}</Badge>
+                    <PaymentChip payment={r.payment} />
+                  </div>
+                </Td>
                 <Td><Button size="sm" variant="outline" onClick={() => setEditing(r)}>Update</Button></Td>
               </tr>
             ))}
