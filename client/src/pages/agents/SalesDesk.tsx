@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, apiError } from '../../lib/api'
 import { agentsApi, type InboxDraft, type InboxHanded, type InboxTouch, type TeamAgent } from '../../lib/agentsApi'
 import { Avatar } from './ui'
+import FollowUpWeek from './FollowUpWeek'
 
 /**
  * The AI Sales Desk: the agents' work on one screen of its own, opened from
@@ -176,6 +177,9 @@ export default function SalesDesk() {
               <div style={{ fontWeight: 800, fontSize: 15 }}>☀️ Briefing — {today()}</div>
               <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 14, lineHeight: 1.7 }}>{brief.map((b) => <li key={b}>{b}</li>)}</ul>
             </div>
+          )}
+          {agentId && team?.agents.find((a) => a._id === agentId)?.ownsBuckets.some((b) => b === 'quiet' || b === 'dormant') && (
+            <FollowUpWeek agentId={agentId} />
           )}
           {agentName && <div style={{ fontSize: 13, color: MUTED, marginBottom: 10 }}>Showing {agentName}'s work · <button type="button" onClick={() => setAgentId('')} style={{ border: 0, background: 'none', color: PURPLE, cursor: 'pointer', fontWeight: 600, padding: 0 }}>show everyone</button></div>}
           {err && <div style={{ background: '#FEE2E2', color: '#B91C1C', borderRadius: 10, padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>{err}</div>}

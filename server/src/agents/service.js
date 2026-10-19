@@ -1080,3 +1080,58 @@ export async function deskStats(now = new Date()) {
         handedToday,
     };
 }
+
+/* ---------- a follow-up agent's week: what it did, what it will do ---------- */
+
+/**
+ * One row per day: the last `back` days of what this agent actually did
+ * (sent, handed to a person, came back to Aisha because they replied,
+ * closed as lost) and the next `ahead` days of who it would follow up,
+ * projected from each lead's place in its schedule — so it reads the same
+ * whether the agent is on, drafting, or off.
+ */
+export async function followUpWeek(agentId, { now = new Date(), back = 6, ahead = 7 } = {}) {
+    const { projectFollowUps, dubaiKey } = await import('./plan.js');
+    const profiles = await team();
+    const agent = profiles.find((p) => String(p._id) === String(agentId));
+    if (!agent) throw new Error('No such agent');
+    const cadence = cadenceFor(agent);
+
+    const files = await AgentLeadFile.find({ agent: agentId, frozenAt: null, bucket: { $in: Object.keys(cadence) } })
+        .populate('lead', 'fullName phone whatsappProfileName status followUpAt')
+        .select('lead bucket touchCount anchorAt').lean();
+    const open = files.filter((f) => f.lead && !['won', 'lost', 'already_customer'].includes(f.lead.status));
+    const ahead_ = projectFollowUps(open.map((f) => ({
+        leadId: String(f.lead._id), name: displayNameOf(f.lead), phone: f.lead.phone || '',
+        bucket: f.bucket, touchCount: f.touchCount || 0, anchorAt: f.anchorAt, followUpAt: f.lead.followUpAt,
+    })), { now, cadence, days: ahead, dailyCap: Number(agent.dailyTouchCap || 0) });
+
+    const since = dubaiDayStart(new Date(now.getTime() - back * 86400000));
+    const actions = await AgentAction.find({
+        $or: [
+            { agent: agentId, kind: 'touch_proposed', resolution: { $in: ['approved', 'edited'] }, resolvedAt: { $gte: since } },
+            { agent: agentId, kind: { $in: ['escalated', 'bucket_moved'] }, at: { $gte: since } },
+            { kind: 'handoff', 'detail.from': agent._id, at: { $gte: since } },
+        ],
+    }).populate('lead', 'fullName phone whatsappProfileName').select('kind lead at resolvedAt resolvedBy detail summary bucketAfter').lean();
+
+    const past = new Map();
+    for (let i = back; i >= 0; i--) past.set(dubaiKey(new Date(now.getTime() - i * 86400000)), { sent: [], handed: [], replied: [], closed: [] });
+    for (const a of actions) {
+        const when = a.resolvedAt || a.at;
+        const day = past.get(dubaiKey(when));
+        if (!day) continue;
+        const who = { leadId: a.lead?._id ? String(a.lead._id) : null, name: displayNameOf(a.lead), at: when };
+        if (a.kind === 'touch_proposed') day.sent.push({ ...who, template: a.detail?.template?.name || '', auto: !a.resolvedBy });
+        else if (a.kind === 'escalated') day.handed.push({ ...who, why: String(a.summary || '').replace(/^Handed to a person:\s*/, '') });
+        else if (a.kind === 'handoff') day.replied.push(who);
+        else if (a.kind === 'bucket_moved' && a.bucketAfter === 'lost') day.closed.push(who);
+    }
+
+    return {
+        agent: { _id: String(agent._id), name: agent.name, mode: agent.mode, dailyTouchCap: Number(agent.dailyTouchCap || 0) },
+        leadsInSchedule: open.length,
+        past: [...past.entries()].map(([date, d]) => ({ date, ...d })),
+        upcoming: ahead_,
+    };
+}

@@ -9,7 +9,7 @@ import { AgentProfile, AgentLeadFile, AgentAction, AGENT_MODES, AGENT_TOOLS, AGE
 import { runJob, describeSchedule } from './jobs.js';
 import { BUCKETS, BUCKET_ORDER, describeStage, DEFAULT_CADENCE, nextTouchFor } from './buckets.js';
 import { runAgent, findLead, cadenceFor } from './runtime.js';
-import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads, reassignTenantsToOwner, agentPlan, agentBoard, deskStats } from './service.js';
+import { adoptLead, applyEvent, runAgentTick, team, forgetTeamCache, inbox, resolveAction, pipelineStats, teamStats, conversationFor, backfillLegacyLeads, reassignTenantsToOwner, agentPlan, agentBoard, deskStats, followUpWeek } from './service.js';
 import { record, revert, snapshotOf } from './log.js';
 import { seedStarterTeam } from './seed.js';
 import { agentStats, startRehearsal, reviewAgent, teachFromRehearsal } from './insights.js';
@@ -259,6 +259,11 @@ router.get('/:id/plan', wrap(async (req, res) => {
 
 // The follow-up sequence as a board: one column per cadence stage, leads
 // move a column each time their touch actually sends.
+/** What a follow-up agent did this past week and who it would follow up each day ahead. */
+router.get('/:id/follow-up-week', wrap(async (req, res) => {
+    res.json(await followUpWeek(req.params.id));
+}));
+
 router.get('/:id/board', wrap(async (req, res) => {
     res.json(await agentBoard(req.params.id));
 }));
