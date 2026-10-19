@@ -529,11 +529,11 @@ textarea:focus{ border-color:var(--ink); }
 #contactForm{ margin-top:22px; display:grid; gap:16px; }
 .field{ display:grid; gap:6px; }
 .field label{ font-size:13px; font-weight:500; color:var(--ink2); }
-.field input, .field textarea{
+.field input, .field textarea, .field select{
   font:inherit; font-size:14px; color:var(--ink); background:var(--bg); border:1px solid var(--line);
   padding:10px 12px; transition:border-color .2s; width:100%;
 }
-.field input:focus, .field textarea:focus{ border-color:var(--ink); }
+.field input:focus, .field textarea:focus, .field select:focus{ border-color:var(--ink); }
 .field textarea{ resize:vertical; }
 .field--error{ color:var(--oxide); font-size:13px; }
 .field--error[hidden]{ display:none; }

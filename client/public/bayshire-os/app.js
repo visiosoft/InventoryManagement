@@ -97,15 +97,18 @@
     e.preventDefault();
     const name = $('#contactName').value.trim();
     const email = $('#contactEmail').value.trim();
+    const company = $('#contactCompany').value.trim();
+    const facilities = $('#contactFacilities').value;
     const message = $('#contactMessage').value.trim();
     const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    if (!name || !emailValid || !message) {
+    if (!name || !emailValid || !company || !facilities) {
       contactFormError.hidden = false;
       return;
     }
     contactFormError.hidden = true;
-    const subject = $('#contactSubject').value.trim() || ('Message from ' + name);
-    const body = 'Name: ' + name + '\nEmail: ' + email + '\n\n' + message;
+    const subject = 'Demo request: ' + company;
+    const body = 'Name: ' + name + '\nEmail: ' + email + '\nCompany: ' + company + '\nFacilities: ' + facilities +
+      (message ? '\n\nWhat they want to improve or automate:\n' + message : '');
     const mailto = 'mailto:' + DEMO_EMAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
     contactFormView.hidden = true;
     contactSuccessView.hidden = false;
@@ -138,7 +141,7 @@
     $('#announce').classList.add('is-hidden');
   });
 
-  const DEMO_EMAIL = 'xulfi.dev@gmail.com';
+  const DEMO_EMAIL = 'hello@2capacity.com';
 
   /* ---------------- Reveal on scroll ---------------- */
   if (window.gsap && window.ScrollTrigger) {
