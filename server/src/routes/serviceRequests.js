@@ -3,6 +3,7 @@ import { User } from '../models/index.js';
 import { ServiceRequest, SERVICE_TYPES, SERVICE_STATUSES } from '../models/serviceRequest.js';
 import { operationalPermission } from '../services/warehouse.js';
 import { notifyServiceStatus } from '../services/customerNotify.js';
+import { expireStale } from '../services/servicePayments.js';
 
 /**
  * Staff side of the valet jobs customers book in the app: see what's waiting,
@@ -33,15 +34,20 @@ const shortText = (v, max, what) => {
   return v.trim();
 };
 
+// A delivery not paid for yet isn't a job yet, so it is left out unless asked
+// for (?includeUnpaid=1, or ?status=awaiting_payment). Items come with their
+// shelf, so a drop-off doubles as the pick list.
 router.get('/', asyncRoute(async (req, res) => {
   const filter = {};
   if (req.query.status) { if (!SERVICE_STATUSES.includes(req.query.status)) fail('Invalid status.'); filter.status = req.query.status; }
+  else if (req.query.includeUnpaid !== '1') filter.status = { $ne: 'awaiting_payment' };
   if (req.query.type) { if (!SERVICE_TYPES.includes(req.query.type)) fail('Invalid type.'); filter.type = req.query.type; }
-  res.json(await ServiceRequest.find(filter)
+  const requests = await ServiceRequest.find(filter)
     .populate('customer', 'fullName phone clientId')
     .populate('contract', 'contractNo')
-    .populate('items', 'displayCode description type currentStatus')
-    .sort({ date: 1, createdAt: -1 }).limit(500).lean());
+    .populate({ path: 'items', select: 'displayCode description type currentStatus currentLocation', populate: { path: 'currentLocation', select: 'displayCode name' } })
+    .sort({ date: 1, createdAt: -1 }).limit(500).lean();
+  res.json(await expireStale(requests));
 }));
 
 router.patch('/:id', asyncRoute(async (req, res) => {
@@ -53,6 +59,8 @@ router.patch('/:id', asyncRoute(async (req, res) => {
   let statusChanged = false;
   if (body.status !== undefined && body.status !== r.status) {
     if (!SERVICE_STATUSES.includes(body.status)) fail('Invalid status.');
+    // Only booking in the app puts a request into waiting for payment.
+    if (body.status === 'awaiting_payment') fail('Only the customer app sets a request to awaiting payment.');
     if (FINAL.includes(r.status)) fail(`This request is already ${r.status}.`, 409);
     r.status = body.status;
     r.statusLog.push({ status: body.status, at: new Date() });

@@ -166,6 +166,42 @@ export async function expireCheckoutSession(id) {
   }
 }
 
+/**
+ * Closes a PaymentIntent nobody should pay any more — the payment-sheet twin of
+ * expireCheckoutSession. Returns its status afterwards ('canceled', or
+ * 'succeeded' / 'processing' if the money got there first); null if unreadable.
+ */
+export async function cancelPaymentIntent(id) {
+  const client = getClient();
+  try {
+    const intent = await client.paymentIntents.retrieve(id);
+    if (['succeeded', 'processing', 'canceled'].includes(intent.status)) return intent.status;
+    await client.paymentIntents.cancel(id);
+    return 'canceled';
+  } catch (err) {
+    console.error('[stripe] could not cancel payment intent', id, err.message);
+    return null;
+  }
+}
+
+/**
+ * Gives back everything a payment took, card fee included. Takes the
+ * PaymentIntent, or the Checkout Session it came through. Throws when Stripe
+ * says no — the caller decides what that means for the thing being undone.
+ */
+export async function refundPayment({ paymentIntentId, checkoutSessionId } = {}) {
+  const client = getClient();
+  let intentId = paymentIntentId || null;
+  if (!intentId && checkoutSessionId) {
+    const session = await client.checkout.sessions.retrieve(checkoutSessionId);
+    intentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id || null;
+  }
+  if (!intentId) throw new Error('No card payment to refund');
+  // Keyed on the payment, so a retried cancel can never refund twice.
+  const refund = await client.refunds.create({ payment_intent: intentId }, { idempotencyKey: `refund-${intentId}` });
+  return { id: refund.id, status: refund.status, amount: (refund.amount || 0) / 100 };
+}
+
 /** Read a Checkout Session back from Stripe — the authoritative answer to "was it paid?". */
 export async function retrieveCheckoutSession(id) {
   return getClient().checkout.sessions.retrieve(id);

@@ -5,7 +5,8 @@ const { Schema, model } = mongoose;
 
 export const SERVICE_TYPES = ['supplies', 'pickup', 'dropoff', 'both', 'worker', 'disposal'];
 export const DISPOSAL_LOADS = ['small', 'large'];
-export const SERVICE_STATUSES = ['requested', 'confirmed', 'scheduled', 'in_progress', 'completed', 'cancelled'];
+export const PAYMENT_STATES = ['pending', 'paid', 'refunded', 'expired'];
+export const SERVICE_STATUSES = ['awaiting_payment', 'requested', 'confirmed', 'scheduled', 'in_progress', 'completed', 'cancelled'];
 
 /* A valet job the customer booked from the app: boxes and labels sent out,
  * their packed things collected, stored items brought back, a worker or two
@@ -13,9 +14,24 @@ export const SERVICE_STATUSES = ['requested', 'confirmed', 'scheduled', 'in_prog
  *
  * This is the customer's side of the job. Physical custody of each item still
  * only changes through warehouse scans; `warehouseJob` is just staff linking
- * this request to the WarehouseJob that carries it out. Nothing is charged at
- * booking — `estimate` is what the app quoted, `charged` is what staff settle
- * on once the job is done. */
+ * this request to the WarehouseJob that carries it out. `estimate` is what the
+ * app quoted, `charged` is what staff settle on once the job is done.
+ *
+ * A delivery back from storage is the exception: it is paid by card when it is
+ * booked (`payment`), and waits in 'awaiting_payment' until Stripe says so.
+ * Other types carry no `payment` at all. */
+const paymentSchema = new Schema({
+  required: { type: Boolean, default: true },
+  state: { type: String, enum: PAYMENT_STATES, default: 'pending' },
+  amount: { type: Number, default: 0 },          // AED, = estimate.total
+  cardFee: { type: Number, default: 0 },         // AED, on top, set when a payment is started
+  expiresAt: { type: Date, default: null },      // unpaid past this, the booking lapses
+  stripeCheckoutSessionId: { type: String, default: null },
+  stripePaymentIntentId: { type: String, default: null },
+  paidAt: { type: Date, default: null },
+  refundId: { type: String, default: null },
+}, { _id: false });
+
 const serviceRequestSchema = new Schema({
   customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
   contract: { type: Schema.Types.ObjectId, ref: 'Contract', default: null },
@@ -54,6 +70,7 @@ const serviceRequestSchema = new Schema({
     total: { type: Number, default: 0 },
   },
   charged: { type: Number, default: null },
+  payment: { type: paymentSchema, default: null },
   statusLog: [{ _id: false, status: { type: String, enum: SERVICE_STATUSES }, at: { type: Date, default: Date.now } }],
   driverName: { type: String, default: '' },
   driverPhone: { type: String, default: '' },

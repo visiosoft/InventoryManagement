@@ -3,6 +3,7 @@ import { Customer, Contract, Unit, Site } from '../models/index.js';
 import { StoredContainer, WarehouseLocation, ScanEvent, WarehouseCounter, ItemPhoto, WarehouseJob, CONTAINER_TYPES, LOCATION_TYPES, WAREHOUSE_JOB_TYPES } from '../models/warehouse.js';
 import { fail, normalizeBarcode, nextAction, validateMovement, validateDispatch, photoMime } from './warehouseRules.js';
 import { softDelete } from '../utils/softDelete.js';
+import { notifyItemsAdded } from './customerNotify.js';
 
 export const operationalPermission = user => Boolean(user && (user.role === 'admin' || user.permissions?.some(p => ['warehouse', 'warehouse_supervisor'].includes(p))));
 export const supervisorPermission = user => Boolean(user && (user.role === 'admin' || user.permissions?.includes('warehouse_supervisor')));
@@ -307,7 +308,28 @@ export async function scan(ctx, input) {
   await item.save({ session: ctx.session });
   const result = { recognized: true, objectType: item.type, container: item.toObject(), nextAction: nextAction(item) };
   await event(ctx, itemEvent(item, previous, { eventType: action === 'INSPECT' ? 'SCANNED' : action, destinationLocation: dispatchPoint?._id ?? item.currentLocation, notes: text(input.notes, 2000), result }));
+  if (action === 'PUTAWAY') await announceIntake(item.customer);
   return result;
+}
+
+// Once everything collected for a customer is on a shelf, they hear about it
+// once for the batch, not once per scan. Items shelved before this existed
+// are stamped silently, so a long-standing customer isn't told "120 items
+// added". Never throws: the scan has already happened.
+const INTAKE_RECENT_DAYS = 7;
+async function announceIntake(customerId) {
+  try {
+    const pending = await StoredContainer.findOne({ customer: customerId, currentStatus: { $in: ['CREATED', 'RECEIVED', 'AWAITING_PUTAWAY'] } }).select('_id').lean();
+    if (pending) return;
+    const fresh = await StoredContainer.find({ customer: customerId, currentStatus: 'IN_STORAGE', intakeNotifiedAt: null }).select('_id storedAt').lean();
+    if (!fresh.length) return;
+    const since = Date.now() - INTAKE_RECENT_DAYS * 86_400_000;
+    const recent = fresh.filter((c) => c.storedAt && new Date(c.storedAt).getTime() >= since).map((c) => c._id);
+    await StoredContainer.updateMany({ _id: { $in: fresh.map((c) => c._id) }, intakeNotifiedAt: null }, { $set: { intakeNotifiedAt: new Date() } });
+    if (recent.length) await notifyItemsAdded(customerId, recent.length);
+  } catch (e) {
+    console.error('[warehouse] intake notification failed:', e.message);
+  }
 }
 
 export async function addPhoto(ctx, containerId, buffer) {

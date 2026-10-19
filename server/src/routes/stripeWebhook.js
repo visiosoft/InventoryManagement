@@ -7,6 +7,7 @@ import { applyMovingInvoicePayment } from '../services/movingInvoicePayments.js'
 import { applyInvoicePayment, syncLinkedPayment } from '../services/invoicePayments.js';
 import { notifyPaymentReceived } from '../services/movingNotifications.js';
 import { notifyInvoicePaid } from '../services/customerNotify.js';
+import { settleServiceRequestPayment } from '../services/servicePayments.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
 import { recordOnlinePaymentInZoho, saveCardFromSession, settleInvoiceFromIntent, settleQuoteFromIntent } from '../services/cardPayments.js';
 
@@ -157,6 +158,13 @@ router.post('/', aw(async (req, res) => {
       }
     }
 
+    // A delivery from valet storage, paid as it was booked. Idempotent. Card
+    // only, so a completed session is a paid one — checked anyway.
+    if (meta.serviceRequestId && session.payment_status !== 'unpaid') {
+      const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id || null;
+      await settleServiceRequestPayment({ serviceRequestId: meta.serviceRequestId, sessionId: session.id, paymentIntentId });
+    }
+
     // Moving quote — same idea as the storage quote above.
     if (meta.movingQuoteId) {
       const quote = await MovingQuote.findById(meta.movingQuoteId).populate('customer', 'fullName email');
@@ -178,6 +186,10 @@ router.post('/', aw(async (req, res) => {
     }
     if (intent.metadata?.storageQuoteId) {
       await settleQuoteFromIntent(intent).catch((e) => console.error('[StripeWebhook] could not settle booking:', e.message));
+    }
+    if (intent.metadata?.serviceRequestId) {
+      await settleServiceRequestPayment({ serviceRequestId: intent.metadata.serviceRequestId, paymentIntentId: intent.id })
+        .catch((e) => console.error('[StripeWebhook] could not settle delivery:', e.message));
     }
     if (intent.metadata?.saveCard === '1' && intent.metadata?.purpleboxCustomerId) {
       await saveCardFromSession({ mode: 'payment', payment_intent: intent, customer: intent.customer, metadata: intent.metadata })

@@ -140,6 +140,31 @@ export async function notifyServiceStatus(r) {
   });
 }
 
+/** The card payment for a delivery came through (the Stripe webhook), so the
+ *  booking is real now. Keyed, so a repeated webhook tells them once. */
+export function notifyDeliveryPaid(r) {
+  const id = String(r._id);
+  return notifyCustomer(r.customer?._id || r.customer, {
+    kind: 'service',
+    title: `Payment received — your delivery ${r.ref} is booked`,
+    body: serviceWhen(r),
+    data: { route: '/service/[id]', params: { id } },
+    key: `service:${id}:paid`,
+  });
+}
+
+// ── Items ───────────────────────────────────────────────────────────────────
+/** A collection is on the shelves. Sent once per batch — the warehouse stamps
+ *  the items it counted, so no key is needed. */
+export function notifyItemsAdded(customerId, n) {
+  return notifyCustomer(customerId, {
+    kind: 'service',
+    title: n === 1 ? '1 item added to your storage' : `${n} items added to your storage`,
+    body: 'See photos and labels, and request any of them back.',
+    data: { route: '/(tabs)/storage', params: { tab: 'items' } },
+  });
+}
+
 // ── Payments ────────────────────────────────────────────────────────────────
 /** A storage invoice was paid online (the Stripe webhook). */
 export function notifyInvoicePaid(invoice, amount) {

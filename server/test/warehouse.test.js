@@ -10,6 +10,7 @@ import { StoredContainer, WarehouseLocation, ScanEvent, ItemPhoto, WarehouseCoun
 import { command, createContainers, createLocation, editLocation, deleteLocation, editContainer, deleteContainer, scan, addPhoto, createWarehouseJob, updateWarehouseJob, getOrCreateJobLink, revokeJobLink, confirmJobPublicly } from '../src/services/warehouse.js';
 import { validateMovement } from '../src/services/warehouseRules.js';
 import warehouseRouter from '../src/routes/warehouse.js';
+import { CustomerNotification } from '../src/models/customerNotification.js';
 
 let replica, admin, staff, outsider, site, customer, otherCustomer, booking, unit, app;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=', 'base64');
@@ -130,6 +131,27 @@ test('dispatching a stored item to the customer frees its shelf and needs no sup
   const events = await ScanEvent.find({ objectId: item._id }).sort({ timestamp: 1 });
   assert.equal(events.at(-1).eventType, 'DISPATCH');
   assert.equal(events.at(-1).destinationLocation, dispatch._id);
+});
+
+test('the owner hears once, when the last item of a collection is shelved', async () => {
+  const owner = await Customer.create({ fullName: 'Fresh valet customer' });
+  const mine = { customer: String(owner._id) };
+  const [first, second] = [await readyItem(mine), await readyItem(mine)];
+  const shelf = await location({ maxContainers: 5 });
+  const notes = () => CustomerNotification.find({ customer: owner._id }).lean();
+  await scanItem(first, 'PUTAWAY', shelf);
+  assert.equal((await notes()).length, 0, 'one still waiting to be shelved');
+  await scanItem(second, 'PUTAWAY', shelf);
+  const [note, ...more] = await notes();
+  assert.equal(more.length, 0);
+  assert.equal(note.title, '2 items added to your storage');
+  assert.equal(note.body, 'See photos and labels, and request any of them back.');
+  assert.deepEqual(note.data, { route: '/(tabs)/storage', params: { tab: 'items' } });
+  assert.equal(await StoredContainer.countDocuments({ customer: owner._id, intakeNotifiedAt: null }), 0);
+
+  const third = await readyItem(mine);
+  await scanItem(third, 'PUTAWAY', shelf);
+  assert.deepEqual((await notes()).map(n => n.title).sort(), ['1 item added to your storage', '2 items added to your storage']);
 });
 
 test('an item can be dispatched straight from receiving, before ever reaching a shelf', async () => {

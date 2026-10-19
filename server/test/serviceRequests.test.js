@@ -6,8 +6,10 @@ import express from 'express';
 import request from 'supertest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Contract, Counter, Customer, CustomerOtp, Site, Unit, User } from '../src/models/index.js';
-import { StoredContainer, ScanEvent, ItemPhoto } from '../src/models/warehouse.js';
+import { StoredContainer, ScanEvent, ItemPhoto, WarehouseLocation } from '../src/models/warehouse.js';
 import { ServiceRequest } from '../src/models/serviceRequest.js';
+import { CustomerNotification } from '../src/models/customerNotification.js';
+import { paymentExpired, paymentView, settleServiceRequestPayment } from '../src/services/servicePayments.js';
 import { addDays, dubaiToday, weekday } from '../src/services/servicePricing.js';
 import customerAuthRouter from '../src/routes/customerAuth.js';
 import customerStorageRouter from '../src/routes/customerStorage.js';
@@ -16,7 +18,7 @@ import serviceRequestRouter from '../src/routes/serviceRequests.js';
 let mongod, app, site, staff, outsider;
 const base = '/api/customer-portal/storage';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=', 'base64');
-const models = [Contract, Counter, Customer, CustomerOtp, Site, Unit, User, StoredContainer, ScanEvent, ItemPhoto, ServiceRequest];
+const models = [Contract, Counter, Customer, CustomerOtp, Site, Unit, User, StoredContainer, ScanEvent, ItemPhoto, ServiceRequest, WarehouseLocation, CustomerNotification];
 
 // The first day from tomorrow that matches — so a test never lands on a
 // Sunday (or misses one) depending on when it runs.
@@ -102,6 +104,11 @@ test('catalog: services, prices, slots, worker hours and the facility of my unit
     firstStart: '08:00', lastEnd: '20:00', stepMinutes: 30, closedWeekdays: [0], minHours: 0.5, maxHours: 2, stepHours: 0.5, maxWorkers: 2,
   });
   assert.deepEqual(r.body.facility, { label: 'At my unit', line: 'Unit L-114 · Warehouse 12, Al Quoz 2' });
+  assert.deepEqual(r.body.valet, { active: false, itemCount: 0 }, 'nothing stored with us yet');
+  await item(t.customer);
+  await item(t.customer, { currentStatus: 'DISPATCHED', currentLocation: null });
+  const withItems = await request(app).get(`${base}/services/catalog`).set(t.auth);
+  assert.deepEqual(withItems.body.valet, { active: true, itemCount: 1 }, 'a delivered item still makes them a valet customer, but is not counted');
 
   const visitor = await login('+971501000002');
   const none = await request(app).get(`${base}/services/catalog`).set(visitor);
@@ -190,6 +197,12 @@ test('create: each type is priced on the server, exactly', async () => {
   assert.equal(dropoff.body.request.estimate.total, 250 + 60);
   assert.deepEqual(dropoff.body.request.items.map((i) => i.label), [a.displayCode, b.displayCode]);
   assert.equal(dropoff.body.request.address.label, 'Home');
+  assert.equal(dropoff.body.request.status, 'awaiting_payment');
+  assert.deepEqual(dropoff.body.request.statusLog.map((s) => s.status), ['awaiting_payment']);
+  const pay = dropoff.body.request.payment;
+  assert.deepEqual({ ...pay, expiresAt: typeof pay.expiresAt }, { state: 'pending', amount: 310, cardFee: 0, totalCharged: 310, expiresAt: 'string', paidAt: null });
+  assert.ok(Math.abs(Date.parse(pay.expiresAt) - Date.now() - 30 * 60_000) < 60_000, 'half an hour to pay');
+  assert.equal(pickup.body.request.payment, null, 'only deliveries are paid at booking');
 
   const c = await item(t.customer);
   const both = await book(t.auth, { type: 'both', date: day, slot: '10-12', addressId, items: [c._id], pickup: { boxes: 3, bulky: 0 } });
@@ -222,7 +235,8 @@ test('create: each type is priced on the server, exactly', async () => {
   assert.deepEqual(fromUnit.body.request.address, { label: 'At my unit', line: 'Unit L-114 · Warehouse 12, Al Quoz 2' });
 
   const contract = await Contract.findById(t.contract._id);
-  assert.equal(contract.timeline.filter((e) => e.text.startsWith('Tenant requested via app:')).length, 8);
+  // The two deliveries reach the contract only once they are paid.
+  assert.equal(contract.timeline.filter((e) => e.text.startsWith('Tenant requested via app')).length, 6);
   assert.ok(contract.timeline.some((e) => e.text.includes('SR-0001')));
   assert.ok(contract.timeline.some((e) => e.text.includes('09:30–11:00, 2 workers')));
 
@@ -232,6 +246,7 @@ test('create: each type is priced on the server, exactly', async () => {
 
 test('create: refuses what it cannot book, with a reason', async () => {
   const t = await seedTenant('+971501000005');
+  await item(t.customer);
   const day = workday();
   const good = { type: 'pickup', date: day, slot: '08-10', address, pickup: { boxes: 1 } };
   for (const [bad, why] of [
@@ -276,6 +291,11 @@ test('create: refuses what it cannot book, with a reason', async () => {
   const r = await book(visitor, { type: 'worker', date: day, startTime: '09:00', hours: 1, job: 'Help me' });
   assert.equal(r.status, 403);
   assert.equal(r.body.error, 'Renting a worker is for customers with an active unit');
+
+  // Nothing in storage, nothing to deliver.
+  const empty = await book(visitor, { type: 'dropoff', date: day, slot: '10-12', address, items: ['x'] });
+  assert.equal(empty.status, 403);
+  assert.equal(empty.body.error, 'Delivery is for customers with items in our storage');
 });
 
 test('dropoff: someone else’s item, or one not in storage, is refused', async () => {
@@ -308,11 +328,11 @@ test('items: scheduled once on a delivery, transit when under way, stored again 
   const cancel = await request(app).post(`${base}/services/${r.body.request.id}/cancel`).set(t.auth);
   assert.equal(cancel.status, 200);
   assert.equal(cancel.body.request.status, 'cancelled');
-  assert.deepEqual(cancel.body.request.statusLog.map((s) => s.status), ['requested', 'cancelled']);
+  assert.deepEqual(cancel.body.request.statusLog.map((s) => s.status), ['awaiting_payment', 'cancelled']);
   assert.equal(await status(), 'stored');
 
   const detail = await request(app).get(`${base}/items/${box._id}`).set(t.auth);
-  assert.ok(detail.body.history.some((h) => h.text.startsWith('Delivery requested · SR-')));
+  assert.ok(detail.body.history.some((h) => h.text.startsWith('Delivery booked, awaiting payment · SR-')));
   assert.ok(detail.body.history.some((h) => h.text.startsWith('Delivery cancelled · SR-')));
 });
 
@@ -422,4 +442,157 @@ test('addresses: validated, listed, and capped at ten', async () => {
   const list = await request(app).get(`${base}/addresses`).set(t.auth);
   assert.equal(list.body.length, 10);
   assert.equal(list.body[0].label, 'Place 0');
+});
+
+// ── Pay at booking ─────────────────────────────────────────────────────────
+const past = () => new Date(Date.now() - 60_000);
+
+test('payment expiry and view are pure', () => {
+  const now = new Date('2026-10-20T10:00:00Z');
+  const r = (status, expiresAt) => ({ status, payment: { required: true, state: 'pending', expiresAt: new Date(expiresAt) } });
+  assert.equal(paymentExpired(r('awaiting_payment', '2026-10-20T09:59:59Z'), now), true);
+  assert.equal(paymentExpired(r('awaiting_payment', '2026-10-20T10:00:01Z'), now), false);
+  assert.equal(paymentExpired(r('requested', '2026-10-20T09:00:00Z'), now), false, 'paid requests never lapse');
+  assert.equal(paymentExpired({ status: 'awaiting_payment', payment: null }, now), false);
+  assert.equal(paymentView(null), null);
+  assert.deepEqual(paymentView({ required: true, state: 'paid', amount: 310, cardFee: 9.3, expiresAt: now, paidAt: now }), {
+    state: 'paid', amount: 310, cardFee: 9.3, totalCharged: 319.3, expiresAt: now.toISOString(), paidAt: now.toISOString(),
+  });
+});
+
+test('unpaid delivery: holds its slot and items for half an hour, then lapses', async () => {
+  const t = await seedTenant('+971501000020');
+  const day = workday();
+  const boxes = [await item(t.customer), await item(t.customer), await item(t.customer)];
+  const ids = [];
+  for (const b of boxes) {
+    const r = await book(t.auth, { type: 'dropoff', date: day, slot: '10-12', address, items: [b._id] });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    ids.push(r.body.request.id);
+  }
+  const slot = async () => (await request(app).get(`${base}/services/availability?type=pickup&date=${day}`).set(t.auth)).body.slots.find((s) => s.id === '10-12').full;
+  assert.equal(await slot(), true, 'unpaid but in time: still holds the van');
+  const status = async (b) => (await request(app).get(`${base}/items`).set(t.auth)).body.find((i) => i.id === b._id).status;
+  assert.equal(await status(boxes[0]), 'scheduled');
+
+  await ServiceRequest.updateOne({ _id: ids[0] }, { 'payment.expiresAt': past() });
+  assert.equal(await slot(), false, 'lapsed: the slot is free again');
+  assert.equal(await status(boxes[0]), 'stored');
+  const again = await book(t.auth, { type: 'dropoff', date: day, slot: '12-14', address, items: [boxes[0]._id] });
+  assert.equal(again.status, 201, 'the item can be sent for again');
+
+  const seen = await request(app).get(`${base}/services/${ids[0]}`).set(t.auth);
+  assert.equal(seen.body.status, 'cancelled');
+  assert.equal(seen.body.payment.state, 'expired');
+  const saved = await ServiceRequest.findById(ids[0]).lean();
+  assert.equal(saved.status, 'cancelled', 'written down on read');
+  assert.deepEqual(saved.statusLog.map((s) => s.status), ['awaiting_payment', 'cancelled']);
+
+  process.env.STRIPE_SECRET_KEY = 'sk_test_unused';
+  try {
+    const pay = await request(app).post(`${base}/services/${ids[0]}/pay`).set(t.auth).send({});
+    assert.equal(pay.status, 410);
+    assert.equal(pay.body.error, 'This booking has expired. Please request the delivery again.');
+    const pickup = await book(t.auth, { type: 'pickup', date: day, slot: '14-16', address, pickup: { boxes: 1 } });
+    assert.equal((await request(app).post(`${base}/services/${pickup.body.request.id}/pay`).set(t.auth).send({})).status, 410, 'nothing to pay');
+  } finally { delete process.env.STRIPE_SECRET_KEY; }
+  assert.equal((await request(app).post(`${base}/services/${ids[1]}/pay-sheet`).set(t.auth).send({})).status, 404, 'sheet off');
+
+  // Cancelling an unpaid one just lets it lapse; the contract never heard of it.
+  const cancel = await request(app).post(`${base}/services/${ids[1]}/cancel`).set(t.auth);
+  assert.equal(cancel.status, 200);
+  assert.equal(cancel.body.request.status, 'cancelled');
+  assert.equal(cancel.body.request.payment.state, 'expired');
+  const contract = await Contract.findById(t.contract._id).lean();
+  assert.equal(contract.timeline.filter((e) => /drop-off|cancelled/.test(e.text)).length, 0);
+});
+
+test('paid by webhook: booked once, the customer told once; late money still books; refund failure keeps it', async () => {
+  const t = await seedTenant('+971501000021');
+  const day = workday();
+  const [a, b] = [await item(t.customer), await item(t.customer)];
+  const r = await book(t.auth, { type: 'dropoff', date: day, slot: '08-10', address, items: [a._id] });
+  const id = r.body.request.id;
+
+  const first = await settleServiceRequestPayment({ serviceRequestId: id, sessionId: 'cs_test_1', paymentIntentId: 'pi_test_1' });
+  assert.deepEqual(first, { settled: true, late: false });
+  assert.deepEqual(await settleServiceRequestPayment({ serviceRequestId: id, sessionId: 'cs_test_1' }), { settled: false }, 'a repeated webhook is a no-op');
+  const view = (await request(app).get(`${base}/services/${id}`).set(t.auth)).body;
+  assert.equal(view.status, 'requested');
+  assert.deepEqual(view.statusLog.map((s) => s.status), ['awaiting_payment', 'requested']);
+  assert.equal(view.payment.state, 'paid');
+  assert.ok(view.payment.paidAt);
+  const notes = await CustomerNotification.find({ customer: t.customer._id }).lean();
+  assert.equal(notes.length, 1);
+  assert.match(notes[0].title, /^Payment received — your delivery SR-\d{4} is booked$/);
+  assert.deepEqual(notes[0].data, { route: '/service/[id]', params: { id } });
+  const contract = await Contract.findById(t.contract._id).lean();
+  assert.equal(contract.timeline.filter((e) => e.text.startsWith('Tenant requested via app (paid by card):')).length, 1);
+
+  // No Stripe here, so the refund fails: the booking must stay as it was.
+  const cancel = await request(app).post(`${base}/services/${id}/cancel`).set(t.auth);
+  assert.equal(cancel.status, 502);
+  assert.equal(cancel.body.error, 'We could not refund your payment automatically — please message us');
+  assert.equal((await ServiceRequest.findById(id).lean()).status, 'requested');
+
+  // Paid after it lapsed: the money is kept and the booking comes back, for staff to check.
+  const late = await book(t.auth, { type: 'dropoff', date: day, slot: '10-12', address, items: [b._id] });
+  await ServiceRequest.updateOne({ _id: late.body.request.id }, { 'payment.expiresAt': past() });
+  await request(app).get(`${base}/services`).set(t.auth);
+  assert.deepEqual(await settleServiceRequestPayment({ serviceRequestId: late.body.request.id, paymentIntentId: 'pi_test_2' }), { settled: true, late: true });
+  const back = await ServiceRequest.findById(late.body.request.id).lean();
+  assert.equal(back.status, 'requested');
+  assert.equal(back.payment.state, 'paid');
+  assert.match(back.staffNote, /Paid after the booking had lapsed/);
+});
+
+test('items: delivered ones leave the list unless asked for; every photo is listed and served to the owner only', async () => {
+  const t = await seedTenant('+971501000022');
+  const other = await seedTenant('+971501000023', 'L-203');
+  const box = await item(t.customer, { photoCount: 2 });
+  const gone = await item(t.customer, { currentStatus: 'DISPATCHED', currentLocation: null });
+  const theirs = await item(other.customer, { photoCount: 1 });
+  const older = await ItemPhoto.create({ container: box._id, data: png, mimeType: 'image/png', employee: staff._id, createdAt: new Date(Date.now() - 60_000) });
+  const newer = await ItemPhoto.create({ container: box._id, data: png, mimeType: 'image/png', employee: staff._id });
+  const foreign = await ItemPhoto.create({ container: theirs._id, data: png, mimeType: 'image/png', employee: staff._id });
+
+  assert.deepEqual((await request(app).get(`${base}/items`).set(t.auth)).body.map((i) => i.id), [box._id]);
+  const all = await request(app).get(`${base}/items?include=delivered`).set(t.auth);
+  assert.equal(all.body.find((i) => i.id === gone._id).status, 'out');
+  assert.equal((await request(app).get(`${base}/items/${gone._id}`).set(t.auth)).status, 200);
+
+  const photos = await request(app).get(`${base}/items/${box._id}/photos`).set(t.auth);
+  assert.deepEqual(photos.body.map((p) => p.id), [newer._id, older._id]);
+  assert.deepEqual(Object.keys(photos.body[0]).sort(), ['at', 'id']);
+  const one = await request(app).get(`${base}/items/${box._id}/photos/${older._id}`).set(t.auth);
+  assert.equal(one.status, 200);
+  assert.equal(one.headers['content-type'], 'image/png');
+  assert.equal(one.headers['cache-control'], 'private, no-store');
+  assert.equal((await request(app).get(`${base}/items/${box._id}/photos/${foreign._id}`).set(t.auth)).status, 404, 'not this item’s photo');
+  assert.equal((await request(app).get(`${base}/items/${theirs._id}/photos`).set(t.auth)).status, 404);
+});
+
+test('staff: unpaid deliveries hidden by default; drop-offs list each item with its shelf', async () => {
+  const t = await seedTenant('+971501000024');
+  const shelf = await WarehouseLocation.create({ displayCode: 'PBX-LOC-B12', name: 'Bay 12, shelf 4', site: site._id, warehouse: 'WH1', kind: 'SHELF' });
+  const box = await item(t.customer, { description: 'Winter clothes', currentLocation: shelf._id });
+  const r = await book(t.auth, { type: 'dropoff', date: workday(), slot: '08-10', address, items: [box._id] });
+  const staffGet = (path) => request(app).get(`/api/service-requests${path}`).set('x-test-user', String(staff._id));
+
+  assert.equal((await staffGet('/')).body.length, 0);
+  const unpaid = await staffGet('/?includeUnpaid=1');
+  assert.equal(unpaid.body.length, 1);
+  assert.equal(unpaid.body[0].payment.state, 'pending');
+  assert.deepEqual(unpaid.body[0].items.map((i) => [i.displayCode, i.description, i.currentLocation.displayCode, i.currentLocation.name]),
+    [[box.displayCode, 'Winter clothes', 'PBX-LOC-B12', 'Bay 12, shelf 4']]);
+  assert.equal((await staffGet('/?status=awaiting_payment')).body.length, 1);
+  const patch = await request(app).patch(`/api/service-requests/${r.body.request.id}`).set('x-test-user', String(staff._id)).send({ status: 'awaiting_payment' });
+  assert.equal(patch.status, 200, 'unchanged status is a no-op');
+
+  await settleServiceRequestPayment({ serviceRequestId: r.body.request.id, paymentIntentId: 'pi_test_3' });
+  const paid = await staffGet('/');
+  assert.equal(paid.body.length, 1);
+  assert.equal(paid.body[0].payment.state, 'paid');
+  const back = await request(app).patch(`/api/service-requests/${r.body.request.id}`).set('x-test-user', String(staff._id)).send({ status: 'awaiting_payment' });
+  assert.equal(back.status, 400, 'staff cannot put a request back to unpaid');
 });

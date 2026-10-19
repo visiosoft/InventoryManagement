@@ -15,12 +15,14 @@ const router = Router();
 // Where Stripe sends the in-app browser after checkout. Public and static: it
 // confirms nothing (the server learns of payment from Stripe itself), it only
 // tells the customer to go back to the app.
+// Also the page a delivery paid from the valet screens returns to (?for=delivery).
 router.get('/done', (req, res) => {
   const cancelled = req.query.cancelled === '1';
+  const next = req.query.for === 'delivery' ? 'to see your delivery' : 'to sign your agreement';
   res.type('html').send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PurpleBox</title><body style="margin:0;font-family:system-ui;background:#FBF8F2;color:#14081F;display:grid;place-items:center;min-height:100vh;text-align:center;padding:24px">
 <div><div style="font-size:56px">${cancelled ? '↩️' : '✅'}</div><h1 style="font-size:24px">${cancelled ? 'Payment cancelled' : 'Payment received'}</h1>
-<p style="color:#4A4357">${cancelled ? 'Nothing was charged. Close this page to go back to the app.' : 'Close this page and return to the PurpleBox app to sign your agreement.'}</p></div>`);
+<p style="color:#4A4357">${cancelled ? 'Nothing was charged. Close this page to go back to the app.' : `Close this page and return to the PurpleBox app ${next}.`}</p></div>`);
 });
 
 router.use(requireCustomer);

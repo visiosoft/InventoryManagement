@@ -7,6 +7,14 @@ import {
   SERVICE_PRICES, CAPACITY, SLOTS, WORKER_HOURS, SERVICE_CATALOG, DISPOSAL_LOADS, slotById, estimateFor,
   workerStartTimes, workerEndTime, toMinutes, dubaiToday, addDays, isDateString, workerClosed, hoursLabel,
 } from '../services/servicePricing.js';
+import { CARD_FEE_PCT } from '../services/appBooking.js';
+import {
+  PAY_WINDOW_MINUTES, PAYING_WINDOW_MINUTES, paymentExpired, notExpired, expireStale, paymentView, describeRequest,
+} from '../services/servicePayments.js';
+import {
+  cancelPaymentIntent, createCheckoutSession, createSheetPayment, ensureStripeCustomer, expireCheckoutSession, refundPayment,
+  stripeConfigured, stripeEmbeddedConfigured, stripePublishableKey, stripeSheetEnabled,
+} from '../services/stripe.js';
 
 /**
  * Valet storage from the customer app: the things we hold for them, and the
@@ -31,7 +39,7 @@ const MAX_ADDRESSES = 10;
 const BOOK_AHEAD_DAYS = 60;
 const DEFAULT_FACILITY = 'PurpleBox Storage, Al Quoz 2';
 const OPEN_STATUSES = ['requested', 'confirmed', 'scheduled', 'in_progress'];
-const CANCELLABLE = ['requested', 'confirmed', 'scheduled'];
+const CANCELLABLE = ['awaiting_payment', 'requested', 'confirmed', 'scheduled'];
 const IN_WAREHOUSE = ['RECEIVED', 'AWAITING_PUTAWAY', 'IN_STORAGE'];
 const DELIVERS = ['dropoff', 'both'];
 
@@ -57,10 +65,12 @@ const humanise = (type) => {
 
 // Items on a delivery that hasn't happened yet, and how far along it is. An
 // item on its way back is not "stored" any more as far as the customer cares,
-// even before the warehouse scans it out.
+// even before the warehouse scans it out. A delivery still being paid for
+// holds its items; one whose time to pay ran out does not.
 async function deliveriesFor(customerId) {
-  const open = await ServiceRequest.find({ customer: customerId, type: { $in: DELIVERS }, status: { $in: OPEN_STATUSES } })
-    .select('items status').lean();
+  const open = await ServiceRequest.find({
+    customer: customerId, type: { $in: DELIVERS }, status: { $in: ['awaiting_payment', ...OPEN_STATUSES] }, ...notExpired(),
+  }).select('items status').lean();
   const byItem = new Map();
   for (const r of open) for (const id of r.items) byItem.set(String(id), r.status);
   return byItem;
@@ -93,6 +103,10 @@ function itemView(c, deliveries) {
 
 const briefItemView = (c, deliveries) => ({ id: c._id, label: c.displayCode, name: c.description || humanise(c.type), status: itemStatus(c, deliveries) });
 
+// The valet is for customers we hold things for: anything ever labelled for
+// them counts, even if all of it has gone back since.
+const valetActive = async (customerId) => Boolean(await StoredContainer.findOne({ customer: customerId }).select('_id').lean());
+
 async function ownedItem(req, id) {
   const item = await StoredContainer.findOne({ _id: String(id), customer: req.customer.customerId }).lean();
   if (!item) notFound('Item');
@@ -111,6 +125,7 @@ const SCAN_TEXT = {
 };
 
 const deliveryText = (r, status) => ({
+  awaiting_payment: `Delivery booked, awaiting payment · ${r.ref}`,
   requested: `Delivery requested · ${r.ref}`,
   confirmed: `Delivery confirmed · ${r.ref}`,
   scheduled: `Delivery scheduled for ${r.date} · ${r.ref}`,
@@ -133,10 +148,13 @@ async function itemHistory(item) {
   return history.sort((a, b) => new Date(b.at) - new Date(a.at));
 }
 
+// A delivered item has left our care for good, so the list is what we still
+// hold; ?include=delivered adds those back (shown as 'out').
 router.get('/items', wrap(async (req, res) => {
   const customerId = req.customer.customerId;
+  const filter = { customer: customerId, ...(req.query.include === 'delivered' ? {} : { currentStatus: { $ne: 'DISPATCHED' } }) };
   const [items, deliveries] = await Promise.all([
-    StoredContainer.find({ customer: customerId }).sort({ createdAt: -1 }).limit(1000).lean(),
+    StoredContainer.find(filter).sort({ createdAt: -1 }).limit(1000).lean(),
     deliveriesFor(customerId),
   ]);
   res.json(items.map((c) => itemView(c, deliveries)));
@@ -148,14 +166,30 @@ router.get('/items/:id', wrap(async (req, res) => {
   res.json({ ...itemView(item, deliveries), history });
 }));
 
+const sendPhoto = (res, photo) => {
+  if (!photo) notFound('Photo');
+  res.set('Cache-Control', 'private, no-store').set('X-Content-Type-Options', 'nosniff').type(photo.mimeType)
+    .send(photo.data.buffer ? Buffer.from(photo.data.buffer) : photo.data);
+};
+
 // The newest photo only: the one staff took last shows the item as it is now.
 // Also reachable by a document link (?dt=), so an <Image> can load it.
 router.get('/items/:id/photo', wrap(async (req, res) => {
   const item = await ownedItem(req, req.params.id);
-  const photo = await ItemPhoto.findOne({ container: item._id }).sort({ createdAt: -1 }).select('+data mimeType').lean();
-  if (!photo) notFound('Photo');
-  res.set('Cache-Control', 'private, no-store').set('X-Content-Type-Options', 'nosniff').type(photo.mimeType)
-    .send(photo.data.buffer ? Buffer.from(photo.data.buffer) : photo.data);
+  sendPhoto(res, await ItemPhoto.findOne({ container: item._id }).sort({ createdAt: -1 }).select('+data mimeType').lean());
+}));
+
+// Every photo, newest first; ids only, each fetched by the route below (which
+// a document link can open too).
+router.get('/items/:id/photos', wrap(async (req, res) => {
+  const item = await ownedItem(req, req.params.id);
+  const photos = await ItemPhoto.find({ container: item._id }).sort({ createdAt: -1 }).select('createdAt').lean();
+  res.json(photos.map((p) => ({ id: p._id, at: p.createdAt })));
+}));
+
+router.get('/items/:id/photos/:photoId', wrap(async (req, res) => {
+  const item = await ownedItem(req, req.params.id);
+  sendPhoto(res, await ItemPhoto.findOne({ _id: String(req.params.photoId), container: item._id }).select('+data mimeType').lean());
 }));
 
 // ── Addresses ───────────────────────────────────────────────────────────────
@@ -193,11 +227,12 @@ function checkDate(date) {
 
 // Van slots are shared by every van job (supplies, pickups, drop-offs); the
 // dump truck has slots of its own. Counted until cancelled: a completed job
-// still used the vehicle that day.
+// still used the vehicle that day. A delivery being paid for holds its slot
+// while it has time to pay, and lets go of it after.
 async function slotsOn(date, type) {
   const truck = type === 'disposal';
   const types = truck ? { $in: ['disposal'] } : { $nin: ['worker', 'disposal'] };
-  const booked = await ServiceRequest.find({ date, type: types, status: { $ne: 'cancelled' } }).select('slot').lean();
+  const booked = await ServiceRequest.find({ date, type: types, status: { $ne: 'cancelled' }, ...notExpired() }).select('slot').lean();
   const capacity = truck ? CAPACITY.truckSlotCapacity : CAPACITY.slotCapacity;
   const count = (id) => booked.filter((r) => r.slot === id).length;
   return SLOTS.map((s) => ({ id: s.id, label: s.label, evening: s.evening, full: count(s.id) >= capacity }));
@@ -239,7 +274,13 @@ async function workerStartsOn(date, hours, workers = 1) {
 }
 
 router.get('/services/catalog', wrap(async (req, res) => {
-  const facility = await facilityFor(await activeContract(req.customer.customerId));
+  const customerId = req.customer.customerId;
+  const [contract, active, itemCount] = await Promise.all([
+    activeContract(customerId),
+    valetActive(customerId),
+    StoredContainer.countDocuments({ customer: customerId, currentStatus: { $ne: 'DISPATCHED' } }),
+  ]);
+  const facility = await facilityFor(contract);
   res.json({
     services: SERVICE_CATALOG,
     prices: { ...SERVICE_PRICES, ...CAPACITY },
@@ -247,6 +288,7 @@ router.get('/services/catalog', wrap(async (req, res) => {
     worker: WORKER_HOURS,
     disposal: Object.entries(DISPOSAL_LOADS).map(([id, l]) => ({ id, ...l })),
     facility,
+    valet: { active, itemCount },
   });
 }));
 
@@ -305,6 +347,7 @@ function requestView(r, expandItem) {
     notes: r.notes,
     estimate: { lines: (r.estimate?.lines || []).map((l) => ({ label: l.label, amount: l.amount })), total: r.estimate?.total || 0 },
     charged: r.charged ?? null,
+    payment: paymentView(r.payment),
     statusLog: r.statusLog.map((s) => ({ status: s.status, at: s.at })),
     driver: r.driverName ? { name: r.driverName, phone: r.driverPhone || '' } : null,
     createdAt: r.createdAt,
@@ -367,14 +410,6 @@ async function deliverableItems(customerId, ids) {
   return unique;
 }
 
-const describe = (r) => {
-  const title = SERVICE_CATALOG.find((s) => s.type === r.type).title.toLowerCase();
-  const when = r.type === 'worker'
-    ? `${r.startTime}–${workerEndTime(r.startTime, r.hours)}, ${r.workers || 1} worker${(r.workers || 1) > 1 ? 's' : ''}`
-    : slotById(r.slot).label;
-  return `${title} ${r.ref} on ${r.date}, ${when} (est. AED ${r.estimate.total})`;
-};
-
 router.post('/services', wrap(async (req, res) => {
   const customerId = req.customer.customerId;
   const body = req.body || {};
@@ -411,7 +446,10 @@ router.post('/services', wrap(async (req, res) => {
       if (boxes + bulky < 1) fail('Tell us how many boxes or bulky items to collect');
       doc.pickup = { boxes, bulky, description: freeText(body.pickup?.description, 1000, 'Description') };
     }
-    if (DELIVERS.includes(type)) doc.items = await deliverableItems(customerId, body.items);
+    if (DELIVERS.includes(type)) {
+      if (!(await valetActive(customerId))) fail('Delivery is for customers with items in our storage', 403);
+      doc.items = await deliverableItems(customerId, body.items);
+    }
     if (type === 'supplies') {
       doc.supplies = { boxes: count(body.supplies?.boxes, 1, 200, 'Boxes'), extraLabels: count(body.supplies?.extraLabels, 0, 200, 'Extra labels') };
     }
@@ -437,10 +475,18 @@ router.post('/services', wrap(async (req, res) => {
   }
 
   doc.ref = await nextServiceRequestNo();
-  doc.statusLog = [{ status: 'requested', at: new Date() }];
+  // A delivery is paid by card as it is booked. Until Stripe confirms that it
+  // only holds its slot and items, and the contract hears of it once paid.
+  const paying = DELIVERS.includes(type);
+  const now = new Date();
+  doc.status = paying ? 'awaiting_payment' : 'requested';
+  doc.statusLog = [{ status: doc.status, at: now }];
+  if (paying) {
+    doc.payment = { required: true, state: 'pending', amount: doc.estimate.total, cardFee: 0, expiresAt: new Date(now.getTime() + PAY_WINDOW_MINUTES * 60_000) };
+  }
   const created = await ServiceRequest.create(doc);
-  if (contract) {
-    contract.timeline.push({ text: `Tenant requested via app: ${describe(created)}`, author: 'customer app' });
+  if (contract && !paying) {
+    contract.timeline.push({ text: `Tenant requested via app: ${describeRequest(created)}`, author: 'customer app' });
     await contract.save();
   }
   const [request] = await requestViews(customerId, [created.toObject()]);
@@ -449,24 +495,135 @@ router.post('/services', wrap(async (req, res) => {
 
 router.get('/services', wrap(async (req, res) => {
   const requests = await ServiceRequest.find({ customer: req.customer.customerId }).sort({ createdAt: -1 }).limit(200).lean();
-  res.json(await requestViews(req.customer.customerId, requests));
+  res.json(await requestViews(req.customer.customerId, await expireStale(requests)));
 }));
 
 router.get('/services/:id', wrap(async (req, res) => {
   const r = await ownedRequest(req, req.params.id);
+  await expireStale([r]);
   const [view] = await requestViews(req.customer.customerId, [r.toObject()]);
   res.json(view);
 }));
 
-// Once the van is on its way, cancelling is a phone call, not a button.
+// ── Paying for a delivery ───────────────────────────────────────────────────
+const PAID_MEANWHILE = 'Your payment went through — we are confirming your request';
+const round2 = (n) => Math.round(n * 100) / 100;
+
+async function payableRequest(req) {
+  if (!stripeConfigured()) fail('Online payment is not available right now', 503);
+  const r = await ownedRequest(req, req.params.id);
+  await expireStale([r]);
+  if (r.payment?.state === 'paid') fail('This delivery is already paid', 409);
+  if (r.status !== 'awaiting_payment' || r.payment?.state !== 'pending') fail('This booking has expired. Please request the delivery again.', 410);
+  return r;
+}
+
+// Only one way to pay may be open at a time: close the earlier Checkout
+// session or payment sheet, and stop if it was paid first.
+async function closeOpenPayment(r) {
+  const p = r.payment;
+  if (p.stripeCheckoutSessionId && (await expireCheckoutSession(p.stripeCheckoutSessionId)) === 'complete') fail(PAID_MEANWHILE, 409);
+  if (p.stripePaymentIntentId && ['succeeded', 'processing'].includes(await cancelPaymentIntent(p.stripePaymentIntentId))) fail(PAID_MEANWHILE, 409);
+  p.stripeCheckoutSessionId = null;
+  p.stripePaymentIntentId = null;
+}
+
+const payTitle = (r) => `${r.type === 'both' ? 'Pickup & delivery' : 'Delivery from storage'} ${r.ref}`;
+
+// Same shape as paying for a unit (customerBooking.js): the app gets a card
+// form, Stripe's webhook confirms the payment, the app never says it was paid.
+router.post('/services/:id/pay', wrap(async (req, res) => {
+  const r = await payableRequest(req);
+  const embedded = req.body?.embedded === true && stripeEmbeddedConfigured();
+  await closeOpenPayment(r);
+  // The booking flow's public "go back to the app" page, worded for a delivery
+  // (this router sits behind the customer login, so it can't serve one itself).
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const done = `${proto}://${req.headers['x-forwarded-host'] || req.get('host')}${req.baseUrl.replace(/\/storage$/, '/booking')}/done?for=delivery`;
+  const session = await createCheckoutSession({
+    amountAed: r.payment.amount,
+    productName: payTitle(r),
+    description: describeRequest(r),
+    metadata: { serviceRequestId: String(r._id), serviceRef: r.ref },
+    successUrl: done,
+    cancelUrl: `${done}&cancelled=1`,
+    feePct: CARD_FEE_PCT,
+    expiresInMinutes: 30,
+    embedded,
+  });
+  r.payment.stripeCheckoutSessionId = session.id;
+  r.payment.cardFee = session.feeAmount;
+  r.payment.expiresAt = new Date(Date.now() + PAYING_WINDOW_MINUTES * 60_000);
+  await r.save();
+  res.json({
+    ...(embedded ? { clientSecret: session.clientSecret, publishableKey: stripePublishableKey() } : { url: session.url }),
+    amount: r.payment.amount, cardFee: session.feeAmount, totalCharged: round2(r.payment.amount + session.feeAmount),
+  });
+}));
+
+// The native payment sheet; 404 until STRIPE_PAYMENT_SHEET=true, like the booking's.
+router.post('/services/:id/pay-sheet', wrap(async (req, res) => {
+  if (!stripeSheetEnabled()) fail('Payment sheet is not available', 404);
+  const r = await payableRequest(req);
+  await closeOpenPayment(r);
+  const customer = await Customer.findById(req.customer.customerId);
+  const stripeCustomerId = await ensureStripeCustomer(customer);
+  const sheet = await createSheetPayment({
+    amountAed: r.payment.amount, feePct: CARD_FEE_PCT, stripeCustomerId,
+    description: `${payTitle(r)} — ${describeRequest(r)}`,
+    metadata: { serviceRequestId: String(r._id), serviceRef: r.ref, purpleboxCustomerId: String(customer._id) },
+  });
+  r.payment.stripePaymentIntentId = sheet.id;
+  r.payment.cardFee = sheet.feeAmount;
+  r.payment.expiresAt = new Date(Date.now() + PAYING_WINDOW_MINUTES * 60_000);
+  await r.save();
+  res.json({
+    paymentIntentClientSecret: sheet.clientSecret, publishableKey: stripePublishableKey(), merchantDisplayName: 'PurpleBox Storage',
+    customerId: stripeCustomerId, customerSessionClientSecret: sheet.customerSessionClientSecret,
+    amount: r.payment.amount, cardFee: sheet.feeAmount, totalCharged: round2(r.payment.amount + sheet.feeAmount),
+  });
+}));
+
+// Once the van is on its way, cancelling is a phone call, not a button. An
+// unpaid delivery just lapses; a paid one is refunded in full, card fee too —
+// and if the refund fails it stays booked, so no money goes unaccounted for.
 router.post('/services/:id/cancel', wrap(async (req, res) => {
   const r = await ownedRequest(req, req.params.id);
-  if (!CANCELLABLE.includes(r.status)) fail('This request can no longer be cancelled', 409);
-  r.status = 'cancelled';
-  r.statusLog.push({ status: 'cancelled', at: new Date() });
-  await r.save();
-  if (r.contract) {
-    await Contract.updateOne({ _id: r.contract }, { $push: { timeline: { text: `Tenant cancelled via app: ${r.ref}`, author: 'customer app' } } });
+  const at = new Date();
+  if (paymentExpired(r, at)) {
+    await expireStale([r], at); // already lapsed: that is the cancellation
+  } else if (r.status === 'awaiting_payment') {
+    await closeOpenPayment(r);
+    const entry = { status: 'cancelled', at };
+    // Conditional, in case the webhook marked it paid a moment ago.
+    const { modifiedCount } = await ServiceRequest.updateOne(
+      { _id: r._id, status: 'awaiting_payment', 'payment.state': 'pending' },
+      { $set: { status: 'cancelled', 'payment.state': 'expired', 'payment.stripeCheckoutSessionId': null, 'payment.stripePaymentIntentId': null }, $push: { statusLog: entry } },
+    );
+    if (!modifiedCount) fail(PAID_MEANWHILE, 409);
+    r.status = 'cancelled';
+    r.payment.state = 'expired';
+    r.statusLog.push(entry);
+  } else {
+    if (!CANCELLABLE.includes(r.status)) fail('This request can no longer be cancelled', 409);
+    if (r.payment?.state === 'paid') {
+      try {
+        const refund = await refundPayment({ paymentIntentId: r.payment.stripePaymentIntentId, checkoutSessionId: r.payment.stripeCheckoutSessionId });
+        r.payment.state = 'refunded';
+        r.payment.refundId = refund.id;
+      } catch (e) {
+        console.error('[customerValet] refund failed for', r.ref, e.message);
+        fail('We could not refund your payment automatically — please message us', 502);
+      }
+    }
+    r.status = 'cancelled';
+    r.statusLog.push({ status: 'cancelled', at });
+    await r.save();
+  }
+  // An unpaid delivery never reached the contract's timeline, so neither does its end.
+  if (r.contract && (!r.payment || r.payment.state === 'refunded')) {
+    const refunded = r.payment?.state === 'refunded' ? ' (card payment refunded)' : '';
+    await Contract.updateOne({ _id: r.contract }, { $push: { timeline: { text: `Tenant cancelled via app: ${r.ref}${refunded}`, author: 'customer app' } } });
   }
   const [request] = await requestViews(req.customer.customerId, [r.toObject()]);
   res.json({ request });

@@ -43,6 +43,8 @@ const containerSchema = new Schema({
   currentLocation: { type: String, ref: 'WarehouseLocation', default: null },
   lastScanAt: Date, lastScanBy: ref('User'), storedAt: Date,
   photoCount: { type: Number, default: 0 },
+  // When the owner was told this item is on the shelf — once, per collection.
+  intakeNotifiedAt: { type: Date, default: null },
   revision: { type: Number, default: 0 },
 }, { timestamps: true });
 containerSchema.index({ customer: 1, createdAt: -1 });
