@@ -19,6 +19,7 @@ import { agentTools, toOpenAiTools } from './tools.js';
 import { transition, describeStage, DEFAULT_CADENCE, BUCKETS } from './buckets.js';
 import { record, snapshotOf } from './log.js';
 import { AgentAction } from './models.js';
+import { pushConfigured, pushToUser } from '../services/push.js';
 import { windowOpen, customerWritesArabic, templatesForLanguage } from './guards.js';
 
 const HISTORY_DAYS = 90;
@@ -368,6 +369,16 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
             detail: { need: leadFile.need, offers: leadFile.offers, openQuestions: leadFile.openQuestions, lastSummary: leadFile.lastSummary },
             bucketBefore: before.bucket, bucketAfter: after.bucket, snapshotBefore: before, snapshotAfter: after, revertible: true, at: now,
         });
+        // The person this agent hands to hears about it, rather than finding
+        // it in the inbox whenever they next look.
+        if (agent.escalateTo && pushConfigured()) {
+            pushToUser(agent.escalateTo, {
+                title: `${agent.name} needs you`,
+                body: `${lead?.fullName || 'A lead'}: ${String(reason || '').slice(0, 140)}`,
+                url: `/agents/leads/${lead?._id || ''}`,
+                tag: `agent-handover-${lead?._id || ''}`,
+            }).catch(() => null);
+        }
     }
     return result;
 }

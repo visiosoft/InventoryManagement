@@ -19,10 +19,12 @@ import { BUCKET_ORDER } from './buckets.js';
 
 const { Schema, model } = mongoose;
 
-/* Live sending is Phase 1. The prototype only knows 'shadow' (drafts and
-   proposed touches, nothing sent) and 'off' — so a misconfigured profile
-   cannot message a customer. */
-export const AGENT_MODES = ['off', 'shadow'];
+/* 'shadow' drafts everything and sends nothing; 'off' does nothing.
+   'auto' sends its approved WhatsApp *templates* by itself, inside the
+   limits in autoSend below (hours, daily cap, per-lead cap) — free-text
+   replies are still only drafted for a person. Templates are pre-approved
+   by Meta, which is what makes them the safe thing to let go on their own. */
+export const AGENT_MODES = ['off', 'shadow', 'auto'];
 
 export const AGENT_TOOLS = [
     'units_available',
@@ -92,6 +94,14 @@ const agentProfileSchema = new Schema({
         dormant: { type: [Number], default: [] },
     },
     escalateTo: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // Limits for mode 'auto'. Hours are Dubai time; sends are held outside
+    // them and go when the window opens. maxPerLead counts template messages
+    // since the customer last wrote — a reply resets it.
+    autoSend: {
+        startHour: { type: Number, default: 9, min: 0, max: 23 },
+        endHour: { type: Number, default: 21, min: 1, max: 24 },
+        maxPerLead: { type: Number, default: 4, min: 1, max: 10 },
+    },
     maxToolRounds: { type: Number, default: 4 },
     // Whether a bucket move also updates the human-facing Lead.status. Off
     // by default: while the agent is only shadowing, the sales team's

@@ -15,24 +15,27 @@ test('a new lead becomes Engaged on the first reply and has no scheduled touch',
     assert.equal(s.nextTouchAt, null);
 });
 
-test('24 hours of silence moves an engaged lead to Quiet with the day-3 touch scheduled', () => {
+test('24 hours of silence moves an engaged lead to Quiet with the day-1 touch scheduled', () => {
     const s = at(at(freshState(T0), 'first_reply_sent'), 'silence', days(1));
     assert.equal(s.bucket, 'quiet');
-    assert.equal(s.nextTouchAt.toISOString(), days(1 + 3).toISOString());
-    assert.equal(describeStage(s), 'touch 1 of 3');
+    assert.equal(s.nextTouchAt.toISOString(), days(1 + 1).toISOString());
+    assert.equal(describeStage(s), 'touch 1 of 4');
 });
 
-test('the quiet cadence walks day 3, 7, 14 and then falls through to Dormant', () => {
+test('the quiet cadence lands on days 1, 3, 7, 14 and then falls through to Dormant', () => {
     let s = at(at(freshState(T0), 'first_reply_sent'), 'silence', T0);
+    s = at(s, 'touch_sent', days(1));
+    assert.equal(describeStage(s), 'touch 2 of 4');
+    assert.equal(s.nextTouchAt.toISOString(), days(3).toISOString());
     s = at(s, 'touch_sent', days(3));
-    assert.equal(describeStage(s), 'touch 2 of 3');
-    assert.equal(s.nextTouchAt.toISOString(), days(3 + 7).toISOString());
-    s = at(s, 'touch_sent', days(10));
-    s = at(s, 'touch_sent', days(24));
-    assert.equal(nextTouchFor(s), null, 'three touches used, nothing more scheduled');
-    s = at(s, 'exhausted', days(24));
+    assert.equal(s.nextTouchAt.toISOString(), days(7).toISOString());
+    s = at(s, 'touch_sent', days(7));
+    assert.equal(s.nextTouchAt.toISOString(), days(14).toISOString());
+    s = at(s, 'touch_sent', days(14));
+    assert.equal(nextTouchFor(s), null, 'four touches used, nothing more scheduled');
+    s = at(s, 'exhausted', days(14));
     assert.equal(s.bucket, 'dormant');
-    assert.equal(s.nextTouchAt.toISOString(), days(24 + 30).toISOString());
+    assert.equal(s.nextTouchAt.toISOString(), days(14 + 30).toISOString());
 });
 
 test('dormant runs out into Lost, and a Lost lead is never contacted first', () => {

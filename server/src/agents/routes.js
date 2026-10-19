@@ -51,7 +51,7 @@ function readProfile(body, existing) {
     }
     if (body.model !== undefined) p.model = String(body.model || '');
     if (body.mode !== undefined) {
-        if (!AGENT_MODES.includes(body.mode)) throw new Error(`mode must be one of ${AGENT_MODES.join(', ')} — live sending is not part of the prototype`);
+        if (!AGENT_MODES.includes(body.mode)) throw new Error(`mode must be one of ${AGENT_MODES.join(', ')}`);
         p.mode = body.mode;
     }
     if (Array.isArray(body.enabledTools)) p.enabledTools = body.enabledTools.filter((t) => AGENT_TOOLS.includes(t));
@@ -70,6 +70,11 @@ function readProfile(body, existing) {
     if (body.syncLeadStatus !== undefined) p.syncLeadStatus = Boolean(body.syncLeadStatus);
     if (body.isDefault !== undefined) p.isDefault = Boolean(body.isDefault);
     if (body.dailyBudgetAed !== undefined) p.dailyBudgetAed = Math.max(0, Number(body.dailyBudgetAed) || 0);
+    if (body.autoSend && typeof body.autoSend === 'object') {
+        const a = body.autoSend;
+        const hour = (v, d, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(Number(v)) ? Math.round(Number(v)) : d));
+        p.autoSend = { startHour: hour(a.startHour, 9, 0, 23), endHour: hour(a.endHour, 21, 1, 24), maxPerLead: hour(a.maxPerLead, 4, 1, 10) };
+    }
     if (body.dailyTouchCap !== undefined) p.dailyTouchCap = Math.max(0, Number(body.dailyTouchCap) || 0);
     if (body.avatarColor !== undefined) p.avatarColor = String(body.avatarColor || '').slice(0, 20);
     if (body.isActive !== undefined) p.isActive = Boolean(body.isActive);

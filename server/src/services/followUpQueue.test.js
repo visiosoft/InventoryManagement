@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, summarise, validateForSend, stageFor, priorityOf, windowFor, nextQuietContact, QUEUE_SINCE } from './followUpQueue.js';
+import { classify, summarise, validateForSend, stageFor, priorityOf, windowFor, nextQuietContact, QUEUE_SINCE, DEFAULT_STAGES } from './followUpQueue.js';
 import { isWaitingOnUs } from './chatFollowUp.js';
 import { windowOpenFor } from './whatsapp.js';
 import { displayNameFor } from './leadNames.js';
@@ -13,28 +13,31 @@ import { displayNameFor } from './leadNames.js';
  */
 
 const NOW = new Date('2026-09-07T10:00:00.000Z'); // 14:00 Dubai
+// These tests check the timing logic against a fixed 3/7/14 schedule; the
+// default itself is checked on its own below.
+const OLD = [{ afterDays: 3 }, { afterDays: 7 }, { afterDays: 14 }];
 const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600_000);
 const daysAgo = (d) => hoursAgo(d * 24);
 const daysAhead = (d) => hoursAgo(-d * 24);
 
 test('scenario 1: they asked, we answered, they went quiet → customer_quiet, due today', () => {
-    const v = classify({ lastInboundAt: daysAgo(4), lastOutboundAt: daysAgo(3), leadStatus: 'contacted' }, { now: NOW });
+    const v = classify({ lastInboundAt: daysAgo(4), lastOutboundAt: daysAgo(3), leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(v.reason, 'customer_quiet');
     assert.equal(v.window, 'today');
     assert.equal(v.daysWaiting, 3);
 });
 
 test('scenario 2: they asked, nobody answered → sales_response_overdue, now — never customer_quiet', () => {
-    const v = classify({ lastInboundAt: hoursAgo(2), lastOutboundAt: daysAgo(5), leadStatus: 'contacted' }, { now: NOW });
+    const v = classify({ lastInboundAt: hoursAgo(2), lastOutboundAt: daysAgo(5), leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(v.reason, 'sales_response_overdue');
     assert.equal(v.window, 'now');
     assert.equal(v.windowOpen, true);
 });
 
 test('scenario 3: once we reply, a waiting customer is no longer waiting', () => {
-    const before = classify({ lastInboundAt: hoursAgo(1), lastOutboundAt: daysAgo(1), leadStatus: 'contacted' }, { now: NOW });
+    const before = classify({ lastInboundAt: hoursAgo(1), lastOutboundAt: daysAgo(1), leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(before.reason, 'sales_response_overdue');
-    const after = classify({ lastInboundAt: hoursAgo(1), lastOutboundAt: hoursAgo(0.5), leadStatus: 'contacted' }, { now: NOW });
+    const after = classify({ lastInboundAt: hoursAgo(1), lastOutboundAt: hoursAgo(0.5), leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     // We spoke last half an hour ago: not waiting, not due — first follow-up is 3 days out.
     assert.equal(after.reason, 'customer_quiet');
     assert.equal(after.window, 'in_3_days');
@@ -42,93 +45,93 @@ test('scenario 3: once we reply, a waiting customer is no longer waiting', () =>
 
 test('scenarios 5 & 6: converted or lost → nothing, whatever the conversation looks like', () => {
     for (const leadStatus of ['won', 'lost', 'already_customer']) {
-        assert.equal(classify({ lastInboundAt: daysAgo(10), lastOutboundAt: daysAgo(9), leadStatus }, { now: NOW }), null);
-        assert.equal(classify({ lastInboundAt: hoursAgo(1), leadStatus }, { now: NOW }), null);
+        assert.equal(classify({ lastInboundAt: daysAgo(10), lastOutboundAt: daysAgo(9), leadStatus }, { now: NOW, stages: OLD }), null);
+        assert.equal(classify({ lastInboundAt: hoursAgo(1), leadStatus }, { now: NOW, stages: OLD }), null);
     }
 });
 
 test('never spoken to at all → not in the queue', () => {
-    assert.equal(classify({ leadStatus: 'new' }, { now: NOW }), null);
+    assert.equal(classify({ leadStatus: 'new' }, { now: NOW, stages: OLD }), null);
 });
 
 test('what happens when today\'s row is followed up: it leaves today and lands in 7 days', () => {
     // A customer waiting on us. We reply with a template — the send log
     // records it even if the chat log does not.
-    const before = classify({ lastInboundAt: daysAgo(2), leadStatus: 'contacted' }, { now: NOW });
+    const before = classify({ lastInboundAt: daysAgo(2), leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(before.window, 'now');
-    const after = classify({ lastInboundAt: daysAgo(2), lastSentAt: NOW, sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW });
+    const after = classify({ lastInboundAt: daysAgo(2), lastSentAt: NOW, sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(after.reason, 'customer_quiet');
     assert.equal(after.window, 'in_7_days');
     // Same for a quiet lead due today for its first follow-up.
-    const quietDue = classify({ lastOutboundAt: daysAgo(3), leadStatus: 'contacted' }, { now: NOW });
+    const quietDue = classify({ lastOutboundAt: daysAgo(3), leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(quietDue.window, 'today');
-    const quietAfter = classify({ lastOutboundAt: daysAgo(3), lastSentAt: NOW, sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW });
+    const quietAfter = classify({ lastOutboundAt: daysAgo(3), lastSentAt: NOW, sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(quietAfter.window, 'in_7_days');
 });
 
 test('a chat left unanswered for years is history, not "needs reply now"', () => {
     // Nothing from us, ever, and their message is far outside the 30-day bound.
-    assert.equal(classify({ lastInboundAt: daysAgo(400), leadStatus: 'contacted' }, { now: NOW }), null);
+    assert.equal(classify({ lastInboundAt: daysAgo(400), leadStatus: 'contacted' }, { now: NOW, stages: OLD }), null);
     // Inside the bound it is exactly the reply-needed case.
-    assert.equal(classify({ lastInboundAt: daysAgo(20), leadStatus: 'contacted' }, { now: NOW }).window, 'now');
+    assert.equal(classify({ lastInboundAt: daysAgo(20), leadStatus: 'contacted' }, { now: NOW, stages: OLD }).window, 'now');
 });
 
 test('waiting-on-us wins over everything else when both apply', () => {
     const v = classify({
         lastInboundAt: hoursAgo(3), lastOutboundAt: daysAgo(6), leadStatus: 'contacted',
         followUpAt: daysAgo(1), sequenceExhaustedAt: daysAgo(2),
-    }, { now: NOW });
+    }, { now: NOW, stages: OLD });
     assert.equal(v.reason, 'sales_response_overdue');
 });
 
 /* ── the cadence: the thing that stops a customer being messaged daily ─── */
 
 test('messaged yesterday: not today — first follow-up is 3 days after we last spoke', () => {
-    const v = classify({ lastOutboundAt: daysAgo(1), leadStatus: 'contacted' }, { now: NOW });
+    const v = classify({ lastOutboundAt: daysAgo(1), leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(v.reason, 'customer_quiet');
     assert.equal(v.window, 'in_3_days');
     assert.equal(windowFor(v.nextContactAt, NOW), 'in_3_days');
 });
 
 test('after the first follow-up went out, the next is 7 days after it — not tomorrow', () => {
-    const v = classify({ lastOutboundAt: daysAgo(10), lastSentAt: daysAgo(1), sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW });
+    const v = classify({ lastOutboundAt: daysAgo(10), lastSentAt: daysAgo(1), sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(v.window, 'in_7_days');
     assert.equal(Math.round((v.nextContactAt - daysAgo(1)) / 864e5), 7);
 });
 
 test('after the second, 14 days; after the third, nobody is messaged automatically again', () => {
-    const second = classify({ lastOutboundAt: daysAgo(20), lastSentAt: daysAgo(2), sentSinceReply: 2, leadStatus: 'contacted' }, { now: NOW });
+    const second = classify({ lastOutboundAt: daysAgo(20), lastSentAt: daysAgo(2), sentSinceReply: 2, leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(second.window, 'later');
-    const third = classify({ lastOutboundAt: daysAgo(40), lastSentAt: daysAgo(15), sentSinceReply: 3, leadStatus: 'contacted' }, { now: NOW });
+    const third = classify({ lastOutboundAt: daysAgo(40), lastSentAt: daysAgo(15), sentSinceReply: 3, leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(third.window, 'exhausted');
     assert.equal(third.reasonDetail, 'exhausted');
     assert.equal(third.nextContactAt, null);
 });
 
 test('the follow-up that is due lands on today, and an overdue one is still today, not lost', () => {
-    const due = classify({ lastOutboundAt: daysAgo(10), lastSentAt: daysAgo(7), sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW });
+    const due = classify({ lastOutboundAt: daysAgo(10), lastSentAt: daysAgo(7), sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(due.window, 'today');
-    const overdue = classify({ lastOutboundAt: daysAgo(30), lastSentAt: daysAgo(12), sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW });
+    const overdue = classify({ lastOutboundAt: daysAgo(30), lastSentAt: daysAgo(12), sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(overdue.window, 'today');
 });
 
 test('a customer reply resets the count: the cadence starts again from our next message', () => {
     // Two follow-ups went out, then they replied, then we replied yesterday. sentSinceReply is 0 again.
-    const v = classify({ lastInboundAt: daysAgo(2), lastOutboundAt: daysAgo(1), lastSentAt: daysAgo(5), sentSinceReply: 0, leadStatus: 'contacted' }, { now: NOW });
+    const v = classify({ lastInboundAt: daysAgo(2), lastOutboundAt: daysAgo(1), lastSentAt: daysAgo(5), sentSinceReply: 0, leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(v.window, 'in_3_days');
 });
 
 test('nextQuietContact counts from whichever was later — the chat or the follow-up send', () => {
-    const fromSend = nextQuietContact({ lastOutboundAt: daysAgo(9), lastSentAt: daysAgo(2), sentSinceReply: 1 });
+    const fromSend = nextQuietContact({ lastOutboundAt: daysAgo(9), lastSentAt: daysAgo(2), sentSinceReply: 1 , stages: OLD });
     assert.equal(Math.round((fromSend.nextContactAt - daysAgo(2)) / 864e5), 7);
-    const fromChat = nextQuietContact({ lastOutboundAt: daysAgo(1), lastSentAt: daysAgo(6), sentSinceReply: 1 });
+    const fromChat = nextQuietContact({ lastOutboundAt: daysAgo(1), lastSentAt: daysAgo(6), sentSinceReply: 1 , stages: OLD });
     assert.equal(Math.round((fromChat.nextContactAt - daysAgo(1)) / 864e5), 7);
 });
 
 test('a scheduled follow-up appears on its day: past or today → today, else its own bucket', () => {
-    assert.equal(classify({ lastOutboundAt: daysAgo(10), leadStatus: 'contacted', followUpAt: daysAgo(1) }, { now: NOW }).window, 'today');
-    assert.equal(classify({ lastOutboundAt: daysAgo(1), leadStatus: 'contacted', followUpAt: daysAhead(1) }, { now: NOW }).window, 'tomorrow');
-    const wk = classify({ lastOutboundAt: daysAgo(1), leadStatus: 'contacted', followUpAt: daysAhead(6) }, { now: NOW });
+    assert.equal(classify({ lastOutboundAt: daysAgo(10), leadStatus: 'contacted', followUpAt: daysAgo(1) }, { now: NOW, stages: OLD }).window, 'today');
+    assert.equal(classify({ lastOutboundAt: daysAgo(1), leadStatus: 'contacted', followUpAt: daysAhead(1) }, { now: NOW, stages: OLD }).window, 'tomorrow');
+    const wk = classify({ lastOutboundAt: daysAgo(1), leadStatus: 'contacted', followUpAt: daysAhead(6) }, { now: NOW, stages: OLD });
     assert.equal(wk.window, 'in_7_days');
     assert.equal(wk.reasonDetail, 'scheduled');
 });
@@ -144,13 +147,13 @@ test('windowFor buckets by Dubai day, not by 24-hour spans', () => {
 });
 
 test('priority is not time alone: a hot lead quiet 3 days beats a cold one quiet 10', () => {
-    const hot = classify({ lastOutboundAt: daysAgo(3), leadStatus: 'contacted', temperature: 'hot', nextAction: 'Send availability' }, { now: NOW });
-    const cold = classify({ lastOutboundAt: daysAgo(10), leadStatus: 'contacted', temperature: 'cold' }, { now: NOW });
+    const hot = classify({ lastOutboundAt: daysAgo(3), leadStatus: 'contacted', temperature: 'hot', nextAction: 'Send availability' }, { now: NOW, stages: OLD });
+    const cold = classify({ lastOutboundAt: daysAgo(10), leadStatus: 'contacted', temperature: 'cold' }, { now: NOW, stages: OLD });
     assert.ok(hot.priorityScore > cold.priorityScore, `${hot.priorityScore} should beat ${cold.priorityScore}`);
 });
 
 test('scenario 10: no AI fields at all still classifies — the model only adds to the score', () => {
-    const v = classify({ lastOutboundAt: daysAgo(5), leadStatus: 'contacted' }, { now: NOW });
+    const v = classify({ lastOutboundAt: daysAgo(5), leadStatus: 'contacted' }, { now: NOW, stages: OLD });
     assert.equal(v.reason, 'customer_quiet');
     assert.equal(v.priority, priorityOf(v.priorityScore));
 });
@@ -181,9 +184,9 @@ test('the counts the cards show: only what is due counts as work; the rest is by
 });
 
 test('stage is derived from sends since they last spoke, and says when the cadence is spent', () => {
-    assert.equal(stageFor(0).label, 'Follow-up 1 of 3');
-    assert.equal(stageFor(2).label, 'Follow-up 3 of 3');
-    assert.equal(stageFor(3).exhausted, true);
+    assert.equal(stageFor(0, OLD).label, 'Follow-up 1 of 3');
+    assert.equal(stageFor(2, OLD).label, 'Follow-up 3 of 3');
+    assert.equal(stageFor(3, OLD).exhausted, true);
 });
 
 /* ── the send guard ─────────────────────────────────────────────────────── */
@@ -271,7 +274,7 @@ test('the queue starts at 1 September 2026, Dubai midnight — the day reliable 
 
 test('an open lead with no date, no chat and no chase is put in front of its owner', () => {
     const old = new Date(NOW.getTime() - 3 * 864e5);
-    const v = classify({ leadStatus: 'contacted', leadCreatedAt: old }, { now: NOW });
+    const v = classify({ leadStatus: 'contacted', leadCreatedAt: old }, { now: NOW, stages: OLD });
     assert.equal(v.reason, 'manual_followup_due');
     assert.equal(v.reasonDetail, 'no_next_step');
     assert.equal(v.window, 'today');
@@ -279,30 +282,36 @@ test('an open lead with no date, no chat and no chase is put in front of its own
 
 test('a lead younger than a day is the first-response clock\'s business, not this list\'s', () => {
     const fresh = new Date(NOW.getTime() - 3600_000);
-    assert.equal(classify({ leadStatus: 'new', leadCreatedAt: fresh }, { now: NOW }), null);
+    assert.equal(classify({ leadStatus: 'new', leadCreatedAt: fresh }, { now: NOW, stages: OLD }), null);
 });
 
 test('a closed lead never shows as having no next step', () => {
     const old = new Date(NOW.getTime() - 9 * 864e5);
-    assert.equal(classify({ leadStatus: 'lost', leadCreatedAt: old }, { now: NOW }), null);
+    assert.equal(classify({ leadStatus: 'lost', leadCreatedAt: old }, { now: NOW, stages: OLD }), null);
 });
 
 test('re-scoring a row that carries its own signals keeps an exhausted chase at its higher base', () => {
     const signals = { lastOutboundAt: daysAgo(10), leadStatus: 'contacted', sequenceExhaustedAt: daysAgo(2) };
-    const first = classify(signals, { now: NOW });
+    const first = classify(signals, { now: NOW, stages: OLD });
     assert.equal(first.reasonDetail, 'exhausted');
     // The second pass is fed the row the first pass produced, merged with its signals.
-    const again = classify({ ...signals, ...first }, { now: NOW });
+    const again = classify({ ...signals, ...first }, { now: NOW, stages: OLD });
     assert.equal(again.priorityScore, first.priorityScore);
 });
 
 test('an intent score replaces the bare temperature in the priority, and a missing one falls back', () => {
     const base = { lastInboundAt: daysAgo(4), lastOutboundAt: daysAgo(3), leadStatus: 'contacted' };
-    const hotNoIntent = classify({ ...base, temperature: 'hot' }, { now: NOW });
-    const intentHigh = classify({ ...base, temperature: 'hot', intentScore: 90 }, { now: NOW });
-    const intentLow = classify({ ...base, temperature: 'hot', intentScore: 10 }, { now: NOW });
+    const hotNoIntent = classify({ ...base, temperature: 'hot' }, { now: NOW, stages: OLD });
+    const intentHigh = classify({ ...base, temperature: 'hot', intentScore: 90 }, { now: NOW, stages: OLD });
+    const intentLow = classify({ ...base, temperature: 'hot', intentScore: 10 }, { now: NOW, stages: OLD });
     assert.ok(intentHigh.priorityScore > intentLow.priorityScore, 'a promising lead outranks an unpromising one');
     assert.equal(intentHigh.priorityScore - intentLow.priorityScore, Math.round(90 * 0.25) - Math.round(10 * 0.25));
-    const plain = classify(base, { now: NOW });
+    const plain = classify(base, { now: NOW, stages: OLD });
     assert.equal(hotNoIntent.priorityScore - plain.priorityScore, 15, 'the temperature fallback still applies');
+});
+
+test('the default schedule is days 1, 3, 7 and 14 after our last message', () => {
+    assert.deepEqual(DEFAULT_STAGES.map((x) => x.afterDays), [1, 2, 4, 7]);
+    let total = 0;
+    assert.deepEqual(DEFAULT_STAGES.map((x) => (total += x.afterDays)), [1, 3, 7, 14]);
 });

@@ -74,3 +74,29 @@ export function templatesForLanguage(templates = [], arabic = false) {
     const other = templates.filter((t) => !isAr(t));
     return arabic && ar.length ? ar : other.length ? other : templates;
 }
+
+/* ---------- auto-send limits ---------- */
+
+/** Dubai hour of day, 0-23. */
+export function dubaiHour(now = new Date()) {
+    return new Date(now.getTime() + 4 * 3600000).getUTCHours();
+}
+
+/** Inside the agent's sending hours (Dubai), start inclusive, end exclusive. */
+export function withinSendHours(now = new Date(), { startHour = 9, endHour = 21 } = {}) {
+    const h = dubaiHour(now);
+    return startHour <= endHour ? h >= startHour && h < endHour : h >= startHour || h < endHour;
+}
+
+/**
+ * Whether an auto agent may send this proposed template now. Returns
+ * { ok } or { ok: false, wait|stop, reason } — wait: try again later (hours,
+ * today's cap); stop: this lead has had enough (per-lead cap).
+ */
+export function autoSendDecision({ now = new Date(), limits = {}, sentToday = 0, dailyCap = 0, sentSinceReply = 0 }) {
+    const l = { startHour: 9, endHour: 21, maxPerLead: 4, ...limits };
+    if (!withinSendHours(now, l)) return { ok: false, wait: true, reason: `outside sending hours (${l.startHour}:00–${l.endHour}:00)` };
+    if (dailyCap > 0 && sentToday >= dailyCap) return { ok: false, wait: true, reason: `daily cap of ${dailyCap} reached` };
+    if (sentSinceReply >= l.maxPerLead) return { ok: false, stop: true, reason: `${sentSinceReply} follow-ups already sent with no reply (limit ${l.maxPerLead})` };
+    return { ok: true };
+}

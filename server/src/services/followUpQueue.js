@@ -37,7 +37,9 @@ import { getFollowUpPlan, sequenceState } from './followUpSequence.js';
 
 export const REASONS = ['sales_response_overdue', 'manual_followup_due', 'customer_quiet'];
 export const CLOSED_STATUSES = ['won', 'lost', 'already_customer'];
-export const DEFAULT_STAGES = [{ afterDays: 3 }, { afterDays: 7 }, { afterDays: 14 }];
+// Gaps between follow-ups: days 1, 3, 7 and 14 after our last message — the
+// same schedule the follow-up agent uses (agents/buckets.js DEFAULT_CADENCE.quiet).
+export const DEFAULT_STAGES = [{ afterDays: 1 }, { afterDays: 2 }, { afterDays: 4 }, { afterDays: 7 }];
 /** A customer who wrote more than this long ago and never got a reply is
  *  history, not today's work — the same bound the inbox's waiting tab
  *  uses (routes/whatsapp.js). Meta's window closed on them long ago. */

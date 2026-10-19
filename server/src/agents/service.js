@@ -17,7 +17,7 @@ import { sendWhatsAppText, whatsappSendConfigured, listWhatsAppTemplates } from 
 import { sendQuietFollowUp } from '../services/leadFollowUp.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
 import { runJob, isDue } from './jobs.js';
-import { isBlocked, isOptOut, phoneKey, windowOpen } from './guards.js';
+import { isBlocked, isOptOut, phoneKey, windowOpen, autoSendDecision } from './guards.js';
 import { worthReading, extractCommitments, validFollowUpDay } from './commitments.js';
 import { syncFollowUpTask } from '../services/followUps.js';
 import { openaiConfigured } from '../services/openai.js';
@@ -245,6 +245,18 @@ export async function applyEvent(file, event, { lead, now = new Date(), actor = 
         file.nextTouchAt = file.frozenAt ? null : nextTouchFor(file, cadenceFor(next));
     }
     await file.save();
+
+    /* An auto agent closes leads out rather than leaving them hanging: a
+       lead its cadence ran out on, or one that said no, is marked Lost on
+       the lead itself with the reason — so the lost list says why. */
+    if (agent?.mode === 'auto' && file.bucket === 'lost' && before.bucket !== 'lost' && lead
+        && !['won', 'lost', 'already_customer'].includes(lead.status)) {
+        const reason = event === 'declined' ? 'not_interested' : 'no_response';
+        await Lead.updateOne({ _id: lead._id }, {
+            $set: { status: 'lost', lostReason: reason },
+            $push: { timeline: { type: 'status_changed', text: `${agent.name} closed this lead as Lost — ${reason === 'no_response' ? 'no reply after every follow-up' : 'they said no'}`, at: now } },
+        });
+    }
 
     const status = LEAD_STATUS_FOR[file.bucket];
     if (agent?.syncLeadStatus && status && lead && lead.status !== status && !['won', 'lost', 'already_customer'].includes(lead.status)) {
@@ -562,8 +574,72 @@ export async function runAgentTick({ now = new Date() } = {}) {
         } catch (e) { out.failed += 1; console.error('[Agents] touch:', e.message); }
     }
 
+    out.autoSent = await autoSendDue({ now, profiles }).catch((e) => { out.failed += 1; console.error('[Agents] auto-send:', e.message); return 0; });
+
     out.purged = await purgeExpiredDetail(now).catch(() => 0);
     return out;
+}
+
+/* ---------- agents that send by themselves ---------- */
+
+const AUTO_BATCH = 10;
+const AUTO_RETRY_MS = 6 * 3600 * 1000;
+
+/** Template messages the agents sent this number since the customer last wrote. */
+async function templatesSinceReply(phoneNormalized) {
+    const lastIn = await WhatsAppMessage.findOne({ phoneNormalized, direction: 'inbound' }).sort({ occurredAt: -1 }).select('occurredAt').lean();
+    return WhatsAppMessage.countDocuments({
+        phoneNormalized, direction: 'outbound', sentByAi: true, type: 'template',
+        ...(lastIn ? { occurredAt: { $gt: lastIn.occurredAt } } : {}),
+    });
+}
+
+/**
+ * For each agent in mode 'auto': send its proposed template touches inside
+ * its limits, and accept the follow-up dates it read from chats ("next
+ * month"). Through resolveAction, so every guard a person's Send has —
+ * do-not-message list, one a day per lead, Meta's live template check —
+ * applies here too. A touch that cannot go yet waits (hours, cap) and is
+ * tried again later; a lead at its per-lead limit goes to a person instead.
+ */
+export async function autoSendDue({ now = new Date(), profiles } = {}) {
+    let sent = 0;
+    for (const agent of (profiles || await team()).filter((p) => p.mode === 'auto')) {
+        const limits = agent.autoSend || {};
+        const bot = { id: null, name: `${agent.name} (auto)` };
+
+        // Dates the agent read from the chat: accepted as said.
+        const dates = await AgentAction.find({ agent: agent._id, kind: 'followup_proposed', resolution: null }).limit(AUTO_BATCH);
+        for (const a of dates) await resolveAction(a._id, { resolution: 'approved', user: bot }).catch((e) => console.error('[Agents] auto follow-up date:', e.message));
+
+        const pending = await AgentAction.find({
+            agent: agent._id, kind: 'touch_proposed', resolution: null,
+            $or: [{ 'detail.autoTriedAt': null }, { 'detail.autoTriedAt': { $lte: new Date(now.getTime() - AUTO_RETRY_MS) } }],
+        }).sort({ at: 1 }).limit(AUTO_BATCH).populate('lead');
+        for (const action of pending) {
+            const phone = action.lead?.phoneNormalized;
+            const decision = autoSendDecision({
+                now, limits,
+                dailyCap: Number(agent.dailyTouchCap || 0),
+                sentToday: await touchSendsToday(agent._id, now),
+                sentSinceReply: phone ? await templatesSinceReply(phone) : 0,
+            });
+            if (decision.wait) break;
+            if (decision.stop) {
+                await resolveAction(action._id, { resolution: 'skipped', user: bot }).catch(() => null);
+                const file = action.leadFile ? await AgentLeadFile.findById(action.leadFile) : null;
+                if (file) await applyEvent(file, 'escalate', { lead: action.lead, now, actor: 'system', why: decision.reason }).catch(() => null);
+                continue;
+            }
+            try {
+                await resolveAction(action._id, { resolution: 'approved', user: bot });
+                sent += 1;
+            } catch (e) {
+                await AgentAction.updateOne({ _id: action._id }, { $set: { 'detail.autoTriedAt': now, 'detail.autoError': e.message } });
+            }
+        }
+    }
+    return sent;
 }
 
 /**

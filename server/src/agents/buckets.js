@@ -31,11 +31,14 @@ export const BUCKETS = {
 
 export const BUCKET_ORDER = ['new', 'engaged', 'quoted', 'booking', 'quiet', 'dormant', 'with_person', 'won', 'lost', 'do_not_contact'];
 
-/** Day offsets for each touch, from the bucket's anchor moment. */
+/** Day offsets for each touch, from the bucket's anchor moment (each touch
+ *  re-anchors, so these are gaps). Quiet [1, 2, 4, 7] lands on days 1, 3, 7
+ *  and 14 after a lead goes quiet — the one follow-up schedule, the same as
+ *  the reps' queue (services/followUpQueue.js DEFAULT_STAGES). */
 export const DEFAULT_CADENCE = {
     quoted: [1, 3, 7],
     booking: [1, 3],
-    quiet: [3, 7, 14],
+    quiet: [1, 2, 4, 7],
     dormant: [30, 60, 90],
 };
 

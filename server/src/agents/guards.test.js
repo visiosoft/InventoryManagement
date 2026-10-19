@@ -35,3 +35,21 @@ test('language: Arabic writers get Arabic templates, others never do', () => {
     assert.equal(customerWritesArabic([{ direction: 'inbound', text: 'مرحبا أريد مخزن' }]), true);
     assert.equal(customerWritesArabic([{ direction: 'inbound', text: 'hello' }]), false);
 });
+
+import { autoSendDecision, withinSendHours } from './guards.js';
+
+test('auto-send: only inside Dubai sending hours', () => {
+    // 05:00 UTC is 09:00 Dubai (open), 17:00 UTC is 21:00 Dubai (closed).
+    assert.equal(withinSendHours(new Date('2026-10-20T05:00:00Z'), { startHour: 9, endHour: 21 }), true);
+    assert.equal(withinSendHours(new Date('2026-10-20T17:00:00Z'), { startHour: 9, endHour: 21 }), false);
+    assert.equal(withinSendHours(new Date('2026-10-20T04:59:00Z'), { startHour: 9, endHour: 21 }), false);
+});
+
+test('auto-send: waits for the cap and the hours, stops at the per-lead limit', () => {
+    const open = new Date('2026-10-20T08:00:00Z');
+    assert.deepEqual(autoSendDecision({ now: open, dailyCap: 200, sentToday: 10, sentSinceReply: 1 }), { ok: true });
+    assert.equal(autoSendDecision({ now: open, dailyCap: 200, sentToday: 200 }).wait, true);
+    assert.equal(autoSendDecision({ now: new Date('2026-10-20T20:00:00Z'), dailyCap: 200 }).wait, true);
+    const stop = autoSendDecision({ now: open, dailyCap: 200, sentSinceReply: 4 });
+    assert.equal(stop.stop, true);
+});
