@@ -17,6 +17,8 @@ import { summariseConversation } from '../services/conversationSummary.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { dubaiDayRange } from '../services/automationEngine.js';
 import { describeChanges, handOverText } from '../services/leadActivity.js';
+import { normalizePhone as normalizePhoneShared, phoneTail9 } from '../services/phone.js';
+import { duplicateReport, fixPhoneFormats, mergeLeads, mergeAllSuggested } from '../services/leadMerge.js';
 
 const router = Router();
 
@@ -34,11 +36,22 @@ const ALLOWED_TAGS = new Set([
 const ALLOWED_SOURCE = new Set(['manual', 'whatsapp', 'referral', 'walk_in', 'website', 'other']);
 const ALLOWED_DURATION_UNIT = new Set(['week', 'month']);
 
-function normalizePhone(input) {
-    let d = String(input || '').replace(/\D/g, '');
-    if (d.startsWith('00')) d = d.slice(2);
-    return d;
+// The one shape for stored numbers (9715…), however it was typed — see services/phone.js.
+const normalizePhone = normalizePhoneShared;
+
+/** A lead with this number however it was stored (old records may be 05…), or null. */
+async function leadWithPhone(phoneNormalized, exceptId = null) {
+    const notMe = exceptId ? { _id: { $ne: exceptId } } : {};
+    const exact = await Lead.findOne({ phoneNormalized, ...notMe }).select('_id fullName owner').populate('owner', 'name').lean();
+    if (exact) return exact;
+    const tail = phoneTail9(phoneNormalized);
+    if (!tail) return null;
+    return Lead.findOne({ phoneNormalized: { $regex: `${tail}$` }, ...notMe }).select('_id fullName owner').populate('owner', 'name').lean();
 }
+const duplicateError = (d) => ({
+    error: `This number is already a lead: ${d.fullName || 'unnamed'}${d.owner?.name ? ` (with ${d.owner.name})` : ''}. Open that lead instead of adding a second one.`,
+    existingLeadId: String(d._id),
+});
 
 function escRegex(s) {
     return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -934,6 +947,41 @@ async function withOverrideInfo(lead) {
  */
 const CLOSED_STATUS = new Set(['won', 'lost', 'already_customer']);
 
+/* ---------- duplicate leads (admin) ---------- */
+
+const adminOnly = (req, res) => {
+    if (req.user?.role === 'admin') return false;
+    res.status(403).json({ error: 'Admins only' });
+    return true;
+};
+
+/** Leads that share a number, and old numbers stored the local way (05…). Reads only. */
+router.get('/maintenance/duplicates', async (req, res) => {
+    if (adminOnly(req, res)) return;
+    try { res.json(await duplicateReport()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Rewrite old local-format numbers that have no twin to the WhatsApp form. */
+router.post('/maintenance/fix-phones', async (req, res) => {
+    if (adminOnly(req, res)) return;
+    try { res.json(await fixPhoneFormats()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Merge one lead into another: { keepId, dropId, ownerId? }. */
+router.post('/maintenance/merge', async (req, res) => {
+    if (adminOnly(req, res)) return;
+    try {
+        const { keepId, dropId, ownerId } = req.body || {};
+        res.json(await mergeLeads({ keepId, dropId, ownerId: ownerId === undefined ? undefined : (ownerId || null), user: { id: req.user.id, name: req.user.name || req.user.email } }));
+    } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+/** Merge every pair the way the report suggests. */
+router.post('/maintenance/merge-all', async (req, res) => {
+    if (adminOnly(req, res)) return;
+    try { res.json(await mergeAllSuggested({ user: { id: req.user.id, name: req.user.name || req.user.email } })); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/:id/deal-check', async (req, res) => {
     try {
         if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
@@ -1470,8 +1518,8 @@ router.post('/', async (req, res) => {
 
     const leadDateTime = parseDate(body.leadDateTime) || new Date();
 
-    const existing = await Lead.findOne({ phoneNormalized });
-    if (existing) return res.status(409).json({ error: 'Lead already exists for this phone number' });
+    const existing = await leadWithPhone(phoneNormalized);
+    if (existing) return res.status(409).json(duplicateError(existing));
 
     const userName = req.user.name || req.user.email || 'user';
     const lead = await Lead.create({
@@ -1549,11 +1597,16 @@ router.put('/:id', async (req, res) => {
         lead.autoAssigned = false;
     }
 
-    const phoneNormalized = normalizePhone(body.phone);
+    let phoneNormalized = normalizePhone(body.phone);
     if (!phoneNormalized) return res.status(400).json({ error: 'Phone must contain at least one digit' });
 
-    const duplicate = await Lead.findOne({ phoneNormalized, _id: { $ne: lead._id } }).select('_id');
-    if (duplicate) return res.status(409).json({ error: 'Another lead already uses this phone number' });
+    // Only a changed number is checked against other leads. An old record
+    // saved as 05… whose twin exists keeps saving (its stored number stays
+    // until the two are merged in Settings → Duplicate leads).
+    const sameNumber = phoneTail9(phoneNormalized) && phoneTail9(phoneNormalized) === phoneTail9(lead.phoneNormalized);
+    const duplicate = await leadWithPhone(phoneNormalized, lead._id);
+    if (duplicate && !sameNumber) return res.status(409).json(duplicateError(duplicate));
+    if (duplicate && sameNumber) phoneNormalized = lead.phoneNormalized;
 
     lead.firstName = body.firstName;
     lead.lastName = body.lastName;
