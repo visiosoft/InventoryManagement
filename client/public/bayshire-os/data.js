@@ -158,9 +158,9 @@ const BayshireData = (function () {
 
   // Set photo to an image path (e.g. 'assets/team/mase.jpg', square, 256px+) to replace the placeholder
   const team = [
-    { n: 'Leanne Binsell', r: 'Co-founder', bio: 'Shapes the roadmap directly from operator calls, not a backlog.', color: 'var(--g3)' },
-    { n: 'Mase R', r: 'Co-founder & CEO', bio: 'Ran a three-site self-storage group in Dubai for six years before starting 2Capacity.', color: 'var(--g1)' },
-    { n: 'Zulfiqar Ali', r: 'Co-founder & CTO', bio: 'Built the pricing and payments engine that the platform still runs on today.', color: 'var(--g2)' },
+    { n: 'Leanne Binsell', r: 'Co-founder', photo: 'assets/team/leanne.jpg', bio: 'Shapes the roadmap directly from operator calls, not a backlog.', color: 'var(--g3)' },
+    { n: 'Mase R', r: 'Co-founder & CEO', photo: 'assets/team/mase.jpg', bio: 'Ran a three-site self-storage group in Dubai for six years before starting 2Capacity.', color: 'var(--g1)' },
+    { n: 'Zulfiqar Ali', r: 'Co-founder & CTO', photo: 'assets/team/zulfiqar.jpg', bio: 'Built the pricing and payments engine that the platform still runs on today.', color: 'var(--g2)' },
     { n: 'Meljay Jadulos', r: 'Customer Success Lead', bio: 'Personally onboards every new facility for its first 90 days.', color: 'var(--g1)' }
   ];
 
