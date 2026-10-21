@@ -164,6 +164,19 @@ const BayshireData = (function () {
     { n: 'Meljay Jadulos', r: 'Customer Success Lead', bio: 'Personally onboards every new facility for its first 90 days.', color: 'var(--g1)' }
   ];
 
+  // Operators shown in the "Trusted by" row. Only list real clients who agreed to be shown.
+  // icon: optional brand mark shown before a text name.
+  // logo: path to their logo (SVG or transparent PNG, ~40px tall) — without it the name is shown as text.
+  const clients = [
+    { n: 'PurpleBox Storage', city: 'Dubai', icon: 'assets/clients/purplebox-icon.png', href: '#customers' },
+    { n: 'Urban Storage', city: 'UAE', logo: 'assets/clients/urban-storage.png', href: 'https://urbanstorage.ae/' },
+    { n: 'Access Self Storage', city: 'UK', logo: 'assets/clients/access-self-storage.png' }
+  ];
+
+  // Customer quote for the "See what our customers say" panel. The section stays hidden while this is empty.
+  // { quote, name, role, company, photo } — use a real quote the customer has approved.
+  const testimonials = [];
+
   const areas = [
     { n: 'Customer Journey', d: 'Every inquiry, rental, and service request handled consistently.', x: 'AI answers a website inquiry, shares available units, and guides the renter through move in.' },
     { n: 'Lead Generation', d: 'Fewer prospects slip through the cracks.', x: 'New leads are captured, qualified, and followed up by email and text on the schedule you set.' },
@@ -183,13 +196,13 @@ const BayshireData = (function () {
   ];
 
   const integrations = [
-    { mark: 'WA', n: 'WhatsApp Business', d: 'Meta webhook integration for customer communication and lead activity.' },
-    { mark: 'GC', n: 'Google Contacts', d: 'Synchronize contacts and automatically create or update leads based on phone numbers.' },
-    { mark: 'GD', n: 'Google Drive', d: 'Store and archive contracts and operational documents.' },
-    { mark: 'ST', n: 'Stripe', d: 'Take card payments for invoices and renewals, recorded against the tenant automatically.' },
-    { mark: 'ZB', n: 'Zoho Books', d: 'Keep invoices, payments and customer ledgers in step with your accounting.' },
-    { mark: 'GM', n: 'Gmail', d: 'Nadia sorts your inbox each morning and drafts replies for you to review.' },
-    { mark: 'ES', n: 'E-Signature', d: 'Send contracts for e-signature and automatically file the countersigned copy against the record.' }
+    { mark: 'WA', logo: 'assets/logos/whatsapp.svg', n: 'WhatsApp Business', d: 'Meta webhook integration for customer communication and lead activity.' },
+    { mark: 'GC', logo: 'assets/logos/google.svg', n: 'Google Contacts', d: 'Synchronize contacts and automatically create or update leads based on phone numbers.' },
+    { mark: 'GD', logo: 'assets/logos/googledrive.svg', n: 'Google Drive', d: 'Store and archive contracts and operational documents.' },
+    { mark: 'ST', logo: 'assets/logos/stripe.svg', n: 'Stripe', d: 'Take card payments for invoices and renewals, recorded against the tenant automatically.' },
+    { mark: 'ZB', logo: 'assets/logos/zoho.svg', n: 'Zoho Books', d: 'Keep invoices, payments and customer ledgers in step with your accounting.' },
+    { mark: 'GM', logo: 'assets/logos/gmail.svg', n: 'Gmail', d: 'Nadia sorts your inbox each morning and drafts replies for you to review.' },
+    { mark: 'ES', logo: 'assets/logos/esignature.svg', n: 'E-Signature', d: 'Send contracts for e-signature and automatically file the countersigned copy against the record.' }
   ];
 
   const alerts = [
@@ -201,6 +214,6 @@ const BayshireData = (function () {
   return {
     buildUnits, fmt, statusColor, suggestFor, leads, defaultInbound, templateReply,
     revenue, occBySize, occBySizeShort, activity, expiries, payments, csvRows, docs,
-    payStatus, modules, integrations, alerts, team, agents, areas
+    payStatus, modules, integrations, alerts, team, agents, areas, clients, testimonials
   };
 })();

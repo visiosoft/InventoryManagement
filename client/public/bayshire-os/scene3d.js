@@ -190,11 +190,27 @@ function BayshireScene(opts) {
         onUpdate: self => {
           const p = self.progress; scrollP = p;
           if (group) { const k = 1 - 0.32 * p; group.scale.set(k, 1 - 0.45 * p, k); group.position.y = -6 * p; }
-          if (canvasEl) canvasEl.style.opacity = String(Math.max(0, 1 - p * 1.15));
-          if (textEl) { textEl.style.opacity = String(Math.max(0, 1 - p * 1.9)); textEl.style.transform = 'translateY(' + (-70 * p) + 'px)'; }
-          if (metricsEl) metricsEl.style.opacity = String(Math.max(0, 1 - p * 1.6));
         }
       });
+      // Fade from what is actually leaving the screen, not from progress through the (tall) hero:
+      // progress-based fading dimmed the metrics row before it was reached and left the text
+      // half-faded whenever the page was scrolled back up only part of the way.
+      const applyFade = () => {
+        const y = Math.max(0, window.scrollY);
+        if (canvasEl) canvasEl.style.opacity = String(Math.max(0, 1 - y / window.innerHeight));
+        if (textEl) {
+          // Share of the text block still visible below the 64px nav; fully opaque until a third has gone
+          const r = textEl.getBoundingClientRect();
+          const visible = Math.min(1, Math.max(0, (r.bottom - 64) / Math.max(1, r.height)));
+          const op = y === 0 ? 1 : Math.min(1, visible * 1.5);
+          textEl.style.opacity = String(op);
+          textEl.style.transform = 'translateY(' + (-40 * (1 - op)) + 'px)';
+        }
+        if (metricsEl) metricsEl.style.opacity = '1';
+      };
+      window.addEventListener('scroll', applyFade, { passive: true });
+      window.addEventListener('resize', applyFade);
+      applyFade();
     }
 
     new ResizeObserver(() => resize()).observe(canvasEl);

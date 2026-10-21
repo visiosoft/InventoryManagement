@@ -618,6 +618,24 @@
     <div class="kv-row" style="grid-template-columns:72px 1fr"><span class="mono" style="color:var(--g2)">${a.t}</span><span style="line-height:1.5">${a.x}</span></div>
   `).join('');
 
+  /* ---------------- Clients ---------------- */
+  $('#clientList').innerHTML = D.clients.map(c => {
+    const icon = c.icon ? `<img class="clients__icon" src="${c.icon}" alt="" aria-hidden="true">` : '';
+    const mark = c.logo ? `<img src="${c.logo}" alt="${c.n}" loading="lazy">` : `${icon}<span class="clients__name">${c.n}</span>`;
+    const inner = `${mark}<span class="clients__city">${c.city}</span>`;
+    const ext = /^https?:/.test(c.href || '') ? ' target="_blank" rel="noopener"' : '';
+    return `<li>${c.href ? `<a href="${c.href}"${ext}>${inner}</a>` : inner}</li>`;
+  }).join('');
+
+  /* ---------------- Testimonial (hidden until a real quote is added in data.js) ---------------- */
+  if (D.testimonials.length) {
+    const t = D.testimonials[0];
+    $('#testimonialQuote').textContent = '\u201C' + t.quote + '\u201D';
+    $('#testimonialWho').innerHTML = `<b>${t.name}</b>, ${t.role} &middot; ${t.company}`;
+    if (t.photo) $('#testimonialPhoto').innerHTML = `<img src="${t.photo}" alt="${t.name}" loading="lazy">`;
+    $('#testimonial').hidden = false;
+  }
+
   /* ---------------- Six areas ---------------- */
   $('#areaGrid').innerHTML = D.areas.map(a => `
     <article class="area-card">
@@ -743,7 +761,7 @@
   `).join('');
   $('#integrationList').innerHTML = D.integrations.map(i => `
     <div class="integration-row">
-      <div class="integration-mark" aria-hidden="true">${i.mark}</div>
+      <div class="integration-mark" aria-hidden="true">${i.logo ? `<img src="${i.logo}" alt="">` : i.mark}</div>
       <div><div class="integration-name">${i.n}</div><div class="integration-desc">${i.d}</div></div>
     </div>`).join('');
 
