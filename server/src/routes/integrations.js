@@ -183,10 +183,13 @@ router.post('/anthropic/connect', requireAdmin, async (req, res) => {
     if (apiKey) updates.ANTHROPIC_API_KEY = effectiveKey;
     if (model) updates.ANTHROPIC_MODEL = effectiveModel;
     if (effort) updates.ANTHROPIC_EFFORT = effort;
+    // Adding a Claude key means moving to Claude: without this the provider
+    // stayed on OpenAI (the default) and its dead key kept failing every reply.
+    if (apiKey) updates.AI_PROVIDER = 'anthropic';
     updateEnvFile(updates);
     Object.assign(process.env, updates);
 
-    res.json({ ok: true, configured: true, model: claudeModel(), effort: claudeEffort(), keyHint: claudeKeyHint() });
+    res.json({ ok: true, configured: true, model: claudeModel(), effort: claudeEffort(), keyHint: claudeKeyHint(), active: aiProvider() });
 });
 
 router.post('/anthropic/disconnect', requireAdmin, async (_req, res) => {

@@ -89,9 +89,10 @@ export default function AiProviderCard({ integrations }: { integrations?: Integr
             try {
               const r = await api.post('/integrations/anthropic/connect', {
                 apiKey: key || undefined, model: model || undefined, effort: effort || undefined,
-              }).then((x: { data: { model: string; effort: string; keyHint: string } }) => x.data)
+              }).then((x: { data: { model: string; effort: string; keyHint: string; active: 'openai' | 'anthropic' } }) => x.data)
               setKey(''); setModel(''); setEffort('')
-              setMsg({ ok: true, text: `Saved. Claude uses ${r.model} at ${r.effort} effort with key ${r.keyHint}.` })
+              const now = r.active === 'anthropic' ? ' Claude now answers everywhere in the app.' : ''
+              setMsg({ ok: true, text: `Saved. Claude uses ${r.model} at ${r.effort} effort with key ${r.keyHint}.${now}` })
               refresh()
             } catch (e) { setMsg({ ok: false, text: apiError(e) }) } finally { setBusy(false) }
           }}>
@@ -111,7 +112,7 @@ export default function AiProviderCard({ integrations }: { integrations?: Integr
             Disconnect
           </Button>
         )}
-        <span className="text-xs text-muted-foreground">The key is checked with Anthropic before it is saved.</span>
+        <span className="text-xs text-muted-foreground">The key is checked with Anthropic before it is saved. A new key also switches the app to Claude.</span>
       </div>
       {msg && <p className={`text-xs ${msg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>{msg.text}</p>}
     </div>
