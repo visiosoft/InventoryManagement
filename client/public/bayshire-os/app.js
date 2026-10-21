@@ -184,7 +184,7 @@
     $$('[data-reveal]').forEach(el => io.observe(el));
   }
 
-  /* ---------------- Dashboard: bars + occupancy ---------------- */
+  /* ---------------- Reporting charts: bars + occupancy ---------------- */
   function renderBars(container, data, labelsContainer) {
     container.innerHTML = '';
     data.forEach(m => {
@@ -203,7 +203,6 @@
       });
     }
   }
-  renderBars($('#revenueBars'), D.revenue, $('#revenueLabels'));
   renderBars($('#reportBars'), D.revenue, null);
 
   function renderOccList(container, data) {
@@ -215,51 +214,20 @@
       container.appendChild(row);
     });
   }
-  renderOccList($('#occBySize'), D.occBySize);
   renderOccList($('#occBySizeShort'), D.occBySizeShort);
-
-  function renderRows() {
-    $('#activityRows').innerHTML = D.activity.map(a =>
-      `<div class="row-item"><span>${a.t}</span><span>${a.x}</span></div>`).join('');
-    $('#expiryRows').innerHTML = D.expiries.map(e =>
-      `<div class="row-item row-item--3"><span class="mono">${e.c}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.n}</span><span class="mono muted">${e.d} · ${e.days}d</span></div>`).join('');
-    $('#paymentRows').innerHTML = D.payments.map(p =>
-      `<div class="row-item row-item--pay"><span class="mono">${p.i}</span><span class="mono">${p.a}</span><span class="status-badge" style="color:${p.color}">${p.s}</span></div>`).join('');
-  }
-  renderRows();
 
   const unitCount = units.length;
   const availCount = units.filter(u => u.floor === 2 && u.sqft >= 100 && u.status === 'Available').length;
   $('#availCount').textContent = availCount + ' results';
 
-  /* ---------------- KPI count-up ---------------- */
-  let counted = false;
-  function countUp() {
-    if (counted) return;
-    counted = true;
-    const els = { occ: $('[data-kpi="occ"]'), avail: $('[data-kpi="avail"]'), rev: $('[data-kpi="rev"]'), exp: $('[data-kpi="exp"]'), over: $('[data-kpi="over"]') };
-    const target = { occ: 87, avail: 31, rev: 284600, exp: 12, over: 7 };
-    const set = o => {
-      els.occ.textContent = Math.round(o.occ) + '%';
-      els.avail.textContent = Math.round(o.avail);
-      els.rev.textContent = 'AED ' + Math.round(o.rev).toLocaleString('en-US');
-      els.exp.textContent = Math.round(o.exp);
-      els.over.textContent = Math.round(o.over);
-    };
-    animateBars();
-    if (reduced || !window.gsap) { set(target); return; }
-    const o = { occ: 0, avail: 0, rev: 0, exp: 0, over: 0 };
-    gsap.to(o, { ...target, duration: 1.4, ease: 'power2.out', onUpdate: () => set(o) });
-  }
   function animateBars() {
-    $$('#revenueBars .bar, #reportBars .bar').forEach(b => { b.style.height = b.dataset.h + '%'; });
+    $$('#reportBars .bar').forEach(b => { b.style.height = b.dataset.h + '%'; });
     $$('.occ-bar__fill').forEach(f => { f.style.width = f.dataset.p + '%'; });
   }
-  const dashBlock = $('#dashBlock');
-  const io = new IntersectionObserver(es => {
-    if (es.some(e => e.isIntersecting)) { countUp(); io.disconnect(); }
+  const barsIo = new IntersectionObserver(es => {
+    if (es.some(e => e.isIntersecting)) { animateBars(); barsIo.disconnect(); }
   }, { threshold: 0.15 });
-  io.observe(dashBlock);
+  barsIo.observe($('#reporting'));
 
   /* ---------------- Units: floor + 3D + table ---------------- */
   const floorTabBtn = $('#floorTabBtn'), threeDTabBtn = $('#threeDTabBtn'), tableTabBtn = $('#tableTabBtn');

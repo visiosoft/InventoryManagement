@@ -135,6 +135,29 @@
   </div>
 </section>
 
+<section id="tour" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>Inside 2Capacity.</h2>
+      <p>The real screens your team works in every day: the AI desk, WhatsApp inbox, follow-ups, live availability and financials. Shown here with sample data.</p>
+    </div>
+    <div class="tour__tabs" role="tablist" aria-label="Product screens" id="tourTabs" data-reveal></div>
+    <div class="tour__window" data-reveal>
+      <div class="tour__chrome"><span></span><span></span><span></span><div class="tour__url" id="tourUrl"></div></div>
+      <div class="tour__scroll">
+        <div class="tour-app">
+          <aside class="ta-side"><div class="ta-logo">2C</div><div class="ta-nav"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="ta-me">M</div></aside>
+          <div class="ta-main">
+            <div class="ta-top"><b id="tourTitle"></b><span class="ta-pill">Demo Facility</span><span class="ta-searchbar">Search tenant, phone, contract no, unit&hellip;</span><span class="ta-bell">3</span><span class="ta-user">Manager</span></div>
+            <div class="ta-page" id="tourPage"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="tour__caption" id="tourCaption" aria-live="polite"></p>
+  </div>
+</section>
+
 <section id="outcomes" class="section">
   <div class="wrap">
     <div class="section-head" data-reveal>
@@ -374,7 +397,7 @@
         <p class="workflow__d">A new lead followed up and moved toward a rental, without manual chasing.</p>
         <span class="workflow__go">Try it below <span class="arrow" aria-hidden="true">&rarr;</span></span>
       </a>
-      <a class="workflow" href="#product">
+      <a class="workflow" href="#tour">
         <div class="workflow__t">Operations at a glance</div>
         <p class="workflow__d">Tasks across your facilities in one view, so nothing waits unnoticed.</p>
         <span class="workflow__go">Try it below <span class="arrow" aria-hidden="true">&rarr;</span></span>
@@ -384,69 +407,6 @@
         <p class="workflow__d">Payments tracked and reconciled, with reports ready when you need them.</p>
         <span class="workflow__go">Try it below <span class="arrow" aria-hidden="true">&rarr;</span></span>
       </a>
-    </div>
-  </div>
-</section>
-
-<section id="product" class="section">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <h2>The platform underneath.</h2>
-      <p>Every agent works from the same records your team does. Occupancy, revenue, contracts and payments sit in one view, so the AI never quotes a unit that's taken and you see what needs attention without chasing it.</p>
-    </div>
-  </div>
-
-  <div class="dash" id="dashBlock">
-    <div class="dash__topbar">
-      <div class="wrap dash__topbar-row">
-        <span class="dash__logo"><span class="dash__logo-mark" aria-hidden="true"></span>2Capacity</span>
-        <div class="dash__tabs">
-          <span class="dash__tab dash__tab--active">Dashboard</span>
-          <span class="dash__tab">Units</span>
-          <span class="dash__tab">Leads</span>
-          <span class="dash__tab">Contracts</span>
-          <span class="dash__tab">Payments</span>
-          <span class="dash__tab">Reports</span>
-        </div>
-        <span class="dash__date">Sep 2026 &middot; Al Quoz Facility</span>
-      </div>
-    </div>
-
-    <div class="wrap">
-      <div class="kpi-row">
-        <div class="kpi"><div class="kpi__l">Occupancy</div><div class="kpi__v kpi__v--accent" data-kpi="occ">0%</div></div>
-        <div class="kpi"><div class="kpi__l">Available units</div><div class="kpi__v" data-kpi="avail">0</div></div>
-        <div class="kpi"><div class="kpi__l">Revenue this month</div><div class="kpi__v kpi__v--blue" data-kpi="rev">AED 0</div></div>
-        <div class="kpi"><div class="kpi__l">Contracts expiring</div><div class="kpi__v" data-kpi="exp">0</div></div>
-        <div class="kpi"><div class="kpi__l">Overdue payments</div><div class="kpi__v kpi__v--oxide" data-kpi="over">0</div></div>
-      </div>
-
-      <div class="chart-row">
-        <div class="chart-col">
-          <div class="chart-head"><span>Revenue by month</span><span class="mono muted">AED &middot; trailing 12 months</span></div>
-          <div class="bars" id="revenueBars"></div>
-          <div class="bars-labels" id="revenueLabels"></div>
-        </div>
-        <div class="chart-col chart-col--narrow">
-          <div class="chart-head"><span>Occupancy by size</span><span class="mono muted">8 sizes</span></div>
-          <div class="occ-list" id="occBySize"></div>
-        </div>
-      </div>
-
-      <div class="three-col">
-        <div>
-          <div class="col-head">Recent activity</div>
-          <div class="rows" id="activityRows"></div>
-        </div>
-        <div>
-          <div class="col-head">Upcoming expiries</div>
-          <div class="rows" id="expiryRows"></div>
-        </div>
-        <div>
-          <div class="col-head">Payment status</div>
-          <div class="rows" id="paymentRows"></div>
-        </div>
-      </div>
     </div>
   </div>
 </section>
@@ -901,5 +861,6 @@
 <script src="unitsScene3d.js"></script>
 <script src="ambientScene3d.js"></script>
 <script src="app.js"></script>
+<script src="tour.js"></script>
 </body>
 </html>
