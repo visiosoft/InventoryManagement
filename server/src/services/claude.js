@@ -13,7 +13,7 @@ import Anthropic from '@anthropic-ai/sdk';
  * on OpenAI whichever provider is selected.
  */
 
-export const DEFAULT_CLAUDE_MODEL = 'claude-opus-5-5';
+export const DEFAULT_CLAUDE_MODEL = 'claude-fable-5-1';
 export const CLAUDE_EFFORTS = ['low', 'medium', 'high'];
 
 // Models that support server-side refusal fallbacks (Haiku has none).

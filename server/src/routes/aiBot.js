@@ -112,10 +112,16 @@ const MODELS = [
        Not yet run through the eval questions; cost is list price per token
        against gpt-4o-mini, not a measured multiple on this prompt. */
     {
+        id: 'claude-fable-5-1',
+        label: 'Claude Fable 5.1',
+        cost: '~67×',
+        note: 'Anthropic\'s most capable, and slower. Not yet evaluated here — try it and see.',
+    },
+    {
         id: 'claude-opus-5-5',
         label: 'Claude Opus 5.5',
         cost: '~27×',
-        note: 'Anthropic\'s strongest. Not yet evaluated here — try it and see.',
+        note: 'Strong and cheaper than Fable. Not yet evaluated here.',
     },
     {
         id: 'claude-sonnet-5-5',

@@ -68,8 +68,9 @@ export default function AiProviderCard({ integrations }: { integrations?: Integr
           <Input type="password" placeholder="sk-ant-..." value={key} onChange={(e) => setKey(e.target.value)} />
         </Field>
         <Field label="Model">
-          <Select value={model || claude?.model || 'claude-opus-5-5'} onChange={(e) => setModel(e.target.value)}>
-            <option value="claude-opus-5-5">Claude Opus 5.5 — most capable</option>
+          <Select value={model || claude?.model || 'claude-fable-5-1'} onChange={(e) => setModel(e.target.value)}>
+            <option value="claude-fable-5-1">Claude Fable 5.1 — most capable</option>
+            <option value="claude-opus-5-5">Claude Opus 5.5 — strong, cheaper</option>
             <option value="claude-sonnet-5-5">Claude Sonnet 5.5 — faster, cheaper</option>
             <option value="claude-haiku-5-5">Claude Haiku 5.5 — cheapest</option>
           </Select>

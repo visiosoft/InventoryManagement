@@ -35,7 +35,7 @@ test('the switch picks the provider, and a missing key falls back to the other',
 });
 
 test('a feature\'s own model is kept only when it belongs to the active provider', () => {
-    assert.equal(resolveModel('gpt-4.1'), 'claude-opus-5-5');
+    assert.equal(resolveModel('gpt-4.1'), 'claude-fable-5-1');
     assert.equal(resolveModel('claude-haiku-5-5'), 'claude-haiku-5-5');
     process.env.AI_PROVIDER = 'openai';
     process.env.OPENAI_API_KEY = 'sk-openai';
@@ -49,7 +49,7 @@ test('chatJson goes to Claude and reads the JSON out of the reply', async () => 
     assert.deepEqual(out, { intent: 'price' });
     const { url, body, headers } = sent[0];
     assert.match(url, /\/v1\/messages/);
-    assert.equal(body.model, 'claude-opus-5-5');
+    assert.equal(body.model, 'claude-fable-5-1');
     assert.equal(body.thinking.type, 'adaptive');
     assert.equal(body.fallbacks, 'default');
     assert.match(headers.get('anthropic-beta') || '', /server-side-fallback-2026-07-01/);
