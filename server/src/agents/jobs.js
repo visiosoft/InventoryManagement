@@ -145,7 +145,7 @@ export async function runJob({ agent, now = new Date(), reason = 'schedule' }) {
     let usage = null;
     const maxRounds = Math.max(4, (agent.maxToolRounds || 4) * 3); // a run reads many messages
     for (let round = 0; round <= maxRounds; round++) {
-        const res = await chatWithTools({ system, messages: convo, tools, model: agent.model || undefined, temperature: 0.2, maxTokens: 900, timeout: 60_000, toolChoice: round === 0 ? 'required' : 'auto' });
+        const res = await chatWithTools({ system, messages: convo, tools, model: agent.model || undefined, effort: agent.effort || undefined, temperature: 0.2, maxTokens: 900, timeout: 60_000, toolChoice: round === 0 ? 'required' : 'auto' });
         usage = res.usage || usage;
         if (!res.toolCalls.length) { content = res.content; break; }
         convo.push(res.message);

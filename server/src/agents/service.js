@@ -302,7 +302,7 @@ export async function proposeFromChat({ lead, file, agent, text, now = new Date(
         const history = rows.reverse().map((m) => ({ direction: m.direction, text: m.text || m.transcript || '' }));
         if (!history.length || history[history.length - 1].direction !== 'inbound') history.push({ direction: 'inbound', text: String(text || '') });
 
-        const found = await extractCommitments({ history, now, model: agent?.model || undefined });
+        const found = await extractCommitments({ history, now, model: agent?.model || undefined, effort: agent?.effort || undefined });
         const open = await AgentAction.find({ lead: lead._id, kind: { $in: ['followup_proposed', 'deal_check_suggested'] }, resolution: null }).select('kind detail').lean();
         const has = (kind, field) => open.some((a) => a.kind === kind && (!field || a.detail?.field === field));
         let proposed = 0;
@@ -930,7 +930,7 @@ export async function teamStats({ now = new Date() } = {}) {
         const approved = k('approved'); const edited = k('edited'); const dismissed = k('dismissed');
         const judged = approved + edited + dismissed;
         return {
-            _id: p._id, name: p.name, role: p.role, mode: p.mode, promptVersion: p.promptVersion, model: p.model, ownsBuckets: p.ownsBuckets, languages: p.languages,
+            _id: p._id, name: p.name, role: p.role, mode: p.mode, promptVersion: p.promptVersion, model: p.model, effort: p.effort || '', ownsBuckets: p.ownsBuckets, languages: p.languages,
             escalateTo: p.escalateTo, isDefault: p.isDefault, dailyBudgetAed: p.dailyBudgetAed, avatarColor: p.avatarColor, isActive: p.isActive,
             leads: filesBy.get(String(p._id)) || 0,
             today: { drafts: k('reply_drafted'), proposed: k('touch_proposed'), approved, edited, dismissed, handed: k('escalated'), approvedRate: judged ? Math.round((approved / judged) * 100) : null },

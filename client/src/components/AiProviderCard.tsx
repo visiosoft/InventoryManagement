@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { api, apiError } from '../lib/api'
 import type { IntegrationStatus } from '../lib/types'
 import { Button, Field, Input, Select } from './ui'
+import { CLAUDE_EFFORTS } from '../lib/claudeEffort'
 
 type Msg = { ok: boolean; text: string } | null
 const NAME = { openai: 'OpenAI', anthropic: 'Claude' } as const
@@ -77,9 +78,7 @@ export default function AiProviderCard({ integrations }: { integrations?: Integr
         </Field>
         <Field label="Effort">
           <Select value={effort || claude?.effort || 'low'} onChange={(e) => setEffort(e.target.value)}>
-            <option value="low">Low — quickest replies</option>
-            <option value="medium">Medium</option>
-            <option value="high">High — most careful, slower</option>
+            {CLAUDE_EFFORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </Select>
         </Field>
       </div>

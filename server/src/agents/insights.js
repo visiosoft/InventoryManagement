@@ -307,7 +307,7 @@ export async function reviewAgent(agent, { now = new Date(), days = 30 } = {}) {
         judgedDrafts: drafts,
         rehearsal: rehearsal ? { conversations: rehearsal.summary.conversations, turns: rehearsal.summary.turns, grounded: rehearsal.summary.grounded, handedOver: rehearsal.summary.handedOver, samples: rehearsal.turns.filter((t) => !t.error).slice(0, 12).map((t) => ({ customer: t.customerText, agent: t.agentReply || `(handed over: ${t.reason})`, rep: t.humanReply || '(no reply recorded)' })) } : null,
     };
-    const parsed = await chatJson({ system: REVIEW_SYSTEM, messages: [{ role: 'user', content: JSON.stringify(evidence) }], model: agent.model || undefined, maxTokens: 1200, temperature: 0.3 });
+    const parsed = await chatJson({ system: REVIEW_SYSTEM, messages: [{ role: 'user', content: JSON.stringify(evidence) }], model: agent.model || undefined, effort: agent.effort || undefined, maxTokens: 1200, temperature: 0.3 });
     if (!parsed) throw new Error('The model did not return a usable review');
     const review = {
         summary: String(parsed.summary || '').slice(0, 1200), grade: ['A', 'B', 'C', 'D'].includes(parsed.grade) ? parsed.grade : '',

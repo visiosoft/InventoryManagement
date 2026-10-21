@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Bot, Save, Play, AlertTriangle, UserCheck, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
+import { CLAUDE_EFFORTS } from '../lib/claudeEffort'
 import { Button, Card, CardBody, CardHeader, Field, Input, PageHeader, Select, Spinner, Textarea } from '../components/ui'
 
 type Config = {
@@ -21,6 +22,8 @@ type Config = {
   voices?: string[]
   /** Empty means "follow the server", which is what serverModel names. */
   model?: string
+  /** Claude only. Empty follows Settings → Integrations. */
+  effort?: string
   models?: { id: string; label: string; cost: string; note: string }[]
   serverModel?: string
   escalateTo: string
@@ -169,6 +172,21 @@ export default function AiAssistant() {
                 </p>
               )
             })()}
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Effort (Claude)</div>
+            <select
+              value={draft.effort ?? ''}
+              onChange={(e) => set({ effort: e.target.value })}
+              className="w-full rounded-lg border px-3 py-2 text-sm"
+            >
+              <option value="">Follow the server</option>
+              {CLAUDE_EFFORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <p className="text-[13px] text-muted-foreground">
+              How hard Claude thinks before replying. Higher is more careful but slower and costs more.
+            </p>
           </div>
 
           <label className="flex items-start gap-3 cursor-pointer">

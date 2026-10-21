@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Save, Zap } from 'lucide-react'
 import { apiError } from '../../lib/api'
 import { agentsApi, AGENT_COLORS, JOB_SECTIONS as JOB, composeJob as compose, parseJob as parse, type AgentKind, type AgentProfile, type Cadence, type Decision, type OwnableBucket, type JobParts, type Schedule } from '../../lib/agentsApi'
+import { CLAUDE_EFFORTS } from '../../lib/claudeEffort'
 import { Button, Field, Input, PageHeader, Select, Spinner, Textarea } from '../../components/ui'
 import { AGENT_ILLUSTRATION, AgentNav, Avatar, C, DecisionView, Eyebrow, Note, Panel, Pill, Tag } from './ui'
 
@@ -72,15 +73,15 @@ const EMAIL_CAPS: { tool: string; name: string; hint: string }[] = [
 ]
 
 type Draft = {
-  name: string; role: string; avatarColor: string; model: string; job: JobParts; enabledTools: string[]
+  name: string; role: string; avatarColor: string; model: string; effort: string; job: JobParts; enabledTools: string[]
   kind: AgentKind; schedule: Schedule; task: string
   ownsBuckets: OwnableBucket[]; languages: string; whatsappNumbers: string; escalateTo: string; dailyBudgetAed: number; dailyTouchCap: number; mode: 'off' | 'shadow' | 'auto'; autoSend: { startHour: number; endHour: number; maxPerLead: number }; syncLeadStatus: boolean; isDefault: boolean
 }
-const MODELS = [['', 'Same as the server'], ['gpt-4o-mini', 'gpt-4o-mini — cheapest'], ['gpt-4.1-mini', 'gpt-4.1-mini'], ['gpt-4.1', 'gpt-4.1'], ['gpt-6-luna', 'gpt-6-luna — cheaper than gpt-4o-mini, untested here'], ['gpt-6-sol', 'gpt-6-sol — newer, untested here'], ['gpt-6-astra', 'gpt-6-astra — untested here'], ['claude-opus-5-5', 'Claude Opus 5.5 (Claude provider)'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 (Claude provider)'], ['claude-haiku-5-5', 'Claude Haiku 5.5 (Claude provider)']]
+const MODELS = [['', 'Same as the server'], ['gpt-4o-mini', 'gpt-4o-mini — cheapest'], ['gpt-4.1-mini', 'gpt-4.1-mini'], ['gpt-4.1', 'gpt-4.1'], ['gpt-6-luna', 'gpt-6-luna — cheaper than gpt-4o-mini, untested here'], ['gpt-6-sol', 'gpt-6-sol — newer, untested here'], ['gpt-6-astra', 'gpt-6-astra — untested here'], ['claude-fable-5-1', 'Claude Fable 5.1 (Claude provider)'], ['claude-opus-5-5', 'Claude Opus 5.5 (Claude provider)'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 (Claude provider)'], ['claude-haiku-5-5', 'Claude Haiku 5.5 (Claude provider)']]
 const BUCKET_OPTIONS: { key: OwnableBucket; label: string }[] = [['new', 'New'], ['engaged', 'Engaged'], ['quoted', 'Quoted'], ['booking', 'Booking'], ['quiet', 'Quiet'], ['dormant', 'Dormant'], ['tenant', 'Existing customers']].map(([key, label]) => ({ key: key as OwnableBucket, label }))
 
 const toDraft = (p: AgentProfile | null, tools: string[]): Draft => ({
-  name: p?.name || '', role: p?.role || '', avatarColor: p?.avatarColor || AGENT_COLORS[0], model: p?.model || '',
+  name: p?.name || '', role: p?.role || '', avatarColor: p?.avatarColor || AGENT_COLORS[0], model: p?.model || '', effort: p?.effort || '',
   kind: p?.kind || 'conversational', schedule: p?.schedule || { cadence: 'daily', hour: 7, dayOfWeek: 1, dayOfMonth: 1 }, task: p?.task || '',
   job: p?.systemPrompt ? parse(p.systemPrompt) : STARTER, enabledTools: p ? p.enabledTools : tools.filter((t) => t !== 'propose_quotation'),
   ownsBuckets: p?.ownsBuckets || [], languages: (p?.languages || []).join(', '), whatsappNumbers: (p?.whatsappNumbers || []).join(', '),
@@ -106,7 +107,7 @@ export default function AgentOnboarding() {
   useEffect(() => { if (data && !draft) setDraft(toDraft(existing, data.tools)) }, [data, existing, draft])
 
   const body = (d: Draft): Partial<AgentProfile> => ({
-    name: d.name, role: d.role, avatarColor: d.avatarColor, model: d.model, systemPrompt: compose(d.job), enabledTools: d.enabledTools,
+    name: d.name, role: d.role, avatarColor: d.avatarColor, model: d.model, effort: d.effort, systemPrompt: compose(d.job), enabledTools: d.enabledTools,
     kind: d.kind, schedule: d.schedule, task: d.task,
     ownsBuckets: d.ownsBuckets, languages: list(d.languages), whatsappNumbers: list(d.whatsappNumbers), escalateTo: d.escalateTo || null,
     dailyBudgetAed: d.dailyBudgetAed, dailyTouchCap: d.dailyTouchCap, mode: d.mode, autoSend: d.autoSend, syncLeadStatus: d.syncLeadStatus, isDefault: d.isDefault,
@@ -167,6 +168,7 @@ export default function AgentOnboarding() {
             <Field label="Name"><Input value={draft.name} onChange={(e) => set({ name: e.target.value })} placeholder="Aisha" /></Field>
             <Field label="The job, in two words"><Input value={draft.role} onChange={(e) => set({ role: e.target.value })} placeholder="First response" /></Field>
             <Field label="Model"><Select value={draft.model} onChange={(e) => set({ model: e.target.value })}>{MODELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></Field>
+            <Field label="Effort (Claude)"><Select value={draft.effort} onChange={(e) => set({ effort: e.target.value })}><option value="">Same as the server</option>{CLAUDE_EFFORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></Field>
             <Field label="How it works">
               <Select value={draft.kind} onChange={(e) => set({ kind: e.target.value as AgentKind })}>
                 <option value="conversational">Talks to customers — wakes when someone writes</option>

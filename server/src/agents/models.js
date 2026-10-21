@@ -82,6 +82,8 @@ const agentProfileSchema = new Schema({
     promptVersion: { type: Number, default: 1 },
     // '' means "whatever the server is set to" (openaiModel()).
     model: { type: String, default: '' },
+    // Claude only: how hard it thinks. '' follows Settings → Integrations.
+    effort: { type: String, default: '' },
     mode: { type: String, enum: AGENT_MODES, default: 'shadow' },
     enabledTools: { type: [String], default: () => [...AGENT_TOOLS] },
     // Which business numbers this agent answers on. Empty = any.

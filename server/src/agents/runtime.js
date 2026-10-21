@@ -247,7 +247,7 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
         // tool call every round until it has actually committed to one.
         const mustCommit = isTouch && !ctx.changes.template && !ctx.changes.escalate;
         const res = await chatWithTools({
-            system, messages: convo, tools, model: agent.model || undefined,
+            system, messages: convo, tools, model: agent.model || undefined, effort: agent.effort || undefined,
             temperature: 0.3, maxTokens: 700,
             toolChoice: mustCommit ? 'required' : 'auto',
         });

@@ -14,7 +14,7 @@ import Anthropic from '@anthropic-ai/sdk';
  */
 
 export const DEFAULT_CLAUDE_MODEL = 'claude-fable-5-1';
-export const CLAUDE_EFFORTS = ['low', 'medium', 'high'];
+export const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 // Models that support server-side refusal fallbacks (Haiku has none).
 const FALLBACK_MODELS = /^claude-(opus-5-5|sonnet-5-5|opus-5$|fable-5)/;
@@ -148,7 +148,7 @@ export function firstJsonObject(raw) {
 
 /* ── the call ──────────────────────────────────────────────────────────── */
 
-async function create({ model, system, messages, tools, maxTokens, timeout }) {
+async function create({ model, system, messages, tools, maxTokens, timeout, effort }) {
     const chosen = model || claudeModel();
     const betas = [BETA_BINDING];
     const fallbacks = FALLBACK_MODELS.test(chosen);
@@ -164,7 +164,8 @@ async function create({ model, system, messages, tools, maxTokens, timeout }) {
             messages,
             ...(tools?.length ? { tools } : {}),
             thinking: { type: 'adaptive', block_binding: { prefix_mismatch_behavior: 'drop_block' } },
-            output_config: { effort: claudeEffort() },
+            // A feature's own effort (an agent, the assistant) wins over the server's.
+            output_config: { effort: CLAUDE_EFFORTS.includes(effort) ? effort : claudeEffort() },
             // A safety decline is retried on Anthropic's recommended model
             // instead of coming back empty.
             ...(fallbacks ? { fallbacks: 'default' } : {}),
@@ -183,9 +184,10 @@ async function create({ model, system, messages, tools, maxTokens, timeout }) {
 const JSON_RULE = 'Reply with one JSON object only: no prose, no code fences.';
 
 /** chatJson contract: the parsed object, or null when the reply was not JSON. */
-export async function claudeChatJson({ system, messages = [], maxTokens = 400, timeout = 30000, model }) {
+export async function claudeChatJson({ system, messages = [], maxTokens = 400, timeout = 30000, model, effort }) {
     const res = await create({
         model,
+        effort,
         system: `${system}\n\n${JSON_RULE}`,
         messages: toClaudeMessages(messages.length ? messages : [{ role: 'user', content: 'Answer now.' }], { keepTools: false }),
         maxTokens,
@@ -195,7 +197,7 @@ export async function claudeChatJson({ system, messages = [], maxTokens = 400, t
 }
 
 /** visionJson contract: { parsed, usage }. */
-export async function claudeVisionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000, model }) {
+export async function claudeVisionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000, model, effort }) {
     const isPdf = /pdf/i.test(mimeType || '');
     const media = isPdf
         ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: imageBase64 } }
@@ -211,7 +213,7 @@ export async function claudeVisionJson({ system, imageBase64, mimeType, prompt =
 }
 
 /** chatWithTools contract: { content, toolCalls, message, usage }. */
-export async function claudeChatWithTools({ system, messages = [], tools = [], model, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
+export async function claudeChatWithTools({ system, messages = [], tools = [], model, effort, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
     const claudeTools = toClaudeTools(tools);
     // Forcing a tool call is not accepted by current models; asking works.
     const sys = toolChoice === 'required' && claudeTools.length
@@ -219,6 +221,7 @@ export async function claudeChatWithTools({ system, messages = [], tools = [], m
         : system;
     const res = await create({
         model,
+        effort,
         system: sys,
         messages: toClaudeMessages(messages, { keepTools: claudeTools.length > 0 }),
         tools: claudeTools,

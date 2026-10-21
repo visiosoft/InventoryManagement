@@ -26,6 +26,7 @@ export interface AgentProfile {
   systemPrompt: string
   promptVersion: number
   model: string
+  effort?: string
   mode: 'off' | 'shadow' | 'auto'
   enabledTools: string[]
   ownsBuckets: OwnableBucket[]

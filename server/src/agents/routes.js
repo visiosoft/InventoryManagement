@@ -14,6 +14,7 @@ import { record, revert, snapshotOf } from './log.js';
 import { seedStarterTeam } from './seed.js';
 import { agentStats, startRehearsal, reviewAgent, teachFromRehearsal } from './insights.js';
 import { AgentRehearsal, AgentReview } from './models.js';
+import { CLAUDE_EFFORTS } from '../services/claude.js';
 import { listWhatsAppTemplates } from '../services/whatsapp.js';
 
 const router = Router();
@@ -50,6 +51,11 @@ function readProfile(body, existing) {
         if (existing && p.systemPrompt !== existing.systemPrompt) p.promptVersion = (existing.promptVersion || 1) + 1;
     }
     if (body.model !== undefined) p.model = String(body.model || '');
+    if (body.effort !== undefined) {
+        const effort = String(body.effort || '');
+        if (effort && !CLAUDE_EFFORTS.includes(effort)) throw new Error(`effort must be one of ${CLAUDE_EFFORTS.join(', ')}`);
+        p.effort = effort;
+    }
     if (body.mode !== undefined) {
         if (!AGENT_MODES.includes(body.mode)) throw new Error(`mode must be one of ${AGENT_MODES.join(', ')}`);
         p.mode = body.mode;

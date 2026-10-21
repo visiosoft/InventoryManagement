@@ -3,6 +3,7 @@ import { requireAdmin } from '../middleware/auth.js';
 import { AiBotThread, User, WhatsAppMessage } from '../models/index.js';
 import { getAiBotConfig, generateReply, decideAction, runAiBotTick, aiBotState, pauseBotForHuman, speakAsConfigured, DEFAULT_PROMPT } from '../services/aiBot.js';
 import { openaiConfigured, openaiModel, synthesizeSpeech, aiProvider } from '../services/openai.js';
+import { CLAUDE_EFFORTS } from '../services/claude.js';
 import { sendWhatsAppMedia, uploadWhatsAppMedia, whatsappSendConfigured } from '../services/whatsapp.js';
 import { understandMedia } from '../services/mediaUnderstanding.js';
 import { mediaFromRaw } from './whatsappMedia.js';
@@ -155,6 +156,7 @@ const shape = (config) => ({
     // Empty means whatever the server is set to, which is what the page shows
     // as the default rather than pretending a choice has been made.
     model: config.model || '',
+    effort: config.effort || '',
     models: MODELS,
     serverModel: openaiModel(),
     escalateTo: config.escalateTo ? String(config.escalateTo) : '',
@@ -206,6 +208,11 @@ router.put('/config', requireAdmin, async (req, res) => {
             return res.status(400).json({ error: `That model is not one of: ${MODEL_IDS.join(', ')}` });
         }
         config.model = wanted;
+    }
+    if (b.effort !== undefined) {
+        const effort = String(b.effort || '');
+        if (effort && !CLAUDE_EFFORTS.includes(effort)) return res.status(400).json({ error: `Effort must be one of ${CLAUDE_EFFORTS.join(', ')}` });
+        config.effort = effort;
     }
     if (b.useAvailability !== undefined) config.useAvailability = Boolean(b.useAvailability);
     if (b.autoSummarise !== undefined) config.autoSummarise = Boolean(b.autoSummarise);

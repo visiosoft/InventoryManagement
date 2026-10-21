@@ -2199,6 +2199,8 @@ const aiBotConfigSchema = new Schema({
      The instructions are explicit that a price is never an estimate, and the
      cheapest model is the one that does not hold on to that. */
   model: { type: String, default: '' },
+  // Claude only: how hard it thinks. '' follows Settings → Integrations.
+  effort: { type: String, default: '' },
   useAvailability: { type: Boolean, default: true },
   escalateTo: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   handoverKeywords: { type: [String], default: ['human', 'agent', 'manager', 'call me', 'speak to someone'] },
@@ -2309,6 +2311,8 @@ const assistantConfigSchema = new Schema({
   systemPrompt: { type: String, default: '' },
   // '' follows the server's model. Tool calling needs a model that supports it.
   model: { type: String, default: '' },
+  // Claude only: how hard it thinks. '' follows Settings → Integrations.
+  effort: { type: String, default: '' },
   // How many tool rounds one question may take before it has to answer.
   maxToolRounds: { type: Number, default: 4 },
   // Who may use it. Reports are admin and accounts, and BayOps (the mobile

@@ -90,6 +90,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
    // whatever it creates is attributed exactly as if they had used the page.
    const ctx = { scope, user, now, authHeader };
    const model = resolveModel(config.model);
+   const effort = config.effort || undefined;
    const system = systemPromptFor(config, { user, now });
 
    // Only the last few turns, and only their text — tool traffic is not replayed.
@@ -112,7 +113,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
    let pending = null;
 
    for (; rounds < maxRounds; rounds += 1) {
-      let turn = await chatWithTools({ system, messages, tools, model, maxTokens: 700 });
+      let turn = await chatWithTools({ system, messages, tools, model, effort, maxTokens: 700 });
 
       /* It answered without looking. "Rikki is a lead" with no lookup is a
          guess whether or not it happens to be true, and a guess with no
@@ -121,7 +122,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
          the database. A question none of them fits still ends in "I can't
          see that", but through a tool that came back empty, not from memory. */
       if (!turn.toolCalls.length && rounds === 0 && !/^\s*(hi|hello|hey|thanks|thank you|ok|okay)\b/i.test(text)) {
-         turn = await chatWithTools({ system, messages, tools, model, maxTokens: 700, toolChoice: 'required' });
+         turn = await chatWithTools({ system, messages, tools, model, effort, maxTokens: 700, toolChoice: 'required' });
       }
 
       if (!turn.toolCalls.length) { content = turn.content; break; }
@@ -146,7 +147,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
 
    // Ran out of rounds mid-thought: ask once more for the answer, tools off.
    if (!content) {
-      const final = await chatWithTools({ system, messages, tools: [], model, maxTokens: 700 });
+      const final = await chatWithTools({ system, messages, tools: [], model, effort, maxTokens: 700 });
       content = final.content;
    }
 
@@ -177,7 +178,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
    if (!check.ok && results.length) {
       messages.push({ role: 'assistant', content });
       messages.push({ role: 'user', content: `Your answer used figures that did not come from the tools: ${check.loose.join(', ')}. Rewrite it using only figures that appear in the tool results, exactly as returned. If a figure you need is not there, say so instead of stating it.` });
-      const retry = await chatWithTools({ system, messages, tools: [], model, maxTokens: 700 });
+      const retry = await chatWithTools({ system, messages, tools: [], model, effort, maxTokens: 700 });
       content = retry.content;
       check = figuresGrounded(content, results);
    }

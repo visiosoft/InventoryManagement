@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, apiError } from '../lib/api'
+import { CLAUDE_EFFORTS } from '../lib/claudeEffort'
 import { PageHeader, Spinner } from '../components/ui'
 
 const INK = '#14081F'
@@ -14,6 +15,7 @@ type Config = {
   enabled: boolean
   systemPrompt: string
   model: string
+  effort: string
   maxToolRounds: number
   roles: string[]
   actionsEnabled: boolean
@@ -91,6 +93,13 @@ export default function AssistantSettings() {
                 <option value="claude-opus-5-5">Claude Opus 5.5 — when Claude is the provider</option>
                 <option value="claude-sonnet-5-5">Claude Sonnet 5.5 — when Claude is the provider</option>
                 <option value="claude-haiku-5-5">Claude Haiku 5.5 — when Claude is the provider</option>
+              </select>
+            </label>
+            <label style={{ display: 'block' }}>
+              <span style={label}>Effort (Claude)</span>
+              <select value={draft.effort || ''} onChange={(e) => setDraft({ ...draft, effort: e.target.value })} style={field}>
+                <option value="">Same as the server</option>
+                {CLAUDE_EFFORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </label>
             <label style={{ display: 'block' }}>
@@ -203,7 +212,7 @@ export default function AssistantSettings() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => save.mutate({ enabled: draft.enabled, systemPrompt: draft.systemPrompt, model: draft.model, maxToolRounds: draft.maxToolRounds, roles: draft.roles, actionsEnabled: draft.actionsEnabled, actionRoles: draft.actionRoles })}
+            onClick={() => save.mutate({ enabled: draft.enabled, systemPrompt: draft.systemPrompt, model: draft.model, effort: draft.effort, maxToolRounds: draft.maxToolRounds, roles: draft.roles, actionsEnabled: draft.actionsEnabled, actionRoles: draft.actionRoles })}
             disabled={save.isPending}
             className="cursor-pointer disabled:opacity-50"
             style={{ background: PURPLE, color: '#fff', border: 0, borderRadius: 10, padding: '11px 18px', fontWeight: 600, fontSize: 13.5 }}

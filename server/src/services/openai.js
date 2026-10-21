@@ -220,9 +220,9 @@ export async function verifyOpenAIKey(apiKey, model) {
  * is not JSON. Callers must treat null as a failure to answer, never as an
  * empty answer.
  */
-export async function chatJson({ system, messages = [], temperature = 0, maxTokens = 400, timeout = 30000, model }) {
+export async function chatJson({ system, messages = [], temperature = 0, maxTokens = 400, timeout = 30000, model, effort }) {
     const chosenModel = resolveModel(model);
-    if (aiProvider() === 'anthropic') return claudeChatJson({ system, messages, maxTokens, timeout, model: chosenModel });
+    if (aiProvider() === 'anthropic') return claudeChatJson({ system, messages, maxTokens, timeout, model: chosenModel, effort });
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {
@@ -275,10 +275,10 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
  *
  * @returns {{ content: string, toolCalls: Array<{id, name, args}>, message: object, usage }}
  */
-export async function chatWithTools({ system, messages = [], tools = [], model, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
+export async function chatWithTools({ system, messages = [], tools = [], model, effort, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
     if (!openaiConfigured()) throw new Error('No AI provider is configured');
     const chosenModel = resolveModel(model);
-    if (aiProvider() === 'anthropic') return claudeChatWithTools({ system, messages, tools, model: chosenModel, maxTokens, timeout, toolChoice });
+    if (aiProvider() === 'anthropic') return claudeChatWithTools({ system, messages, tools, model: chosenModel, effort, maxTokens, timeout, toolChoice });
     if (usesResponsesApi(chosenModel, tools.length > 0)) {
         return chatWithToolsResponses({ system, messages, tools, model: chosenModel, maxTokens, timeout, toolChoice });
     }
@@ -309,9 +309,9 @@ export async function chatWithTools({ system, messages = [], tools = [], model, 
     return { content: String(message.content || ''), toolCalls, message, usage: data?.usage || null };
 }
 
-export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000, model }) {
+export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000, model, effort }) {
     const chosenModel = resolveModel(model);
-    if (aiProvider() === 'anthropic') return claudeVisionJson({ system, imageBase64, mimeType, prompt, maxTokens, timeout, model: chosenModel });
+    if (aiProvider() === 'anthropic') return claudeVisionJson({ system, imageBase64, mimeType, prompt, maxTokens, timeout, model: chosenModel, effort });
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {

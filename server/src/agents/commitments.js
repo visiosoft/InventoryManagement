@@ -61,7 +61,7 @@ const SYSTEM = (today, weekday) => [
  *
  * @param history  [{ direction, text }] oldest first, the customer's last message last
  */
-export async function extractCommitments({ history = [], now = new Date(), model } = {}) {
+export async function extractCommitments({ history = [], now = new Date(), model, effort } = {}) {
     const empty = { followUp: null, decisionMaker: null, why: null };
     if (!openaiConfigured()) return empty;
     const lines = history.slice(-8).map((m) => `${m.direction === 'inbound' ? 'CUSTOMER' : 'US'}: ${String(m.text || '').slice(0, 400)}`).join('\n');
@@ -69,7 +69,7 @@ export async function extractCommitments({ history = [], now = new Date(), model
     const weekday = new Date(`${dubaiDay(now)}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' });
     let out;
     try {
-        out = await chatJson({ system: SYSTEM(dubaiDay(now), weekday), messages: [{ role: 'user', content: lines }], temperature: 0, maxTokens: 400, model });
+        out = await chatJson({ system: SYSTEM(dubaiDay(now), weekday), messages: [{ role: 'user', content: lines }], temperature: 0, maxTokens: 400, model, effort });
     } catch (e) {
         console.error('[Agents] commitments:', e.message);
         return empty;

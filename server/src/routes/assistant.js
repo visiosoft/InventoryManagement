@@ -6,6 +6,7 @@ import { toolNames } from '../services/assistant/tools.js';
 import { takeProposal, dropProposal, runAction } from '../services/assistant/actions.js';
 import { getAdminInsight } from '../services/assistant/adminInsight.js';
 import { openaiConfigured, openaiModel, transcribeAudio } from '../services/openai.js';
+import { CLAUDE_EFFORTS } from '../services/claude.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -119,7 +120,7 @@ router.get('/config', requireAdmin, async (_req, res) => {
    try {
       const c = await getAssistantConfig();
       res.json({
-         enabled: c.enabled, systemPrompt: c.systemPrompt, model: c.model, maxToolRounds: c.maxToolRounds, roles: c.roles,
+         enabled: c.enabled, systemPrompt: c.systemPrompt, model: c.model, effort: c.effort || '', maxToolRounds: c.maxToolRounds, roles: c.roles,
          actionsEnabled: c.actionsEnabled !== false, actionRoles: c.actionRoles,
          defaultPrompt: DEFAULT_PROMPT, promptLimit: PROMPT_LIMIT, serverModel: openaiModel(),
          tools: toolNames(),
@@ -142,6 +143,11 @@ router.put('/config', requireAdmin, async (req, res) => {
          c.systemPrompt = String(b.systemPrompt);
       }
       if (b.model !== undefined) c.model = String(b.model || '');
+      if (b.effort !== undefined) {
+         const effort = String(b.effort || '');
+         if (effort && !CLAUDE_EFFORTS.includes(effort)) return res.status(400).json({ error: `Effort must be one of ${CLAUDE_EFFORTS.join(', ')}` });
+         c.effort = effort;
+      }
       if (b.maxToolRounds !== undefined) c.maxToolRounds = Math.min(8, Math.max(1, Number(b.maxToolRounds) || 4));
       if (Array.isArray(b.roles)) c.roles = b.roles.map(String);
       if (b.actionsEnabled !== undefined) c.actionsEnabled = Boolean(b.actionsEnabled);
