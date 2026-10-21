@@ -98,6 +98,14 @@ const INK = '#14081F'
 const MUTED_INK = '#4A4357'
 const FAINT_INK = '#756E80'
 const LINE = 'rgba(20,8,31,.10)'
+/* The chat palette, taken from the 2Capacity site's WhatsApp mock: a grey-white
+   thread, white bubbles in, a soft blue-to-cream wash on ours and on AI drafts,
+   and green for approve, delivered and online. */
+const WA_BG = '#F6F7F9'
+const WA_SOFT = 'linear-gradient(115deg, #E4EDFE 0%, #E8F3EE 55%, #FDF2D6 100%)'
+const WA_GREEN = '#2E9E4F'
+const WA_RING = 'linear-gradient(135deg, #4285F4, #4FC3F7 55%, #34A853)'
+const WA_MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace"
 
 const CSS = `
 @keyframes wa-blink-bg {
@@ -576,9 +584,8 @@ function MessageBubbleImpl({ msg, onCorrected, onDeleted }: {
         className="wa-bubble max-w-[75%] rounded-2xl px-3.5 py-2 text-sm"
         style={
           out
-            // WhatsApp's own outgoing green, with dark text — white on this
-            // tint fails contrast badly.
-            ? { background: '#D9FDD3', color: INK, borderBottomRightRadius: 6, boxShadow: '0 1px 2px rgba(20,8,31,.10)' }
+            // The site mock's soft blue-to-cream wash, with dark text.
+            ? { background: WA_SOFT, color: INK, borderBottomRightRadius: 6, boxShadow: '0 1px 2px rgba(20,8,31,.06)' }
             : { background: '#fff', color: INK, borderBottomLeftRadius: 6, border: `1px solid ${LINE}`, boxShadow: '0 1px 2px rgba(20,8,31,.06)' }
         }
       >
@@ -694,15 +701,14 @@ function MessageBubbleImpl({ msg, onCorrected, onDeleted }: {
             </span>
           )}
           <span>{formatClock(msg.occurredAt)}</span>
-          {/* Grey until read, then WhatsApp's blue — the same signal people
-              already read without being told. */}
+          {/* Grey until read, then green. */}
           {out && (msg.status === 'failed'
             /* A failure used to look exactly like a success: the same grey
                ticks, no word anywhere. Somebody sent a voice note, watched it
                sit there looking fine, and only heard days later that it never
                arrived. */
             ? <AlertTriangle size={12} style={{ color: '#DC2626' }} />
-            : <CheckCheck size={13} style={{ color: msg.status === 'read' ? '#53BDEB' : 'rgba(20,8,31,.35)' }} />)}
+            : <CheckCheck size={13} style={{ color: msg.status === 'read' ? WA_GREEN : 'rgba(20,8,31,.35)' }} />)}
         </div>
         {out && msg.status === 'failed' && (
           <div
@@ -3616,7 +3622,8 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
         'wa-shell flex flex-col rounded-2xl overflow-hidden min-h-[520px]',
         embedded ? 'h-[calc(100vh-7rem)] min-h-[680px]' : 'h-[calc(100vh-5rem)] md:h-[calc(100vh-5.5rem)]',
       )}
-      style={{ border: `1px solid ${LINE}`, background: '#fff', boxShadow: embedded ? 'none' : '0 6px 28px rgba(20,8,31,.07)' }}
+      // A thin blue-to-green outline, as on the site mock.
+      style={{ border: '1px solid transparent', background: 'linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, #A8C7FA, #A5E0F7 55%, #A8DAB5) border-box', boxShadow: embedded ? 'none' : '0 6px 28px rgba(20,8,31,.07)' }}
     >
       <style>{CSS}</style>
 
@@ -4120,7 +4127,11 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
 
             {selectedConvo ? (
               <>
-                <Avatar seed={selectedConvo.phoneNormalized} label={convoTitle} size={38} />
+                <span className="shrink-0 rounded-full" style={{ padding: 2, background: WA_RING }}>
+                  <span className="block rounded-full" style={{ padding: 1.5, background: '#fff' }}>
+                    <Avatar seed={selectedConvo.phoneNormalized} label={convoTitle} size={34} />
+                  </span>
+                </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 min-w-0">
                     {renaming ? (
@@ -4397,11 +4408,11 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                  laid on top. This is the same warmth at a fraction of the
                  strength: enough that the thread is not a flat white page,
                  little enough that the bubbles are what carries the colour. */
-              backgroundColor: '#FCFAF6',
+              backgroundColor: WA_BG,
               // The wash over the tile knocks the pattern back so the bubbles
               // stay the thing you read. Heavier than before, because a paler
               // ground shows the pattern more.
-              backgroundImage: 'linear-gradient(rgba(252,250,246,.90), rgba(252,250,246,.90)), url(/chat-bg.avif)',
+              backgroundImage: 'linear-gradient(rgba(246,247,249,.94), rgba(246,247,249,.94)), url(/chat-bg.avif)',
               backgroundRepeat: 'repeat, repeat',
               backgroundSize: 'auto, 400px auto',
             }}
@@ -4562,7 +4573,7 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                 onClick={() => suggestAgain.mutate(selectedConvo.lead!._id)}
                 disabled={suggestAgain.isPending}
                 className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
-                style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: '#4A1FA0' }}
+                style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: INK }}
                 title="Ask the agent for a reply to their last message"
               >
                 {suggestAgain.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
@@ -4575,8 +4586,8 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
               and presses Send, or edits it first. */}
           {selectedConvo?.botDraft && selectedConvo.botActionId && (
             <div className={cn('shrink-0 rounded-xl', embedded ? 'mx-3 mb-1.5 px-3 py-2' : 'mx-6 mb-2 px-3.5 py-3')}
-              style={{ background: '#F3EEFF', border: '1px solid #D9CBFA' }}>
-              <div className="flex items-center gap-1.5 mb-1.5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: selectedConvo.botAgentColor || '#4A1FA0' }}>
+              style={{ background: WA_SOFT, border: `1px solid ${LINE}` }}>
+              <div className="flex items-center gap-1.5 mb-1.5" style={{ fontFamily: WA_MONO, fontSize: 11, fontWeight: 500, letterSpacing: '.02em', color: MUTED_INK }}>
                 <Bot size={13} /> {selectedConvo.botAgentName ? `${selectedConvo.botAgentName} suggests` : 'Suggested reply'}
                 {/* The conversation can move on after a suggestion is written —
                     a colleague answers from another device, or the customer
@@ -4592,7 +4603,7 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                           onClick={() => suggestAgain.mutate(selectedConvo.lead!._id)}
                           disabled={suggestAgain.isPending}
                           className="h-6 px-2.5 rounded-full cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
-                          style={{ border: `1px solid ${stale ? '#F5DFB8' : '#D9CBFA'}`, background: stale ? '#FFF7E6' : '#fff', fontSize: 11.5, fontWeight: 700, color: stale ? '#B45309' : '#4A1FA0' }}
+                          style={{ border: `1px solid ${stale ? '#F5DFB8' : LINE}`, background: stale ? '#FFF7E6' : '#fff', fontFamily: CHAT_PANEL_FONT, fontSize: 11.5, fontWeight: 700, color: stale ? '#B45309' : INK }}
                           title="Read the whole conversation again and write a new suggestion">
                           {suggestAgain.isPending ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
                           {suggestAgain.isPending ? 'Reading…' : 'Refresh'}
@@ -4607,7 +4618,7 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
               ) : (
                 <div
                   className={cn('whitespace-pre-wrap', draftExpanded ? 'overflow-y-auto' : 'line-clamp-2')}
-                  style={{ fontSize: 13, color: MUTED_INK, maxHeight: draftExpanded ? (embedded ? '16vh' : '28vh') : undefined, cursor: (selectedConvo.botDraft || '').length > 120 ? 'pointer' : undefined }}
+                  style={{ fontSize: 13, color: INK, maxHeight: draftExpanded ? (embedded ? '16vh' : '28vh') : undefined, cursor: (selectedConvo.botDraft || '').length > 120 ? 'pointer' : undefined }}
                   onClick={() => (selectedConvo.botDraft || '').length > 120 && setDraftExpanded((v) => !v)}
                   title={(selectedConvo.botDraft || '').length > 120 ? (draftExpanded ? 'Show less' : 'Show the whole suggestion') : undefined}
                 >
@@ -4621,7 +4632,7 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                       onClick={() => { resolveDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, resolution: 'edited', text: draftEditText }); setEditingDraft(false) }}
                       disabled={resolveDraft.isPending || !draftEditText.trim()}
                       className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
-                      style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
+                      style={{ background: WA_GREEN, fontSize: 12, fontWeight: 700 }}>
                       Send edited
                     </button>
                     <button type="button"
@@ -4637,7 +4648,7 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                       onClick={() => resolveDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, resolution: 'approved' })}
                       disabled={resolveDraft.isPending}
                       className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
-                      style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
+                      style={{ background: WA_GREEN, fontSize: 12, fontWeight: 700 }}>
                       Send
                     </button>
                     {draftMore && (<>
@@ -4658,7 +4669,7 @@ export default function WhatsApp({ embeddedPhone, onPanelOpenChange }: { embedde
                       onClick={() => sendVoiceDraft.mutate({ phone: selectedConvo.phoneNormalized, actionId: selectedConvo.botActionId!, text: selectedConvo.botDraft! })}
                       disabled={sendVoiceDraft.isPending}
                       className="h-7 px-3 rounded-full cursor-pointer disabled:opacity-50"
-                      style={{ border: '1px solid #D9CBFA', background: '#fff', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}
+                      style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 700, color: INK }}
                       title="Send this as a voice note">
                       {sendVoiceDraft.isPending ? 'Sending…' : 'Send as voice'}
                     </button>
