@@ -23,13 +23,19 @@
   function setTheme(dark) {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
     try { localStorage.setItem('bayshire-theme', dark ? 'dark' : 'light'); } catch (e) {}
-    $('#themeToggle').setAttribute('aria-pressed', String(dark));
+    syncThemeToggle();
     if (window.__bayshireScene) window.__bayshireScene.applyTheme();
     if (window.__bayshireUnitsScene) window.__bayshireUnitsScene.applyTheme();
     if (window.__bayshireAmbientScene) window.__bayshireAmbientScene.applyTheme();
   }
+  // aria-pressed says whether dark mode is on; the label stays "Dark theme" so the pair reads correctly
+  function syncThemeToggle() {
+    const btn = $('#themeToggle');
+    btn.setAttribute('aria-pressed', String(isDark()));
+    btn.title = isDark() ? 'Switch to light theme' : 'Switch to dark theme';
+  }
   $('#themeToggle').addEventListener('click', () => setTheme(!isDark()));
-  $('#themeToggle').setAttribute('aria-pressed', String(isDark()));
+  syncThemeToggle();
 
   /* ---------------- Nav scroll ---------------- */
   const nav = $('#nav');
@@ -98,16 +104,21 @@
     const name = $('#contactName').value.trim();
     const email = $('#contactEmail').value.trim();
     const company = $('#contactCompany').value.trim();
+    const phone = $('#contactPhone').value.trim();
     const facilities = $('#contactFacilities').value;
+    const country = $('#contactCountry').value.trim();
     const message = $('#contactMessage').value.trim();
     const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    if (!name || !emailValid || !company || !facilities) {
+    // Honeypot: people never see the "Leave blank" field, bots fill it
+    if ($('#contactWebsite').value) return;
+    if (!name || !emailValid || !company || !facilities || !country) {
       contactFormError.hidden = false;
       return;
     }
     contactFormError.hidden = true;
     const subject = 'Demo request: ' + company;
-    const body = 'Name: ' + name + '\nEmail: ' + email + '\nCompany: ' + company + '\nFacilities: ' + facilities +
+    const body = 'Name: ' + name + '\nEmail: ' + email + (phone ? '\nPhone / WhatsApp: ' + phone : '') +
+      '\nCompany: ' + company + '\nFacilities: ' + facilities + '\nCountry: ' + country +
       (message ? '\n\nWhat they want to improve or automate:\n' + message : '');
     const mailto = 'mailto:' + DEMO_EMAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
     contactFormView.hidden = true;
@@ -607,21 +618,141 @@
     <div class="kv-row" style="grid-template-columns:72px 1fr"><span class="mono" style="color:var(--g2)">${a.t}</span><span style="line-height:1.5">${a.x}</span></div>
   `).join('');
 
+  /* ---------------- Six areas ---------------- */
+  $('#areaGrid').innerHTML = D.areas.map(a => `
+    <article class="area-card">
+      <span class="area-card__badge">Available now</span>
+      <div class="area-card__n">${a.n}</div>
+      <p class="area-card__d">${a.d}</p>
+      <p class="area-card__x"><b>For example:</b> ${a.x}</p>
+    </article>`).join('');
+
+  /* ---------------- AI team ---------------- */
+  const agentAvatar = (a, cls) => `<span class="agent-avatar ${cls || ''}" aria-hidden="true">${a.n[0]}</span>`;
+  $('#agentGrid').innerHTML = D.agents.map(a => `
+    <article class="agent-card">
+      <div class="agent-card__top">${agentAvatar(a)}<div><div class="agent-card__name">${a.n}</div><div class="agent-card__role">${a.r}</div></div></div>
+      <p class="agent-card__d">${a.d}</p>
+      <div class="agent-card__h"><b>Hands to you:</b> ${a.h}</div>
+    </article>`).join('');
+
+  /* ---------------- Hero chat: Aisha drafts, the owner approves ---------------- */
+  const heroUnit = units.find(u => u.code === 'F2-034') || units[0];
+  const TYPING = '<div class="typing" data-typing>Aisha is drafting <span class="typing__dots"><i></i><i></i><i></i></span></div>';
+  const heroSteps = [
+    { at: 500, html: '<div class="bubble bubble--in">Hi, price for 50 sq ft? Need it from Saturday.</div>' },
+    { at: 1400, html: TYPING },
+    { at: 3300, dropTyping: true, html: `<div class="bubble bubble--ai"><span class="bubble__tag">AI draft</span>Hi! A ${heroUnit.sqft} sq ft unit is free from Saturday: ${heroUnit.code}, ${heroUnit.dims}. It's AED ${D.fmt(heroUnit.price)} per 4 weeks, about AED ${D.fmt(heroUnit.price / 4)} a week. Shall I send you a written quote?</div>` },
+    { at: 4300, html: '<div class="approve-card" data-approve><div class="approve-card__t">Draft ready. Approve and send?</div><div class="approve-card__d">Price checked against your unit list</div><div class="approve-card__btns"><span>Approve &amp; send</span><span>Edit</span></div></div>' },
+    { at: 6400, approve: true, html: '<div class="sent-tick">Sent by you &middot; &#10003;&#10003;</div>' }
+  ];
+  const heroChat = $('#heroChatBody');
+  function playHeroChat() {
+    heroChat.innerHTML = '';
+    if (reduced) {
+      heroSteps.filter(s => s.html !== TYPING).forEach(s => heroChat.insertAdjacentHTML('beforeend', s.html));
+      heroChat.querySelector('[data-approve]').classList.add('is-sent');
+      return;
+    }
+    heroSteps.forEach(s => setTimeout(() => {
+      if (s.dropTyping) heroChat.querySelector('[data-typing]')?.remove();
+      if (s.approve) heroChat.querySelector('[data-approve]')?.classList.add('is-sent');
+      heroChat.insertAdjacentHTML('beforeend', s.html);
+    }, s.at));
+    setTimeout(playHeroChat, 13000);
+  }
+  playHeroChat();
+
+  /* ---------------- Live AI demo: scripted, answers from the sample units ---------------- */
+  const demoSizes = [...new Set(units.map(u => u.sqft))].sort((a, b) => a - b);
+  const HANDOVER = 'Handed to a person';
+  function demoAnswer(q) {
+    const t = q.toLowerCase();
+    if (/discount|cheaper|offer|deal|best price/.test(t)) return { tag: HANDOVER, text: "I'll pass that to the team. Discounts are always agreed by a person, so someone will reply here shortly." };
+    if (/contract|pay|card|invoice|refund|complain|manager|human|person/.test(t)) return { tag: HANDOVER, text: "That one's for the team. I've passed it on with a short summary and a person will reply here." };
+    const m = t.match(/(\d{2,4})\s*(sq|ft|sf|square)?/);
+    if (m || /price|cost|rate|how much|availab|free|size|unit/.test(t)) {
+      const want = m ? Number(m[1]) : 50;
+      const size = demoSizes.reduce((b, s) => Math.abs(s - want) < Math.abs(b - want) ? s : b, demoSizes[0]);
+      const free = units.filter(u => u.sqft === size && u.status === 'Available');
+      if (!free.length) return { tag: 'Checked live availability', text: `${size} sq ft is fully booked right now. Want me to check the next size up?` };
+      const u = free[0];
+      return { tag: 'Price from unit list', text: `${size === want ? '' : `The closest size is ${size} sq ft. `}We have ${free.length} unit${free.length > 1 ? 's' : ''} of ${size} sq ft free, like ${u.code} (${u.dims}). It's AED ${D.fmt(u.price)} per 4 weeks, about AED ${D.fmt(u.price / 4)} a week. Shall I send you a written quote?` };
+    }
+    if (/hour|open|access|time/.test(t)) return { tag: 'From facility facts', text: 'The sample facility is open for access from 7am to 10pm, every day.' };
+    if (/where|location|address|map/.test(t)) return { tag: 'From facility facts', text: 'The sample facility is in Al Quoz, Dubai. I can send you a map pin.' };
+    if (/minimum|how long|shortest|month|week/.test(t)) return { tag: 'From facility facts', text: 'Contracts run in 4-week periods on a rolling basis, so you can stay as long as you need.' };
+    if (/^\s*(hi|hello|hey|salam|marhaba|good)/.test(t)) return { tag: 'AI draft', text: 'Hi! What are you looking to store, and roughly how much space do you need?' };
+    return { tag: HANDOVER, text: "I'm not sure about that one, so I'll check with the team rather than guess. Someone will reply here shortly." };
+  }
+  const demoBody = $('#demoChatBody');
+  function demoBubble(cls, text, tag) {
+    const el = document.createElement('div');
+    el.className = 'bubble ' + cls;
+    if (tag) {
+      const t = document.createElement('span');
+      t.className = 'bubble__tag' + (tag === HANDOVER ? ' bubble__tag--handover' : '');
+      t.textContent = tag;
+      el.append(t);
+    }
+    el.append(text);
+    demoBody.append(el);
+    demoBody.scrollTop = demoBody.scrollHeight;
+  }
+  let demoBusy = false;
+  function demoAsk(q) {
+    if (!q || demoBusy) return;
+    demoBusy = true;
+    demoBubble('bubble--in', q);
+    demoBody.insertAdjacentHTML('beforeend', TYPING);
+    demoBody.scrollTop = demoBody.scrollHeight;
+    setTimeout(() => {
+      demoBody.querySelector('[data-typing]')?.remove();
+      const a = demoAnswer(q);
+      demoBubble('bubble--ai', a.text, a.tag);
+      demoBusy = false;
+    }, reduced ? 0 : 1000);
+  }
+  demoBubble('bubble--ai', "Hi, I'm Aisha. Ask me about sizes, prices or availability at our sample facility.", 'AI');
+  $('#demoChips').innerHTML = ['Price for 50 sq ft?', 'Anything around 100 sq ft free?', 'Can I get a discount?', 'What are your access hours?']
+    .map(c => `<button type="button" class="demo-chip">${c}</button>`).join('');
+  $$('.demo-chip').forEach(b => b.addEventListener('click', () => demoAsk(b.textContent)));
+  $('#demoChatForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const input = $('#demoChatInput');
+    demoAsk(input.value.trim());
+    input.value = '';
+  });
+
+  /* ---------------- ROI estimate ---------------- */
+  const roiIds = ['roiInq', 'roiMin', 'roiAfter', 'roiClose'];
+  function renderRoi() {
+    const [inq, min, after, close] = roiIds.map(id => Number($('#' + id).value));
+    roiIds.forEach(id => { $('#' + id + 'Out').textContent = $('#' + id).value + ($('#' + id).dataset.unit || ''); });
+    // Assumptions stated under the results: drafts halve writing time, a quarter of after-hours inquiries are lost today
+    $('#roiHours').textContent = Math.round(inq * min * 0.5 / 60);
+    $('#roiAfterCount').textContent = Math.round(inq * after / 100);
+    $('#roiUnits').textContent = (inq * (after / 100) * 0.25 * (close / 100)).toFixed(1);
+  }
+  roiIds.forEach(id => $('#' + id).addEventListener('input', renderRoi));
+  renderRoi();
+
   /* ---------------- Modules / Integrations ---------------- */
   $('#moduleGrid').innerHTML = D.modules.map(m => `
     <div class="module-card" style="border-top-color:${m.color}"><div class="module-card__n">${m.n}</div><div class="module-card__d">${m.d}</div></div>
   `).join('');
   $('#integrationList').innerHTML = D.integrations.map(i => `
     <div class="integration-row">
-      <div class="integration-mark">${i.mark}</div>
+      <div class="integration-mark" aria-hidden="true">${i.mark}</div>
       <div><div class="integration-name">${i.n}</div><div class="integration-desc">${i.d}</div></div>
     </div>`).join('');
 
   /* ---------------- About / Team ---------------- */
-  function initials(name) { return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(); }
+  // Placeholder silhouette until a member's photo is set in data.js
+  const AVATAR_PLACEHOLDER = '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="24" r="12" fill="currentColor"/><path d="M8 62c0-14 11-22 24-22s24 8 24 22" fill="currentColor"/></svg>';
   $('#teamGrid').innerHTML = D.team.map(p => `
     <div class="team-card">
-      <div class="team-avatar" style="border-top-color:${p.color}">${initials(p.n)}</div>
+      <div class="team-avatar" style="border-top-color:${p.color}">${p.photo ? `<img src="${p.photo}" alt="${p.n}" loading="lazy">` : AVATAR_PLACEHOLDER}</div>
       <div class="team-name">${p.n}</div>
       <div class="team-role">${p.r}</div>
       <div class="team-bio">${p.bio}</div>

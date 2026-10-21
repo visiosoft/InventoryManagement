@@ -66,7 +66,7 @@ const BayshireData = (function () {
     { id: 3, col: 'Contacted', n: 'Yusuf Karim', sq: 100, code: 'F1-027', src: 'Walk-in', t: '3h' },
     { id: 4, col: 'Qualified', n: 'Meridian Events LLC', sq: 300, code: 'F2-055', src: 'Referral', t: '1d' },
     { id: 5, col: 'Qualified', n: 'Priya Nair', sq: 40, code: 'F1-011', src: 'WhatsApp', t: '1d' },
-    { id: 6, col: 'Quoted', n: 'Layla Haddad', sq: 50, code: 'F2-034', src: 'Google Contacts', t: '2d' },
+    { id: 6, col: 'Quoted', n: 'Sara Haddad', sq: 50, code: 'F2-034', src: 'Google Contacts', t: '2d' },
     { id: 7, col: 'Won', n: 'Dune Retail FZE', sq: 200, code: 'F2-051', src: 'Web form', t: '4d' }
   ];
 
@@ -93,14 +93,14 @@ const BayshireData = (function () {
     { t: 'Alert', x: 'Occupancy for 300 sq ft fell to 71%, 8 points below the 12-month average' },
     { t: '09:42', x: 'Payment received. INV-2041. AED 3,800' },
     { t: '09:15', x: 'Contract CT-0197 activated. F2-034' },
-    { t: '08:50', x: 'Lead assigned. Hana Al Rashid to Omar' },
+    { t: '08:50', x: 'Reply drafted by Aisha. Hana Al Rashid' },
     { t: 'Yesterday', x: 'Quote Q-0336 sent. PDF generated' },
     { t: 'Yesterday', x: 'Unit F1-012 set to maintenance' }
   ];
 
   const expiries = [
     { c: 'CT-0142', n: 'Meridian Events LLC', d: '24 Sep', days: 7 },
-    { c: 'CT-0151', n: 'Layla Haddad', d: '29 Sep', days: 12 },
+    { c: 'CT-0151', n: 'Sara Haddad', d: '29 Sep', days: 12 },
     { c: 'CT-0163', n: 'Dune Retail FZE', d: '03 Oct', days: 16 },
     { c: 'CT-0170', n: 'Faisal Mansoor', d: '11 Oct', days: 24 }
   ];
@@ -134,6 +134,10 @@ const BayshireData = (function () {
   ];
 
   const modules = [
+    ['AI Inbox', 'WhatsApp inquiries with AI-drafted replies you approve.'],
+    ['AI Follow-ups', 'Timed check-ins for quoted, quiet and dormant leads.'],
+    ['AI Pricing', 'Rate suggestions based on occupancy by unit size.'],
+    ['AI Email Desk', 'A morning inbox sort with replies drafted for you.'],
     ['Dashboard', 'Operational overview and key metrics.'],
     ['Units', 'Inventory, availability, pricing and dimensions.'],
     ['Customers', 'Customer records and activity history.'],
@@ -152,11 +156,30 @@ const BayshireData = (function () {
     ['Integrations', 'Connect 2Capacity with external services.']
   ].map((a, i) => ({ n: a[0], d: a[1], color: ['var(--g1)', 'var(--g2)', 'var(--g3)'][i % 3] }));
 
+  // Set photo to an image path (e.g. 'assets/team/mase.jpg', square, 256px+) to replace the placeholder
   const team = [
+    { n: 'Leanne Binsell', r: 'Co-founder', bio: 'Shapes the roadmap directly from operator calls, not a backlog.', color: 'var(--g3)' },
     { n: 'Mase R', r: 'Co-founder & CEO', bio: 'Ran a three-site self-storage group in Dubai for six years before starting 2Capacity.', color: 'var(--g1)' },
     { n: 'Zulfiqar Ali', r: 'Co-founder & CTO', bio: 'Built the pricing and payments engine that the platform still runs on today.', color: 'var(--g2)' },
-    { n: 'Noor Haddad', r: 'Head of Product', bio: 'Shapes the roadmap directly from operator calls, not a backlog.', color: 'var(--g3)' },
-    { n: 'Omar Suleiman', r: 'Customer Success Lead', bio: 'Personally onboards every new facility for its first 90 days.', color: 'var(--g1)' }
+    { n: 'Meljay Jadulos', r: 'Customer Success Lead', bio: 'Personally onboards every new facility for its first 90 days.', color: 'var(--g1)' }
+  ];
+
+  const areas = [
+    { n: 'Customer Journey', d: 'Every inquiry, rental, and service request handled consistently.', x: 'AI answers a website inquiry, shares available units, and guides the renter through move in.' },
+    { n: 'Lead Generation', d: 'Fewer prospects slip through the cracks.', x: 'New leads are captured, qualified, and followed up by email and text on the schedule you set.' },
+    { n: 'Marketing', d: 'Stay in front of prospects and tenants without the busywork.', x: 'AI drafts a monthly email campaign. You review it, then schedule it.' },
+    { n: 'Advertising', d: 'Campaigns that run within the limits you set.', x: 'AI proposes ad copy and budget. You set a spending cap, and changes above it wait for your approval.' },
+    { n: 'Operations', d: 'Routine facility work, coordinated and visible.', x: 'Move out inspections and maintenance tasks are created, assigned, and tracked across facilities.' },
+    { n: 'Accounting', d: 'Organized books and a clear view of cash flow.', x: 'Payments are matched to tenant ledgers, and a monthly revenue report is prepared for your review.' }
+  ];
+
+  // What each AI agent does, matching the agent prompts and guardrails in server/src/agents
+  const agents = [
+    { n: 'Aisha', r: 'First response', d: 'Drafts a reply to every new WhatsApp inquiry within seconds, day or night, in English or Arabic. Checks availability and price before she mentions a number.', h: 'discounts, payments, complaints and anything she can\'t verify.' },
+    { n: 'Omar', r: 'Follow-ups', d: 'Spots leads that go quiet and lines up check-ins on day 3, 7 and 14, then day 30, 60 and 90 for dormant leads. Stops the moment someone says no.', h: 'every follow-up, for your approval before it goes out.' },
+    { n: 'Layla', r: 'Closing', d: 'Keeps quoted customers moving toward a signed booking with follow-ups on day 1, 3 and 7, re-checking price and availability before she repeats a figure.', h: 'contracts, payments and discount requests.' },
+    { n: 'Sam', r: 'Tenants', d: 'Picks up messages from existing tenants, answers simple questions like access hours, and logs renewals, move-outs and invoice requests with a one-line summary.', h: 'every tenant request, routed to your accounts team.' },
+    { n: 'Nadia', r: 'Back office', d: 'At 7:00 every morning she sorts your inbox into leads, tenants, suppliers and spam, drafts the replies, and sends you a five-line summary.', h: 'every draft, since nothing she writes is sent until you read it.' }
   ];
 
   const integrations = [
@@ -175,6 +198,6 @@ const BayshireData = (function () {
   return {
     buildUnits, fmt, statusColor, suggestFor, leads, defaultInbound, templateReply,
     revenue, occBySize, occBySizeShort, activity, expiries, payments, csvRows, docs,
-    payStatus, modules, integrations, alerts, team
+    payStatus, modules, integrations, alerts, team, agents, areas
   };
 })();

@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>2Capacity — The AI powered operating system for self storage</title>
-<meta name="description" content="2Capacity is the AI powered operating system for self-storage owners. Units, leads, contracts, payments and reporting in one platform. Book a personalized demo.">
+<title>2Capacity — The AI operating system for self storage</title>
+<meta name="description" content="2Capacity's AI agents draft WhatsApp replies in seconds, chase quiet leads and sort your inbox, with prices from your live unit list. You approve every send. Built for self-storage operators worldwide. Book a personalized demo.">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:,">
 <script>(function(){try{var t=localStorage.getItem('bayshire-theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t;}catch(e){}})();</script>
@@ -14,54 +14,55 @@
 </head>
 <body>
 
-<a class="skip-link" href="#top">Skip to content</a>
+<a class="skip-link" href="#contact">Skip to demo booking</a>
 
 <header class="nav" id="nav">
   <div class="wrap nav__row">
     <a href="#top" class="nav__brand" aria-label="2Capacity home">2Capacity</a>
     <nav class="nav__links" aria-label="Primary">
+      <a href="#agents">AI Agents</a>
       <div class="nav__item">
         <button type="button" class="nav__link nav__link--trigger" id="productMenuBtn" aria-haspopup="true" aria-expanded="false">
-          Product <span class="nav__chevron" aria-hidden="true"></span>
+          Platform <span class="nav__chevron" aria-hidden="true"></span>
         </button>
-        <div class="nav__dropdown" id="productDropdown" role="menu" aria-label="Product" hidden>
+        <div class="nav__dropdown" id="productDropdown" role="menu" aria-label="Platform" hidden>
           <a href="#units" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark">IM</span>
+            <span class="nav__dropdown-mark" aria-hidden="true">IM</span>
             <span>
               <span class="nav__dropdown-title">Inventory Management System</span>
               <span class="nav__dropdown-desc">Live floor plan, 3D unit picker and per-unit pricing</span>
             </span>
           </a>
           <a href="#pipeline" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark">CR</span>
+            <span class="nav__dropdown-mark" aria-hidden="true">CR</span>
             <span>
               <span class="nav__dropdown-title">CRM</span>
               <span class="nav__dropdown-desc">Leads, quotes and contracts in one pipeline</span>
             </span>
           </a>
           <a href="#assist" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark">WA</span>
+            <span class="nav__dropdown-mark" aria-hidden="true">WA</span>
             <span>
-              <span class="nav__dropdown-title">WhatsApp Lead Management</span>
-              <span class="nav__dropdown-desc">Draft and send replies from the lead record</span>
+              <span class="nav__dropdown-title">AI Inbox for WhatsApp</span>
+              <span class="nav__dropdown-desc">AI drafts every reply from the lead record, you approve</span>
             </span>
           </a>
           <a href="#integrations" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark">ES</span>
+            <span class="nav__dropdown-mark" aria-hidden="true">ES</span>
             <span>
               <span class="nav__dropdown-title">E-Signature</span>
               <span class="nav__dropdown-desc">Route contracts for e-signature automatically</span>
             </span>
           </a>
           <a href="#finance" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark">FS</span>
+            <span class="nav__dropdown-mark" aria-hidden="true">FS</span>
             <span>
               <span class="nav__dropdown-title">Financial System</span>
               <span class="nav__dropdown-desc">Invoices, payments, vendors and expenses</span>
             </span>
           </a>
           <a href="#modules" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark">MS</span>
+            <span class="nav__dropdown-mark" aria-hidden="true">MS</span>
             <span>
               <span class="nav__dropdown-title">Moving System</span>
               <span class="nav__dropdown-desc">Schedule move-ins and move-outs and track unit turnover</span>
@@ -69,14 +70,14 @@
           </a>
         </div>
       </div>
-      <a href="#modules">Modules</a>
+      <a href="#how">How it works</a>
       <a href="#integrations">Integrations</a>
-      <a href="#reporting">Resources</a>
-      <a href="#about">About Us</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#about">Team</a>
       <a href="#contact">Contact</a>
     </nav>
     <div class="nav__actions">
-      <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle theme" aria-pressed="false">
+      <button type="button" class="theme-toggle" id="themeToggle" aria-label="Dark theme" title="Dark theme" aria-pressed="false">
         <span class="theme-toggle__dot" aria-hidden="true"></span>
       </button>
       <a href="#contact" class="btn btn--solid">Book a demo</a>
@@ -84,44 +85,220 @@
   </div>
 </header>
 
-<main>
+<main id="main" tabindex="-1">
 
 <section id="top" class="hero" aria-label="Hero">
   <div class="hero__canvas" id="heroCanvas" aria-hidden="true"></div>
   <div class="hero__text" id="heroText">
     <div class="announce" id="announce">
-      <span class="announce__text">New: pricing suggestions and reply drafting are here</span>
-      <a href="#assist" class="announce__cta">Try it</a>
+      <span class="announce__text">New: five AI agents that answer, follow up and sort your inbox</span>
+      <a href="#agents" class="announce__cta">Meet them</a>
       <button type="button" class="announce__dismiss" id="announceDismiss" aria-label="Dismiss">&times;</button>
     </div>
-    <h1 class="hero__h1">The AI powerhouse behind your <span class="grad-text">storage business.</span></h1>
-    <p class="hero__sub">2Capacity is the AI powered operating system that runs your facility, from the first inquiry and follow up to contracts, payments and reporting. Your whole business in one platform, with less manual work and more control.</p>
+    <div class="hero__eyebrow">AI operating system for self storage</div>
+    <h1 class="hero__h1">The AI Powerhouse Behind <span class="grad-text">Your Storage Business.</span></h1>
+    <p class="hero__sub">2Capacity is the AI-powered operating system that automates your facility's workflows, from customer acquisition and lead follow up to marketing, daily operations, and accounting. Bring your business together in one powerful platform, with less manual work and more control.</p>
     <div class="hero__ctas">
       <a href="#contact" class="btn btn--solid btn--lg">Book a demo <span class="arrow" aria-hidden="true">&rarr;</span></a>
-      <a href="#product" class="btn btn--outline btn--lg">Explore the platform</a>
+      <a href="#live" class="btn btn--outline btn--lg">See 2Capacity in Action</a>
     </div>
   </div>
 
-  <div class="hero__frame-wrap">
-    <div class="hero__frame" id="videoFrame">
-      <video id="demoVideo" class="hero__video" src="assets/demo.mp4" poster="assets/poster.jpg" preload="metadata" playsinline aria-label="2Capacity product demo"></video>
-      <div class="hero__frame-inner" id="videoOverlay">
-        <button type="button" class="play-btn" id="playBtn" aria-label="Play demo video">
-          <span class="play-btn__triangle" aria-hidden="true"></span>
-        </button>
-        <div class="hero__frame-label">Meet 2Capacity</div>
-        <div class="hero__frame-meta">7 min product walkthrough</div>
-      </div>
+  <div class="hero__chat-wrap">
+    <div class="wa-chat ai-glow" role="img" aria-label="Sample WhatsApp chat: a customer asks the price of a 50 square foot unit, Aisha drafts a reply with the price and availability, and the owner approves it">
+      <div class="wa-chat__head">
+          <span class="agent-avatar agent-avatar--sm" aria-hidden="true">A</span>
+          <span><span class="wa-chat__name">Aisha</span><span class="wa-chat__status">AI first response &middot; WhatsApp</span></span>
+          <span class="wa-chat__live" aria-hidden="true"></span>
+        </div>
+      <div class="wa-chat__body" id="heroChatBody" aria-hidden="true"></div>
     </div>
+    <div class="hero__chat-note">Sample conversation with sample prices</div>
   </div>
 
   <div class="hero__metrics" id="heroMetrics">
     <div class="wrap hero__metrics-row">
-      <div class="metric"><div class="metric__v">240</div><div class="metric__l">Units</div></div>
-      <div class="metric"><div class="metric__v">8</div><div class="metric__l">Unit sizes</div></div>
-      <div class="metric"><div class="metric__v">AED 237.50</div><div class="metric__l">Example weekly rate</div></div>
-      <div class="metric"><div class="metric__v">30 days</div><div class="metric__l">Expiry alert</div></div>
-      <div class="metric__note">Illustrative operational data</div>
+      <div class="metric"><div class="metric__v">5</div><div class="metric__l">AI agents, one job each</div></div>
+      <div class="metric"><div class="metric__v">24/7</div><div class="metric__l">Replies drafted, any hour</div></div>
+      <div class="metric"><div class="metric__v">EN &middot; AR</div><div class="metric__l">Replies in the customer's language</div></div>
+      <div class="metric"><div class="metric__v">0</div><div class="metric__l">Messages sent without your approval</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="outcomes" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>Fill More Units. Simplify Operations. Unlock Growth.</h2>
+      <p>Opportunities get lost in the gaps: an inquiry answered too late, a follow up that never went out, a ledger reconciled by hand at month end. 2Capacity connects those steps, so work keeps moving without you chasing it.</p>
+    </div>
+    <div class="outcome-grid" data-reveal>
+      <div class="outcome">
+        <div class="outcome__t">Occupancy and Revenue</div>
+        <p class="outcome__d">Capture demand when it appears. Inquiries are logged and followed up promptly, so fewer prospective tenants go cold.</p>
+        <div class="outcome__by">Powered by Lead Generation &middot; Customer Journey</div>
+      </div>
+      <div class="outcome">
+        <div class="outcome__t">Customer Experience</div>
+        <p class="outcome__d">Make renting easy. Timely, consistent communication from first inquiry through move in and every month after.</p>
+        <div class="outcome__by">Powered by Customer Journey &middot; Marketing</div>
+      </div>
+      <div class="outcome">
+        <div class="outcome__t">Efficiency and Control</div>
+        <p class="outcome__d">Spend less time on repetitive admin. See tasks, activity, and finances across every facility in one place.</p>
+        <div class="outcome__by">Powered by Operations &middot; Accounting</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="areas" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>One Operating System. AI Across Your Business.</h2>
+      <p>Six connected areas, one platform. AI moves each workflow forward and passes the results to the next.</p>
+    </div>
+    <div class="area-grid" data-reveal id="areaGrid"></div>
+  </div>
+</section>
+
+<section id="agents" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>Meet your AI team.</h2>
+      <p>Five agents, each with one job. They read your live units, prices and lead history, draft the next step, and hand anything about money, contracts or complaints to a person.</p>
+    </div>
+    <div class="agent-grid" data-reveal id="agentGrid"></div>
+  </div>
+</section>
+
+<section id="how" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>Let AI Move the Work Forward.</h2>
+      <p>Once configured, automations run in the background and handle the repetitive steps. You decide the rules, see what ran, and approve what matters.</p>
+    </div>
+    <ol class="steps" data-reveal>
+      <li class="step">
+        <div class="step__n">01</div>
+        <div class="step__t">Set your preferences</div>
+        <p class="step__d">Choose follow up timing, message tone, spending limits, and which actions need your approval.</p>
+      </li>
+      <li class="step">
+        <div class="step__n">02</div>
+        <div class="step__t">Automations run in the background</div>
+        <p class="step__d">Workflows start from real events, such as a new inquiry, a missed payment, or a move out, and carry the work to the next step.</p>
+      </li>
+      <li class="step">
+        <div class="step__n">03</div>
+        <div class="step__t">Monitor and approve</div>
+        <p class="step__d">An activity view shows what ran and what is waiting on you, across every facility.</p>
+      </li>
+    </ol>
+    <div data-reveal style="margin-top:40px">
+      <a href="#live" class="btn btn--outline btn--lg">See 2Capacity in Action <span class="arrow" aria-hidden="true">&rarr;</span></a>
+    </div>
+  </div>
+</section>
+
+<section id="live" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>See the AI in action.</h2>
+      <p>Ask a storage question the way a customer would. This demo answers from a sample facility's units and prices, the same way Aisha drafts from your live list.</p>
+    </div>
+    <div class="split split--2" data-reveal style="margin-top:0">
+      <div>
+        <div class="wa-chat wa-chat--demo ai-glow">
+          <div class="wa-chat__head">
+          <span class="agent-avatar agent-avatar--sm" aria-hidden="true">A</span>
+          <span><span class="wa-chat__name">Aisha</span><span class="wa-chat__status">AI first response &middot; demo</span></span>
+          <span class="wa-chat__live" aria-hidden="true"></span>
+        </div>
+          <div class="wa-chat__body" id="demoChatBody" aria-live="polite"></div>
+          <div class="demo-chips" id="demoChips"></div>
+          <form class="wa-chat__composer" id="demoChatForm">
+            <label for="demoChatInput" class="sr-only">Ask a storage question</label>
+            <input id="demoChatInput" type="text" autocomplete="off" maxlength="200" placeholder="e.g. anything around 100 sq ft free?">
+            <button type="submit" class="btn btn--solid">Send</button>
+          </form>
+        </div>
+        <p class="fine">Scripted demo with sample prices. In your account every draft waits for your approval. Nothing you type here leaves your browser.</p>
+      </div>
+      <div>
+        <div class="hero__frame" id="videoFrame">
+          <video id="demoVideo" class="hero__video" src="assets/demo.mp4" poster="assets/poster.jpg" preload="metadata" playsinline aria-label="2Capacity product demo"></video>
+          <div class="hero__frame-inner" id="videoOverlay">
+            <button type="button" class="play-btn" id="playBtn" aria-label="Play demo video">
+              <span class="play-btn__triangle" aria-hidden="true"></span>
+            </button>
+            <div class="hero__frame-label">Meet 2Capacity</div>
+            <div class="hero__frame-meta">7 min product walkthrough</div>
+          </div>
+        </div>
+        <p class="fine">Prefer a guided tour? <a href="#contact">Book a demo</a> and we'll run it on your own units.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="roi" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>What a faster reply is worth.</h2>
+      <p>A rough estimate for your facility. Move the sliders to match your numbers.</p>
+    </div>
+    <div class="roi" data-reveal>
+      <div>
+        <div class="roi-input">
+          <label for="roiInq"><span>Inquiries a month</span><output id="roiInqOut" for="roiInq"></output></label>
+          <input type="range" id="roiInq" min="20" max="1000" step="10" value="200">
+        </div>
+        <div class="roi-input">
+          <label for="roiMin"><span>Minutes your team spends per inquiry</span><output id="roiMinOut" for="roiMin"></output></label>
+          <input type="range" id="roiMin" min="2" max="30" step="1" value="10" data-unit=" min">
+        </div>
+        <div class="roi-input">
+          <label for="roiAfter"><span>Inquiries arriving after hours</span><output id="roiAfterOut" for="roiAfter"></output></label>
+          <input type="range" id="roiAfter" min="0" max="80" step="5" value="30" data-unit="%">
+        </div>
+        <div class="roi-input">
+          <label for="roiClose"><span>Inquiries that become tenants</span><output id="roiCloseOut" for="roiClose"></output></label>
+          <input type="range" id="roiClose" min="5" max="60" step="1" value="20" data-unit="%">
+        </div>
+      </div>
+      <div class="roi-results" aria-live="polite">
+        <div class="roi-result"><div class="roi-result__v"><span id="roiHours"></span> h</div><div class="roi-result__l">of typing saved each month</div></div>
+        <div class="roi-result"><div class="roi-result__v" id="roiAfterCount"></div><div class="roi-result__l">after-hours inquiries with a reply drafted and waiting</div></div>
+        <div class="roi-result"><div class="roi-result__v" id="roiUnits"></div><div class="roi-result__l">extra units filled a month</div></div>
+        <p class="fine">Assumes AI drafts halve the time spent writing replies, and that a quarter of after-hours inquiries are currently lost to a slow reply. Your results will vary.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="workflows" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>See the Power Behind Your Next Stage of Growth.</h2>
+      <p>Three workflows that show how customer activity, operations, and finances connect.</p>
+    </div>
+    <div class="workflow-grid" data-reveal>
+      <a class="workflow" href="#pipeline">
+        <div class="workflow__t">From inquiry to tenant</div>
+        <p class="workflow__d">A new lead followed up and moved toward a rental, without manual chasing.</p>
+        <span class="workflow__go">Try it below <span class="arrow" aria-hidden="true">&rarr;</span></span>
+      </a>
+      <a class="workflow" href="#product">
+        <div class="workflow__t">Operations at a glance</div>
+        <p class="workflow__d">Tasks across your facilities in one view, so nothing waits unnoticed.</p>
+        <span class="workflow__go">Try it below <span class="arrow" aria-hidden="true">&rarr;</span></span>
+      </a>
+      <a class="workflow" href="#finance">
+        <div class="workflow__t">Payments to reporting</div>
+        <p class="workflow__d">Payments tracked and reconciled, with reports ready when you need them.</p>
+        <span class="workflow__go">Try it below <span class="arrow" aria-hidden="true">&rarr;</span></span>
+      </a>
     </div>
   </div>
 </section>
@@ -129,8 +306,8 @@
 <section id="product" class="section">
   <div class="wrap">
     <div class="section-head" data-reveal>
-      <h2>Fill more units. Simplify operations.</h2>
-      <p>Opportunities get lost in the gaps: an inquiry answered too late, a renewal nobody noticed, a payment reconciled by hand at month end. 2Capacity keeps occupancy, revenue, contracts and payments in one view, so you see what needs attention without chasing it.</p>
+      <h2>The platform underneath.</h2>
+      <p>Every agent works from the same records your team does. Occupancy, revenue, contracts and payments sit in one view, so the AI never quotes a unit that's taken and you see what needs attention without chasing it.</p>
     </div>
   </div>
 
@@ -362,8 +539,8 @@
 <section id="assist" class="section">
   <div class="wrap">
     <div class="section-head" data-reveal>
-      <h2>Let AI move the work forward.</h2>
-      <p>2CapacityAssist drafts WhatsApp replies, suggests rates and flags anomalies using the records already in your system. You set the rules, and nothing is sent or changed until you approve it.</p>
+      <h2>2Capacity AI at work.</h2>
+      <p>2Capacity AI drafts WhatsApp replies, suggests rates and flags anomalies using the records already in your system. You set the rules, and nothing is sent or changed until you approve it.</p>
     </div>
 
     <div class="split split--2" data-reveal>
@@ -405,9 +582,27 @@
   </div>
 </section>
 
+<section id="trust" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>AI you stay in control of.</h2>
+      <p>An AI writing to your customers should never run loose. 2Capacity is built so it can't, and these rules can't be switched off.</p>
+    </div>
+    <div class="trust-grid" data-reveal>
+      <div class="trust-item"><div class="trust-item__t">You approve every send</div><p class="trust-item__d">Agents draft. Nothing reaches a customer until a person approves, edits or dismisses it.</p></div>
+      <div class="trust-item"><div class="trust-item__t">No invented prices</div><p class="trust-item__d">Every figure in a draft must come from your unit list. If a number can't be traced, the draft goes to a person instead.</p></div>
+      <div class="trust-item"><div class="trust-item__t">Hands over when unsure</div><p class="trust-item__d">Discounts, payments, contracts, complaints or a request for a person go straight to your team with a short summary.</p></div>
+      <div class="trust-item"><div class="trust-item__t">No money moves without you</div><p class="trust-item__d">Agents can't send payment links, contracts or quotations, and never confirm a booking or promise a refund.</p></div>
+      <div class="trust-item"><div class="trust-item__t">Limits you set</div><p class="trust-item__d">Daily caps on follow-ups and a daily AI budget for each agent. Switch any agent off in one click.</p></div>
+      <div class="trust-item"><div class="trust-item__t">Official WhatsApp API</div><p class="trust-item__d">Messages run through Meta's WhatsApp Business Cloud API on your own business number.</p></div>
+    </div>
+    <p class="trust-note" data-reveal>Your customer data is processed only to run your account, under our <a href="legal/dpa.html">Data Processing Agreement</a> and <a href="legal/privacy-policy.html">Privacy Policy</a>.</p>
+  </div>
+</section>
+
 <section id="modules" class="section">
   <div class="wrap">
-    <h2 data-reveal>One operating system. Your whole business.</h2>
+    <h2 data-reveal>Every module, included.</h2>
     <div class="module-grid" data-reveal id="moduleGrid"></div>
   </div>
 </section>
@@ -417,6 +612,47 @@
     <div class="split split--integrations" data-reveal>
       <h2>Integrations</h2>
       <div class="integration-list" id="integrationList"></div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>Pricing built around your AI team.</h2>
+      <p>Priced per facility, by number of units. Every plan includes the full platform. We'll show the exact figure for your facility in your demo.</p>
+    </div>
+    <div class="price-grid" data-reveal>
+      <div class="price-card">
+        <div class="price-card__n">Starter</div>
+        <div class="price-card__tag">The platform plus AI reply drafts</div>
+        <ul>
+          <li>Units, leads, quotes, contracts, payments and reports</li>
+          <li>Aisha drafts a reply to every new WhatsApp inquiry</li>
+          <li>Approve, edit or dismiss every draft</li>
+        </ul>
+        <a href="#contact" class="btn btn--outline">Get pricing</a>
+      </div>
+      <div class="price-card ai-glow">
+        <div class="price-card__n">Growth</div>
+        <div class="price-card__tag">Starter plus AI follow-ups and closing</div>
+        <ul>
+          <li>Omar lines up follow-ups for quiet and dormant leads</li>
+          <li>Layla keeps quoted customers moving to a booking</li>
+          <li>Follow-up timing and daily limits you control</li>
+        </ul>
+        <a href="#contact" class="btn btn--solid">Get pricing</a>
+      </div>
+      <div class="price-card">
+        <div class="price-card__n">Pro</div>
+        <div class="price-card__tag">The full AI team</div>
+        <ul>
+          <li>Sam logs tenant requests and routes them to your team</li>
+          <li>Nadia sorts your inbox and sends a 7:00 morning report</li>
+          <li>AI pricing suggestions and anomaly alerts</li>
+        </ul>
+        <a href="#contact" class="btn btn--outline">Get pricing</a>
+      </div>
     </div>
   </div>
 </section>
@@ -434,8 +670,8 @@
 <section id="contact" class="section">
   <div class="wrap">
     <div class="section-head" data-reveal>
-      <h2>Discover what 2Capacity can do for your facility.</h2>
-      <p>Tell us about your business. We'll tailor your demo to the workflows you want to simplify and the opportunities you want to unlock. Prefer to talk first? Reach us directly.</p>
+      <h2>Discover What 2Capacity Can Do for Your Facility.</h2>
+      <p>Tell us about your business. We'll tailor your demo to the workflows you want to simplify and the opportunities you want to unlock.</p>
     </div>
 
     <div class="split split--2" data-reveal>
@@ -446,11 +682,12 @@
           <div class="kv-row"><span>Phone</span><span class="mono"><a href="tel:+14169308205">+1 416-930-8205</a></span></div>
           <div class="kv-row"><span>WhatsApp</span><span class="mono"><a href="https://wa.me/971501234567" target="_blank" rel="noopener">+971 50 123 4567</a></span></div>
           <div class="kv-row"><span>Email</span><span><a href="mailto:hello@2capacity.com">hello@2capacity.com</a></span></div>
+          <div class="kv-row"><span>Coverage</span><span>Worldwide, with remote onboarding</span></div>
           <div class="kv-row"><span>Hours</span><span>Sun-Thu, 9:00-18:00 GST</span></div>
         </div>
 
         <div class="chat-card">
-          <div class="chat-card__mark">WA</div>
+          <div class="chat-card__mark" aria-hidden="true">WA</div>
           <div class="chat-card__body">
             <div class="chat-card__title">Prefer to chat now?</div>
             <div class="chat-card__desc">Message our team on WhatsApp for a live reply during business hours.</div>
@@ -461,8 +698,18 @@
 
       <div>
         <h3>Book a personalized demo</h3>
+        <ol class="next-steps">
+          <li><span class="next-steps__n">1</span>Share a few details about your facilities.</li>
+          <li><span class="next-steps__n">2</span>Our team emails you within 1 business day to arrange a time.</li>
+          <li><span class="next-steps__n">3</span>A personalized walkthrough of about 30 minutes, built around your goals.</li>
+        </ol>
         <div id="contactFormView">
           <form id="contactForm" novalidate>
+            <p class="fine" style="margin:0 0 18px">All fields are required unless marked optional.</p>
+            <div class="hp-field" aria-hidden="true">
+              <label for="contactWebsite">Leave blank</label>
+              <input type="text" id="contactWebsite" name="website" tabindex="-1" autocomplete="off">
+            </div>
             <div class="field">
               <label for="contactName">Name</label>
               <input type="text" id="contactName" name="name" required autocomplete="name">
@@ -470,6 +717,10 @@
             <div class="field">
               <label for="contactEmail">Business email</label>
               <input type="email" id="contactEmail" name="email" required autocomplete="email">
+            </div>
+            <div class="field">
+              <label for="contactPhone">Phone or WhatsApp <span class="muted">(optional)</span></label>
+              <input type="tel" id="contactPhone" name="phone" autocomplete="tel" inputmode="tel">
             </div>
             <div class="field">
               <label for="contactCompany">Company name</label>
@@ -487,13 +738,18 @@
               </select>
             </div>
             <div class="field">
+              <label for="contactCountry">Country</label>
+              <input type="text" id="contactCountry" name="country" required autocomplete="country-name">
+            </div>
+            <div class="field">
               <label for="contactMessage">What would you most like to improve or automate? <span class="muted">(optional)</span></label>
               <textarea id="contactMessage" name="message" rows="4"></textarea>
             </div>
-            <div class="field field--error" id="contactFormError" hidden>Please add your name, a valid business email, your company name and number of facilities.</div>
+            <div class="field field--error" id="contactFormError" hidden>Please add your name, a valid business email, your company name, number of facilities and country.</div>
             <div class="modal-actions" style="justify-content:flex-start">
-              <button type="submit" class="btn btn--solid">Request my demo</button>
+              <button type="submit" class="btn btn--solid">Request My Personalized Demo</button>
             </div>
+            <p class="fine">We use your details only to arrange and tailor your demo. See our <a href="legal/privacy-policy.html">privacy policy</a>.</p>
           </form>
         </div>
         <div id="contactSuccessView" hidden>
@@ -508,10 +764,10 @@
 <section id="demo" class="closing">
   <div class="closing__canvas" id="closingCanvas" aria-hidden="true"></div>
   <div class="wrap" data-reveal>
-    <h2 class="closing__h2">Run the facility.<br><span class="grad-text">Not the spreadsheet.</span></h2>
-    <p class="closing__sub">See 2Capacity in action, with a personalized demo built around your facility and your business goals.</p>
+    <h2 class="closing__h2">See 2Capacity <span class="grad-text">in Action.</span></h2>
+    <p class="closing__sub">A personalized demo built around your facility and your business goals.</p>
     <a href="#contact" class="btn btn--solid btn--lg">Book a demo <span class="arrow" aria-hidden="true">&rarr;</span></a>
-    <div class="closing__foot">For self-storage owners and operators.</div>
+    <div class="closing__foot">An AI team for self-storage owners and operators worldwide.</div>
   </div>
 </section>
 
@@ -519,8 +775,9 @@
 
 <footer class="footer">
   <div class="wrap footer__row">
-    <span class="footer__brand">2Capacity</span>
-    <span>All figures, units and customers shown are illustrative sample data.</span>
+    <span class="footer__brand">2Capacity Storage OS</span>
+    <a href="mailto:hello@2capacity.com">hello@2capacity.com</a>
+    <span>&copy; 2026 2Capacity &middot; Product screens show illustrative sample data.</span>
     <nav class="footer__legal" aria-label="Legal">
       <a href="legal/terms-of-service.html">Terms of Service</a>
       <a href="legal/privacy-policy.html">Privacy Policy</a>
@@ -534,20 +791,20 @@
   <div class="quick-chat__panel" id="quickChatPanel" hidden role="menu" aria-label="Contact options">
     <div class="quick-chat__panel-title">Need a hand?</div>
     <a href="https://wa.me/971501234567" target="_blank" rel="noopener" class="quick-chat__option">
-      <span class="quick-chat__option-mark">WA</span>
+      <span class="quick-chat__option-mark" aria-hidden="true">WA</span>
       <span><span class="quick-chat__option-title">Chat on WhatsApp</span><span class="quick-chat__option-desc">Usually replies within minutes</span></span>
     </a>
     <a href="mailto:hello@2capacity.com" class="quick-chat__option">
-      <span class="quick-chat__option-mark">@</span>
+      <span class="quick-chat__option-mark" aria-hidden="true">@</span>
       <span><span class="quick-chat__option-title">Email us</span><span class="quick-chat__option-desc">hello@2capacity.com</span></span>
     </a>
     <a href="#contact" class="quick-chat__option" id="quickChatContactLink">
-      <span class="quick-chat__option-mark">FM</span>
+      <span class="quick-chat__option-mark" aria-hidden="true">FM</span>
       <span><span class="quick-chat__option-title">Book a demo</span><span class="quick-chat__option-desc">A personalized walkthrough</span></span>
     </a>
   </div>
   <button type="button" class="quick-chat__btn" id="quickChatBtn" aria-haspopup="true" aria-expanded="false" aria-label="Contact us">
-    <span class="quick-chat__btn-mark">WA</span>
+    <span class="quick-chat__btn-mark" aria-hidden="true">WA</span>
   </button>
 </div>
 
