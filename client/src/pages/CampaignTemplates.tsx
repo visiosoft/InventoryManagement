@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, RefreshCw, Send, Trash2, Pencil, ImagePlus } from 'lucide-react'
-import { api, apiError } from '../lib/api'
+import { api, apiError, apiUrl } from '../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, Select, Spinner, Textarea } from '../components/ui'
 
 const PURPLE = '#5B2BC9'
@@ -152,6 +152,8 @@ export default function CampaignTemplates() {
   if (isLoading) return <Spinner />
 
   return (
+    <div className="space-y-4">
+    <UnitSizesCarousel />
     <Card>
       <CardHeader
         title="Your WhatsApp templates"
@@ -196,6 +198,65 @@ export default function CampaignTemplates() {
             </div>
           )
         })}
+      </CardBody>
+    </Card>
+    </div>
+  )
+}
+
+/**
+ * The unit-sizes carousel: one WhatsApp message with a card per unit size.
+ * Photos come with the server; this shows which cards are ready, sends the
+ * carousel to Meta for review, and says where it stands. Once approved it
+ * is sent from the WhatsApp inbox like any template.
+ */
+function UnitSizesCarousel() {
+  const qc = useQueryClient()
+  const [msg, setMsg] = useState('')
+  const { data } = useQuery<{ name: string; status: string; rejectedReason: string; cards: { code: string; label: string; text: string; hasImage: boolean }[] }>({
+    queryKey: ['unit-sizes-carousel'],
+    queryFn: () => api.get('/campaign-templates/carousel').then((r) => r.data),
+  })
+  const submit = useMutation({
+    mutationFn: () => api.post('/campaign-templates/carousel/submit').then((r) => r.data),
+    onSuccess: (r: { status: string; cards: string[] }) => { setMsg(`Sent to Meta with ${r.cards.length} cards — ${r.status.toLowerCase()}. Approval usually takes minutes to a day.`); qc.invalidateQueries({ queryKey: ['unit-sizes-carousel'] }) },
+    onError: (e) => setMsg(apiError(e)),
+  })
+  if (!data) return null
+  const ready = data.cards.filter((c) => c.hasImage)
+  const STATUS_LINE: Record<string, string> = {
+    NOT_SUBMITTED: 'Not sent to Meta yet',
+    PENDING: 'Waiting for Meta to approve',
+    APPROVED: 'Approved — send it from the WhatsApp inbox (Send template → unit sizes carousel)',
+    REJECTED: `Rejected by Meta${data.rejectedReason ? `: ${data.rejectedReason}` : ''}`,
+  }
+  return (
+    <Card>
+      <CardHeader
+        title="Unit sizes carousel"
+        subtitle={'One WhatsApp message, a card per unit size — photo, “Book now” and “Get a quote”. A “Get a quote” tap records that unit on the lead.'}
+        action={data.status !== 'APPROVED' && data.status !== 'PENDING' ? (
+          <Button disabled={ready.length < 2 || submit.isPending} onClick={() => { if (confirm(`Send the carousel to Meta with ${ready.length} cards? Cards without a photo are left out.`)) submit.mutate() }}>
+            <Send size={13} /> {submit.isPending ? 'Sending…' : `Send to Meta (${ready.length} cards)`}
+          </Button>
+        ) : undefined}
+      />
+      <CardBody className="space-y-3">
+        <div style={{ fontSize: 13, fontWeight: 600, color: data.status === 'APPROVED' ? '#15803D' : data.status === 'REJECTED' ? '#B91C1C' : MUTED }}>{STATUS_LINE[data.status] ?? data.status}</div>
+        {msg && <div style={{ fontSize: 13, color: PURPLE }}>{msg}</div>}
+        <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+          {data.cards.map((c) => (
+            <div key={c.code} style={{ flex: '0 0 150px', border: `1px solid ${LINE}`, borderRadius: 12, overflow: 'hidden', background: '#fff', opacity: c.hasImage ? 1 : 0.6 }}>
+              {c.hasImage
+                ? <img src={apiUrl(`/public/carousel/${c.code}.jpg`)} alt={c.label} style={{ width: '100%', height: 120, objectFit: 'cover' }} />
+                : <div style={{ height: 120, display: 'grid', placeItems: 'center', fontSize: 12, color: MUTED, background: '#F6F4F9', textAlign: 'center', padding: 8 }}>No photo yet<br />({c.code})</div>}
+              <div style={{ padding: 8, fontSize: 12 }}><b>{c.label}</b><div style={{ color: MUTED }}>{c.code}</div></div>
+            </div>
+          ))}
+        </div>
+        {ready.length < data.cards.length && (
+          <div style={{ fontSize: 12, color: MUTED }}>{data.cards.length - ready.length} card{data.cards.length - ready.length === 1 ? '' : 's'} without a photo will be left out.</div>
+        )}
       </CardBody>
     </Card>
   )

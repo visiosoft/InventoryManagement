@@ -62,6 +62,7 @@ import aiBotRoutes from './routes/aiBot.js';
 import whatsappFlowTemplateRoutes from './routes/whatsappFlowTemplates.js';
 import campaignRoutes from './routes/campaigns.js';
 import campaignTemplateRoutes, { publicMediaRouter as templateMediaPublic } from './routes/campaignTemplates.js';
+import { CAROUSEL_DIR } from './services/carousel.js';
 import { refreshTemplateStatuses } from './services/templateManager.js';
 import sentEmailRoutes from './routes/sentEmails.js';
 import marketingPublicRoutes from './routes/marketingPublic.js';
@@ -297,6 +298,8 @@ app.use('/api/public/bookings', publicBookingRoutes);
 // The website's price list: sizes, prices and discounts, no token. Read-only.
 app.use('/api/public/pricing', publicPricingRoutes);
 app.use('/api/public/template-media', templateMediaPublic);
+// The unit-sizes carousel's card photos: Meta fetches each one when the carousel is sent.
+app.use('/api/public/carousel', express.static(CAROUSEL_DIR, { maxAge: '7d', fallthrough: false }));
 app.use('/api/warehouse-jobs/public', warehouseJobPublicRoutes);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
