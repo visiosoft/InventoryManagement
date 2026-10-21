@@ -21,12 +21,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JOBS_UPLOADS = path.resolve(__dirname, '../../../uploads/moving-jobs');
 fs.mkdirSync(JOBS_UPLOADS, { recursive: true });
 
+// Photos and videos of the job. Videos are larger, so the ceiling is a
+// phone video's worth rather than a photo's.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Only image files are allowed'));
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) cb(null, true);
+    else cb(new Error('Only photos and videos can be uploaded'));
   },
 });
 
@@ -574,7 +576,11 @@ router.delete('/:id', async (req, res) => {
 });
 
 // ── Image upload ───────────────────────────────────────────────────────────
-router.post('/:id/images', upload.array('images', 20), async (req, res) => {
+router.post('/:id/images', (req, res, next) => upload.array('images', 20)(req, res, (err) => {
+  if (!err) return next();
+  const tooBig = err.code === 'LIMIT_FILE_SIZE';
+  res.status(400).json({ error: tooBig ? 'That file is over 100 MB — trim the video or send a shorter one' : err.message });
+}), async (req, res) => {
   try {
     const job = await MovingJob.findById(req.params.id).populate('customer', 'fullName');
     if (!job) return res.status(404).json({ error: 'Job not found' });
@@ -596,6 +602,7 @@ router.post('/:id/images', upload.array('images', 20), async (req, res) => {
         originalName: file.originalname,
         size: file.size,
         category,
+        mimeType: file.mimetype,
         storage: result.storage,
         driveFileId: result.driveFileId || '',
         uploadedAt: new Date(),
@@ -876,6 +883,7 @@ publicUploadRouter.post('/:token/upload', publicUpload.array('files', 20), async
         originalName: file.originalname,
         size: file.size,
         category,
+        mimeType: file.mimetype,
         storage: result.storage,
         driveFileId: result.driveFileId || '',
         uploadedAt: new Date(),

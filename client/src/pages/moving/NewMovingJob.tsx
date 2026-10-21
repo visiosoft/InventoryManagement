@@ -604,14 +604,14 @@ export default function NewMovingJob() {
             <div className="space-y-5">
               <div>
                 <h2 style={{ fontFamily: "'Bricolage Grotesque', sans-serif", color: INK, fontSize: '1.125rem', fontWeight: 700 }}>
-                  Estimation Photos
+                  Estimation Photos &amp; Videos
                 </h2>
                 <p style={{ color: MUTED, fontSize: '0.8rem', marginTop: '0.125rem' }}>
-                  Take photos of each area for an accurate estimate{totalPhotos > 0 && ` · ${totalPhotos} photo${totalPhotos !== 1 ? 's' : ''} added`}
+                  Take photos or a short video of each area for an accurate estimate{totalPhotos > 0 && ` · ${totalPhotos} file${totalPhotos !== 1 ? 's' : ''} added`}
                 </p>
               </div>
 
-              <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={e => {
+              <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => {
                 const cat = fileInputRef.current?.dataset.category || 'Other'
                 handlePhotoPick(cat, e.target.files)
                 e.target.value = ''
@@ -649,7 +649,9 @@ export default function NewMovingJob() {
                           )}>
                             {photos.slice(0, 4).map((p, pi) => (
                               <div key={pi} className={cn('relative overflow-hidden', count === 1 ? 'w-full h-full' : '')}>
-                                <img src={p.preview} alt="" className="w-full h-full object-cover" />
+                                {p.file.type.startsWith('video/')
+                                  ? <video src={p.preview} muted playsInline className="w-full h-full object-cover" />
+                                  : <img src={p.preview} alt="" className="w-full h-full object-cover" />}
                                 {pi === 3 && count > 4 && (
                                   <div className="absolute inset-0 bg-black/50 grid place-items-center">
                                     <span className="text-white text-sm font-bold">+{count - 4}</span>

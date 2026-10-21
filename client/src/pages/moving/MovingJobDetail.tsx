@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check, Share2, Copy, ExternalLink, Download, MessageSquare } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check, Play, Share2, Copy, ExternalLink, Download, MessageSquare } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
 import type { MovingJob, MovingJobStatus, Worker, Truck, MovingJobImage } from '../../lib/types'
@@ -470,6 +470,10 @@ function MovingNoticesCard({ job }: { job: MovingJob }) {
     </Card>
   )
 }
+
+/** A job's media can be a photo or a video; older uploads only have the file name to go on. */
+const isVideo = (img: MovingJobImage) =>
+  Boolean(img.mimeType?.startsWith('video/')) || /\.(mp4|mov|m4v|webm|3gp|avi|mkv)$/i.test(img.originalName || img.filename || '')
 
 export default function MovingJobDetail() {
   const { id } = useParams<{ id: string }>()
@@ -1411,8 +1415,8 @@ export default function MovingJobDetail() {
       {/* Estimation Photos — room-by-room tile grid */}
       <Card>
         <CardHeader
-          title={<span className="flex items-center gap-2"><Camera size={15} />Estimation Photos</span>}
-          subtitle={`${imageList.length} photo${imageList.length !== 1 ? 's' : ''} · take photos of each area for an accurate estimate`}
+          title={<span className="flex items-center gap-2"><Camera size={15} />Estimation Photos &amp; Videos</span>}
+          subtitle={`${imageList.length} file${imageList.length !== 1 ? 's' : ''} · take photos or a short video of each area for an accurate estimate`}
         />
         <CardBody>
           {(() => {
@@ -1465,7 +1469,7 @@ export default function MovingJobDetail() {
                         )}>
                           {cat}{done && ` (${count})`}
                         </span>
-                        <input type="file" accept="image/*" multiple className="sr-only" disabled={uploadingImages}
+                        <input type="file" accept="image/*,video/*" multiple className="sr-only" disabled={uploadingImages}
                           onChange={e => handleImageUpload(e, cat)} />
                       </label>
                     )
@@ -1499,14 +1503,19 @@ export default function MovingJobDetail() {
                                     t.parentElement!.querySelector('.img-fallback')?.classList.remove('hidden')
                                   }}
                                 />
-                                <div className="img-fallback hidden absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-1">
-                                  <AlertCircle size={20} className="opacity-40" />
-                                  <span className="text-[10px]">Image unavailable</span>
+                                <div className="img-fallback hidden absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-1 cursor-pointer" onClick={() => setLightboxImg(img)}>
+                                  {isVideo(img) ? <Play size={22} className="opacity-60" /> : <AlertCircle size={20} className="opacity-40" />}
+                                  <span className="text-[10px]">{isVideo(img) ? 'Video — tap to play' : 'Image unavailable'}</span>
                                 </div>
+                                {isVideo(img) && (
+                                  <span className="pointer-events-none absolute inset-0 grid place-items-center">
+                                    <span className="h-10 w-10 rounded-full bg-black/55 text-white grid place-items-center"><Play size={18} fill="currentColor" /></span>
+                                  </span>
+                                )}
                                 <button
                                   onClick={() => deleteImageMut.mutate(idx)}
                                   className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                                  title="Delete photo"
+                                  title={isVideo(img) ? 'Delete video' : 'Delete photo'}
                                 >
                                   <X size={11} />
                                 </button>
@@ -1534,14 +1543,30 @@ export default function MovingJobDetail() {
           <button className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">
             <X size={20} />
           </button>
-          <img
-            src={lightboxImg.storage === 'drive' && lightboxImg.driveFileId
-              ? `https://drive.google.com/thumbnail?id=${lightboxImg.driveFileId}&sz=w1600`
-              : lightboxImg.url}
-            alt={lightboxImg.originalName || 'Photo'}
-            className="max-w-full max-h-full rounded-xl shadow-2xl"
-            onClick={e => e.stopPropagation()}
-          />
+          {isVideo(lightboxImg) ? (
+            lightboxImg.storage === 'drive' && lightboxImg.driveFileId ? (
+              // Drive plays its own videos; a large one may need a minute after upload before it plays.
+              <iframe
+                src={`https://drive.google.com/file/d/${lightboxImg.driveFileId}/preview`}
+                title={lightboxImg.originalName || 'Video'}
+                allow="autoplay; fullscreen"
+                allowFullScreen
+                className="w-full max-w-4xl aspect-video rounded-xl shadow-2xl bg-black"
+                onClick={e => e.stopPropagation()}
+              />
+            ) : (
+              <video src={lightboxImg.url} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
+            )
+          ) : (
+            <img
+              src={lightboxImg.storage === 'drive' && lightboxImg.driveFileId
+                ? `https://drive.google.com/thumbnail?id=${lightboxImg.driveFileId}&sz=w1600`
+                : lightboxImg.url}
+              alt={lightboxImg.originalName || 'Photo'}
+              className="max-w-full max-h-full rounded-xl shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            />
+          )}
           {lightboxImg.originalName && (
             <p className="absolute bottom-4 text-xs text-white/70">{lightboxImg.originalName}</p>
           )}

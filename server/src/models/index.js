@@ -1409,6 +1409,8 @@ const movingJobImageSchema = new Schema({
   originalName: { type: String },
   size: { type: Number },
   category: { type: String, default: '' },
+  // image/… or video/… — a job's media can be either.
+  mimeType: { type: String, default: '' },
   storage: { type: String, enum: ['local', 'drive'], default: 'local' },
   driveFileId: { type: String, default: '' },
   uploadedAt: { type: Date, default: Date.now },
