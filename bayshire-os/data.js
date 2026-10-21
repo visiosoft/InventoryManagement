@@ -202,6 +202,8 @@ const BayshireData = (function () {
     { mark: 'ST', logo: 'assets/logos/stripe.svg', n: 'Stripe', d: 'Take card payments for invoices and renewals, recorded against the tenant automatically.' },
     { mark: 'ZB', logo: 'assets/logos/zoho.svg', n: 'Zoho Books', d: 'Keep invoices, payments and customer ledgers in step with your accounting.' },
     { mark: 'GM', logo: 'assets/logos/gmail.svg', n: 'Gmail', d: 'Nadia sorts your inbox each morning and drafts replies for you to review.' },
+    { mark: 'CL', logo: 'assets/logos/claude.svg', n: 'Claude (MCP)', d: 'Connect 2Capacity to Claude over MCP and ask about occupancy, leads, revenue and follow-ups in plain language, or have it prepare quotes for you to confirm.' },
+    { mark: 'OA', logo: 'assets/logos/openai.svg', n: 'OpenAI (MCP)', d: 'OpenAI models power the AI agents, and the same MCP connection lets ChatGPT work with your live 2Capacity data.' },
     { mark: 'ES', logo: 'assets/logos/esignature.svg', n: 'E-Signature', d: 'Send contracts for e-signature and automatically file the countersigned copy against the record.' }
   ];
 
