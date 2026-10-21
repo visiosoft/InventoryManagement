@@ -186,6 +186,9 @@ const BayshireData = (function () {
     { mark: 'WA', n: 'WhatsApp Business', d: 'Meta webhook integration for customer communication and lead activity.' },
     { mark: 'GC', n: 'Google Contacts', d: 'Synchronize contacts and automatically create or update leads based on phone numbers.' },
     { mark: 'GD', n: 'Google Drive', d: 'Store and archive contracts and operational documents.' },
+    { mark: 'ST', n: 'Stripe', d: 'Take card payments for invoices and renewals, recorded against the tenant automatically.' },
+    { mark: 'ZB', n: 'Zoho Books', d: 'Keep invoices, payments and customer ledgers in step with your accounting.' },
+    { mark: 'GM', n: 'Gmail', d: 'Nadia sorts your inbox each morning and drafts replies for you to review.' },
     { mark: 'ES', n: 'E-Signature', d: 'Send contracts for e-signature and automatically file the countersigned copy against the record.' }
   ];
 
