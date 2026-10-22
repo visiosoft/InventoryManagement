@@ -114,6 +114,13 @@ export function toClaudeMessages(messages, { keepTools = true } = {}) {
     // The first message must come from the user.
     if (out[0]?.role === 'assistant') out.unshift({ role: 'user', content: [{ type: 'text', text: '(conversation so far)' }] });
     if (!out.length) out.push({ role: 'user', content: [{ type: 'text', text: 'Begin.' }] });
+    /* …and the last one too. A chat where our side wrote last (a Refresh
+       after "Which size?") ended on an assistant turn, which current Claude
+       models reject as prefill: "The conversation must end with a user
+       message." The instructions in the system prompt say what to write. */
+    if (out[out.length - 1].role === 'assistant') {
+        out.push({ role: 'user', content: [{ type: 'text', text: '(Our side sent the last message above. Do what the instructions ask next.)' }] });
+    }
     return out;
 }
 

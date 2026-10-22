@@ -95,3 +95,16 @@ test('conversion helpers', () => {
     assert.deepEqual(firstJsonObject('Sure: {"a":1} done'), { a: 1 });
     assert.equal(firstJsonObject('no json'), null);
 });
+
+test('a conversation where we wrote last still ends with a user turn (no prefill)', () => {
+    const out = toClaudeMessages([
+        { role: 'user', content: 'I need thiss' },
+        { role: 'assistant', content: 'Which size?' },
+    ]);
+    assert.equal(out[out.length - 1].role, 'user');
+    assert.equal(out[out.length - 2].content[0].text, 'Which size?');
+    // A normal turn is left alone.
+    const normal = toClaudeMessages([{ role: 'assistant', content: 'Hi' }, { role: 'user', content: 'Price?' }]);
+    assert.equal(normal.length, 3);
+    assert.equal(normal[2].content[0].text, 'Price?');
+});
