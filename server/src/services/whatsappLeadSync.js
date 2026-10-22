@@ -16,7 +16,7 @@ import { parseFormMessage, ingestMetaLead } from './metaLead.js';
 import { handleMovingStorageFlow } from './movingStorageFlow.js';
 import { handleExitSurveyReply, exitSurveySummary } from './exitSurvey.js';
 import { sendWelcomeFlow, handleWelcomeReply, welcomeSummary } from './welcomeFlow.js';
-import { handleCarouselTap } from './carousel.js';
+import { handleCarouselTap, cardFromTap } from './carousel.js';
 import { starterOfChat, keptNote } from './chatStarter.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
@@ -228,7 +228,9 @@ export function extractMessagesFromPayload(payload) {
                    `interactive.button_reply`. Without this every tap was stored
                    as a blank message, so the chat showed nothing and nobody
                    could tell what the customer had answered. */
-                const text = msg?.text?.body || buttonReplyText(msg) || exitSurveySummary(msg) || welcomeSummary(msg) || '';
+                // A carousel "Get a quote" says which card it was tapped on.
+                const card = cardFromTap(msg);
+                const text = msg?.text?.body || (card ? `${buttonReplyText(msg) || 'Get a quote'} — ${card.label}` : '') || buttonReplyText(msg) || exitSurveySummary(msg) || welcomeSummary(msg) || '';
                 const messageId = msg?.id || '';
                 const type = msg?.type || 'text';
                 const ts = msg?.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();

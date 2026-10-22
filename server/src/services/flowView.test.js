@@ -44,3 +44,10 @@ test('a template shows its buttons; a Flow button shows as the form', async () =
     assert.deepEqual(v.buttons, [{ type: 'QUICK_REPLY', text: 'Call me' }, { type: 'URL', text: 'Website' }]);
     assert.equal(await templatesFor([{ direction: 'inbound', type: 'text' }], async () => { throw new Error('not called'); }), null);
 });
+
+test('a carousel "Get a quote" tap names the card it came from', () => {
+    const out = withFormView({ direction: 'inbound', text: 'Get a quote' }, { button: { text: 'Get a quote', payload: 'pb_card:F2-048' } });
+    assert.equal(out.text, 'Get a quote — 10 sq ft unit');
+    const already = withFormView({ direction: 'inbound', text: 'Get a quote — 10 sq ft unit' }, { button: { payload: 'pb_card:F2-048' } });
+    assert.equal(already.text, 'Get a quote — 10 sq ft unit');
+});

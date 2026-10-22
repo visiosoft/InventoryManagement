@@ -10,6 +10,8 @@
  *     blob of JSON or a blank bubble.
  */
 
+import { cardFromTap } from './carousel.js';
+
 const SKIP = new Set(['flow_token', 'flow', 'error_message', 'show_error']);
 
 // Field names whose plain humanised form would read badly.
@@ -129,6 +131,9 @@ export function withFormView(message, raw, templatesByName = null) {
     } else {
         const formAnswers = formAnswersFromRaw(raw);
         if (formAnswers) out.formAnswers = formAnswers;
+        // A carousel tap stored before it named its card.
+        const card = cardFromTap(raw);
+        if (card && !String(out.text || '').includes(card.label)) out.text = `${out.text || 'Get a quote'} — ${card.label}`;
     }
     return out;
 }
