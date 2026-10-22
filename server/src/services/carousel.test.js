@@ -45,5 +45,9 @@ test('each card\'s Book now opens its own unit section', () => {
     assert.equal(url(0), 'https://purplebox.ae/unit-details.html#unit-xs');
     assert.equal(url(1), 'https://purplebox.ae/unit-details.html#unit-ss');
     assert.equal(url(2), 'https://purplebox.ae/unit-details.html#unit-m35');
-    assert.equal(url(3), 'https://purplebox.ae/unit-details.html');
+    assert.equal(url(3), 'https://purplebox.ae/unit-details.html#unit-s50');
+    assert.equal(url(4), 'https://purplebox.ae/unit-details.html#unit-m75');
+    assert.equal(url(5), 'https://purplebox.ae/unit-details.html#unit-l');
+    assert.equal(url(6), 'https://purplebox.ae/unit-details.html#unit-xl');
+    assert.equal(url(7), 'https://purplebox.ae/unit-details.html');
 });
