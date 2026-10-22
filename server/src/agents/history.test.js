@@ -55,3 +55,29 @@ test('a run of files collapses to one counted line, and long messages are trimme
   assert.equal(m[0].content, '[the customer sent 3 photos and a document]');
   assert.equal(m[1].content.length, 500);
 });
+
+import { openCustomerMessages } from './runtime.js';
+
+// The chat from the screenshot (22 Oct): the price list went out, then the
+// customer wrote four messages; our only reply in between was "sure".
+test('every customer message since our last real reply is open — "sure" does not answer the location', () => {
+    const chat = [
+        { direction: 'outbound', type: 'text', text: '• 150 sq ft: AED 2,700 • 200 sq ft: AED 3,100 Limited-Time Offer: …' },
+        { direction: 'inbound', type: 'text', text: 'Hib' },
+        { direction: 'inbound', type: 'text', text: 'Please share your location' },
+        { direction: 'outbound', type: 'text', text: 'sure' },
+        { direction: 'inbound', type: 'text', text: 'Let me know if 100 Sq ft available with you' },
+        { direction: 'inbound', type: 'text', text: 'And final rent per month' },
+    ];
+    assert.deepEqual(openCustomerMessages(chat), ['Hib', 'Please share your location', 'Let me know if 100 Sq ft available with you', 'And final rent per month']);
+});
+
+test('a real answer closes what came before it', () => {
+    const chat = [
+        { direction: 'inbound', type: 'text', text: 'Where are you?' },
+        { direction: 'outbound', type: 'text', text: 'We are at Warehouse 12, ABA Avenue, Al Quoz 2 — here is the map.' },
+        { direction: 'inbound', type: 'text', text: 'Price for 50?' },
+    ];
+    assert.deepEqual(openCustomerMessages(chat), ['Price for 50?']);
+    assert.deepEqual(openCustomerMessages([...chat, { direction: 'outbound', type: 'image', text: '' }]), []);
+});

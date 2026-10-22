@@ -73,6 +73,33 @@ router.put('/:id', upload.single('image'), async (req, res) => {
   res.json(present(doc.toObject()));
 });
 
+/* ---------- the unit-sizes carousel ---------- */
+
+/** Which cards have a photo, and where the template stands with Meta. */
+router.get('/carousel', async (_req, res) => {
+  try {
+    const { CAROUSEL_CARDS, CAROUSEL_NAME, cardHasImage, cardImageUrl } = await import('../services/carousel.js');
+    const { listWhatsAppTemplates } = await import('../services/whatsapp.js');
+    const list = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
+    const meta = (list.templates || []).find((t) => t.name === CAROUSEL_NAME);
+    res.json({
+      name: CAROUSEL_NAME,
+      status: meta ? String(meta.status).toUpperCase() : 'NOT_SUBMITTED',
+      rejectedReason: meta?.rejected_reason || '',
+      cards: CAROUSEL_CARDS.map((c) => ({ code: c.code, label: c.label, text: c.text, hasImage: cardHasImage(c.code), imageUrl: cardHasImage(c.code) ? `/api/public/carousel/${c.code}.jpg` : '' })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Send the carousel to Meta for review (admin). */
+router.post('/carousel/submit', async (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+  try {
+    const { submitUnitSizesCarousel } = await import('../services/templateManager.js');
+    res.json(await submitUnitSizesCarousel());
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 router.post('/:id/submit', async (req, res) => {
   try { res.json(present((await submitTemplate(req.params.id)).toObject())); } catch (e) { res.status(400).json({ error: e.message }); }
 });

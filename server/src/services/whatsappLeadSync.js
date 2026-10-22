@@ -16,6 +16,7 @@ import { parseFormMessage, ingestMetaLead } from './metaLead.js';
 import { handleMovingStorageFlow } from './movingStorageFlow.js';
 import { handleExitSurveyReply, exitSurveySummary } from './exitSurvey.js';
 import { sendWelcomeFlow, handleWelcomeReply, welcomeSummary } from './welcomeFlow.js';
+import { handleCarouselTap } from './carousel.js';
 import { starterOfChat, keptNote } from './chatStarter.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
@@ -571,6 +572,9 @@ async function persistMessages(messages) {
              * is our first reply, so nothing else answers this message. The
              * answers coming back are written onto the lead, thanked, and
              * handed to the assistant as a plain line it can act on. */
+            // "Get a quote" on a unit-sizes carousel card: the lead records the unit.
+            await handleCarouselTap({ phoneNormalized: msg.phoneNormalized, raw: msg.raw }).catch((e) => console.error('[Carousel]', e.message));
+
             let welcomeSummaryText = '';
             let welcomeHandled = false;
             try {

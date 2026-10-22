@@ -75,6 +75,35 @@ export function agentHistoryMessages(docs, inboundText) {
     })), inboundText);
 }
 
+/* A reply from our side this short ("sure", "ok", "one moment") acknowledges
+   rather than answers — a question before it is still open. */
+const ACK_MAX_CHARS = 25;
+const MAX_OPEN = 8;
+
+/**
+ * The customer's messages still waiting for an answer, oldest first: every
+ * message since our last real reply. A customer often sends several in a row
+ * ("Please share your location" … "Is 100 sq ft available?" … "And the final
+ * rent?"), and answering only the last left the rest unanswered.
+ *
+ * `history` is chronological. Pure, so it can be tested.
+ */
+export function openCustomerMessages(history) {
+    const open = [];
+    for (let i = history.length - 1; i >= 0; i--) {
+        const m = history[i];
+        const words = String(m.text || m.transcript || '').trim();
+        if (m.direction === 'outbound') {
+            const real = (m.type && m.type !== 'text') || words.length > ACK_MAX_CHARS;
+            if (real) break;
+            continue;
+        }
+        if (words) open.unshift(words);
+        if (open.length >= MAX_OPEN) break;
+    }
+    return open;
+}
+
 export function cadenceFor(agent) {
     const out = { ...DEFAULT_CADENCE };
     for (const k of Object.keys(DEFAULT_CADENCE)) {
@@ -202,7 +231,12 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
     // history already ends wherever the conversation really ends.
     const messages = agentHistoryMessages(history.reverse(), isTouch || isRefresh || isFollowup ? '' : trigger.text);
 
-    const facts = await buildFacts(trigger.text || '', { useAvailability: true });
+    // Everything the customer is still waiting on, not just their last line.
+    const open = isTouch || isRefresh || isFollowup ? [] : openCustomerMessages(history);
+    const current = String(trigger.text || '').trim();
+    if (open.length && current && open[open.length - 1] !== current) open.push(current);
+    const factsText = [...new Set([...open, String(trigger.text || '')])].filter(Boolean).join('\n');
+    const facts = await buildFacts(factsText, { useAvailability: true });
 
     const task = isFollowup && !isTouch
         ? 'TASK: the follow-up date our team set for this lead has arrived. Write the follow-up WhatsApp message to send now — pick up where the conversation and the recorded reason left off, refer to what the customer actually said they wanted or when they said they would decide, and end with one easy next step. Do not re-introduce yourself and do not repeat what has already been sent. Use tools for anything factual. Answer with JSON only: {"reply": string, "needsHuman": boolean, "reason": string, "summary": one line on where this lead stands}.'
@@ -215,7 +249,13 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
         ].join('\n')
         : isRefresh
             ? 'TASK: a colleague asked for a fresh suggestion because the conversation may have moved on. Read the WHOLE conversation above, including what our team has already sent since the customer last wrote (messages, videos, photos). Write the best next message from where the conversation stands NOW, without repeating anything already said or sent. If our team has already fully answered and nothing is waiting on us, set reply to an empty string and needsHuman false. Use tools for anything factual. Answer with JSON only: {"reply": string, "needsHuman": boolean, "reason": string, "summary": one line on where this lead stands}.'
-            : 'TASK: answer the customer\'s latest message. Use tools for anything factual. Then answer with JSON only: {"reply": string, "needsHuman": boolean, "reason": string, "summary": one line on where this lead stands}.';
+            : open.length > 1
+                ? [
+                    'TASK: the customer has sent several messages that are all still waiting for an answer:',
+                    ...open.map((t, i) => `${i + 1}. "${t.slice(0, 300)}"`),
+                    'Answer ALL of them in ONE reply, in order — every question, not just the last one. A short acknowledgement from our side (e.g. "sure") is not an answer: if our team promised something (the location, a photo, a price) and did not send it, include it now. Use tools for anything factual. Then answer with JSON only: {"reply": string, "needsHuman": boolean, "reason": string, "summary": one line on where this lead stands}.',
+                ].join('\n')
+                : 'TASK: answer the customer\'s latest message, and anything earlier in the conversation they asked that our team has not yet answered. Use tools for anything factual. Then answer with JSON only: {"reply": string, "needsHuman": boolean, "reason": string, "summary": one line on where this lead stands}.';
 
     const system = [
         String(agent.systemPrompt || '').trim() || 'You are the sales assistant for PurpleBox Storage in Dubai, replying to customers on WhatsApp. Be brief and warm.',

@@ -77,6 +77,13 @@ export { DEFAULT_PROMPT };
  * because a price or a free unit it invented is a commitment the business did
  * not make.
  */
+/* The facility, as the team gives it to customers. */
+export const FACILITY = {
+    address: process.env.FACILITY_ADDRESS || 'PurpleBox Storage, Warehouse 12, ABA Avenue, Al Quoz 2, Dubai',
+    mapUrl: process.env.FACILITY_MAP_URL || 'https://maps.app.goo.gl/r6SPEHz8JAnWRT1DA',
+    hours: process.env.FACILITY_HOURS || 'Monday to Saturday, 10 AM to 6 PM',
+};
+
 export async function buildFacts(inboundText, config) {
     const units = await Unit.find({ status: { $ne: 'maintenance' } })
         .select('unitNumber floor sizeSqf price status')
@@ -106,6 +113,9 @@ export async function buildFacts(inboundText, config) {
         lines.push(`- ${size} sqft: ${min === max ? `AED ${min}` : `AED ${min}–${max}`} per month (${row.total} units)`);
     }
     if (floors.length) lines.push(`FLOORS: ${floors.join(', ')}`);
+    // Where we are and when to come — customers ask in nearly every chat.
+    lines.push(`LOCATION: ${FACILITY.address}. Google Maps: ${FACILITY.mapUrl}`);
+    lines.push(`OPENING HOURS FOR VISITS: ${FACILITY.hours}`);
 
     let window = null;
     if (config.useAvailability && openaiConfigured()) {
@@ -223,6 +233,7 @@ export async function generateReply({ phoneNormalized, inboundText, config }) {
         '- If the customer asks for a person, set needsHuman true.',
         '- Read the conversation above before replying. Never ask for something the customer has already told you, and never re-introduce yourself in a conversation that has already started.',
         '- If your own last message already answered them and they have said nothing new, do not send a near-identical message again.',
+        '- Customers often send several messages in a row. Answer EVERY question they asked since our last real reply, in one message, in order — not only the last one. A short "sure" or "ok" from us is not an answer: if we promised something (the location, a photo, a price) and did not send it, send it now.',
         '- Keep the reply under 600 characters and write it as a WhatsApp message.',
         '',
         'Reply with JSON only: {"reply": string, "needsHuman": boolean, "reason": string}',

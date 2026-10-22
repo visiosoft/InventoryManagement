@@ -56,7 +56,7 @@ async function appId() {
 }
 
 /** Meta's resumable upload: the sample image a template header needs for review. */
-async function uploadSampleHandle(buffer, contentType, fileName) {
+export async function uploadSampleHandle(buffer, contentType, fileName) {
   const app = await appId();
   const session = await graph(`${app}/uploads?file_length=${buffer.length}&file_type=${encodeURIComponent(contentType)}&file_name=${encodeURIComponent(fileName || 'header.jpg')}`, {
     method: 'POST', headers: { Authorization: `Bearer ${token()}` },
@@ -191,3 +191,25 @@ export async function applyTemplateStatusEvent(value = {}) {
 }
 
 export const newImageKey = () => crypto.randomBytes(16).toString('hex');
+
+/**
+ * Submit the unit-sizes carousel to Meta: one card per unit size that has a
+ * photo (server/assets/carousel), each photo uploaded as the card's sample.
+ * Meta wants at least two cards.
+ */
+export async function submitUnitSizesCarousel() {
+  const fs = await import('fs');
+  const { readyCards, cardImagePath, carouselTemplate } = await import('./carousel.js');
+  const cards = readyCards();
+  if (cards.length < 2) throw new Error('At least two cards need a photo before the carousel can be sent to Meta');
+  const waba = await resolveWabaId();
+  if (!waba) throw new Error('The WhatsApp Business Account ID is not set');
+  const handles = [];
+  for (const c of cards) handles.push(await uploadSampleHandle(fs.readFileSync(cardImagePath(c.code)), 'image/jpeg', `purplebox_unit_${c.code}.jpg`));
+  const res = await graph(`${waba}/message_templates`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(carouselTemplate(cards, handles)),
+  });
+  return { id: res.id, status: String(res.status || 'PENDING').toUpperCase(), cards: cards.map((c) => c.label) };
+}
