@@ -31,7 +31,7 @@ export const CAROUSEL_CARDS = [
     { code: 'F2-106', bookUrl: 'https://purplebox.ae/unit-details.html#unit-m75', size: null, label: '1-bed apartment unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-75-v2.webp', text: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
     { code: 'F2-069', bookUrl: 'https://purplebox.ae/unit-details.html#unit-l', size: null, label: 'Family storage unit', text: '*Family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.' },
     { code: 'F1U005', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xl', size: null, label: '2-bed home unit', text: '*2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.' },
-    { code: 'F1U014', size: null, label: 'Whole home or business unit', text: '*Whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.' },
+    { code: 'F1U014', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xxl', size: null, label: 'Whole home or business unit', text: '*Whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.' },
 ];
 
 export const cardImagePath = (code) => path.join(CAROUSEL_DIR, `${code}.jpg`);
