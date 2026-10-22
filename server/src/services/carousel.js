@@ -24,9 +24,9 @@ const BOOK_URL = 'https://purplebox.ae/';
 export const CAROUSEL_CARDS = [
     { code: 'F2-048', size: 10, label: '10 sq ft unit', text: '*10 sq ft unit* - Suitcases, boxes and seasonal items. Perfect for a few personal things.' },
     { code: 'F1U0', size: 25, label: '25 sq ft unit', text: '*25 sq ft unit* - Extra household boxes, luggage and bedding, with room to spare.' },
-    { code: 'F2-016', size: 35, label: '35 sq ft unit', text: '*35 sq ft unit* - A mattress, bike, shelving and boxes. Great for a studio or while renovating.' },
-    { code: 'F2-001', size: 50, label: '50 sq ft unit', text: '*50 sq ft unit* - Fits a sofa plus stacks of boxes. Ideal when moving between homes.' },
-    { code: 'F2-106', size: null, label: '1-bed apartment unit', text: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
+    { code: 'F2-016', size: 35, label: '35 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-35-v2.webp', text: '*35 sq ft unit* - A mattress, bike, shelving and boxes. Great for a studio or while renovating.' },
+    { code: 'F2-001', size: 50, label: '50 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-50-v2.webp', text: '*50 sq ft unit* - Fits a sofa plus stacks of boxes. Ideal when moving between homes.' },
+    { code: 'F2-106', size: null, label: '1-bed apartment unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-75-v2.webp', text: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
     { code: 'F2-069', size: null, label: 'Family storage unit', text: '*Family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.' },
     { code: 'F1U005', size: null, label: '2-bed home unit', text: '*2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.' },
     { code: 'F1U014', size: null, label: 'Whole home or business unit', text: '*Whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.' },
@@ -35,6 +35,48 @@ export const CAROUSEL_CARDS = [
 export const cardImagePath = (code) => path.join(CAROUSEL_DIR, `${code}.jpg`);
 export const cardHasImage = (code) => fs.existsSync(cardImagePath(code));
 export const cardImageUrl = (code) => `${(process.env.API_PUBLIC_URL || 'https://api.purplebox.ae').replace(/\/+$/, '')}/api/public/carousel/${encodeURIComponent(code)}.jpg`;
+
+/**
+ * A photo as WhatsApp wants it on a carousel card: JPEG (not WebP), and
+ * square like the others — every card in a carousel has to share one shape.
+ * Centre-cropped to 1080×1080.
+ */
+export async function toSquareJpeg(buffer, size = 1080) {
+    const { loadImage, createCanvas } = await import('@napi-rs/canvas');
+    const img = await loadImage(buffer);
+    const side = Math.min(img.width, img.height);
+    const canvas = createCanvas(size, size);
+    canvas.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+    return canvas.encode('jpeg', 88);
+}
+
+let fetching = null;
+/**
+ * Cards whose photo lives on the website (a `source` link) are fetched,
+ * squared and saved as JPEG the first time they are needed. Never throws:
+ * a card that cannot be fetched just stays without a photo.
+ */
+export function ensureCardImages({ fetchImpl = fetch } = {}) {
+    if (fetching) return fetching;
+    fetching = (async () => {
+        const out = { fetched: [], failed: [] };
+        for (const c of CAROUSEL_CARDS.filter((x) => x.source && !cardHasImage(x.code))) {
+            try {
+                const r = await fetchImpl(c.source);
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                const jpeg = await toSquareJpeg(Buffer.from(await r.arrayBuffer()));
+                fs.mkdirSync(CAROUSEL_DIR, { recursive: true });
+                fs.writeFileSync(cardImagePath(c.code), jpeg);
+                out.fetched.push(c.code);
+            } catch (e) {
+                out.failed.push({ code: c.code, error: e.message });
+                console.error(`[Carousel] ${c.code} photo from ${c.source}:`, e.message);
+            }
+        }
+        return out;
+    })().finally(() => { fetching = null; });
+    return fetching;
+}
 
 /** The cards that have a photo — the ones that go into the template. */
 export const readyCards = (cards = CAROUSEL_CARDS, has = cardHasImage) => cards.filter((c) => has(c.code));

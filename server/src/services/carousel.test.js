@@ -24,3 +24,17 @@ test('a "Get a quote" tap says which card it came from', () => {
     assert.equal(cardFromTap({ button: { payload: 'pb_card:F1U0', text: 'Get a quote' } }).size, 25);
     assert.equal(cardFromTap({ button: { payload: 'something_else' } }), null);
 });
+
+import { toSquareJpeg } from './carousel.js';
+
+test('a website WebP photo becomes a square JPEG, like the other cards', async () => {
+    const { createCanvas } = await import('@napi-rs/canvas');
+    const wide = createCanvas(800, 600);
+    wide.getContext('2d').fillRect(0, 0, 800, 600);
+    const webp = await wide.encode('webp');
+    const jpeg = await toSquareJpeg(webp);
+    assert.equal(jpeg[0], 0xff); assert.equal(jpeg[1], 0xd8); // JPEG magic
+    const { loadImage } = await import('@napi-rs/canvas');
+    const back = await loadImage(jpeg);
+    assert.equal(back.width, 1080); assert.equal(back.height, 1080);
+});

@@ -213,7 +213,7 @@ export default function CampaignTemplates() {
 function UnitSizesCarousel() {
   const qc = useQueryClient()
   const [msg, setMsg] = useState('')
-  const { data } = useQuery<{ name: string; status: string; rejectedReason: string; cards: { code: string; label: string; text: string; hasImage: boolean }[] }>({
+  const { data } = useQuery<{ name: string; status: string; rejectedReason: string; photoProblems?: { code: string; error: string }[]; cards: { code: string; label: string; text: string; hasImage: boolean }[] }>({
     queryKey: ['unit-sizes-carousel'],
     queryFn: () => api.get('/campaign-templates/carousel').then((r) => r.data),
   })
@@ -244,6 +244,11 @@ function UnitSizesCarousel() {
       <CardBody className="space-y-3">
         <div style={{ fontSize: 13, fontWeight: 600, color: data.status === 'APPROVED' ? '#15803D' : data.status === 'REJECTED' ? '#B91C1C' : MUTED }}>{STATUS_LINE[data.status] ?? data.status}</div>
         {msg && <div style={{ fontSize: 13, color: PURPLE }}>{msg}</div>}
+        {!!data.photoProblems?.length && (
+          <div style={{ fontSize: 12.5, color: '#B91C1C' }}>
+            Could not fetch {data.photoProblems.map((p) => p.code).join(', ')} from the website ({data.photoProblems[0].error}). Refresh to try again.
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
           {data.cards.map((c) => (
             <div key={c.code} style={{ flex: '0 0 150px', border: `1px solid ${LINE}`, borderRadius: 12, overflow: 'hidden', background: '#fff', opacity: c.hasImage ? 1 : 0.6 }}>

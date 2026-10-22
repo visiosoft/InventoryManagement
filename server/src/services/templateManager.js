@@ -199,7 +199,8 @@ export const newImageKey = () => crypto.randomBytes(16).toString('hex');
  */
 export async function submitUnitSizesCarousel() {
   const fs = await import('fs');
-  const { readyCards, cardImagePath, carouselTemplate } = await import('./carousel.js');
+  const { readyCards, cardImagePath, carouselTemplate, ensureCardImages } = await import('./carousel.js');
+  await ensureCardImages();
   const cards = readyCards();
   if (cards.length < 2) throw new Error('At least two cards need a photo before the carousel can be sent to Meta');
   const waba = await resolveWabaId();
