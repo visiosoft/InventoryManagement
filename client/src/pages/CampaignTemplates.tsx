@@ -213,7 +213,7 @@ export default function CampaignTemplates() {
 function UnitSizesCarousel() {
   const qc = useQueryClient()
   const [msg, setMsg] = useState('')
-  const { data } = useQuery<{ name: string; status: string; rejectedReason: string; photoProblems?: { code: string; error: string }[]; cards: { code: string; label: string; text: string; hasImage: boolean }[] }>({
+  const { data } = useQuery<{ name: string; status: string; rejectedReason: string; photoProblems?: { code: string; error: string }[]; cards: { code: string; label: string; text: string; hasImage: boolean; bookUrl: string }[] }>({
     queryKey: ['unit-sizes-carousel'],
     queryFn: () => api.get('/campaign-templates/carousel').then((r) => r.data),
   })
@@ -255,7 +255,8 @@ function UnitSizesCarousel() {
               {c.hasImage
                 ? <img src={apiUrl(`/public/carousel/${c.code}.jpg`)} alt={c.label} style={{ width: '100%', height: 120, objectFit: 'cover' }} />
                 : <div style={{ height: 120, display: 'grid', placeItems: 'center', fontSize: 12, color: MUTED, background: '#F6F4F9', textAlign: 'center', padding: 8 }}>No photo yet<br />({c.code})</div>}
-              <div style={{ padding: 8, fontSize: 12 }}><b>{c.label}</b><div style={{ color: MUTED }}>{c.code}</div></div>
+              <div style={{ padding: 8, fontSize: 12 }}><b>{c.label}</b><div style={{ color: MUTED }}>{c.code}</div>
+                <a href={c.bookUrl} target="_blank" rel="noopener" style={{ display: 'block', marginTop: 4, color: PURPLE, fontSize: 11, wordBreak: 'break-all' }}>Book now → {c.bookUrl.replace('https://purplebox.ae/', '')}</a></div>
             </div>
           ))}
         </div>

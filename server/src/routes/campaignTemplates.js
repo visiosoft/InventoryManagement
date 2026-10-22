@@ -89,7 +89,7 @@ router.get('/carousel', async (_req, res) => {
       status: meta ? String(meta.status).toUpperCase() : 'NOT_SUBMITTED',
       rejectedReason: meta?.rejected_reason || '',
       photoProblems: fetched.failed,
-      cards: CAROUSEL_CARDS.map((c) => ({ code: c.code, label: c.label, text: c.text, hasImage: cardHasImage(c.code), imageUrl: cardHasImage(c.code) ? `/api/public/carousel/${c.code}.jpg` : '' })),
+      cards: CAROUSEL_CARDS.map((c) => ({ code: c.code, label: c.label, text: c.text, bookUrl: c.bookUrl || 'https://purplebox.ae/unit-details.html', hasImage: cardHasImage(c.code), imageUrl: cardHasImage(c.code) ? `/api/public/carousel/${c.code}.jpg` : '' })),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

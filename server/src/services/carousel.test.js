@@ -38,3 +38,12 @@ test('a website WebP photo becomes a square JPEG, like the other cards', async (
     const back = await loadImage(jpeg);
     assert.equal(back.width, 1080); assert.equal(back.height, 1080);
 });
+
+test('each card\'s Book now opens its own unit section', () => {
+    const tpl = carouselTemplate(CAROUSEL_CARDS, CAROUSEL_CARDS.map(() => 'h'));
+    const url = (i) => tpl.components[1].cards[i].components[2].buttons[0].url;
+    assert.equal(url(0), 'https://purplebox.ae/unit-details.html#unit-xs');
+    assert.equal(url(1), 'https://purplebox.ae/unit-details.html#unit-ss');
+    assert.equal(url(2), 'https://purplebox.ae/unit-details.html#unit-m35');
+    assert.equal(url(3), 'https://purplebox.ae/unit-details.html');
+});

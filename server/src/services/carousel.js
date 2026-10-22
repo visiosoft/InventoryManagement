@@ -17,14 +17,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const CAROUSEL_DIR = path.resolve(__dirname, '../../assets/carousel');
 export const CAROUSEL_NAME = 'purplebox_unit_sizes_carousel';
 export const CAROUSEL_BODY = 'Need more space? PurpleBox has clean, climate-controlled storage units in Al Quoz, Dubai. Pick the size that fits you and book in minutes.';
-const BOOK_URL = 'https://purplebox.ae/';
+// "Book now" on a card opens that unit's section of the unit details page;
+// a card without its own section opens the page itself.
+const BOOK_URL = 'https://purplebox.ae/unit-details.html';
 
 /* The cards, in order. `size` is written onto the lead when they tap
    "Get a quote" on a card with a plain sq ft size. */
 export const CAROUSEL_CARDS = [
-    { code: 'F2-048', size: 10, label: '10 sq ft unit', text: '*10 sq ft unit* - Suitcases, boxes and seasonal items. Perfect for a few personal things.' },
-    { code: 'F1U0', size: 25, label: '25 sq ft unit', text: '*25 sq ft unit* - Extra household boxes, luggage and bedding, with room to spare.' },
-    { code: 'F2-016', size: 35, label: '35 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-35-v2.webp', text: '*35 sq ft unit* - A mattress, bike, shelving and boxes. Great for a studio or while renovating.' },
+    { code: 'F2-048', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xs', size: 10, label: '10 sq ft unit', text: '*10 sq ft unit* - Suitcases, boxes and seasonal items. Perfect for a few personal things.' },
+    { code: 'F1U0', bookUrl: 'https://purplebox.ae/unit-details.html#unit-ss', size: 25, label: '25 sq ft unit', text: '*25 sq ft unit* - Extra household boxes, luggage and bedding, with room to spare.' },
+    { code: 'F2-016', bookUrl: 'https://purplebox.ae/unit-details.html#unit-m35', size: 35, label: '35 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-35-v2.webp', text: '*35 sq ft unit* - A mattress, bike, shelving and boxes. Great for a studio or while renovating.' },
     { code: 'F2-001', size: 50, label: '50 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-50-v2.webp', text: '*50 sq ft unit* - Fits a sofa plus stacks of boxes. Ideal when moving between homes.' },
     { code: 'F2-106', size: null, label: '1-bed apartment unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-75-v2.webp', text: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
     { code: 'F2-069', size: null, label: 'Family storage unit', text: '*Family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.' },
@@ -95,7 +97,7 @@ export function carouselTemplate(cards, handles) {
                     components: [
                         { type: 'HEADER', format: 'IMAGE', example: { header_handle: [handles[i]] } },
                         { type: 'BODY', text: c.text },
-                        { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Book now', url: BOOK_URL }, { type: 'QUICK_REPLY', text: 'Get a quote' }] },
+                        { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Book now', url: c.bookUrl || BOOK_URL }, { type: 'QUICK_REPLY', text: 'Get a quote' }] },
                     ],
                 })),
             },
