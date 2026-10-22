@@ -21,6 +21,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
     "@modelcontextprotocol/sdk": "^1.17.5",
+    "@napi-rs/canvas": "^1.0.0",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
     "bwip-js": "^4.11.4",
@@ -46,7 +47,6 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
-    "@napi-rs/canvas": "^1.0.0",
     "mongodb-memory-server": "^11.2.0",
     "pdfjs-dist": "^4.10.38",
     "supertest": "^7.2.2"
