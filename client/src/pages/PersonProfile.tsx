@@ -76,6 +76,8 @@ const EVENT_STYLE: Record<string, { icon: typeof Pencil; bg: string; color: stri
   note: { icon: MessageSquare, bg: 'rgba(217,119,6,.09)', color: WARM },
   comment: { icon: MessageSquare, bg: 'rgba(217,119,6,.09)', color: WARM },
   updated: { icon: Pencil, bg: CREAM_2, color: INK_2 },
+  // A phone call synced from a rep's phone.
+  call: { icon: Phone, bg: 'rgba(22,163,74,.09)', color: '#047857' },
   // Changed hands: sent on by a rep, or reassigned by an admin.
   assigned: { icon: Send, bg: 'rgba(37,99,235,.09)', color: '#1D4ED8' },
 }

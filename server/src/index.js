@@ -64,6 +64,7 @@ import aiBotRoutes from './routes/aiBot.js';
 import whatsappFlowTemplateRoutes from './routes/whatsappFlowTemplates.js';
 import campaignRoutes from './routes/campaigns.js';
 import campaignTemplateRoutes, { publicMediaRouter as templateMediaPublic } from './routes/campaignTemplates.js';
+import callRoutes from './routes/calls.js';
 import { CAROUSEL_DIR } from './services/carousel.js';
 import { refreshTemplateStatuses } from './services/templateManager.js';
 import sentEmailRoutes from './routes/sentEmails.js';
@@ -405,6 +406,8 @@ app.use('/api/whatsapp-flow-templates', requireAuth, whatsappFlowTemplateRoutes)
 app.use('/api/marketing', marketingPublicRoutes);
 app.use('/api/campaigns', requireAuth, campaignRoutes);
 app.use('/api/campaign-templates', requireAuth, campaignTemplateRoutes);
+// Calls from the reps' phones, synced by the staff app.
+app.use('/api/calls', requireAuth, callRoutes);
 app.use('/api/sent-emails', requireAuth, sentEmailRoutes);
 app.use('/api/reminder-config', requireAuth, reminderConfigRoutes);
 app.use('/api/message-templates', requireAuth, messageTemplateRoutes);

@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import {
-  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox } from 'lucide-react'
+  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox, PhoneCall } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -54,6 +54,7 @@ const navGroups = [
       /* Either permission: an admin whose list has 'leads' but not
          'sales_board' works leads too, and this is where that work is. */
       { to: '/follow-ups', label: 'Follow-Ups', icon: CalendarCheck, perm: ['sales_board', 'leads'] },
+      { to: '/calls', label: 'Calls', icon: PhoneCall, perm: ['sales_board', 'leads'] },
       { to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
       { to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
       { to: '/leaderboard', label: 'Leaderboard', icon: Trophy, perm: 'sales_board' },
@@ -160,6 +161,7 @@ const salesRepNavGroups = [
       /* The queue itself: who to contact today and why, ranked. My Day is
          the morning glance; this is where the work gets done. */
       { key: 'follow-ups', to: '/follow-ups', label: 'Follow-Ups', icon: CalendarCheck, perm: 'sales_board', notFor: 'accounts' },
+      { key: 'calls', to: '/calls', label: 'Calls', icon: PhoneCall, perm: 'sales_board', notFor: 'accounts' },
       { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board', notFor: 'accounts' },
       { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
       { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },
@@ -294,6 +296,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/leads': 'Leads',
   '/my-day': 'My Day',
   '/my-leads': 'My Leads',
+  '/calls': 'Calls',
   '/moving-estimator': 'Moving Estimator',
   '/my-performance': 'My Performance',
   '/leaderboard': 'Leaderboard',

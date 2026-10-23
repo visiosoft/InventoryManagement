@@ -77,6 +77,7 @@ import SignMovingJob from './pages/SignMovingJob'
 import Dashboard from './pages/Dashboard'
 import MyDay from './pages/MyDay'
 import FollowUps from './pages/FollowUps'
+import Calls from './pages/Calls'
 import RenewalRequests from './pages/RenewalRequests'
 import ExitSurveys from './pages/ExitSurveys'
 import Units from './pages/Units'
@@ -282,6 +283,7 @@ export default function App() {
         {/* The follow-up queue. Same gate as My Day: reps and admins; the
             server scopes a rep to their own leads regardless. */}
         <Route path="/follow-ups" element={<PermGuard module={['sales_board', 'leads']} orSalesRep><FollowUps /></PermGuard>} />
+        <Route path="/calls" element={<PermGuard module={['sales_board', 'leads']} orSalesRep><Calls /></PermGuard>} />
         <Route path="/accounts" element={<RoleGuard roles={['admin', 'accounts']}><AccountsDashboard /></RoleGuard>} />
         <Route path="/settings/lead-distribution" element={<AdminGuard><LeadDistribution /></AdminGuard>} />
         <Route path="/settings/duplicate-leads" element={<AdminGuard><DuplicateLeads /></AdminGuard>} />

@@ -2934,6 +2934,27 @@ leadFollowUpSchema.index({ phoneNormalized: 1, sentAt: -1 });
 leadFollowUpSchema.index({ sentBy: 1, sentAt: -1 });
 export const LeadFollowUp = model('LeadFollowUp', leadFollowUpSchema);
 
+/* A phone call a rep made or took on their own phone, synced from the staff
+   app's call log. Only calls to a lead or a customer are ever stored — a
+   rep's personal calls are dropped on arrival (services/callLog.js). */
+const callLogSchema = new Schema({
+  user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  phoneNormalized: { type: String, required: true },
+  direction: { type: String, enum: ['outgoing', 'incoming', 'missed', 'rejected'], required: true },
+  startedAt: { type: Date, required: true },
+  durationSec: { type: Number, default: 0 },
+  lead: { type: Schema.Types.ObjectId, ref: 'Lead', default: null },
+  isCustomer: { type: Boolean, default: false },
+  // The phone's own id for the call, so a re-sync never counts it twice.
+  deviceCallId: { type: String, required: true },
+  note: { type: String, default: '' },
+  source: { type: String, default: 'android' },
+}, { timestamps: true });
+callLogSchema.index({ user: 1, deviceCallId: 1 }, { unique: true });
+callLogSchema.index({ startedAt: -1 });
+callLogSchema.index({ lead: 1, startedAt: -1 });
+export const CallLog = model('CallLog', callLogSchema);
+
 const messageTemplateSchema = new Schema({
   key: { type: String, required: true },
   label: { type: String, required: true },
