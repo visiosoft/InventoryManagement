@@ -11,6 +11,7 @@
 
 import { CallLog, Lead, User } from '../models/index.js';
 import { normalizePhone, phoneTail9 } from './phone.js';
+import { displayNameFor } from './leadNames.js';
 
 // An outgoing call this short is a ring with no answer, not a conversation.
 export const ANSWERED_MIN_SEC = 10;
@@ -75,7 +76,8 @@ export async function ingestCalls(userId, calls, deps = {}) {
         repName: async () => (await User.findById(userId).select('name').lean())?.name || '',
         ...deps,
     };
-    const out = { received: (calls || []).length, saved: 0, ignored: 0, duplicates: 0, attempts: 0 };
+    // `leadCalls`: the saved calls to leads, so the app can ask for a note.
+    const out = { received: (calls || []).length, saved: 0, ignored: 0, duplicates: 0, attempts: 0, leadCalls: [] };
     const name = await d.repName();
     for (const raw of (calls || []).slice(0, 500)) {
         const call = cleanCall(raw);
@@ -85,14 +87,18 @@ export async function ingestCalls(userId, calls, deps = {}) {
         const isCustomer = lead ? false : await d.isCustomer(call.phoneNormalized);
         // Not a lead, not a customer: a personal call. Not stored.
         if (!lead && !isCustomer) { out.ignored += 1; continue; }
+        let saved;
         try {
-            await d.save({ ...call, user: userId, lead: lead?._id || null, isCustomer });
+            saved = await d.save({ ...call, user: userId, lead: lead?._id || null, isCustomer });
         } catch (e) {
             if (e?.code === 11000) { out.duplicates += 1; continue; }
             throw e;
         }
         out.saved += 1;
         if (lead) {
+            if (saved?._id) {
+                out.leadCalls.push({ id: String(saved._id), leadId: String(lead._id), name: displayNameFor(lead), direction: call.direction, durationSec: call.durationSec, at: call.startedAt });
+            }
             if (call.direction === 'outgoing') { await d.attempt(lead, call); out.attempts += 1; }
             lead.timeline.push({ type: 'call', text: callLine(call, name), user: userId, at: call.startedAt });
             await lead.save().catch((e) => console.error('[CallLog] lead save:', e.message));

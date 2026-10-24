@@ -21,12 +21,12 @@ test('a short outgoing call is no answer; a real one is reached', () => {
 test('personal calls are never stored; lead calls are, once, and outgoing ones count as attempts', async () => {
     const saved = [];
     const attempts = [];
-    const lead = { _id: 'L1', timeline: [], save: async () => {} };
+    const lead = { _id: 'L1', fullName: 'Randa Haddad', timeline: [], save: async () => {} };
     const deps = {
         findLead: async (p) => (p === '971502814305' ? lead : null),
         isCustomer: async () => false,
         exists: async (id) => saved.some((s) => s.deviceCallId === id),
-        save: async (doc) => saved.push(doc),
+        save: async (doc) => { saved.push(doc); return { _id: `C${saved.length}` }; },
         attempt: async (l, c) => attempts.push(c.direction),
         repName: async () => 'Randa',
     };
@@ -39,6 +39,7 @@ test('personal calls are never stored; lead calls are, once, and outgoing ones c
     assert.deepEqual({ saved: r.saved, ignored: r.ignored, attempts: r.attempts }, { saved: 2, ignored: 1, attempts: 1 });
     assert.ok(!saved.some((s) => s.phoneNormalized === '971509999999'), 'the personal call is not stored');
     assert.equal(lead.timeline.length, 2);
+    assert.deepEqual(r.leadCalls.map((c) => [c.id, c.name, c.direction]), [['C1', 'Randa Haddad', 'outgoing'], ['C2', 'Randa Haddad', 'missed']]);
     const again = await ingestCalls('U1', [{ id: '1', number: '0502814305', type: 'outgoing', timestamp: t, duration: 60 }], deps);
     assert.equal(again.duplicates, 1);
 });
