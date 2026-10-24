@@ -28,17 +28,17 @@ Sending everything is fine: **the server keeps only calls to leads and customers
 drops the rest without storing them. The app may also filter first.
 
 Optional: after a call to a lead, ask the rep for a one-line note and send it with
-`PATCH /api/calls/:id/note { "note": "…" }` (the id comes back from `GET /api/calls/summary`).
+`PATCH /api/calls/:id/note { "note": "…" }`. The sync reply's `leadCalls` lists the
+saved calls to leads (`id`, `leadId`, `name`, `direction`, `durationSec`, `at`).
 
 ## How the app reads the call log
 
 - Android only: iOS does not let apps read call history.
 - Permission `READ_CALL_LOG` (runtime permission; ask once with a short why).
-- Expo: needs a development/EAS build (not Expo Go) with a call-log native module,
-  e.g. `react-native-call-log`, or a small config plugin + native module.
-- When: on app open, on return to foreground, and every ~15 min with
-  `expo-background-fetch` / WorkManager. Remember the last synced timestamp and send
-  only newer calls.
+- Built in PurpleBoxMobile: a local Expo module (`modules/call-log`) reads the call
+  log, `src/lib/callSync.ts` syncs it on open, on return to the app and every ~15 min
+  (`expo-background-task`), remembering the last synced timestamp. Needs an EAS build,
+  not Expo Go.
 
 ## Distribution
 
