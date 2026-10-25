@@ -15,8 +15,13 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const CAROUSEL_DIR = path.resolve(__dirname, '../../assets/carousel');
-export const CAROUSEL_NAME = 'purplebox_unit_sizes_carousel';
-export const CAROUSEL_BODY = 'Need more space? PurpleBox has clean, climate-controlled storage units in Al Quoz, Dubai. Pick the size that fits you and book in minutes.';
+/* The current offer, as on the website's unit details page. Each card shows
+   its price (struck-out old price when discounted) above its text. A new
+   offer gets its own template name, so the old one stays sendable while the
+   new one is with Meta. */
+export const PROMO = { endsOn: '2026-11-15', label: 'Nov 15th' };
+export const CAROUSEL_NAME = `purplebox_units_offer_${PROMO.endsOn.replace(/-/g, '')}`;
+export const CAROUSEL_BODY = `Looking for Air Conditioned & Clean Storage Space in Al Quoz Dubai with 24/7 Access? Please Check Out our Units Below and Take Advantage of Latest Discounts Ending on ${PROMO.label}. Moving Services Available.`;
 // "Book now" on a card opens that unit's section of the unit details page;
 // a card without its own section opens the page itself.
 const BOOK_URL = 'https://purplebox.ae/unit-details.html';
@@ -24,15 +29,26 @@ const BOOK_URL = 'https://purplebox.ae/unit-details.html';
 /* The cards, in order. `size` is written onto the lead when they tap
    "Get a quote" on a card with a plain sq ft size. */
 export const CAROUSEL_CARDS = [
-    { code: 'F2-048', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xs', size: 10, label: '10 sq ft unit', text: '*10 sq ft unit* - Suitcases, boxes and seasonal items. Perfect for a few personal things.' },
-    { code: 'F1U0', bookUrl: 'https://purplebox.ae/unit-details.html#unit-ss', size: 25, label: '25 sq ft unit', text: '*25 sq ft unit* - Extra household boxes, luggage and bedding, with room to spare.' },
-    { code: 'F2-016', bookUrl: 'https://purplebox.ae/unit-details.html#unit-m35', size: 35, label: '35 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-35-v2.webp', text: '*35 sq ft unit* - A mattress, bike, shelving and boxes. Great for a studio or while renovating.' },
-    { code: 'F2-001', bookUrl: 'https://purplebox.ae/unit-details.html#unit-s50', size: 50, label: '50 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-50-v2.webp', text: '*50 sq ft unit* - Fits a sofa plus stacks of boxes. Ideal when moving between homes.' },
-    { code: 'F2-106', bookUrl: 'https://purplebox.ae/unit-details.html#unit-m75', size: null, label: '1-bed apartment unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-75-v2.webp', text: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
-    { code: 'F2-069', bookUrl: 'https://purplebox.ae/unit-details.html#unit-l', size: null, label: 'Family storage unit', text: '*Family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.' },
-    { code: 'F1U005', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xl', size: null, label: '2-bed home unit', text: '*2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.' },
-    { code: 'F1U014', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xxl', size: null, label: 'Whole home or business unit', text: '*Whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.' },
+    { code: 'F2-048', was: 330, now: 264, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xs', size: 10, label: '10 sq ft unit', text: '*10 sq ft unit* - Suitcases, boxes and seasonal items. Perfect for a few personal things.' },
+    { code: 'F1U0', now: 625, bookUrl: 'https://purplebox.ae/unit-details.html#unit-ss', size: 25, label: '25 sq ft unit', text: '*25 sq ft unit* - Extra household boxes, luggage and bedding, with room to spare.' },
+    { code: 'F2-016', was: 770, now: 732, bookUrl: 'https://purplebox.ae/unit-details.html#unit-m35', size: 35, label: '35 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-35-v2.webp', text: '*35 sq ft unit* - A mattress, bike, shelving and boxes. Great for a studio or while renovating.' },
+    { code: 'F2-001', was: 975, now: 829, bookUrl: 'https://purplebox.ae/unit-details.html#unit-s50', size: 50, label: '50 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-50-v2.webp', text: '*50 sq ft unit* - Fits a sofa plus stacks of boxes. Ideal when moving between homes.' },
+    { code: 'F2-106', was: 1400, now: 1330, bookUrl: 'https://purplebox.ae/unit-details.html#unit-m75', size: null, label: '1-bed apartment unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-75-v2.webp', text: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
+    { code: 'F2-069', now: 1600, from: true, bookUrl: 'https://purplebox.ae/unit-details.html#unit-l', size: null, label: 'Family storage unit', text: '*Family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.' },
+    { code: 'F1U005', now: 2700, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xl', size: null, label: '2-bed home unit', text: '*2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.' },
+    { code: 'F1U014', now: 3100, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xxl', size: null, label: 'Whole home or business unit', text: '*Whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.' },
 ];
+
+const aedFmt = (n) => `AED ${Number(n).toLocaleString('en-US')}`;
+
+/** The price line on a card: "~AED 330~ *AED 264* / 4 weeks · 20% off till Nov 15th". */
+export function priceLine(c, promo = PROMO) {
+    if (c.was > c.now) return `~${aedFmt(c.was)}~ *${aedFmt(c.now)}* / 4 weeks · ${Math.round((1 - c.now / c.was) * 100)}% off till ${promo.label}`;
+    return `${c.from ? 'From ' : ''}*${aedFmt(c.now)}* / 4 weeks`;
+}
+
+/** A card's text as it appears in the template: its price, then what fits. */
+export const cardBody = (c) => `${priceLine(c)}\n${c.text}`;
 
 export const cardImagePath = (code) => path.join(CAROUSEL_DIR, `${code}.jpg`);
 export const cardHasImage = (code) => fs.existsSync(cardImagePath(code));
@@ -96,7 +112,7 @@ export function carouselTemplate(cards, handles) {
                 cards: cards.map((c, i) => ({
                     components: [
                         { type: 'HEADER', format: 'IMAGE', example: { header_handle: [handles[i]] } },
-                        { type: 'BODY', text: c.text },
+                        { type: 'BODY', text: cardBody(c) },
                         { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Book now', url: c.bookUrl || BOOK_URL }, { type: 'QUICK_REPLY', text: 'Get a quote' }] },
                     ],
                 })),
@@ -116,7 +132,9 @@ export function cardsInTemplate(metaComponents = []) {
     const out = [];
     for (const card of carousel.cards || []) {
         const body = (card.components || []).find((c) => String(c.type).toUpperCase() === 'BODY');
-        const match = CAROUSEL_CARDS.find((c) => c.text === String(body?.text || '').trim());
+        // Matched on what fits, so a template from before the prices were added still sends.
+        const text = String(body?.text || '').trim();
+        const match = CAROUSEL_CARDS.find((c) => text === c.text || text.endsWith(`\n${c.text}`));
         if (!match) return null;
         out.push(match);
     }

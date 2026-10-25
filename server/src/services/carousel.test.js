@@ -51,3 +51,19 @@ test('each card\'s Book now opens its own unit section', () => {
     assert.equal(url(6), 'https://purplebox.ae/unit-details.html#unit-xl');
     assert.equal(url(7), 'https://purplebox.ae/unit-details.html#unit-xxl');
 });
+
+import { cardBody, priceLine, CAROUSEL_BODY, CAROUSEL_NAME } from './carousel.js';
+
+test('each card leads with its price, the discount and when it ends — within Meta\'s 160 characters', () => {
+    assert.equal(priceLine({ was: 330, now: 264 }), '~AED 330~ *AED 264* / 4 weeks · 20% off till Nov 15th');
+    assert.equal(priceLine({ now: 625 }), '*AED 625* / 4 weeks');
+    assert.equal(priceLine({ now: 1600, from: true }), 'From *AED 1,600* / 4 weeks');
+    for (const c of CAROUSEL_CARDS) assert.ok(cardBody(c).length <= 160, `${c.label}: ${cardBody(c).length} characters`);
+    assert.match(CAROUSEL_BODY, /Ending on Nov 15th\. Moving Services Available\.$/);
+    assert.equal(CAROUSEL_NAME, 'purplebox_units_offer_20261115');
+});
+
+test('the carousel approved before prices were added still maps to its cards', () => {
+    const old = [{ type: 'CAROUSEL', cards: CAROUSEL_CARDS.slice(0, 2).map((c) => ({ components: [{ type: 'BODY', text: c.text }] })) }];
+    assert.deepEqual(cardsInTemplate(old).map((c) => c.code), ['F2-048', 'F1U0']);
+});
