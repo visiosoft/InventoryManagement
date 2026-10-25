@@ -751,3 +751,53 @@ export async function zohoReceivables({ force = false } = {}) {
     receivablesCache = { at: Date.now(), data };
     return data;
 }
+
+/* ── Sales, the way a seller dashboard shows it ──────────────────────────────
+   Invoiced per day for the last 31 days, and the totals for today, 7, 31 and
+   90 days, each against the same length of time just before it. Sales are
+   invoices (not void or draft) by invoice date; collected is customer
+   payments by payment date. Dates are Zoho's own (the org's time zone). */
+
+const isoDay = (d) => d.toISOString().slice(0, 10);
+const addDays = (day, n) => isoDay(new Date(Date.parse(`${day}T00:00:00Z`) + n * 86400000));
+
+/** Pure: the sales card from invoice and payment rows. `today` is YYYY-MM-DD. */
+export function salesSummary(invoices, payments, today) {
+    const r = (n) => Math.round(n * 100) / 100;
+    const sales = (invoices || []).filter((i) => !['void', 'draft'].includes(i.status));
+    const sumBetween = (rows, from, to, amountOf) => r(rows.filter((x) => x.date >= from && x.date <= to).reduce((s, x) => s + Number(amountOf(x) || 0), 0));
+    const period = (days) => {
+        const from = addDays(today, -(days - 1));
+        const value = sumBetween(sales, from, today, (i) => i.total);
+        const before = sumBetween(sales, addDays(from, -days), addDays(from, -1), (i) => i.total);
+        return { days, value, before, change: before > 0 ? Math.round(((value - before) / before) * 1000) / 10 : null };
+    };
+    const byDay = Array.from({ length: 31 }, (_, k) => {
+        const date = addDays(today, k - 30);
+        return { date, value: sumBetween(sales, date, date, (i) => i.total) };
+    });
+    const from90 = addDays(today, -89);
+    return {
+        today,
+        periods: [1, 7, 31, 90].map(period),
+        byDay,
+        sales90: sumBetween(sales, from90, today, (i) => i.total),
+        invoices90: sales.filter((i) => i.date >= from90 && i.date <= today).length,
+        collected90: sumBetween(payments || [], from90, today, (p) => p.amount),
+    };
+}
+
+let salesCache = { at: 0, data: null };
+export async function zohoSales({ force = false } = {}) {
+    if (!zohoBooksConfigured()) return { configured: false };
+    if (!force && salesCache.data && Date.now() - salesCache.at < 10 * 60_000) return salesCache.data;
+    // Dubai's date, which is the org's.
+    const today = isoDay(new Date(Date.now() + 4 * 3600000));
+    const [invoices, payments] = await Promise.all([
+        zohoListAll('invoices', 'invoices', { date_start: addDays(today, -179), date_end: today }),
+        zohoListAll('customerpayments', 'customerpayments', { date_start: addDays(today, -89), date_end: today }),
+    ]);
+    const data = { configured: true, orgId: process.env.ZOHO_BOOKS_ORG_ID, ...salesSummary(invoices, payments, today), fetchedAt: new Date().toISOString() };
+    salesCache = { at: Date.now(), data };
+    return data;
+}

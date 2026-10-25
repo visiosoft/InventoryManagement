@@ -13,7 +13,7 @@
 
 import { Router } from 'express';
 import { Contract, Customer, Task } from '../models/index.js';
-import { zohoBooksConfigured, zohoOutstandingByCustomer, zohoBooksDashboard, zohoReceivables } from '../services/zohoBooks.js';
+import { zohoBooksConfigured, zohoOutstandingByCustomer, zohoBooksDashboard, zohoReceivables, zohoSales } from '../services/zohoBooks.js';
 
 const router = Router();
 
@@ -124,6 +124,15 @@ router.get('/zoho', async (_req, res) => {
 router.get('/zoho-receivables', async (req, res) => {
    try {
       res.json(await zohoReceivables({ force: req.query.refresh === '1' }));
+   } catch (e) {
+      res.json({ configured: true, error: e.response?.data?.message || e.message });
+   }
+});
+
+// GET /api/accounts-dashboard/zoho-sales — invoiced per day and by period, for the admin dashboard.
+router.get('/zoho-sales', async (req, res) => {
+   try {
+      res.json(await zohoSales({ force: req.query.refresh === '1' }));
    } catch (e) {
       res.json({ configured: true, error: e.response?.data?.message || e.message });
    }

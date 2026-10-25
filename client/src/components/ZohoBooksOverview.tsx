@@ -192,3 +192,81 @@ export function ZohoReceivablesCard() {
   if (data.error) return <div style={CARD} className="text-sm"><span style={{ color: '#B91C1C' }}>Zoho receivables could not be read: {data.error}</span></div>
   return <OwedCard title="Total Receivables" sub="Unpaid invoices in Zoho" s={data.receivables ?? null} />
 }
+
+type SalesPeriod = { days: number; value: number; before: number; change: number | null }
+type SalesData = {
+  configured: boolean; error?: string; orgId?: string; today: string
+  periods: SalesPeriod[]; byDay: { date: string; value: number }[]
+  sales90: number; invoices90: number; collected90: number; fetchedAt: string
+}
+const PERIOD_LABEL: Record<number, string> = { 1: 'Today', 7: 'Last 7 days', 31: 'Last 31 days', 90: 'Last 90 days' }
+const dayLabel = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+
+/**
+ * Sales from Zoho Books, laid out like a seller dashboard: 90-day totals on
+ * top, invoiced per day for the last 31 days, and today / 7 / 31 / 90 days
+ * each against the period before. Admin dashboard, Overview tab.
+ */
+export function ZohoSalesCard() {
+  const { data, isLoading } = useQuery<SalesData>({
+    queryKey: ['zoho-sales'],
+    queryFn: () => api.get('/accounts-dashboard/zoho-sales').then((r) => r.data),
+    staleTime: 5 * 60_000,
+  })
+  if (isLoading) return <div style={CARD} className="text-sm"><span style={{ color: MUTED }}>Loading sales from Zoho…</span></div>
+  if (!data?.configured) return null
+  if (data.error) return <div style={CARD} className="text-sm"><span style={{ color: '#B91C1C' }}>Zoho sales could not be read: {data.error}</span></div>
+
+  const tiles = [['Sales (90d)', aed(data.sales90)], ['Invoices (90d)', String(data.invoices90)], ['Collected (90d)', aed(data.collected90)]] as const
+  return (
+    <div className="space-y-3">
+      <div style={{ ...CARD, padding: 0 }} className="grid grid-cols-3">
+        {tiles.map(([label, v], i) => (
+          <div key={label} style={{ padding: '14px 18px', borderLeft: i ? '1px solid rgba(20,8,31,0.08)' : undefined }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: INK }}>{v}</div>
+            <div style={{ fontSize: 12.5, color: MUTED }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={CARD}>
+        <div className="flex items-baseline gap-2">
+          <span style={HEAD}>Sales</span>
+          {data.orgId && (
+            <a href={`https://books.zoho.com/app/${data.orgId}#/invoices`} target="_blank" rel="noreferrer"
+              className="ml-auto inline-flex items-center gap-1 text-xs font-semibold" style={{ color: '#4A1FA0' }}>
+              Zoho invoices <ExternalLink size={12} />
+            </a>
+          )}
+        </div>
+        <div style={{ fontSize: 12.5, color: MUTED, textAlign: 'center', marginTop: 6 }}>Invoiced per day, last 31 days</div>
+        <div style={{ height: 190 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data.byDay.map((d) => ({ ...d, label: dayLabel(d.date) }))} barCategoryGap="25%">
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(20,8,31,.08)" />
+              <XAxis dataKey="label" interval={6} tick={{ fontSize: 11, fill: MUTED }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={kfmt} tick={{ fontSize: 11, fill: MUTED }} axisLine={false} tickLine={false} width={44} />
+              <Tooltip formatter={(v) => aed(Number(v))} cursor={{ fill: 'rgba(74,31,160,.06)' }} />
+              <Bar dataKey="value" name="Sales" fill="#1D5FA8" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="mt-2">
+          {data.periods.map((p) => (
+            <div key={p.days} className="flex items-center gap-3 py-2" style={{ borderTop: '1px solid rgba(20,8,31,0.06)', fontSize: 13.5 }}>
+              <span style={{ color: INK }}>{PERIOD_LABEL[p.days] ?? `Last ${p.days} days`}</span>
+              <span className="ml-auto" style={{ fontSize: 12, fontWeight: 600, color: p.change == null ? MUTED : p.change >= 0 ? '#047857' : '#B91C1C' }}
+                title={`The ${p.days === 1 ? 'day' : `${p.days} days`} before: ${aed(p.before)}`}>
+                {p.change == null ? '' : `${p.change >= 0 ? '▲' : '▼'} ${Math.abs(p.change)}%`}
+              </span>
+              <b style={{ minWidth: 110, textAlign: 'right' }}>{aed(p.value)}</b>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 11.5, color: MUTED, marginTop: 6 }}>
+          From Zoho Books invoices (not void or draft), by invoice date, up to {dayLabel(data.today)}. Change is against the same length of time before. Collected is customer payments.
+        </div>
+      </div>
+    </div>
+  )
+}
