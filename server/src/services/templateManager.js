@@ -199,12 +199,10 @@ export const newImageKey = () => crypto.randomBytes(16).toString('hex');
  */
 export async function submitUnitSizesCarousel() {
   const fs = await import('fs');
-  const { readyCards, cardImagePath, carouselTemplate, ensureCardImages, missingUnitPages, loadCardPricing } = await import('./carousel.js');
+  const { readyCards, cardImagePath, carouselTemplate, ensureCardImages, loadCardPricing } = await import('./carousel.js');
   await ensureCardImages();
   const cards = readyCards();
   if (cards.length < 2) throw new Error('At least two cards need a photo before the carousel can be sent to Meta');
-  const missing = await missingUnitPages(cards);
-  if (missing.length) throw new Error(`Upload the unit pages to the website first (docs/website-unit-pages) — not live yet: ${missing.join(', ')}`);
   const waba = await resolveWabaId();
   if (!waba) throw new Error('The WhatsApp Business Account ID is not set');
   const handles = [];
