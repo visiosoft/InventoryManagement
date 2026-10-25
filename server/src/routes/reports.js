@@ -154,6 +154,8 @@ router.get('/summary', async (req, res) => {
  * list too. /summary itself is left as it was for whatever else still
  * calls it; this is additive, not a replacement.
  */
+const MOVE_LIST_FIELDS = 'contractNo customer unit startDate endDate status';
+
 router.get('/stats', async (req, res) => {
   const scope = await siteScope(req.query.site);
   const uF = scope ? scope.unitFilter : {};
@@ -186,10 +188,13 @@ router.get('/stats', async (req, res) => {
         { $group: { _id: null, total: { $sum: '$amount' } } },
       ]),
       Contract.countDocuments({ ...cF, status: 'active' }),
+      // Only what the move-in / move-out lists show: whole contracts carry the
+      // agreement text, which made this response megabytes and the KPI row
+      // sit on its loading placeholders.
       Contract.find({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: monthStart, $lt: monthEnd } })
-        .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ startDate: 1 }).lean(),
+        .select(MOVE_LIST_FIELDS).populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ startDate: 1 }).lean(),
       Contract.find({ ...cF, status: 'ended', endDate: { $gte: monthStart, $lt: monthEnd } })
-        .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ endDate: 1 }).lean(),
+        .select(MOVE_LIST_FIELDS).populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ endDate: 1 }).lean(),
       Contract.countDocuments({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: lastMonthStart, $lt: monthStart } }),
       Contract.countDocuments({ ...cF, status: 'ended', endDate: { $gte: lastMonthStart, $lt: monthStart } }),
       Contract.countDocuments({ ...cF, status: 'active', endDate: { $gte: monthStart, $lt: monthEnd } }),
