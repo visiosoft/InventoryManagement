@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { cardsInTemplate, carouselSendComponents, bookIsReply } from '../services/carousel.js';
+import { cardsInTemplate, carouselSendComponents } from '../services/carousel.js';
 import { syncFollowUpTask } from '../services/followUps.js';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { withFormView, templatesFor, templateButtons } from '../services/flowView.js';
@@ -1268,7 +1268,7 @@ router.post('/send-template', async (req, res) => {
 
         // The unit-sizes carousel: every card needs its photo at send time.
         const carouselCards = cardsInTemplate(meta?.components);
-        const result = await sendWhatsAppTemplate({ to, name, language, variables, extraComponents: carouselCards ? carouselSendComponents(carouselCards, undefined, { bookReply: bookIsReply(meta?.components) }) : [] });
+        const result = await sendWhatsAppTemplate({ to, name, language, variables, extraComponents: carouselCards ? carouselSendComponents(carouselCards) : [] });
 
         /* What the customer will actually read, so the thread shows the words
            rather than a template name nobody outside this office knows. */

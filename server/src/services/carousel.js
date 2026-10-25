@@ -26,9 +26,9 @@ export const CAROUSEL_BODY = `Looking for Air Conditioned & Clean Storage Space 
 // a card without its own section opens the page itself.
 const BOOK_URL = 'https://purplebox.ae/unit-details.html';
 
-/* The cards, in order. `size` is written onto the lead when they tap a
-   card. `oldText` is a card's text in an earlier approved template, so that
-   one still sends with the right photos. */
+/* The cards, in order. `size` is written onto the lead when they tap
+   "Get a quote". `oldText` is a card's text in an earlier approved
+   template, so that one still sends with the right photos. */
 export const CAROUSEL_CARDS = [
     { code: 'F2-048', was: 330, now: 264, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xs', size: 10, label: '10 sq ft unit', text: '*10 sq ft unit* - Suitcases, boxes and seasonal items. Perfect for a few personal things.' },
     { code: 'F1U0', now: 625, bookUrl: 'https://purplebox.ae/unit-details.html#unit-ss', size: 25, label: '25 sq ft unit', text: '*25 sq ft unit* - Extra household boxes, luggage and bedding, with room to spare.' },
@@ -50,6 +50,32 @@ export function priceLine(c, promo = PROMO) {
 
 /** A card's text as it appears in the template: its price, then what fits. */
 export const cardBody = (c) => `${priceLine(c)}\n${c.text}`;
+
+/* "Book now" opens a page of ours first. WhatsApp puts a box with the
+   linked page's title on each card; the website's page title is the same
+   for every unit ("Unit Details | PurpleBox Storage Dubai"), so each card
+   links to its own page titled with its size and price, which sends the
+   customer straight on to that unit on the website. */
+const apiBase = () => (process.env.API_PUBLIC_URL || 'https://api.purplebox.ae').replace(/\/+$/, '');
+export const cardKey = (c) => (c.bookUrl || '').split('#unit-')[1] || c.code.toLowerCase();
+export const cardLinkUrl = (c) => `${apiBase()}/api/public/unit/${cardKey(c)}`;
+
+const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+/** The page behind a card's "Book now": its preview reads the unit size and price. */
+export function cardLinkPage(c) {
+    const title = `${c.size} sq ft storage unit`;
+    const desc = priceLine(c).replace(/[~*]/g, '').replace(/^AED [\d,]+ (?=AED)/, '');
+    const to = c.bookUrl || BOOK_URL;
+    return `<!doctype html><html><head><meta charset="utf-8">
+<title>${esc(title)}</title>
+<meta property="og:title" content="${esc(title)}">
+<meta property="og:description" content="${esc(desc)}">
+<meta property="og:site_name" content="PurpleBox Storage">
+${cardHasImage(c.code) ? `<meta property="og:image" content="${esc(cardImageUrl(c.code))}">` : ''}
+<meta http-equiv="refresh" content="0;url=${esc(to)}">
+</head><body><script>location.replace(${JSON.stringify(to)})</script><a href="${esc(to)}">${esc(title)}</a></body></html>`;
+}
 
 export const cardImagePath = (code) => path.join(CAROUSEL_DIR, `${code}.jpg`);
 export const cardHasImage = (code) => fs.existsSync(cardImagePath(code));
@@ -114,10 +140,7 @@ export function carouselTemplate(cards, handles) {
                     components: [
                         { type: 'HEADER', format: 'IMAGE', example: { header_handle: [handles[i]] } },
                         { type: 'BODY', text: cardBody(c) },
-                        // Both are replies: a link button makes WhatsApp put the
-                        // page's title box on the card. "Book now" is answered
-                        // with the link instead (handleCarouselTap).
-                        { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Book now' }, { type: 'QUICK_REPLY', text: 'Get a quote' }] },
+                        { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Book now', url: cardLinkUrl(c) }, { type: 'QUICK_REPLY', text: 'Get a quote' }] },
                     ],
                 })),
             },
@@ -145,67 +168,41 @@ export function cardsInTemplate(metaComponents = []) {
     return out.length ? out : null;
 }
 
-/** True when the template's "Book now" is a reply button (newer), not a link (the first carousel). */
-export function bookIsReply(metaComponents = []) {
-    const carousel = (metaComponents || []).find((c) => String(c.type).toUpperCase() === 'CAROUSEL');
-    const buttons = (carousel?.cards?.[0]?.components || []).find((c) => String(c.type).toUpperCase() === 'BUTTONS')?.buttons || [];
-    return String(buttons[0]?.type || '').toUpperCase() === 'QUICK_REPLY';
-}
-
-/** The send-time components: each card's photo, and a payload on each reply button saying which card. */
-export function carouselSendComponents(cards, imageUrl = cardImageUrl, { bookReply = false } = {}) {
+/** The send-time components: each card's photo, and a payload on "Get a quote" saying which card. */
+export function carouselSendComponents(cards, imageUrl = cardImageUrl) {
     return [{
         type: 'carousel',
         cards: cards.map((c, i) => ({
             card_index: i,
             components: [
                 { type: 'header', parameters: [{ type: 'image', image: { link: imageUrl(c.code) } }] },
-                ...(bookReply ? [{ type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: `pb_book:${c.code}` }] }] : []),
                 { type: 'button', sub_type: 'quick_reply', index: '1', parameters: [{ type: 'payload', payload: `pb_card:${c.code}` }] },
             ],
         })),
     }];
 }
 
-/** The card a tap came from and which button — 'quote' or 'book' — or null. */
-export function tapFrom(raw) {
-    const m = String(raw?.button?.payload || '').match(/^pb_(card|book):(.+)$/);
-    const card = m && CAROUSEL_CARDS.find((c) => c.code === m[2]);
-    return card ? { card, action: m[1] === 'book' ? 'book' : 'quote' } : null;
+/** The card a "Get a quote" tap came from, or null. */
+export function cardFromTap(raw) {
+    const m = String(raw?.button?.payload || '').match(/^pb_card:(.+)$/);
+    return m ? CAROUSEL_CARDS.find((c) => c.code === m[1]) || null : null;
 }
 
-/** The card a tap came from, or null. */
-export const cardFromTap = (raw) => tapFrom(raw)?.card || null;
-
-/** What "Book now" answers with: the unit, its price and its booking link. */
-export const bookReply = (c) => `Great choice! Here is the ${c.label} — ${priceLine(c).replace(/[~*]/g, '').replace(/^AED [\d,]+ (?=AED)/, '')}.\nBook it here: ${c.bookUrl || BOOK_URL}`;
-
 /**
- * A customer tapped a card's button: the lead records which unit they want —
- * the size when it is a plain sq ft one and none is set yet — so whoever
- * replies starts from it. "Book now" is answered here with that unit's
- * booking link (`replied`), so the assistant does not answer it as well;
- * "Get a quote" is left to the assistant or a rep.
+ * A customer tapped "Get a quote" on a card: the lead records which unit
+ * they want — the size when it is a plain sq ft one and none is set yet —
+ * so whoever replies starts from it.
  */
 export async function handleCarouselTap({ phoneNormalized, raw }) {
-    const tap = tapFrom(raw);
-    if (!tap) return { handled: false };
-    const { card, action } = tap;
-    const { Lead, WhatsAppMessage } = await import('../models/index.js');
+    const card = cardFromTap(raw);
+    if (!card) return { handled: false };
+    const { Lead } = await import('../models/index.js');
     const lead = await Lead.findOne({ phoneNormalized });
     if (lead) {
         if (card.size && !(lead.storageSizeValue > 0)) lead.storageSizeValue = card.size;
         if (!lead.spaceNeeded) lead.spaceNeeded = card.label;
-        lead.timeline.push({ type: 'note', text: `Tapped "${action === 'book' ? 'Book now' : 'Get a quote'}" on the ${card.label} card (unit sizes carousel)` });
+        lead.timeline.push({ type: 'note', text: `Tapped "Get a quote" on the ${card.label} card (unit sizes carousel)` });
         await lead.save().catch((e) => console.error('[Carousel] lead save:', e.message));
     }
-    if (action !== 'book') return { handled: true, card };
-    const { sendWhatsAppText } = await import('./whatsapp.js');
-    const text = bookReply(card);
-    const sent = await sendWhatsAppText({ to: phoneNormalized, body: text });
-    await WhatsAppMessage.create({
-        messageId: sent?.messages?.[0]?.id || '', phone: phoneNormalized, phoneNormalized,
-        direction: 'outbound', type: 'text', text, status: 'sent', occurredAt: new Date(), raw: sent,
-    }).catch((e) => console.error('[Carousel] save reply:', e.message));
-    return { handled: true, replied: true, card };
+    return { handled: true, card };
 }

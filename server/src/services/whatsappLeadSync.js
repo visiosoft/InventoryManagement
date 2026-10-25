@@ -575,12 +575,11 @@ async function persistMessages(messages) {
              * answers coming back are written onto the lead, thanked, and
              * handed to the assistant as a plain line it can act on. */
             // "Get a quote" on a unit-sizes carousel card: the lead records the unit.
-            // "Book now" is answered there with the booking link; nothing else replies to it.
-            const carouselTap = await handleCarouselTap({ phoneNormalized: msg.phoneNormalized, raw: msg.raw }).catch((e) => { console.error('[Carousel]', e.message); return null; });
+            await handleCarouselTap({ phoneNormalized: msg.phoneNormalized, raw: msg.raw }).catch((e) => console.error('[Carousel]', e.message));
 
             let welcomeSummaryText = '';
-            let welcomeHandled = !!carouselTap?.replied;
-            if (!welcomeHandled) try {
+            let welcomeHandled = false;
+            try {
                 const reply = await handleWelcomeReply({ phoneNormalized: msg.phoneNormalized, phone: msg.phone, raw: msg.raw });
                 if (reply.handled) { welcomeHandled = true; welcomeSummaryText = reply.summary || ''; }
                 else welcomeHandled = (await sendWelcomeFlow({ phoneNormalized: msg.phoneNormalized, phone: msg.phone, wasNewLead: isNewLead })).sent;
