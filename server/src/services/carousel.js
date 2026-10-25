@@ -30,49 +30,66 @@ const BOOK_URL = 'https://purplebox.ae/unit-details.html';
    "Get a quote". `oldText` is a card's text in an earlier approved
    template, so that one still sends with the right photos. */
 export const CAROUSEL_CARDS = [
-    { code: 'F2-048', was: 330, now: 264, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xs', size: 10, label: '10 sq ft unit', text: '*10 sq ft unit* - Suitcases, boxes and seasonal items. Perfect for a few personal things.' },
-    { code: 'F1U0', now: 625, bookUrl: 'https://purplebox.ae/unit-details.html#unit-ss', size: 25, label: '25 sq ft unit', text: '*25 sq ft unit* - Extra household boxes, luggage and bedding, with room to spare.' },
-    { code: 'F2-016', was: 770, now: 732, bookUrl: 'https://purplebox.ae/unit-details.html#unit-m35', size: 35, label: '35 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-35-v2.webp', text: '*35 sq ft unit* - A mattress, bike, shelving and boxes. Great for a studio or while renovating.' },
-    { code: 'F2-001', was: 975, now: 829, bookUrl: 'https://purplebox.ae/unit-details.html#unit-s50', size: 50, label: '50 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-50-v2.webp', text: '*50 sq ft unit* - Fits a sofa plus stacks of boxes. Ideal when moving between homes.' },
-    { code: 'F2-106', was: 1400, now: 1330, bookUrl: 'https://purplebox.ae/unit-details.html#unit-m75', size: 75, label: '75 sq ft 1-bed apartment unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-75-v2.webp', oldText: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.', text: '*75 sq ft 1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
-    { code: 'F2-069', now: 1600, from: true, bookUrl: 'https://purplebox.ae/unit-details.html#unit-l', size: 100, label: '100 sq ft family storage unit', oldText: '*Family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.', text: '*100 sq ft family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.' },
-    { code: 'F1U005', now: 2700, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xl', size: 150, label: '150 sq ft 2-bed home unit', oldText: '*2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.', text: '*150 sq ft 2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.' },
-    { code: 'F1U014', now: 3100, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xxl', size: 200, label: '200 sq ft whole home or business unit', oldText: '*Whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.', text: '*200 sq ft whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.' },
+    { code: 'F2-048', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xs', size: 10, label: '10 sq ft unit', text: '*10 sq ft unit* - Suitcases, boxes and seasonal items. Perfect for a few personal things.' },
+    { code: 'F1U0', bookUrl: 'https://purplebox.ae/unit-details.html#unit-ss', size: 25, label: '25 sq ft unit', text: '*25 sq ft unit* - Extra household boxes, luggage and bedding, with room to spare.' },
+    { code: 'F2-016', bookUrl: 'https://purplebox.ae/unit-details.html#unit-m35', size: 35, label: '35 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-35-v2.webp', text: '*35 sq ft unit* - A mattress, bike, shelving and boxes. Great for a studio or while renovating.' },
+    { code: 'F2-001', bookUrl: 'https://purplebox.ae/unit-details.html#unit-s50', size: 50, label: '50 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-50-v2.webp', text: '*50 sq ft unit* - Fits a sofa plus stacks of boxes. Ideal when moving between homes.' },
+    { code: 'F2-106', bookUrl: 'https://purplebox.ae/unit-details.html#unit-m75', size: 75, label: '75 sq ft 1-bed apartment unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-75-v2.webp', oldText: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.', text: '*75 sq ft 1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
+    { code: 'F2-069', bookUrl: 'https://purplebox.ae/unit-details.html#unit-l', size: 100, label: '100 sq ft family storage unit', oldText: '*Family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.', text: '*100 sq ft family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.' },
+    { code: 'F1U005', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xl', size: 150, label: '150 sq ft 2-bed home unit', oldText: '*2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.', text: '*150 sq ft 2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.' },
+    { code: 'F1U014', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xxl', size: 200, label: '200 sq ft whole home or business unit', oldText: '*Whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.', text: '*200 sq ft whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.' },
 ];
 
-const aedFmt = (n) => `AED ${Number(n).toLocaleString('en-US')}`;
+const aedFmt = (n) => `AED ${Math.round(Number(n)).toLocaleString('en-US')}`;
 
-/** The price line on a card: "~AED 330~ *AED 264* / 4 weeks · 20% off till Nov 15th". */
-export function priceLine(c, promo = PROMO) {
-    if (c.was > c.now) return `~${aedFmt(c.was)}~ *${aedFmt(c.now)}* / 4 weeks · ${Math.round((1 - c.now / c.was) * 100)}% off till ${promo.label}`;
-    return `${c.from ? 'From ' : ''}*${aedFmt(c.now)}* / 4 weeks`;
+/**
+ * Each size's price and discount, from the units — the same list the website
+ * shows (websitePricing.js), so the cards and the website always agree.
+ * A Map of size → { price, offerPrice, discountPct, hasDiscount, hasPriceRange }.
+ */
+export async function loadCardPricing() {
+    const { Unit } = await import('../models/index.js');
+    const { buildWebsitePricing } = await import('./websitePricing.js');
+    const units = await Unit.find({ sizeSqf: { $gt: 0 } }).select('sizeSqf price discountPct status').lean();
+    return new Map(buildWebsitePricing(units, { sizes: CAROUSEL_CARDS.map((c) => c.size) }).map((r) => [r.sizeSqf, r]));
+}
+
+/** The price line on a card: "~AED 330~ *AED 264* / 4 weeks · 20% off till Nov 15th". Empty with no price. */
+export function priceLine(row, promo = PROMO) {
+    if (!row) return '';
+    if (row.hasDiscount) return `~${aedFmt(row.price)}~ *${aedFmt(row.offerPrice)}* / 4 weeks · ${row.discountPct}% off till ${promo.label}`;
+    return `${row.hasPriceRange ? 'From ' : ''}*${aedFmt(row.price)}* / 4 weeks`;
 }
 
 /** A card's text as it appears in the template: its price, then what fits. */
-export const cardBody = (c) => `${priceLine(c)}\n${c.text}`;
+export const cardBody = (c, pricing) => {
+    const line = priceLine(pricing?.get(c.size));
+    return line ? `${line}\n${c.text}` : c.text;
+};
 
-/* "Book now" opens a page of ours first. WhatsApp puts a box with the
-   linked page's title on each card; the website's page title is the same
-   for every unit ("Unit Details | PurpleBox Storage Dubai"), so each card
-   links to its own page titled with its size and price, which sends the
-   customer straight on to that unit on the website. */
-const apiBase = () => (process.env.API_PUBLIC_URL || 'https://api.purplebox.ae').replace(/\/+$/, '');
+/* "Book now" opens a small page on the website first. WhatsApp puts a box
+   with the linked page's title and web address on each card; the unit
+   details page has one title for every unit ("Unit Details | PurpleBox
+   Storage Dubai"), so each card links to its own page, titled with its
+   size, which sends the customer straight on to that unit. The pages are
+   made by cardLinkPage and uploaded to purplebox.ae/units/ (see
+   docs/website-unit-pages). */
+const UNIT_PAGES = 'https://purplebox.ae/units';
 export const cardKey = (c) => (c.bookUrl || '').split('#unit-')[1] || c.code.toLowerCase();
-export const cardLinkUrl = (c) => `${apiBase()}/api/public/unit/${cardKey(c)}`;
+export const cardLinkUrl = (c) => `${UNIT_PAGES}/${cardKey(c)}.html`;
 
 const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
-/** The page behind a card's "Book now": its preview reads the unit size and price. */
+/** A card's page on the website: its link box reads the unit size. */
 export function cardLinkPage(c) {
     const title = `${c.size} sq ft storage unit`;
-    const desc = priceLine(c).replace(/[~*]/g, '').replace(/^AED [\d,]+ (?=AED)/, '');
     const to = c.bookUrl || BOOK_URL;
     return `<!doctype html><html><head><meta charset="utf-8">
 <title>${esc(title)}</title>
 <meta property="og:title" content="${esc(title)}">
-<meta property="og:description" content="${esc(desc)}">
+<meta property="og:description" content="Clean, air-conditioned storage in Al Quoz, Dubai.">
 <meta property="og:site_name" content="PurpleBox Storage">
-${cardHasImage(c.code) ? `<meta property="og:image" content="${esc(cardImageUrl(c.code))}">` : ''}
+<meta name="robots" content="noindex">
 <meta http-equiv="refresh" content="0;url=${esc(to)}">
 </head><body><script>location.replace(${JSON.stringify(to)})</script><a href="${esc(to)}">${esc(title)}</a></body></html>`;
 }
@@ -126,8 +143,27 @@ export function ensureCardImages({ fetchImpl = fetch } = {}) {
 /** The cards that have a photo — the ones that go into the template. */
 export const readyCards = (cards = CAROUSEL_CARDS, has = cardHasImage) => cards.filter((c) => has(c.code));
 
-/** The template as submitted to Meta, given one uploaded sample handle per card. */
-export function carouselTemplate(cards, handles) {
+/**
+ * Each card's page must be live on the website before the carousel goes to
+ * Meta — otherwise "Book now" opens a missing page. Returns the cards whose
+ * page is missing or out of date.
+ */
+export async function missingUnitPages(cards, { fetchImpl = fetch } = {}) {
+    const missing = [];
+    for (const c of cards) {
+        const want = `<meta property="og:title" content="${esc(`${c.size} sq ft storage unit`)}">`;
+        try {
+            const r = await fetchImpl(cardLinkUrl(c));
+            if (!r.ok || !(await r.text()).includes(want)) missing.push(cardLinkUrl(c));
+        } catch {
+            missing.push(cardLinkUrl(c));
+        }
+    }
+    return missing;
+}
+
+/** The template as submitted to Meta, given one uploaded sample handle per card and the prices. */
+export function carouselTemplate(cards, handles, pricing) {
     return {
         name: CAROUSEL_NAME,
         language: 'en',
@@ -139,7 +175,7 @@ export function carouselTemplate(cards, handles) {
                 cards: cards.map((c, i) => ({
                     components: [
                         { type: 'HEADER', format: 'IMAGE', example: { header_handle: [handles[i]] } },
-                        { type: 'BODY', text: cardBody(c) },
+                        { type: 'BODY', text: cardBody(c, pricing) },
                         { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Book now', url: cardLinkUrl(c) }, { type: 'QUICK_REPLY', text: 'Get a quote' }] },
                     ],
                 })),

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cardLinkPage } from './carousel.js';
+import { cardLinkPage, missingUnitPages } from './carousel.js';
 import { CAROUSEL_CARDS, carouselTemplate, cardsInTemplate, carouselSendComponents, cardFromTap, readyCards } from './carousel.js';
 
 test('only cards with a photo go into the template', () => {
@@ -40,14 +40,21 @@ test('a website WebP photo becomes a square JPEG, like the other cards', async (
     assert.equal(back.width, 1080); assert.equal(back.height, 1080);
 });
 
-test('each card\'s Book now opens its own page, titled with its size, which goes on to its unit section', () => {
+test('each card\'s Book now opens its own website page, titled with its size, which goes on to its unit section', () => {
     const tpl = carouselTemplate(CAROUSEL_CARDS, CAROUSEL_CARDS.map(() => 'h'));
     const urls = tpl.components[1].cards.map((card) => card.components[2].buttons[0].url);
-    assert.deepEqual(urls, ['xs', 'ss', 'm35', 's50', 'm75', 'l', 'xl', 'xxl'].map((k) => `https://api.purplebox.ae/api/public/unit/${k}`));
+    assert.deepEqual(urls, ['xs', 'ss', 'm35', 's50', 'm75', 'l', 'xl', 'xxl'].map((k) => `https://purplebox.ae/units/${k}.html`));
     const page = cardLinkPage(CAROUSEL_CARDS[0]);
     assert.match(page, /<meta property="og:title" content="10 sq ft storage unit">/);
-    assert.match(page, /og:description" content="AED 264 \/ 4 weeks · 20% off till Nov 15th"/);
     assert.match(page, /url=https:\/\/purplebox\.ae\/unit-details\.html#unit-xs/);
+});
+
+test('Send to Meta waits until the website pages are live', async () => {
+    const live = (body) => async () => ({ ok: true, text: async () => body });
+    const cards = CAROUSEL_CARDS.slice(0, 2);
+    assert.deepEqual(await missingUnitPages(cards, { fetchImpl: async (u) => ({ ok: true, text: async () => cardLinkPage(cards.find((c) => u.endsWith(`/${c.bookUrl.split('#unit-')[1]}.html`))) }) }), []);
+    assert.equal((await missingUnitPages(cards, { fetchImpl: live('<html>404</html>') })).length, 2);
+    assert.equal((await missingUnitPages(cards, { fetchImpl: async () => { throw new Error('down'); } })).length, 2);
 });
 
 test('every card starts with its size', () => {
@@ -62,16 +69,42 @@ test('the first carousel (old card text) still maps to its cards', () => {
 
 import { cardBody, priceLine, CAROUSEL_BODY, CAROUSEL_NAME } from './carousel.js';
 
+// The live price list as of 25 Oct 2026 (websitePricing.js rows).
+const PRICING = new Map([
+    [10, { price: 330, offerPrice: 264, discountPct: 20, hasDiscount: true }],
+    [25, { price: 625, offerPrice: 625, discountPct: 0, hasDiscount: false }],
+    [35, { price: 770, offerPrice: 731.5, discountPct: 5, hasDiscount: true }],
+    [50, { price: 975, offerPrice: 828.75, discountPct: 15, hasDiscount: true }],
+    [75, { price: 1400, offerPrice: 1330, discountPct: 5, hasDiscount: true }],
+    [100, { price: 1600, offerPrice: 1600, discountPct: 0, hasDiscount: false, hasPriceRange: true }],
+    [150, { price: 2700, offerPrice: 2700, discountPct: 0, hasDiscount: false }],
+    [200, { price: 3100, offerPrice: 3100, discountPct: 0, hasDiscount: false }],
+]);
+
 test('each card leads with its price, the discount and when it ends — within Meta\'s 160 characters', () => {
-    assert.equal(priceLine({ was: 330, now: 264 }), '~AED 330~ *AED 264* / 4 weeks · 20% off till Nov 15th');
-    assert.equal(priceLine({ now: 625 }), '*AED 625* / 4 weeks');
-    assert.equal(priceLine({ now: 1600, from: true }), 'From *AED 1,600* / 4 weeks');
-    for (const c of CAROUSEL_CARDS) assert.ok(cardBody(c).length <= 160, `${c.label}: ${cardBody(c).length} characters`);
+    assert.equal(priceLine(PRICING.get(10)), '~AED 330~ *AED 264* / 4 weeks · 20% off till Nov 15th');
+    assert.equal(priceLine(PRICING.get(50)), '~AED 975~ *AED 829* / 4 weeks · 15% off till Nov 15th');
+    assert.equal(priceLine(PRICING.get(25)), '*AED 625* / 4 weeks');
+    assert.equal(priceLine(PRICING.get(100)), 'From *AED 1,600* / 4 weeks');
+    assert.equal(cardBody(CAROUSEL_CARDS[0], new Map()), CAROUSEL_CARDS[0].text, 'no price, just the text');
+    for (const c of CAROUSEL_CARDS) assert.ok(cardBody(c, PRICING).length <= 160, `${c.label}: ${cardBody(c, PRICING).length} characters`);
     assert.match(CAROUSEL_BODY, /Ending on Nov 15th\. Moving Services Available\.$/);
     assert.equal(CAROUSEL_NAME, 'purplebox_units_offer_20261115');
+    const tpl = carouselTemplate(CAROUSEL_CARDS.slice(0, 1), ['h'], PRICING);
+    assert.equal(tpl.components[1].cards[0].components[1].text, `~AED 330~ *AED 264* / 4 weeks · 20% off till Nov 15th\n${CAROUSEL_CARDS[0].text}`);
+    assert.deepEqual(cardsInTemplate(tpl.components).map((c) => c.code), ['F2-048']);
 });
 
 test('the carousel approved before prices were added still maps to its cards', () => {
     const old = [{ type: 'CAROUSEL', cards: CAROUSEL_CARDS.slice(0, 2).map((c) => ({ components: [{ type: 'BODY', text: c.text }] })) }];
     assert.deepEqual(cardsInTemplate(old).map((c) => c.code), ['F2-048', 'F1U0']);
+});
+
+test('the unit pages in docs/website-unit-pages match what the cards link to', async () => {
+    const fs = await import('fs');
+    const { cardKey } = await import('./carousel.js');
+    for (const c of CAROUSEL_CARDS) {
+        const file = new URL(`../../../docs/website-unit-pages/units/${cardKey(c)}.html`, import.meta.url);
+        assert.equal(fs.readFileSync(file, 'utf8'), `${cardLinkPage(c)}\n`, `${cardKey(c)}.html is out of date`);
+    }
 });

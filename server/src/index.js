@@ -303,13 +303,6 @@ app.use('/api/public/pricing', publicPricingRoutes);
 app.use('/api/public/template-media', templateMediaPublic);
 // The unit-sizes carousel's card photos: Meta fetches each one when the carousel is sent.
 app.use('/api/public/carousel', express.static(CAROUSEL_DIR, { maxAge: '7d', fallthrough: false }));
-// A carousel card's "Book now": a page titled with the unit size, on to the website.
-app.get('/api/public/unit/:key', async (req, res) => {
-    const { CAROUSEL_CARDS, cardKey, cardLinkPage } = await import('./services/carousel.js');
-    const card = CAROUSEL_CARDS.find((c) => cardKey(c) === req.params.key);
-    if (!card) return res.redirect(302, 'https://purplebox.ae/unit-details.html');
-    res.set('Cache-Control', 'public, max-age=3600').type('html').send(cardLinkPage(card));
-});
 app.use('/api/warehouse-jobs/public', warehouseJobPublicRoutes);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
