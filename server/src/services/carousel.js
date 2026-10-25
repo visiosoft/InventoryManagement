@@ -26,17 +26,18 @@ export const CAROUSEL_BODY = `Looking for Air Conditioned & Clean Storage Space 
 // a card without its own section opens the page itself.
 const BOOK_URL = 'https://purplebox.ae/unit-details.html';
 
-/* The cards, in order. `size` is written onto the lead when they tap
-   "Get a quote" on a card with a plain sq ft size. */
+/* The cards, in order. `size` is written onto the lead when they tap a
+   card. `oldText` is a card's text in an earlier approved template, so that
+   one still sends with the right photos. */
 export const CAROUSEL_CARDS = [
     { code: 'F2-048', was: 330, now: 264, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xs', size: 10, label: '10 sq ft unit', text: '*10 sq ft unit* - Suitcases, boxes and seasonal items. Perfect for a few personal things.' },
     { code: 'F1U0', now: 625, bookUrl: 'https://purplebox.ae/unit-details.html#unit-ss', size: 25, label: '25 sq ft unit', text: '*25 sq ft unit* - Extra household boxes, luggage and bedding, with room to spare.' },
     { code: 'F2-016', was: 770, now: 732, bookUrl: 'https://purplebox.ae/unit-details.html#unit-m35', size: 35, label: '35 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-35-v2.webp', text: '*35 sq ft unit* - A mattress, bike, shelving and boxes. Great for a studio or while renovating.' },
     { code: 'F2-001', was: 975, now: 829, bookUrl: 'https://purplebox.ae/unit-details.html#unit-s50', size: 50, label: '50 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-50-v2.webp', text: '*50 sq ft unit* - Fits a sofa plus stacks of boxes. Ideal when moving between homes.' },
-    { code: 'F2-106', was: 1400, now: 1330, bookUrl: 'https://purplebox.ae/unit-details.html#unit-m75', size: null, label: '1-bed apartment unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-75-v2.webp', text: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
-    { code: 'F2-069', now: 1600, from: true, bookUrl: 'https://purplebox.ae/unit-details.html#unit-l', size: null, label: 'Family storage unit', text: '*Family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.' },
-    { code: 'F1U005', now: 2700, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xl', size: null, label: '2-bed home unit', text: '*2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.' },
-    { code: 'F1U014', now: 3100, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xxl', size: null, label: 'Whole home or business unit', text: '*Whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.' },
+    { code: 'F2-106', was: 1400, now: 1330, bookUrl: 'https://purplebox.ae/unit-details.html#unit-m75', size: 75, label: '75 sq ft 1-bed apartment unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-75-v2.webp', oldText: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.', text: '*75 sq ft 1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
+    { code: 'F2-069', now: 1600, from: true, bookUrl: 'https://purplebox.ae/unit-details.html#unit-l', size: 100, label: '100 sq ft family storage unit', oldText: '*Family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.', text: '*100 sq ft family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.' },
+    { code: 'F1U005', now: 2700, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xl', size: 150, label: '150 sq ft 2-bed home unit', oldText: '*2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.', text: '*150 sq ft 2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.' },
+    { code: 'F1U014', now: 3100, bookUrl: 'https://purplebox.ae/unit-details.html#unit-xxl', size: 200, label: '200 sq ft whole home or business unit', oldText: '*Whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.', text: '*200 sq ft whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.' },
 ];
 
 const aedFmt = (n) => `AED ${Number(n).toLocaleString('en-US')}`;
@@ -113,7 +114,10 @@ export function carouselTemplate(cards, handles) {
                     components: [
                         { type: 'HEADER', format: 'IMAGE', example: { header_handle: [handles[i]] } },
                         { type: 'BODY', text: cardBody(c) },
-                        { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Book now', url: c.bookUrl || BOOK_URL }, { type: 'QUICK_REPLY', text: 'Get a quote' }] },
+                        // Both are replies: a link button makes WhatsApp put the
+                        // page's title box on the card. "Book now" is answered
+                        // with the link instead (handleCarouselTap).
+                        { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Book now' }, { type: 'QUICK_REPLY', text: 'Get a quote' }] },
                     ],
                 })),
             },
@@ -134,48 +138,74 @@ export function cardsInTemplate(metaComponents = []) {
         const body = (card.components || []).find((c) => String(c.type).toUpperCase() === 'BODY');
         // Matched on what fits, so a template from before the prices were added still sends.
         const text = String(body?.text || '').trim();
-        const match = CAROUSEL_CARDS.find((c) => text === c.text || text.endsWith(`\n${c.text}`));
+        const match = CAROUSEL_CARDS.find((c) => [c.text, c.oldText].filter(Boolean).some((t) => text === t || text.endsWith(`\n${t}`)));
         if (!match) return null;
         out.push(match);
     }
     return out.length ? out : null;
 }
 
-/** The send-time components: each card's photo, and a payload on "Get a quote" saying which card. */
-export function carouselSendComponents(cards, imageUrl = cardImageUrl) {
+/** True when the template's "Book now" is a reply button (newer), not a link (the first carousel). */
+export function bookIsReply(metaComponents = []) {
+    const carousel = (metaComponents || []).find((c) => String(c.type).toUpperCase() === 'CAROUSEL');
+    const buttons = (carousel?.cards?.[0]?.components || []).find((c) => String(c.type).toUpperCase() === 'BUTTONS')?.buttons || [];
+    return String(buttons[0]?.type || '').toUpperCase() === 'QUICK_REPLY';
+}
+
+/** The send-time components: each card's photo, and a payload on each reply button saying which card. */
+export function carouselSendComponents(cards, imageUrl = cardImageUrl, { bookReply = false } = {}) {
     return [{
         type: 'carousel',
         cards: cards.map((c, i) => ({
             card_index: i,
             components: [
                 { type: 'header', parameters: [{ type: 'image', image: { link: imageUrl(c.code) } }] },
+                ...(bookReply ? [{ type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: `pb_book:${c.code}` }] }] : []),
                 { type: 'button', sub_type: 'quick_reply', index: '1', parameters: [{ type: 'payload', payload: `pb_card:${c.code}` }] },
             ],
         })),
     }];
 }
 
-/** The card a "Get a quote" tap came from, or null. */
-export function cardFromTap(raw) {
-    const m = String(raw?.button?.payload || '').match(/^pb_card:(.+)$/);
-    return m ? CAROUSEL_CARDS.find((c) => c.code === m[1]) || null : null;
+/** The card a tap came from and which button — 'quote' or 'book' — or null. */
+export function tapFrom(raw) {
+    const m = String(raw?.button?.payload || '').match(/^pb_(card|book):(.+)$/);
+    const card = m && CAROUSEL_CARDS.find((c) => c.code === m[2]);
+    return card ? { card, action: m[1] === 'book' ? 'book' : 'quote' } : null;
 }
 
+/** The card a tap came from, or null. */
+export const cardFromTap = (raw) => tapFrom(raw)?.card || null;
+
+/** What "Book now" answers with: the unit, its price and its booking link. */
+export const bookReply = (c) => `Great choice! Here is the ${c.label} — ${priceLine(c).replace(/[~*]/g, '').replace(/^AED [\d,]+ (?=AED)/, '')}.\nBook it here: ${c.bookUrl || BOOK_URL}`;
+
 /**
- * A customer tapped "Get a quote" on a card: the lead records which unit
- * they want — the size when it is a plain sq ft one and none is set yet —
- * so whoever replies starts from it.
+ * A customer tapped a card's button: the lead records which unit they want —
+ * the size when it is a plain sq ft one and none is set yet — so whoever
+ * replies starts from it. "Book now" is answered here with that unit's
+ * booking link (`replied`), so the assistant does not answer it as well;
+ * "Get a quote" is left to the assistant or a rep.
  */
 export async function handleCarouselTap({ phoneNormalized, raw }) {
-    const card = cardFromTap(raw);
-    if (!card) return { handled: false };
-    const { Lead } = await import('../models/index.js');
+    const tap = tapFrom(raw);
+    if (!tap) return { handled: false };
+    const { card, action } = tap;
+    const { Lead, WhatsAppMessage } = await import('../models/index.js');
     const lead = await Lead.findOne({ phoneNormalized });
     if (lead) {
         if (card.size && !(lead.storageSizeValue > 0)) lead.storageSizeValue = card.size;
         if (!lead.spaceNeeded) lead.spaceNeeded = card.label;
-        lead.timeline.push({ type: 'note', text: `Tapped "Get a quote" on the ${card.label} card (unit sizes carousel)` });
+        lead.timeline.push({ type: 'note', text: `Tapped "${action === 'book' ? 'Book now' : 'Get a quote'}" on the ${card.label} card (unit sizes carousel)` });
         await lead.save().catch((e) => console.error('[Carousel] lead save:', e.message));
     }
-    return { handled: true, card };
+    if (action !== 'book') return { handled: true, card };
+    const { sendWhatsAppText } = await import('./whatsapp.js');
+    const text = bookReply(card);
+    const sent = await sendWhatsAppText({ to: phoneNormalized, body: text });
+    await WhatsAppMessage.create({
+        messageId: sent?.messages?.[0]?.id || '', phone: phoneNormalized, phoneNormalized,
+        direction: 'outbound', type: 'text', text, status: 'sent', occurredAt: new Date(), raw: sent,
+    }).catch((e) => console.error('[Carousel] save reply:', e.message));
+    return { handled: true, replied: true, card };
 }

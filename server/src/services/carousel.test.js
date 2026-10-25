@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { bookIsReply, tapFrom, bookReply } from './carousel.js';
 import { CAROUSEL_CARDS, carouselTemplate, cardsInTemplate, carouselSendComponents, cardFromTap, readyCards } from './carousel.js';
 
 test('only cards with a photo go into the template', () => {
@@ -39,17 +40,9 @@ test('a website WebP photo becomes a square JPEG, like the other cards', async (
     assert.equal(back.width, 1080); assert.equal(back.height, 1080);
 });
 
-test('each card\'s Book now opens its own unit section', () => {
-    const tpl = carouselTemplate(CAROUSEL_CARDS, CAROUSEL_CARDS.map(() => 'h'));
-    const url = (i) => tpl.components[1].cards[i].components[2].buttons[0].url;
-    assert.equal(url(0), 'https://purplebox.ae/unit-details.html#unit-xs');
-    assert.equal(url(1), 'https://purplebox.ae/unit-details.html#unit-ss');
-    assert.equal(url(2), 'https://purplebox.ae/unit-details.html#unit-m35');
-    assert.equal(url(3), 'https://purplebox.ae/unit-details.html#unit-s50');
-    assert.equal(url(4), 'https://purplebox.ae/unit-details.html#unit-m75');
-    assert.equal(url(5), 'https://purplebox.ae/unit-details.html#unit-l');
-    assert.equal(url(6), 'https://purplebox.ae/unit-details.html#unit-xl');
-    assert.equal(url(7), 'https://purplebox.ae/unit-details.html#unit-xxl');
+test('each card\'s Book now answers with its own unit section', () => {
+    const urls = CAROUSEL_CARDS.map((c) => bookReply(c).split('Book it here: ')[1]);
+    assert.deepEqual(urls, ['xs', 'ss', 'm35', 's50', 'm75', 'l', 'xl', 'xxl'].map((k) => `https://purplebox.ae/unit-details.html#unit-${k}`));
 });
 
 import { cardBody, priceLine, CAROUSEL_BODY, CAROUSEL_NAME } from './carousel.js';
@@ -66,4 +59,27 @@ test('each card leads with its price, the discount and when it ends — within M
 test('the carousel approved before prices were added still maps to its cards', () => {
     const old = [{ type: 'CAROUSEL', cards: CAROUSEL_CARDS.slice(0, 2).map((c) => ({ components: [{ type: 'BODY', text: c.text }] })) }];
     assert.deepEqual(cardsInTemplate(old).map((c) => c.code), ['F2-048', 'F1U0']);
+});
+
+
+test('every card starts with its size', () => {
+    for (const c of CAROUSEL_CARDS) assert.match(c.text, /^\*\d+ sq ft /, c.label);
+    assert.deepEqual(CAROUSEL_CARDS.map((c) => c.size), [10, 25, 35, 50, 75, 100, 150, 200]);
+});
+
+test('"Book now" is a reply button (no link box on the card) answered with the booking link', () => {
+    const tpl = carouselTemplate(CAROUSEL_CARDS.slice(0, 2), ['h', 'h']);
+    assert.deepEqual(tpl.components[1].cards[0].components[2].buttons.map((b) => b.type), ['QUICK_REPLY', 'QUICK_REPLY']);
+    assert.equal(bookIsReply(tpl.components), true);
+    const send = carouselSendComponents(cardsInTemplate(tpl.components), (c) => c, { bookReply: true });
+    assert.deepEqual(send[0].cards[0].components.slice(1).map((b) => [b.index, b.parameters[0].payload]), [['0', 'pb_book:F2-048'], ['1', 'pb_card:F2-048']]);
+    assert.deepEqual(tapFrom({ button: { payload: 'pb_book:F2-048' } }).action, 'book');
+    assert.equal(bookReply(CAROUSEL_CARDS[0]), 'Great choice! Here is the 10 sq ft unit — AED 264 / 4 weeks · 20% off till Nov 15th.\nBook it here: https://purplebox.ae/unit-details.html#unit-xs');
+});
+
+test('the first carousel (link button, old card text) still sends as before', () => {
+    const old = [{ type: 'CAROUSEL', cards: [CAROUSEL_CARDS[4], CAROUSEL_CARDS[7]].map((c) => ({ components: [{ type: 'BODY', text: c.oldText }, { type: 'BUTTONS', buttons: [{ type: 'URL' }, { type: 'QUICK_REPLY' }] }] })) }];
+    assert.deepEqual(cardsInTemplate(old).map((c) => c.code), ['F2-106', 'F1U014']);
+    assert.equal(bookIsReply(old), false);
+    assert.equal(carouselSendComponents(cardsInTemplate(old), (c) => c)[0].cards[0].components.length, 2);
 });
