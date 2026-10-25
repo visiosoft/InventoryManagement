@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cardLinkPage, missingUnitPages } from './carousel.js';
 import { CAROUSEL_CARDS, carouselTemplate, cardsInTemplate, carouselSendComponents, cardFromTap, readyCards } from './carousel.js';
 
 test('only cards with a photo go into the template', () => {
@@ -40,22 +39,9 @@ test('a website WebP photo becomes a square JPEG, like the other cards', async (
     assert.equal(back.width, 1080); assert.equal(back.height, 1080);
 });
 
-test('each card\'s Book now opens its own website page, titled with its size, which goes on to its unit section', () => {
-    const tpl = carouselTemplate(CAROUSEL_CARDS, CAROUSEL_CARDS.map(() => 'h'));
-    const urls = tpl.components[1].cards.map((card) => card.components[2].buttons[0].url);
-    assert.deepEqual(urls, ['xs', 'ss', 'm35', 's50', 'm75', 'l', 'xl', 'xxl'].map((k) => `https://purplebox.ae/units/${k}.html`));
-    const page = cardLinkPage(CAROUSEL_CARDS[0]);
-    assert.match(page, /<meta property="og:title" content="10 sq ft storage unit">/);
-    assert.match(page, /url=https:\/\/purplebox\.ae\/unit-details\.html#unit-xs/);
-});
 
-test('Send to Meta waits until the website pages are live', async () => {
-    const live = (body) => async () => ({ ok: true, text: async () => body });
-    const cards = CAROUSEL_CARDS.slice(0, 2);
-    assert.deepEqual(await missingUnitPages(cards, { fetchImpl: async (u) => ({ ok: true, text: async () => cardLinkPage(cards.find((c) => u.endsWith(`/${c.bookUrl.split('#unit-')[1]}.html`))) }) }), []);
-    assert.equal((await missingUnitPages(cards, { fetchImpl: live('<html>404</html>') })).length, 2);
-    assert.equal((await missingUnitPages(cards, { fetchImpl: async () => { throw new Error('down'); } })).length, 2);
-});
+
+
 
 test('every card starts with its size', () => {
     for (const c of CAROUSEL_CARDS) assert.match(c.text, /^\*\d+ sq ft /, c.label);
@@ -100,11 +86,12 @@ test('the carousel approved before prices were added still maps to its cards', (
     assert.deepEqual(cardsInTemplate(old).map((c) => c.code), ['F2-048', 'F1U0']);
 });
 
-test('the unit pages in docs/website-unit-pages match what the cards link to', async () => {
-    const fs = await import('fs');
-    const { cardKey } = await import('./carousel.js');
-    for (const c of CAROUSEL_CARDS) {
-        const file = new URL(`../../../docs/website-unit-pages/units/${cardKey(c)}.html`, import.meta.url);
-        assert.equal(fs.readFileSync(file, 'utf8'), `${cardLinkPage(c)}\n`, `${cardKey(c)}.html is out of date`);
-    }
+test('each card\'s Book now opens the reservation form for its size', () => {
+    const tpl = carouselTemplate(CAROUSEL_CARDS, CAROUSEL_CARDS.map(() => 'h'));
+    const urls = tpl.components[1].cards.map((card) => new URL(card.components[2].buttons[0].url));
+    assert.ok(urls.every((u) => u.origin + u.pathname === 'https://purplebox.ae/reserve-step-1.html'));
+    assert.deepEqual(urls.map((u) => [u.searchParams.get('unitLabel'), u.searchParams.get('unitSize'), u.searchParams.get('monthlyRent')]), [
+        ['XS', '10 sq ft (XS)', '330'], ['S', '25 sq ft (S)', '625'], ['M', '35 sq ft (M)', '770'], ['L', '50 sq ft (L)', '975'],
+        ['XL', '75 sq ft (XL)', '1400'], ['XXL', '100 sq ft (XXL)', '1600'], ['3XL', '150 sq ft (3XL)', '2700'], ['4XL', '200 sq ft (4XL)', '3100'],
+    ]);
 });

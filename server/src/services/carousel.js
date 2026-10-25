@@ -22,22 +22,20 @@ export const CAROUSEL_DIR = path.resolve(__dirname, '../../assets/carousel');
 export const PROMO = { endsOn: '2026-11-15', label: 'Nov 15th' };
 export const CAROUSEL_NAME = `purplebox_units_offer_${PROMO.endsOn.replace(/-/g, '')}`;
 export const CAROUSEL_BODY = `Looking for Air Conditioned & Clean Storage Space in Al Quoz Dubai with 24/7 Access? Please Check Out our Units Below and Take Advantage of Latest Discounts Ending on ${PROMO.label}. Moving Services Available.`;
-// "Book now" on a card opens that unit's section of the unit details page;
-// a card without its own section opens the page itself.
-const BOOK_URL = 'https://purplebox.ae/unit-details.html';
+// "Book now" on a card opens the website's reservation form for that size.
 
 /* The cards, in order. `size` is written onto the lead when they tap
    "Get a quote". `oldText` is a card's text in an earlier approved
    template, so that one still sends with the right photos. */
 export const CAROUSEL_CARDS = [
-    { code: 'F2-048', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xs', size: 10, label: '10 sq ft unit', text: '*10 sq ft unit* - Suitcases, boxes and seasonal items. Perfect for a few personal things.' },
-    { code: 'F1U0', bookUrl: 'https://purplebox.ae/unit-details.html#unit-ss', size: 25, label: '25 sq ft unit', text: '*25 sq ft unit* - Extra household boxes, luggage and bedding, with room to spare.' },
-    { code: 'F2-016', bookUrl: 'https://purplebox.ae/unit-details.html#unit-m35', size: 35, label: '35 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-35-v2.webp', text: '*35 sq ft unit* - A mattress, bike, shelving and boxes. Great for a studio or while renovating.' },
-    { code: 'F2-001', bookUrl: 'https://purplebox.ae/unit-details.html#unit-s50', size: 50, label: '50 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-50-v2.webp', text: '*50 sq ft unit* - Fits a sofa plus stacks of boxes. Ideal when moving between homes.' },
-    { code: 'F2-106', bookUrl: 'https://purplebox.ae/unit-details.html#unit-m75', size: 75, label: '75 sq ft 1-bed apartment unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-75-v2.webp', oldText: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.', text: '*75 sq ft 1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
-    { code: 'F2-069', bookUrl: 'https://purplebox.ae/unit-details.html#unit-l', size: 100, label: '100 sq ft family storage unit', oldText: '*Family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.', text: '*100 sq ft family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.' },
-    { code: 'F1U005', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xl', size: 150, label: '150 sq ft 2-bed home unit', oldText: '*2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.', text: '*150 sq ft 2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.' },
-    { code: 'F1U014', bookUrl: 'https://purplebox.ae/unit-details.html#unit-xxl', size: 200, label: '200 sq ft whole home or business unit', oldText: '*Whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.', text: '*200 sq ft whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.' },
+    { code: 'F2-048', bookUrl: 'https://purplebox.ae/reserve-step-1.html?unitLabel=XS&unitSize=10+sq+ft+%28XS%29&monthlyRent=330', size: 10, label: '10 sq ft unit', text: '*10 sq ft unit* - Suitcases, boxes and seasonal items. Perfect for a few personal things.' },
+    { code: 'F1U0', bookUrl: 'https://purplebox.ae/reserve-step-1.html?unitLabel=S&unitSize=25+sq+ft+%28S%29&monthlyRent=625', size: 25, label: '25 sq ft unit', text: '*25 sq ft unit* - Extra household boxes, luggage and bedding, with room to spare.' },
+    { code: 'F2-016', bookUrl: 'https://purplebox.ae/reserve-step-1.html?unitLabel=M&unitSize=35+sq+ft+%28M%29&monthlyRent=770', size: 35, label: '35 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-35-v2.webp', text: '*35 sq ft unit* - A mattress, bike, shelving and boxes. Great for a studio or while renovating.' },
+    { code: 'F2-001', bookUrl: 'https://purplebox.ae/reserve-step-1.html?unitLabel=L&unitSize=50+sq+ft+%28L%29&monthlyRent=975', size: 50, label: '50 sq ft unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-50-v2.webp', text: '*50 sq ft unit* - Fits a sofa plus stacks of boxes. Ideal when moving between homes.' },
+    { code: 'F2-106', bookUrl: 'https://purplebox.ae/reserve-step-1.html?unitLabel=XL&unitSize=75+sq+ft+%28XL%29&monthlyRent=1400', size: 75, label: '75 sq ft 1-bed apartment unit', source: 'https://purplebox.ae/wp-content/themes/purplebox-static-theme/images/card-unit-75-v2.webp', oldText: '*1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.', text: '*75 sq ft 1-bed apartment unit* - A mattress, fridge, bike, luggage and boxes from a 1-bed apartment.' },
+    { code: 'F2-069', bookUrl: 'https://purplebox.ae/reserve-step-1.html?unitLabel=XXL&unitSize=100+sq+ft+%28XXL%29&monthlyRent=1600', size: 100, label: '100 sq ft family storage unit', oldText: '*Family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.', text: '*100 sq ft family storage unit* - Dining set, artwork, sports gear and boxes, all safe and organised.' },
+    { code: 'F1U005', bookUrl: 'https://purplebox.ae/reserve-step-1.html?unitLabel=3XL&unitSize=150+sq+ft+%283XL%29&monthlyRent=2700', size: 150, label: '150 sq ft 2-bed home unit', oldText: '*2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.', text: '*150 sq ft 2-bed home unit* - Shelving, appliances, furniture and boxes from a 2-bed home.' },
+    { code: 'F1U014', bookUrl: 'https://purplebox.ae/reserve-step-1.html?unitLabel=4XL&unitSize=200+sq+ft+%284XL%29&monthlyRent=3100', size: 200, label: '200 sq ft whole home or business unit', oldText: '*Whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.', text: '*200 sq ft whole home or business unit* - Your entire home or business stock. Furniture, shelving, office setup and more.' },
 ];
 
 const aedFmt = (n) => `AED ${Math.round(Number(n)).toLocaleString('en-US')}`;
@@ -66,33 +64,6 @@ export const cardBody = (c, pricing) => {
     const line = priceLine(pricing?.get(c.size));
     return line ? `${line}\n${c.text}` : c.text;
 };
-
-/* "Book now" opens a small page on the website first. WhatsApp puts a box
-   with the linked page's title and web address on each card; the unit
-   details page has one title for every unit ("Unit Details | PurpleBox
-   Storage Dubai"), so each card links to its own page, titled with its
-   size, which sends the customer straight on to that unit. The pages are
-   made by cardLinkPage and uploaded to purplebox.ae/units/ (see
-   docs/website-unit-pages). */
-const UNIT_PAGES = 'https://purplebox.ae/units';
-export const cardKey = (c) => (c.bookUrl || '').split('#unit-')[1] || c.code.toLowerCase();
-export const cardLinkUrl = (c) => `${UNIT_PAGES}/${cardKey(c)}.html`;
-
-const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
-
-/** A card's page on the website: its link box reads the unit size. */
-export function cardLinkPage(c) {
-    const title = `${c.size} sq ft storage unit`;
-    const to = c.bookUrl || BOOK_URL;
-    return `<!doctype html><html><head><meta charset="utf-8">
-<title>${esc(title)}</title>
-<meta property="og:title" content="${esc(title)}">
-<meta property="og:description" content="Clean, air-conditioned storage in Al Quoz, Dubai.">
-<meta property="og:site_name" content="PurpleBox Storage">
-<meta name="robots" content="noindex">
-<meta http-equiv="refresh" content="0;url=${esc(to)}">
-</head><body><script>location.replace(${JSON.stringify(to)})</script><a href="${esc(to)}">${esc(title)}</a></body></html>`;
-}
 
 export const cardImagePath = (code) => path.join(CAROUSEL_DIR, `${code}.jpg`);
 export const cardHasImage = (code) => fs.existsSync(cardImagePath(code));
@@ -143,25 +114,6 @@ export function ensureCardImages({ fetchImpl = fetch } = {}) {
 /** The cards that have a photo — the ones that go into the template. */
 export const readyCards = (cards = CAROUSEL_CARDS, has = cardHasImage) => cards.filter((c) => has(c.code));
 
-/**
- * Each card's page must be live on the website before the carousel goes to
- * Meta — otherwise "Book now" opens a missing page. Returns the cards whose
- * page is missing or out of date.
- */
-export async function missingUnitPages(cards, { fetchImpl = fetch } = {}) {
-    const missing = [];
-    for (const c of cards) {
-        const want = `<meta property="og:title" content="${esc(`${c.size} sq ft storage unit`)}">`;
-        try {
-            const r = await fetchImpl(cardLinkUrl(c));
-            if (!r.ok || !(await r.text()).includes(want)) missing.push(cardLinkUrl(c));
-        } catch {
-            missing.push(cardLinkUrl(c));
-        }
-    }
-    return missing;
-}
-
 /** The template as submitted to Meta, given one uploaded sample handle per card and the prices. */
 export function carouselTemplate(cards, handles, pricing) {
     return {
@@ -176,7 +128,7 @@ export function carouselTemplate(cards, handles, pricing) {
                     components: [
                         { type: 'HEADER', format: 'IMAGE', example: { header_handle: [handles[i]] } },
                         { type: 'BODY', text: cardBody(c, pricing) },
-                        { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Book now', url: cardLinkUrl(c) }, { type: 'QUICK_REPLY', text: 'Get a quote' }] },
+                        { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Book now', url: c.bookUrl }, { type: 'QUICK_REPLY', text: 'Get a quote' }] },
                     ],
                 })),
             },
