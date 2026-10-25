@@ -78,7 +78,10 @@ router.put('/:id', upload.single('image'), async (req, res) => {
 /** Which cards have a photo, and where the template stands with Meta. */
 router.get('/carousel', async (_req, res) => {
   try {
-    const { CAROUSEL_CARDS, CAROUSEL_NAME, cardHasImage, ensureCardImages } = await import('../services/carousel.js');
+    const { CAROUSEL_CARDS, CAROUSEL_NAME, CAROUSEL_BODY, cardBody, cardHasImage, ensureCardImages, loadCardPricing, cardLinkUrl, missingUnitPages } = await import('../services/carousel.js');
+    const pricing = await loadCardPricing();
+    // The website pages behind each card's "Book now" (purplebox.ae/units/…).
+    const pagesMissing = await missingUnitPages(CAROUSEL_CARDS).catch(() => []);
     // Photos that live on the website are fetched the first time they are needed.
     const fetched = await ensureCardImages();
     const { listWhatsAppTemplates } = await import('../services/whatsapp.js');
@@ -86,10 +89,12 @@ router.get('/carousel', async (_req, res) => {
     const meta = (list.templates || []).find((t) => t.name === CAROUSEL_NAME);
     res.json({
       name: CAROUSEL_NAME,
+      body: CAROUSEL_BODY,
+      pagesMissing,
       status: meta ? String(meta.status).toUpperCase() : 'NOT_SUBMITTED',
       rejectedReason: meta?.rejected_reason || '',
       photoProblems: fetched.failed,
-      cards: CAROUSEL_CARDS.map((c) => ({ code: c.code, label: c.label, text: c.text, bookUrl: c.bookUrl || 'https://purplebox.ae/unit-details.html', hasImage: cardHasImage(c.code), imageUrl: cardHasImage(c.code) ? `/api/public/carousel/${c.code}.jpg` : '' })),
+      cards: CAROUSEL_CARDS.map((c) => ({ code: c.code, label: c.label, text: cardBody(c, pricing), bookUrl: cardLinkUrl(c), hasImage: cardHasImage(c.code), imageUrl: cardHasImage(c.code) ? `/api/public/carousel/${c.code}.jpg` : '' })),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
