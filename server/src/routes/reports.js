@@ -156,7 +156,11 @@ router.get('/summary', async (req, res) => {
  */
 const MOVE_LIST_FIELDS = 'contractNo customer unit startDate endDate status';
 
-router.get('/stats', async (req, res) => {
+// Express 4 does not catch a rejected async handler: without the catch a
+// failure here left the request hanging and the KPI row loading for good.
+router.get('/stats', (req, res) => statsHandler(req, res).catch((e) => res.status(500).json({ error: e.message })));
+
+async function statsHandler(req, res) {
   const scope = await siteScope(req.query.site);
   const uF = scope ? scope.unitFilter : {};
   const cF = scope ? scope.contractFilter : {};
@@ -248,7 +252,7 @@ router.get('/stats', async (req, res) => {
     moveOutsList: moveOutsThisMonthList,
     availableUnitsList: availableUnits.map(u => ({ _id: u._id, unitNumber: u.unitNumber, floor: u.floor, sizeSqf: u.sizeSqf, monthlyRent: u.price || 0 })),
   });
-});
+}
 
 /** Today's website visits, the last N days by country, and the last N days'
  *  trend — its own card, own load, same reasoning as floor-occupancy below:
