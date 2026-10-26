@@ -7,6 +7,7 @@ import { sendWhatsAppMedia, sendWhatsAppText, uploadWhatsAppMedia, whatsappSendC
 import { understandMedia } from './mediaUnderstanding.js';
 import { mixAmbience } from './voiceAmbience.js';
 import { dismissAssignmentNotification } from './leadNotify.js';
+import { resolveFollowUpOnReply } from './followUps.js';
 
 // WhatsApp only permits a free-form reply inside 24 hours of the customer's
 // last message. Replying at 23h59 would race that limit and fail at Meta, so
@@ -394,6 +395,13 @@ export async function markFirstResponse(phoneNormalized) {
     // a lead can be replied to a second time, on a fresh assignment, long
     // after its firstResponseAt was set once and for good.
     await dismissAssignmentNotification(phoneNormalized);
+    // Every caller here is a person replying (the assistant's own sends never
+    // reach this), so a follow-up that was due is now done.
+    try {
+        await resolveFollowUpOnReply(phoneNormalized);
+    } catch (e) {
+        console.error('[aiBot] resolveFollowUpOnReply:', e.message);
+    }
 }
 
 /**

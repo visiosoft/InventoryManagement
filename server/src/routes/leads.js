@@ -1318,14 +1318,35 @@ router.get('/follow-ups', async (req, res) => {
         else if (req.query.owner) filter.owner = String(req.query.owner);
 
         const leads = await Lead.find(filter)
-            .select('fullName phone status temperature tags followUpAt owner ownerSeenAt whatsappProfileName')
+            .select('fullName phone phoneNormalized status temperature tags followUpAt siteVisitAt owner ownerSeenAt whatsappProfileName createdAt')
             .populate('owner', 'name email')
             .sort({ followUpAt: 1 })
             .lean();
 
+        // The last WhatsApp message each way, so a row can say "you wrote
+        // last, 2d ago" instead of a bare "overdue" — the date alone read as
+        // wrong to a rep who had in fact been chatting with the customer.
+        const phones = [...new Set(leads.map((l) => l.phoneNormalized).filter(Boolean))];
+        const last = phones.length
+            ? await WhatsAppMessage.aggregate([
+                { $match: { phoneNormalized: { $in: phones } } },
+                { $sort: { occurredAt: -1 } },
+                { $group: { _id: '$phoneNormalized', at: { $first: '$occurredAt' }, direction: { $first: '$direction' } } },
+            ])
+            : [];
+        const lastBy = new Map(last.map((m) => [m._id, m]));
+        for (const l of leads) {
+            const m = lastBy.get(l.phoneNormalized);
+            l.lastMessageAt = m?.at || null;
+            l.lastMessageMine = m ? m.direction === 'outbound' : null;
+        }
+
         const at = (l) => new Date(l.followUpAt).getTime();
+        // A site visit booked for today or later is the next step already —
+        // the older chase date underneath it is not something to do.
+        const visitAhead = (l) => l.siteVisitAt && new Date(l.siteVisitAt).getTime() >= startOfToday.getTime();
         res.json({
-            overdue: leads.filter((l) => at(l) < startOfToday.getTime()),
+            overdue: leads.filter((l) => at(l) < startOfToday.getTime() && !visitAhead(l)),
             today: leads.filter((l) => at(l) >= startOfToday.getTime() && at(l) < endOfToday.getTime()),
             upcoming: leads.filter((l) => at(l) >= endOfToday.getTime()),
             days,
