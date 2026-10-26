@@ -24,8 +24,8 @@ export type RosterRule = {
   rosterManaged?: boolean
 }
 
-const GAP_BG = '#F4F5F8'
-const GAP_LINE = '#E3E6EE'
+const GAP_BG = '#EEF0F4'
+const GAP_LINE = '#DCE0E8'
 const GAP_FG = '#D9534F'
 const LINE = '#ECEDF1'
 const MUTED = '#6B7280'
@@ -209,7 +209,7 @@ export default function CoverageCalendar({ rules, people, splits, saving, error,
             <tbody>
               {HOURS.map((h) => (
                 <tr key={h}>
-                  <td style={{ ...cellBase, fontSize: 10.5, color: MUTED, textAlign: 'right', paddingRight: 8 }}>{h % 3 === 0 ? hourLabel(h).replace(':00', '') : ''}</td>
+                  <td style={{ ...cellBase, fontSize: 10.5, color: MUTED, textAlign: 'right', paddingRight: 8, whiteSpace: 'nowrap' }}>{hourLabel(h).replace(':00', '')}</td>
                   {WEEK.map(([label, day]) => {
                     const on = everyone.filter((x) => grids[x._id][day][h])
                     const split = splitAt.get(keyOf(day, h))

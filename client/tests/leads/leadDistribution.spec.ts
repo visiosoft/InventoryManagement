@@ -85,8 +85,10 @@ test('cells show who is on, in soft colours, not the old purple', async ({ page 
   await expect(cell(page, 1, 16)).toHaveAttribute('title', /Randa Mustafa, Mahmoud Gohar/)
   await expect(cell(page, 3, 10)).toHaveAttribute('title', /nobody/)
   const bg = await cell(page, 1, 10).locator('div > div').first().evaluate((el) => getComputedStyle(el).backgroundColor)
-  expect(bg).toBe('rgb(232, 240, 252)') // the blue tint, #E8F0FC
+  expect(bg).toBe('rgb(201, 220, 248)') // the blue tint, #C9DCF8
   expect(bg).not.toBe('rgb(123, 75, 191)') // the old purple
+  // Every hour of the day is labelled.
+  for (const label of ['12 AM', '1 AM', '11 AM', '12 PM', '1 PM', '11 PM']) await expect(page.getByRole('cell', { name: label, exact: true })).toBeVisible()
   // The name once at the start of the block, not in every hour.
   await expect(cell(page, 1, 3)).toContainText('RANDA')
   await expect(cell(page, 1, 4)).not.toContainText('RANDA')
