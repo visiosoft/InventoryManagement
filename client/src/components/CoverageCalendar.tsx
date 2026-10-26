@@ -20,7 +20,6 @@ export type RosterRule = {
   user: { _id: string; name: string }
   color?: string
   weeklyShifts?: Shift[]
-  workingHours?: { days?: number[]; start?: string; end?: string }
   rosterManaged?: boolean
 }
 
@@ -56,24 +55,15 @@ export function shortName(name: string) {
 type Grid = boolean[][]
 const emptyGrid = (): Grid => Array.from({ length: 7 }, () => Array(24).fill(false))
 
+/** On the roster at this weekday and minute — the same rule the server applies: no shifts is off. */
 function onShiftAt(rule: RosterRule, day: number, minute: number) {
-  const shifts = rule.weeklyShifts ?? []
-  // On the roster with no shifts is off — the server reads it the same way.
-  if (shifts.length || rule.rosterManaged) {
-    return shifts.some((sh) => {
-      const s = clock(sh.start)
-      const e = clock(sh.end)
-      if (s == null || e == null) return false
-      if (s < e) return sh.day === day && minute >= s && minute < e
-      return (sh.day === day && minute >= s) || ((sh.day + 1) % 7 === day && minute < e)
-    })
-  }
-  const hours = rule.workingHours ?? {}
-  if (hours.days?.length && !hours.days.includes(day)) return false
-  const s = clock(hours.start)
-  const e = clock(hours.end)
-  if (s == null || e == null) return true
-  return s <= e ? minute >= s && minute < e : minute >= s || minute < e
+  return (rule.weeklyShifts ?? []).some((sh) => {
+    const s = clock(sh.start)
+    const e = clock(sh.end)
+    if (s == null || e == null) return false
+    if (s < e) return sh.day === day && minute >= s && minute < e
+    return (sh.day === day && minute >= s) || ((sh.day + 1) % 7 === day && minute < e)
+  })
 }
 
 function gridFrom(rule: RosterRule): Grid {

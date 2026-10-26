@@ -16,7 +16,7 @@ type Rep = {
   lastReplyAt: string | null; repliesToday: number; waiting: number
 }
 type Coverage = {
-  enabled: boolean; outOfHoursMode: string; nobodyOn: boolean; reps: Rep[]
+  enabled: boolean; outOfHours?: string[]; nobodyOn: boolean; reps: Rep[]
   live?: { waitingForReply: number; newLeadsToday: number; repliesToday: number }
   signal?: Signal; ai?: { enabled: boolean; mode: string; answering: boolean }
   handovers: { label: string; joins: string[]; leaves: string[]; onAfter: string[] }[]
@@ -39,11 +39,6 @@ function replyState(r: Rep) {
   return { label: m == null ? 'No replies yet' : 'Quiet', bg: '#FEF3C7', fg: '#B45309' }
 }
 
-const OUT_OF_HOURS: Record<string, string> = {
-  ai: 'the AI assistant answers and the lead waits for the next rep on shift',
-  unassigned: 'leads wait unassigned for the next rep on shift',
-  user: 'leads go to the out-of-hours person',
-}
 
 export default function LeadCoverageCard() {
   const { data, isLoading } = useQuery<Coverage>({
@@ -120,9 +115,9 @@ export default function LeadCoverageCard() {
           Distribution is switched off — new leads are not handed out by the roster. Turn it on in <Link to="/settings/lead-distribution" style={{ fontWeight: 700, textDecoration: 'underline' }}>Lead distribution</Link>.
         </div>
       )}
-      {data.nobodyOn && data.outOfHoursMode !== 'ai' && (
+      {data.nobodyOn && (
         <div className="text-xs" style={{ color: MUTED }}>
-          New leads now: {OUT_OF_HOURS[data.outOfHoursMode] || 'out-of-hours rules apply'}.
+          New leads now: {data.outOfHours?.length ? `go to ${data.outOfHours.join(', ')}${data.outOfHours.length > 1 ? ' (taking turns)' : ''}` : 'wait unassigned until the next shift starts'}.
         </div>
       )}
 
