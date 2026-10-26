@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, GripVertical, ChevronDown, ArrowUp, ArrowDown, EyeOff, Plus, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, GripVertical, ChevronDown, ArrowUp, ArrowDown, Columns2, EyeOff, Maximize2, Plus, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError, leadApi, type HighIntentLead, type WebsiteLead, type WebsiteAnalytics, type MonthFunnelStage } from '../lib/api'
 import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
@@ -122,8 +122,11 @@ function safeLoadLayout() {
 /* Each person's own dashboard, kept on their account (GET/PUT
    /auth/me/dashboard) so it follows them to any computer: the order, the
    cards they hid, and cards they moved to another tab. */
-type Layout = { order: WidgetId[]; hidden: WidgetId[]; tabs: Partial<Record<WidgetId, TabKey>> }
-const DEFAULT_SAVED: Layout = { order: DEFAULT_LAYOUT, hidden: [], tabs: {} }
+type Size = 'full' | 'half'
+type Layout = { order: WidgetId[]; hidden: WidgetId[]; tabs: Partial<Record<WidgetId, TabKey>>; sizes: Partial<Record<WidgetId, Size>> }
+const DEFAULT_SAVED: Layout = { order: DEFAULT_LAYOUT, hidden: [], tabs: {}, sizes: {} }
+// Cards that sit side by side unless somebody makes them full width.
+const HALF_BY_DEFAULT: WidgetId[] = ['zoho-sales', 'zoho-receivables', 'high-intent-leads', 'website-leads-today', 'units-by-size', 'floor-occupancy', 'expiring-contracts', 'team-tasks']
 
 const WIDGET_LABEL: Record<WidgetId, string> = {
   stats: 'Key numbers',
@@ -239,7 +242,7 @@ export default function Dashboard() {
   if (savedLayout && savedLayout !== adopted) {
     setAdopted(savedLayout)
     const l = savedLayout.layout
-    if (l) setLayoutState({ order: normalizeOrder(l.order), hidden: l.hidden ?? [], tabs: l.tabs ?? {} })
+    if (l) setLayoutState({ order: normalizeOrder(l.order), hidden: l.hidden ?? [], tabs: l.tabs ?? {}, sizes: l.sizes ?? {} })
   }
   const saveLayout = useCallback((next: Layout) => {
     setLayoutState(next)
@@ -249,6 +252,7 @@ export default function Dashboard() {
     api.put('/auth/me/dashboard', { layout: body }).catch(() => { /* kept in this browser at least */ })
   }, [qc])
   const tabOf = (id: WidgetId): TabKey => layout.tabs[id] ?? defaultTabOf(id)
+  const sizeOf = (id: WidgetId): Size => (id === 'stats' ? 'full' : layout.sizes?.[id] ?? (HALF_BY_DEFAULT.includes(id) ? 'half' : 'full'))
 
   // The open tab lives in the URL (?tab=leads) so a link or a refresh keeps it.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -411,6 +415,8 @@ export default function Dashboard() {
   }
   const setCardTab = (id: WidgetId, to: TabKey) =>
     saveLayout({ ...layout, tabs: { ...layout.tabs, [id]: to === defaultTabOf(id) ? undefined : to } })
+  const setCardSize = (id: WidgetId, size: Size) =>
+    saveLayout({ ...layout, sizes: { ...layout.sizes, [id]: size === (HALF_BY_DEFAULT.includes(id) ? 'half' : 'full') ? undefined : size } })
   const hideCard = (id: WidgetId) => saveLayout({ ...layout, hidden: [...layout.hidden, id] })
   const showCard = (id: WidgetId) => saveLayout({
     ...layout,
@@ -865,8 +871,8 @@ export default function Dashboard() {
         'whatsapp-id': <ClientInfoSubmissionsCard scope={isAdmin ? 'all' : 'mine'} />,
         // Zoho Books receivables — admin only (the endpoint is admin/accounts).
         // Sales from Zoho Books, seller-dashboard style — admin only.
-        'zoho-sales': isAdmin ? <div className="max-w-3xl"><ZohoSalesCard /></div> : null,
-        'zoho-receivables': isAdmin ? <div className="max-w-xl"><ZohoReceivablesCard /></div> : null,
+        'zoho-sales': isAdmin ? <ZohoSalesCard /> : null,
+        'zoho-receivables': isAdmin ? <ZohoReceivablesCard /> : null,
         'team-tasks': (
           <WidgetShell id="team-tasks" title="Latest tasks from the team" subtitle="Newest first, across everyone" {...dragHandlers}>
             {tasksLoading ? <Skeleton className="h-[240px]" /> : !teamTasks || teamTasks.length === 0 ? (
@@ -961,7 +967,7 @@ export default function Dashboard() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[220px]">
               <div style={{ ...HEADING, fontWeight: 700, fontSize: 14.5, color: INK }}>Customize your dashboard</div>
-              <div className="text-xs mt-0.5" style={{ color: MUTED_CLR }}>Move cards up or down, send one to another tab, or hide it. Saved to your account, on every computer.</div>
+              <div className="text-xs mt-0.5" style={{ color: MUTED_CLR }}>Move cards up or down, make them full or half width, send one to another tab, or hide it. Saved to your account.</div>
             </div>
             <button type="button" onClick={() => { if (confirm('Put every card back where it started?')) saveLayout(DEFAULT_SAVED) }}
               className="inline-flex items-center gap-1 text-xs font-semibold cursor-pointer" style={{ color: '#4A1FA0' }}>
@@ -1010,20 +1016,33 @@ export default function Dashboard() {
         </Link>
       )}
 
-      <div className="space-y-8">
+      {/* One grid: a full-width card spans both columns, two half-width cards
+          sit side by side. Dense, so a half card left alone beside a
+          full-width one is joined by the next half card instead of leaving a
+          gap and shifting every pair after it. */}
+      <div className="grid gap-x-5 gap-y-8 lg:grid-cols-2 lg:grid-flow-row-dense [&>*]:min-w-0">
         {visible.length === 0 && customizing && (
-          <div className="text-sm text-center py-10 rounded-2xl" style={{ color: MUTED_CLR, border: '1px dashed rgba(20,8,31,0.15)' }}>No cards on this tab. Add a hidden one above, or move one here from another tab.</div>
+          <div className="lg:col-span-2 text-sm text-center py-10 rounded-2xl" style={{ color: MUTED_CLR, border: '1px dashed rgba(20,8,31,0.15)' }}>No cards on this tab. Add a hidden one above, or move one here from another tab.</div>
         )}
         {visible.map((id, i) => {
-          // While customizing every card gets its own row and a bar of controls.
+          const span = sizeOf(id) === 'half' ? '' : 'lg:col-span-2'
+          // While customizing every card gets a bar of controls.
           if (customizing) {
             const btn = { width: 30, height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,0.12)', background: '#fff', display: 'inline-grid', placeItems: 'center' } as const
             return (
-              <div key={id} style={{ border: '2px dashed #C9B8F0', borderRadius: 18, padding: 10 }}>
+              <div key={id} className={span} style={{ border: '2px dashed #C9B8F0', borderRadius: 18, padding: 10 }}>
                 <div className="flex flex-wrap items-center gap-2 mb-3 px-1">
                   <span style={{ ...HEADING, fontWeight: 700, fontSize: 14, color: INK }} className="mr-auto">{WIDGET_LABEL[id]}</span>
                   <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => moveCard(id, -1)} className="cursor-pointer disabled:opacity-30" style={btn}><ArrowUp size={14} /></button>
                   <button type="button" aria-label="Move down" disabled={i === visible.length - 1} onClick={() => moveCard(id, 1)} className="cursor-pointer disabled:opacity-30" style={btn}><ArrowDown size={14} /></button>
+                  {id !== 'stats' && (
+                    <button type="button" onClick={() => setCardSize(id, sizeOf(id) === 'half' ? 'full' : 'half')}
+                      aria-label={sizeOf(id) === 'half' ? 'Make full width' : 'Make half width'}
+                      className="inline-flex items-center gap-1 cursor-pointer"
+                      style={{ height: 30, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,0.12)', background: '#fff', fontSize: 12.5, fontWeight: 600 }}>
+                      {sizeOf(id) === 'half' ? <><Maximize2 size={13} /> Full width</> : <><Columns2 size={13} /> Half width</>}
+                    </button>
+                  )}
                   <select value={tabOf(id)} onChange={(e) => setCardTab(id, e.target.value as TabKey)} aria-label="Tab"
                     style={{ height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,0.12)', fontSize: 12.5, padding: '0 8px', background: '#fff' }}>
                     {tabs.map((t) => <option key={t.key} value={t.key}>{t.key === tab ? `On ${t.label}` : `Move to ${t.label}`}</option>)}
@@ -1039,7 +1058,7 @@ export default function Dashboard() {
           }
           if (id === 'stats') {
             return (
-              <div key={id} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
+              <div key={id} className={span} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
                 <div
                   className="mb-3 flex items-center gap-2"
                   style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}
@@ -1050,57 +1069,8 @@ export default function Dashboard() {
               </div>
             )
           }
-
-          if (id === 'high-intent-leads' || id === 'website-leads-today') {
-            const peerIds: WidgetId[] = ['high-intent-leads', 'website-leads-today']
-            const first = peerIds.find((x) => visible.includes(x))
-            if (id !== first) return null
-            return (
-              <div key="leads-grid" className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
-                {peerIds.filter((x) => visible.includes(x)).map((x) => (
-                  <div key={x}>{widgets[x]}</div>
-                ))}
-              </div>
-            )
-          }
-
-          if (id === 'units-by-size' || id === 'floor-occupancy') {
-            const peerIds: WidgetId[] = ['units-by-size', 'floor-occupancy']
-            const first = peerIds.find((x) => visible.includes(x))
-            if (id !== first) return null
-            return (
-              <div key="charts-grid" className="grid gap-5 lg:grid-cols-2">
-                {peerIds.filter((x) => visible.includes(x)).map((x) => (
-                  <div key={x}>{widgets[x]}</div>
-                ))}
-              </div>
-            )
-          }
-
-          if (id === 'expiring-contracts' || id === 'team-tasks') {
-            const peerIds: WidgetId[] = ['expiring-contracts', 'team-tasks']
-            const first = peerIds.find((x) => visible.includes(x))
-            if (id !== first) return null
-            return (
-              <div key="middle-grid" className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
-                {peerIds.filter((x) => visible.includes(x)).map((x) => (
-                  <div key={x}>{widgets[x]}</div>
-                ))}
-              </div>
-            )
-          }
-
-          /* Everything else — its own full-width row, nothing to pair it
-             with. This used to be a bare `return null` covering every id
-             above, which is exactly how high-intent-leads went missing:
-             its entry in `widgets` was real, nothing in this loop ever
-             rendered it — the whole layout-order investigation before this
-             was chasing a symptom this line actually caused. Falling
-             through to render `widgets[id]` here means a future widget
-             added to DEFAULT_LAYOUT never needs its own branch wired in
-             just to appear. */
           return (
-            <div key={id} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
+            <div key={id} className={span} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
               {widgets[id]}
             </div>
           )

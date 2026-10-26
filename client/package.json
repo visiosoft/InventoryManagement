@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test:warehouse": "playwright test --config playwright.warehouse.config.ts",
-    "test:leads": "playwright test --config playwright.leads.config.ts",
+    "test:ui": "playwright test --config playwright.ui.config.ts",
     "dev": "node scripts/version.mjs && vite",
     "build": "node scripts/version.mjs && tsc -b && vite build",
     "lint": "eslint .",

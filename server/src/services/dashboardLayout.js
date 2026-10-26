@@ -1,6 +1,6 @@
 /**
- * Each person's own dashboard: the order of the cards, which ones are hidden
- * and which tab a card sits on, kept on their account so it follows them to
+ * Each person's own dashboard: the order of the cards, which ones are hidden,
+ * which tab a card sits on and how wide it is, kept on their account so it follows them to
  * any computer. Card ids and tab names are the client's; this only keeps the
  * shape sane — strings, sensible lengths, nothing else stored.
  */
@@ -17,6 +17,13 @@ export function cleanDashboardLayout(input) {
             if (ID.test(k) && typeof v === 'string' && ID.test(v)) tabs[k] = v;
         }
     }
-    const out = { order: ids(input.order), hidden: ids(input.hidden), tabs };
-    return out.order.length || out.hidden.length || Object.keys(tabs).length ? out : null;
+    // Card widths: full, or half so two sit side by side.
+    const sizes = {};
+    if (input.sizes && typeof input.sizes === 'object' && !Array.isArray(input.sizes)) {
+        for (const [k, v] of Object.entries(input.sizes).slice(0, 60)) {
+            if (ID.test(k) && (v === 'full' || v === 'half')) sizes[k] = v;
+        }
+    }
+    const out = { order: ids(input.order), hidden: ids(input.hidden), tabs, sizes };
+    return out.order.length || out.hidden.length || Object.keys(tabs).length || Object.keys(sizes).length ? out : null;
 }
