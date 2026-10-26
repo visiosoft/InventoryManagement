@@ -53,6 +53,9 @@ const userSchema = new Schema(
        registration and drops it the moment Expo reports the device gone,
        so this never grows stale. */
     pushTokens: { type: [String], default: [] },
+    /* Their own dashboard: card order, hidden cards, cards moved to another
+       tab (services/dashboardLayout.js). Null is the default layout. */
+    dashboardLayout: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true }
 );
