@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import {
-  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox, PhoneCall } from 'lucide-react'
+  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox, PhoneCall, DoorOpen } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -75,6 +75,7 @@ const profileMenuGroups = [
       { to: '/documents', label: 'Documents', icon: FolderOpen, perm: 'documents', adminOnly: false },
       { to: '/customers', label: 'Tenants', icon: Users, perm: 'customers', adminOnly: false },
       { to: '/sites', label: 'Sites', icon: Building2, perm: 'units', adminOnly: false },
+      { to: '/door-access', label: 'Door Access', icon: DoorOpen, perm: 'units', adminOnly: true },
     ],
   },
   {
@@ -307,6 +308,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/documents': 'Documents',
   '/settings': 'Settings',
   '/settings/lead-distribution': 'Lead Distribution',
+  '/door-access': 'Door Access',
   '/settings/duplicate-leads': 'Duplicate Leads',
   '/settings/agreement': 'Agreement Template',
   '/approvals': 'Approvals',

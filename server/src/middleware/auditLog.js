@@ -153,6 +153,9 @@ export async function auditLogMiddleware(req, res, next) {
   // buries the actions a staff member actually took, so it's excluded
   // entirely rather than just filtered out of the report view.
   if ((req.originalUrl || req.path || '').includes('/whatsapp/webhook')) return next();
+  // Same for the door terminal's event push — a device, not a person — and its
+  // URL carries the push secret, which must not be written down anywhere.
+  if ((req.originalUrl || req.path || '').includes('/public/door/')) return next();
 
   // A create's own id never appears in the URL that created it — peek at
   // what the route actually returned instead.

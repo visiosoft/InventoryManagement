@@ -2634,6 +2634,44 @@ const leadRoutingRuleSchema = new Schema({
 leadRoutingRuleSchema.index({ user: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
 leadRoutingRuleSchema.plugin(softDeletePlugin);
 
+/* ── The door terminal (Hikvision face/card/fingerprint) ──────────────────
+   Every access event the terminal pushes, and who on the device is which
+   customer. services/doorAccess.js. */
+const doorEventSchema = new Schema({
+  device: { type: String, default: '' },          // the terminal's serial, or its MAC/IP
+  at: { type: Date, required: true },
+  major: { type: Number, default: 0 },
+  sub: { type: Number, default: 0 },
+  kind: { type: String, enum: ['granted', 'denied', 'door', 'other'], default: 'other' },
+  method: { type: String, default: '' },          // face | card | fingerprint | pin | ''
+  label: { type: String, default: '' },           // what happened, in words
+  employeeNo: { type: String, default: '' },      // the person's ID on the device
+  personName: { type: String, default: '' },
+  cardNo: { type: String, default: '' },
+  serialNo: { type: Number, default: 0 },         // the device's own event number
+  customer: { type: Schema.Types.ObjectId, ref: 'Customer', default: null },
+  raw: { type: Schema.Types.Mixed, default: null },
+}, { timestamps: true });
+doorEventSchema.index({ at: -1 });
+doorEventSchema.index({ customer: 1, at: -1 });
+// The device resends what it stored while offline: the same event is kept once.
+doorEventSchema.index({ device: 1, serialNo: 1 }, { unique: true, partialFilterExpression: { serialNo: { $gt: 0 } } });
+
+const doorPersonSchema = new Schema({
+  employeeNo: { type: String, required: true },
+  name: { type: String, default: '' },
+  customer: { type: Schema.Types.ObjectId, ref: 'Customer', default: null },
+  matchedBy: { type: String, enum: ['', 'name', 'admin'], default: '' },
+}, { timestamps: true });
+doorPersonSchema.index({ employeeNo: 1 }, { unique: true });
+
+const doorConfigSchema = new Schema({
+  // The secret in the push address; anything posted without it is ignored.
+  secret: { type: String, default: '' },
+  lastEventAt: { type: Date, default: null },
+  lastDevice: { type: Schema.Types.Mixed, default: null },  // { device, ip, mac, name }
+}, { timestamps: true });
+
 /** The settings that are not about one person. A single document. */
 const leadRoutingConfigSchema = new Schema({
   enabled: { type: Boolean, default: false },
@@ -2785,6 +2823,9 @@ export const CustomerRequest = model('CustomerRequest', customerRequestSchema);
 
 export const LeadRoutingRule = model('LeadRoutingRule', leadRoutingRuleSchema);
 export const LeadRoutingConfig = model('LeadRoutingConfig', leadRoutingConfigSchema);
+export const DoorEvent = model('DoorEvent', doorEventSchema);
+export const DoorPerson = model('DoorPerson', doorPersonSchema);
+export const DoorConfig = model('DoorConfig', doorConfigSchema);
 export const Contract = model('Contract', contractSchema);
 export const Quote = model('Quote', quoteSchema);
 export const Invoice = model('Invoice', invoiceSchema);

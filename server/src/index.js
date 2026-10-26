@@ -103,6 +103,7 @@ import followUpQueueRoutes from './routes/followUpQueue.js';
 import accountsDashboardRoutes from './routes/accountsDashboard.js';
 import exportRoutes from './routes/exports.js';
 import leadRoutingRoutes from './routes/leadRouting.js';
+import doorRoutes, { pushRouter as doorPush } from './routes/door.js';
 import auditLogRoutes from './routes/auditLog.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
@@ -301,6 +302,8 @@ app.use('/api/public/bookings', publicBookingRoutes);
 // The website's price list: sizes, prices and discounts, no token. Read-only.
 app.use('/api/public/pricing', publicPricingRoutes);
 app.use('/api/public/template-media', templateMediaPublic);
+// The door terminal posts its access events here (JSON, XML or multipart); the path's secret is the key.
+app.use('/api/public/door', express.text({ type: ['application/xml', 'text/xml', 'text/plain'], limit: '1mb' }), doorPush);
 // The unit-sizes carousel's card photos: Meta fetches each one when the carousel is sent.
 app.use('/api/public/carousel', express.static(CAROUSEL_DIR, { maxAge: '7d', fallthrough: false }));
 app.use('/api/warehouse-jobs/public', warehouseJobPublicRoutes);
@@ -432,6 +435,7 @@ app.use('/api/accounts-dashboard', requireAuth, accountsDashboardRoutes);
 app.use('/api/exports', requireAuth, exportRoutes);
 // Who gets the next WhatsApp lead. Admin only, inside the router.
 app.use('/api/lead-routing', requireAuth, leadRoutingRoutes);
+app.use('/api/door', requireAuth, doorRoutes);
 app.use('/api/audit-log', requireAuth, auditLogRoutes);
 
 // Central error handler
