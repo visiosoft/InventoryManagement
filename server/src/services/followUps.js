@@ -65,6 +65,35 @@ export function isDue(lead = {}, todayKey = dayKeyFor()) {
   return Boolean(day) && day <= todayKey;
 }
 
+/**
+ * A person has just written to this number, so a follow-up that fell due
+ * today or earlier is done — that message *was* the follow-up. Without this
+ * a rep could chat with a lead all morning and the app would still call it
+ * "3d overdue", because only the follow-up form ever cleared the date.
+ *
+ * A follow-up booked for a later day is a deliberate future reminder and is
+ * left alone, the same rule the mobile app's markContacted() applies.
+ */
+export async function resolveFollowUpOnReply(phoneNormalized, now = new Date()) {
+  const key = String(phoneNormalized || '').replace(/\D/g, '').slice(-9);
+  if (key.length < 7) return 0;
+  const leads = await Lead.find({
+    phoneNormalized: new RegExp(`${key}$`),
+    followUpAt: { $ne: null, $lt: dayRange(dayKeyFor(now)).to },
+    status: { $nin: ['won', 'lost', 'already_customer'] },
+    deletedAt: null,
+  });
+  for (const lead of leads) {
+    lead.followUpAt = null;
+    lead.followUpNotifiedAt = null;
+    lead.followUpPushedAt = null;
+    lead.timeline.push({ at: now, type: 'note', text: 'Follow-up done — replied on WhatsApp' });
+    await syncFollowUpTask(lead);
+    await lead.save();
+  }
+  return leads.length;
+}
+
 /** What the follow-up is, in words, for whichever task carries it. */
 export function describeFollowUp(lead = {}) {
   const kind = lead.followUpKind || 'date';

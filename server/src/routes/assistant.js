@@ -26,12 +26,14 @@ async function allowed(req) {
 router.post('/ask', async (req, res) => {
    try {
       if (!(await allowed(req))) return res.status(403).json({ error: 'The assistant is not enabled for your role' });
-      const { question, history, site } = req.body || {};
+      const { question, history, site, context } = req.body || {};
       const out = await askAssistant({
          question, history: Array.isArray(history) ? history : [],
          siteId: site || req.query.site || null,
          user: req.user,
          authHeader: req.headers.authorization || '',
+         // The staff app says which screen and lead it is on (see askAssistant).
+         context: context && typeof context === 'object' ? context : null,
       });
       res.json(out);
    } catch (e) {

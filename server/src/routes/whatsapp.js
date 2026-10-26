@@ -13,6 +13,7 @@ import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
 import { keepChatWithSender, advanceStageOnReply } from '../services/chatStarter.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
+import { normalizePhone } from '../services/phone.js';
 import { deleteCustomerCascade } from './customers.js';
 import { promotePlaceholderName } from '../services/leadNames.js';
 import { quickReplyWatchLink } from '../services/renewalLink.js';
@@ -194,7 +195,13 @@ router.get('/messages', async (req, res) => {
     const q = {};
 
     if (phone) {
-        q.phoneNormalized = phone.replace(/\D/g, '');
+        // Inbound messages are stored as 971…, but a lead's phone is often
+        // saved the local way (050…). Matching only the raw digits opened an
+        // empty chat for those leads — "the chat sometimes doesn't come
+        // down" — so look under both spellings.
+        const raw = phone.replace(/\D/g, '');
+        const canonical = normalizePhone(phone);
+        q.phoneNormalized = canonical && canonical !== raw ? { $in: [canonical, raw] } : raw;
     }
 
     /* A single conversation used to come back whole, with the limit raised to
@@ -1116,7 +1123,9 @@ router.post('/send', async (req, res) => {
 
     const result = await sendWhatsAppText({ to, body });
 
-    const phoneNormalized = String(to).replace(/\D/g, '');
+    // Filed under the same 971… key as the customer's own messages, however
+    // the number was typed, so the reply lands in the same thread.
+    const phoneNormalized = normalizePhone(to);
     await WhatsAppMessage.create({
         messageId: result?.messages?.[0]?.id || '',
         phone: to,

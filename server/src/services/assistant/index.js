@@ -4,6 +4,8 @@ import { siteScope } from '../../utils/siteScope.js';
 import { dayKeyFor } from '../dailyDigest.js';
 import { toolDefinitions, toolByName } from './tools.js';
 import { PROPOSAL_TOOLS, ACTION_TOOLS } from './actions.js';
+// Registers the staff-app tools (follow-ups, chats, invoices, Zoho, sending) on import.
+import './staffTools.js';
 
 /**
  * The assistant in the corner of every page.
@@ -31,7 +33,12 @@ const RULES = `RULES YOU CANNOT BREAK:
 - Dates you pass to tools are YYYY-MM-DD. "Today" and relative dates are worked out from the date given below.
 - Do not mention tools by name to the user. Speak as the system.
 - Buttons to the relevant pages — a customer, a contract, a chat — are attached to your answer automatically. You may say "open it below". Do not write URLs yourself.
-- You can draft an email to customers or leads, and prepare a quotation or a contract for a person — but you cannot create or send any of them yourself. When you have prepared one, say so in a line and tell them to press Confirm in the card. Never say it has been created, booked, reserved, signed or sent — only a person's Confirm does that, and a contract is a draft until it is signed.`;
+- Lead housekeeping happens straight away when asked: a new lead, a follow-up date, a site visit, a lead's stage, a note.
+- Anything that reaches a customer or moves money is only prepared: a WhatsApp message, an email, a quotation, a contract, an invoice, sending an invoice, a payment, extending a contract, a template. When you have prepared one, say so in a line and tell them to press Confirm in the card. Never say it has been created, booked, reserved, signed or sent — only a person's Confirm does that, and a contract is a draft until it is signed.
+- Before writing to a customer or judging one (interested, lost, agreed to visit), read their conversation first. The latest message wins.
+- A booking end to end is: find or quote the unit for the dates, then prepare the quotation or the contract. Do every lookup you need in the same turn, then prepare it — do not stop to ask for something a tool can find.
+- If the person asking is a sales rep, "my leads", "my follow-ups" and "who is waiting for me" mean leads they own.
+- Answers are read on a phone: short, the name or number first, no headings, no tables.`;
 
 /** Any figure that could be mistaken for a fact: money, counts, sizes, dates. */
 const NUMBERS = /\d[\d,]*(?:\.\d+)?/g;
@@ -61,14 +68,29 @@ export function figuresGrounded(answer, toolResults) {
    return { ok: loose.length === 0, loose };
 }
 
-function systemPromptFor(config, { user, now }) {
+/** What the person is looking at in the staff app, so "send her the quote" or
+ *  "move this to Monday" needs no name. Only ever a pointer: the tools still
+ *  look the lead up, nothing about it is taken from the client as fact. */
+function contextLine(context) {
+   if (!context || typeof context !== 'object') return '';
+   const clip = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+   const parts = [];
+   if (context.screen) parts.push(`They are on the ${clip(context.screen)} screen of the staff mobile app.`);
+   if (context.leadId || context.phone || context.name) {
+      parts.push(`The lead on screen is ${clip(context.name) || 'unnamed'}${context.phone ? `, phone ${clip(context.phone)}` : ''}${context.leadId ? `, leadId ${clip(context.leadId)}` : ''}. "This customer", "him", "her", "them" mean this lead — pass the leadId to the tools.`);
+   }
+   return parts.join(' ');
+}
+
+function systemPromptFor(config, { user, now, context }) {
    const today = dayKeyFor(now);
    const weekday = new Date(now).toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Asia/Dubai' });
    return [
       config.systemPrompt || DEFAULT_PROMPT,
       RULES,
       `Today is ${weekday} ${today} (Dubai). The person asking is ${user?.name || 'a member of staff'} (${user?.role || 'staff'}).`,
-   ].join('\n\n');
+      contextLine(context),
+   ].filter(Boolean).join('\n\n');
 }
 
 /**
@@ -76,7 +98,7 @@ function systemPromptFor(config, { user, now }) {
  *
  * @returns {{ answer, tools: [{name, args, ok}], model, rounds, grounded }}
  */
-export async function askAssistant({ question, history = [], siteId = null, user = null, now = new Date(), authHeader = '' }) {
+export async function askAssistant({ question, history = [], siteId = null, user = null, now = new Date(), authHeader = '', context = null }) {
    if (!openaiConfigured()) return { answer: 'The assistant is not set up — no AI provider is configured.', tools: [], model: '', rounds: 0, grounded: true };
    const config = await getAssistantConfig();
    if (!config.enabled) return { answer: 'The assistant is switched off.', tools: [], model: '', rounds: 0, grounded: true };
@@ -91,7 +113,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
    const ctx = { scope, user, now, authHeader };
    const model = resolveModel(config.model);
    const effort = config.effort || undefined;
-   const system = systemPromptFor(config, { user, now });
+   const system = systemPromptFor(config, { user, now, context });
 
    // Only the last few turns, and only their text — tool traffic is not replayed.
    const messages = [
@@ -103,7 +125,9 @@ export async function askAssistant({ question, history = [], siteId = null, user
    const results = [];
    let content = '';
    let rounds = 0;
-   const maxRounds = Math.max(1, Number(config.maxToolRounds || 4));
+   // A booking end to end (find the person, price the unit, prepare it) needs
+   // a few rounds; 6 is the floor so an old stored default of 4 does not cut it short.
+   const maxRounds = Math.max(6, Number(config.maxToolRounds || 6));
 
    /* Whether this person may even be offered an action. If not, the proposal
       tool is simply absent — the model cannot propose what it cannot see. */
@@ -113,7 +137,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
    let pending = null;
 
    for (; rounds < maxRounds; rounds += 1) {
-      let turn = await chatWithTools({ system, messages, tools, model, effort, maxTokens: 700 });
+      let turn = await chatWithTools({ system, messages, tools, model, effort, maxTokens: 1500 });
 
       /* It answered without looking. "Rikki is a lead" with no lookup is a
          guess whether or not it happens to be true, and a guess with no
@@ -122,7 +146,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
          the database. A question none of them fits still ends in "I can't
          see that", but through a tool that came back empty, not from memory. */
       if (!turn.toolCalls.length && rounds === 0 && !/^\s*(hi|hello|hey|thanks|thank you|ok|okay)\b/i.test(text)) {
-         turn = await chatWithTools({ system, messages, tools, model, effort, maxTokens: 700, toolChoice: 'required' });
+         turn = await chatWithTools({ system, messages, tools, model, effort, maxTokens: 1500, toolChoice: 'required' });
       }
 
       if (!turn.toolCalls.length) { content = turn.content; break; }
@@ -147,7 +171,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
 
    // Ran out of rounds mid-thought: ask once more for the answer, tools off.
    if (!content) {
-      const final = await chatWithTools({ system, messages, tools: [], model, effort, maxTokens: 700 });
+      const final = await chatWithTools({ system, messages, tools: [], model, effort, maxTokens: 1500 });
       content = final.content;
    }
 
@@ -156,13 +180,18 @@ export async function askAssistant({ question, history = [], siteId = null, user
       return { answer: "I can't see that in the system — none of the questions I can ask the database covers it. Try asking about units, prices, contracts, customers, leads, WhatsApp, documents or tasks.", tools: used, model, rounds, grounded: false };
    }
 
-   /* A drafted email is the model's words too, and it will reach a customer.
-      Any figure in it must have come from a tool, exactly like an answer. */
-   const drafted = results.find((r) => r.tool === 'propose_email' && r.result?.proposalId);
+   /* A drafted email or WhatsApp is the model's words too, and it will reach
+      a customer. Any figure in it must have come from a tool — or from the
+      person's own question, since "tell him it's 1,200" is theirs to say. */
+   const DRAFT_TOOLS = { propose_email: 'body', propose_whatsapp_message: 'message' };
+   const drafted = results.find((r) => DRAFT_TOOLS[r.tool] && r.result?.proposalId);
    if (drafted) {
-      const body = String(messages.find((m) => m.role === 'assistant' && m.tool_calls)?.tool_calls
-         ?.find((c) => c.function?.name === 'propose_email')?.function?.arguments || '');
-      const inDraft = figuresGrounded(body, results.filter((r) => r.tool !== 'propose_email'));
+      const call = messages.filter((m) => m.role === 'assistant' && m.tool_calls)
+         .flatMap((m) => m.tool_calls).reverse()
+         .find((c) => c.function?.name === drafted.tool);
+      let body = '';
+      try { body = String(JSON.parse(call?.function?.arguments || '{}')[DRAFT_TOOLS[drafted.tool]] || ''); } catch { body = String(call?.function?.arguments || ''); }
+      const inDraft = figuresGrounded(body, [...results.filter((r) => !DRAFT_TOOLS[r.tool]), text]);
       if (!inDraft.ok) {
          const { dropProposal } = await import('./actions.js');
          dropProposal(drafted.result.proposalId);
@@ -178,7 +207,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
    if (!check.ok && results.length) {
       messages.push({ role: 'assistant', content });
       messages.push({ role: 'user', content: `Your answer used figures that did not come from the tools: ${check.loose.join(', ')}. Rewrite it using only figures that appear in the tool results, exactly as returned. If a figure you need is not there, say so instead of stating it.` });
-      const retry = await chatWithTools({ system, messages, tools: [], model, effort, maxTokens: 700 });
+      const retry = await chatWithTools({ system, messages, tools: [], model, effort, maxTokens: 1500 });
       content = retry.content;
       check = figuresGrounded(content, results);
    }

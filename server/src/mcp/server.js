@@ -91,7 +91,7 @@ const WRITE_TOOLS = [
 
 // The assistant's own tools: the lookups as they are, plus the three that PREPARE
 // an action and the two quick lead actions. compose_* just draft text, so skipped.
-const REUSED = () => toolNames().filter((n) => !/^compose_/.test(n));
+const REUSED = () => toolNames().filter((n) => !/^compose_/.test(n) && !toolByName(n)?.appOnly);
 
 function allTools() {
   const reused = REUSED().map((n) => { const t = toolByName(n); return { name: `crm_${n}`, description: t.description, inputSchema: t.parameters || OBJ(), run: async (a, ctx) => t.run(a, { scope: null, user: ctx.user, now: new Date(), authHeader: await serviceAuthHeader() }) }; });

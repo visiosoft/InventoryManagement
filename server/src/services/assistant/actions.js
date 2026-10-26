@@ -446,6 +446,37 @@ export function dropProposal(id) {
    proposals.delete(id);
 }
 
+/* ── more actions, from other modules ─────────────────────────────────────
+ *
+ * staffTools.js adds the rest of what a rep does in a day (send a WhatsApp,
+ * raise or send an invoice, record a payment, extend a contract…). Each one
+ * is the same two steps as the quotation: its tool holds a proposal here and
+ * returns the card, and its runner is what Confirm reaches. */
+
+const runners = new Map();
+
+/** What Confirm runs for proposals of this kind: `(spec, { authHeader }) => { ok, message }`. */
+export function registerRunner(kind, run) {
+   runners.set(kind, run);
+}
+
+/** Hold a proposal for one person's Confirm, and the fields index.js turns into the card. */
+export function holdProposal({ user, kind, summary, spec }) {
+   sweep();
+   const id = crypto.randomBytes(8).toString('hex');
+   proposals.set(id, { id, userId: String(user?.id || ''), kind, expiresAt: Date.now() + TTL_MS, summary, spec });
+   return { proposalId: id, kind, summary };
+}
+
+/** A tool as a proposal (card + Confirm) or as an immediate write — both are hidden from anyone who may not act. */
+export function markProposalTool(name) {
+   if (!PROPOSAL_TOOLS.includes(name)) PROPOSAL_TOOLS.push(name);
+   if (!ACTION_TOOLS.includes(name)) ACTION_TOOLS.push(name);
+}
+export function markWriteTool(name) {
+   if (!ACTION_TOOLS.includes(name)) ACTION_TOOLS.push(name);
+}
+
 /* ── the executor, which only a confirmed card reaches ────────────────────── */
 
 /**
@@ -473,6 +504,13 @@ export async function runAction(proposal, { authHeader }) {
 
    if (proposal.kind === 'create_contract') return runContract(proposal, { call, base, authHeader });
    if (proposal.kind === 'send_email') return runEmail(proposal);
+   if (runners.has(proposal.kind)) {
+      try {
+         return await runners.get(proposal.kind)(proposal.spec, { authHeader });
+      } catch (e) {
+         return { ok: false, message: `Stopped: ${e.message}` };
+      }
+   }
 
    const s = proposal.spec;
    const steps = [];
