@@ -251,18 +251,28 @@ export const startOfHour = (at = new Date()) => new Date(Math.floor(at.getTime()
  * people, taking turns; with none chosen the owner is null, a real answer:
  * the lead waits and the sweep below hands it out when a shift starts.
  */
-export async function routeInboundLead({ at = new Date() } = {}) {
-   const config = (await LeadRoutingConfig.findOne().lean()) ?? {};
+export async function routeInboundLead({ at = new Date(), deps = {} } = {}) {
+   // `deps` lets tests run the whole decision without a database.
+   const d = {
+      config: async () => (await LeadRoutingConfig.findOne().lean()) ?? {},
+      rules: () => LeadRoutingRule.find({}).lean(),
+      activeIds: async (ids) => (await User.find({ _id: { $in: ids }, isActive: { $ne: false } }).select('_id').lean()).map((u) => String(u._id)),
+      counts: (opts) => countsForToday(opts),
+      hourCounts: (since) => countsSince(since),
+      random: Math.random,
+      ...deps,
+   };
+   const config = await d.config();
    if (!config.enabled) return { ownerId: null, reason: 'distribution is off', off: true };
 
    const timeZone = config.timeZone || 'Asia/Dubai';
    // Only people who can actually take a lead: a deactivated user left on the roster is not handed anything.
-   const allRules = await LeadRoutingRule.find({}).lean();
+   const allRules = await d.rules();
    const outIds = outOfHoursIds(config);
-   const live = new Set((await User.find({ _id: { $in: [...allRules.map((r) => r.user), ...outIds] }, isActive: { $ne: false } }).select('_id').lean()).map((u) => String(u._id)));
-   const rules = allRules.filter((r) => live.has(String(r.user)));
-   const [counts, hourCounts] = await Promise.all([countsForToday({ at, timeZone }), countsSince(startOfHour(at))]);
-   const decision = pickOwner({ rules, counts, hourCounts, at, timeZone, splits: config.hourSplits || [] });
+   const live = new Set(await d.activeIds([...allRules.map((r) => String(r.user?._id ?? r.user)), ...outIds]));
+   const rules = allRules.filter((r) => live.has(String(r.user?._id ?? r.user)));
+   const [counts, hourCounts] = await Promise.all([d.counts({ at, timeZone }), d.hourCounts(startOfHour(at))]);
+   const decision = pickOwner({ rules, counts, hourCounts, at, timeZone, splits: config.hourSplits || [], random: d.random });
    if (decision.ownerId) return decision;
 
    const out = pickOutOfHours({ userIds: outIds.filter((id) => live.has(id)), counts, hourCounts });
@@ -294,8 +304,19 @@ export function outOfHoursIds(config = {}) {
  * last few days. It will not reassign anything, and it will not sweep up a
  * lead somebody deliberately left unassigned months ago.
  */
-export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {}) {
-   const config = await LeadRoutingConfig.findOne().lean();
+export async function sweepUnassignedLeads({ at = new Date(), limit = 25, deps = {} } = {}) {
+   // `deps` lets tests run the sweep without a database.
+   const d = {
+      config: () => LeadRoutingConfig.findOne().lean(),
+      waiting: () => Lead.find({ owner: null, status: { $nin: ['won', 'lost', 'already_customer'] } }).sort({ createdAt: 1 }).limit(limit).lean(),
+      starter: (phone) => starterOfChat(phone),
+      route: (lead) => routeInboundLead({ phoneNormalized: lead.phoneNormalized, at }),
+      claim: (lead, set, note) => Lead.updateOne({ _id: lead._id, owner: null }, { $set: set, $push: { timeline: { type: 'note', text: note } } }),
+      notify: (lead, ownerId, reason) => notifyLeadAssigned({ lead, ownerId, reason }),
+      leadless: (n) => leadsForChatsWithoutOne({ at, limit: n }),
+      ...deps,
+   };
+   const config = await d.config();
    if (!config?.enabled) return { assigned: 0, reason: 'distribution is off' };
 
    /* Every lead nobody owns gets one — whatever its age or where it came
@@ -305,10 +326,7 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
       lost) and existing customers are not handed out. Batches of `limit`
       per run, oldest first, so a backlog spreads over a few runs instead of
       landing on the reps at once. */
-   const waiting = await Lead.find({
-      owner: null,
-      status: { $nin: ['won', 'lost', 'already_customer'] },
-   }).sort({ createdAt: 1 }).limit(limit).lean();
+   const waiting = await d.waiting();
 
    let assigned = 0;
    let nobodyOnShift = false;
@@ -318,37 +336,34 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
       /* A rep who messaged this chat from their CRM login keeps it; the rules
          place the rest. A lead someone assigned by hand already has an owner
          and never reaches this loop. */
-      const starter = await starterOfChat(lead.phoneNormalized).catch(() => null);
+      const starter = await Promise.resolve(d.starter(lead.phoneNormalized)).catch(() => null);
       const decision = starter
          ? { ownerId: starter._id, reason: keptNote(starter.name), kept: true }
-         : await routeInboundLead({ phoneNormalized: lead.phoneNormalized, at });
+         : await d.route(lead);
       // Nobody on the roster: try again later. The out-of-hours people take
       // new leads as they arrive, never the backlog this sweep would hand out.
       if (!decision.ownerId || decision.outOfHours) { nobodyOnShift = true; break; }
 
       // owner: null in the filter too — a lead somebody was given in the meantime
       // is never overwritten, even in a race with this sweep.
-      const claimed = await Lead.updateOne({ _id: lead._id, owner: null }, {
-         $set: {
-            owner: decision.ownerId,
-            assignedAt: at,
-            autoAssigned: !decision.kept,
-            assignedBy: null,        // the rules, not a person
-            ownerSeenAt: null,
-            firstResponseAt: null,
-         },
-         $push: { timeline: { type: 'note', text: decision.kept ? decision.reason : `Assigned by distribution rules — ${decision.reason}` } },
-      });
+      const claimed = await d.claim(lead, {
+         owner: decision.ownerId,
+         assignedAt: at,
+         autoAssigned: !decision.kept,
+         assignedBy: null,        // the rules, not a person
+         ownerSeenAt: null,
+         firstResponseAt: null,
+      }, decision.kept ? decision.reason : `Assigned by distribution rules — ${decision.reason}`);
       if (!claimed.modifiedCount) continue;   // somebody got it first; leave it
       assigned += 1;
 
-      notifyLeadAssigned({ lead, ownerId: decision.ownerId, reason: decision.reason })
+      Promise.resolve(d.notify(lead, decision.ownerId, decision.reason))
          .catch((e) => console.error('[LeadRouting] notify failed:', e.message));
    }
 
    // Chats with no lead at all (one of ours that the customer never answered,
    // from before outbound chats created leads): give them one, distributed.
-   const created = nobodyOnShift ? 0 : await leadsForChatsWithoutOne({ at, limit: Math.max(0, limit - assigned) })
+   const created = nobodyOnShift ? 0 : await Promise.resolve(d.leadless(Math.max(0, limit - assigned)))
       .catch((e) => { console.error('[LeadRouting] leadless chats:', e.message); return 0; });
 
    return { assigned: assigned + created, waiting: waiting.length, created };
