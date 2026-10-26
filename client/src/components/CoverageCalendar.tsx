@@ -7,13 +7,15 @@ import { Card, CardBody } from './ui'
  * Laid out like the coverage review: a column per day, a row per hour, each
  * cell in the colour of whoever takes leads then, pink GAP where nobody does.
  *
- * Editing is done on the calendar itself: pick a rep, then click or drag over
- * hours to give them those hours (or take them away). For the usual case —
- * the same hours on several days — each rep also has a one-line shift setter.
- * Nothing changes for distribution until Save.
+ * Click an hour, or drag across several, and a small window asks who is on
+ * then and how the leads are split. Left even, the reps on take turns one by
+ * one; set percentages (70 / 15 / 15) and that hour follows them. Saved the
+ * moment it is applied.
  */
 
 export type Shift = { day: number; start: string; end: string }
+export type HourSplit = { day: number; hour: number; shares: { user: string; pct: number }[] }
+export type RosterPerson = { _id: string; name: string }
 export type RosterRule = {
   user: { _id: string; name: string }
   color?: string
@@ -32,7 +34,6 @@ const PALETTE = ['#1B2238', '#7B4BBF', '#3E8E6E', '#C2410C', '#0E7490', '#B91C77
 // Monday first, as the calendar reads. Values are Date.getDay() numbers.
 const WEEK = [['MONDAY', 1], ['TUESDAY', 2], ['WEDNESDAY', 3], ['THURSDAY', 4], ['FRIDAY', 5], ['SATURDAY', 6], ['SUNDAY', 0]] as const
 const DAY_NAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const HOURS = Array.from({ length: 24 }, (_, h) => h)
 
 const clock = (v?: string) => {
@@ -40,7 +41,6 @@ const clock = (v?: string) => {
   return m ? Number(m[1]) * 60 + Number(m[2]) : null
 }
 const hourLabel = (h: number) => (h === 24 || h === 0 ? '12:00 AM' : `${h % 12 === 0 ? 12 : h % 12}:00 ${h < 12 ? 'AM' : 'PM'}`)
-const shortHour = (h: number) => (h === 24 || h === 0 ? '12am' : `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'am' : 'pm'}`)
 const pad = (h: number) => `${String(h).padStart(2, '0')}:00`
 
 /** The name on the calendar: "Mohamed Emad" is EMAD, as the team says it. */
@@ -97,39 +97,6 @@ function shiftsFrom(g: Grid): Shift[] {
   return out
 }
 
-/** "Mon–Sat 8am–4pm · Sun 10am–6pm" */
-function describe(g: Grid) {
-  const perDay = new Map<number, string>()
-  for (let d = 0; d < 7; d++) {
-    const parts: string[] = []
-    let h = 0
-    while (h < 24) {
-      if (!g[d][h]) { h++; continue }
-      const s = h
-      while (h < 24 && g[d][h]) h++
-      parts.push(`${shortHour(s)}–${shortHour(h)}`)
-    }
-    if (parts.length) perDay.set(d, parts.join(', '))
-  }
-  if (!perDay.size) return 'No hours — gets no leads'
-  // Group consecutive days (Mon→Sun order) that share the same hours.
-  const order: number[] = WEEK.map(([, d]) => d)
-  const groups: { days: number[]; hours: string }[] = []
-  for (const d of order) {
-    const hrs = perDay.get(d)
-    if (!hrs) continue
-    const last = groups[groups.length - 1]
-    if (last && last.hours === hrs && order.indexOf(last.days[last.days.length - 1]) === order.indexOf(d) - 1) last.days.push(d)
-    else groups.push({ days: [d], hours: hrs })
-  }
-  return groups.map((g2) => {
-    const label = g2.days.length > 2
-      ? `${DAY_SHORT[g2.days[0]]}–${DAY_SHORT[g2.days[g2.days.length - 1]]}`
-      : g2.days.map((d) => DAY_SHORT[d]).join(', ')
-    return `${label} ${g2.hours}`
-  }).join(' · ')
-}
-
 /** The longest stretch of the week with nobody on, wrapping Sunday into Monday. */
 function longestGap(grids: Grid[]) {
   const slots: boolean[] = []
@@ -151,187 +118,119 @@ function longestGap(grids: Grid[]) {
   return `Key gap: ${at(best.from)} – ${at(best.from + best.len)} = ${best.len} continuous hours without lead coverage.`
 }
 
-/* The Purplebox coverage calendar, as reviewed: matched to reps by name. */
-const PRESET: { match: RegExp; color: string; days: number[]; start: number; end: number }[] = [
-  { match: /emad/i, color: '#1B2238', days: [1, 2, 3, 4, 5, 6], start: 8, end: 16 },
-  { match: /randa/i, color: '#7B4BBF', days: [1, 2, 4, 5, 6, 0], start: 10, end: 18 },
-  { match: /mahmoud/i, color: '#3E8E6E', days: [1, 2, 3, 4, 5, 0], start: 15, end: 22 },
-]
+type Pct = Record<string, string>
 
-type Draft = Record<string, { color: string; grid: Grid }>
+const keyOf = (day: number, hour: number) => `${day}:${hour}`
 
-function draftFrom(rules: RosterRule[]): Draft {
-  const out: Draft = {}
-  rules.forEach((r, i) => { out[r.user._id] = { color: r.color || PALETTE[i % PALETTE.length], grid: gridFrom(r) } })
-  return out
-}
-
-const rangeGrid = (days: number[], start: number, end: number) => {
-  const g = emptyGrid()
-  for (const d of days) {
-    if (start < end) for (let h = start; h < end; h++) g[d][h] = true
-    else { // past midnight: evening on the day, small hours on the next
-      for (let h = start; h < 24; h++) g[d][h] = true
-      for (let h = 0; h < end; h++) g[(d + 1) % 7][h] = true
-    }
+/** "Mon 3 PM", or "Mon 3 PM – 6 PM", or "8 hours on 3 days". */
+function selectionLabel(cells: { day: number; hour: number }[]) {
+  if (cells.length === 1) return `${DAY_NAME[cells[0].day]} ${hourLabel(cells[0].hour)}`
+  const days = [...new Set(cells.map((c) => c.day))]
+  if (days.length === 1) {
+    const hours = cells.map((c) => c.hour).sort((a, b) => a - b)
+    return `${DAY_NAME[days[0]]} ${hourLabel(hours[0])} – ${hourLabel(hours[hours.length - 1] + 1)}`
   }
-  return g
+  return `${cells.length} hours on ${days.length} days`
 }
 
-export default function CoverageCalendar({ rules, saving, saveError, savedAt, onSave }: {
+export default function CoverageCalendar({ rules, people, splits, saving, error, onApply }: {
   rules: RosterRule[]
+  /** Everybody who could take leads (sales reps), in the rotation or not. */
+  people: RosterPerson[]
+  splits: HourSplit[]
   saving: boolean
-  saveError?: string
-  savedAt?: number
-  onSave: (changes: { userId: string; color: string; weeklyShifts: Shift[] }[]) => void
+  error?: string
+  onApply: (change: { rules: { userId: string; color: string; weeklyShifts: Shift[] }[]; hourSplits: HourSplit[] }) => void
 }) {
-  const [draft, setDraft] = useState<Draft>(() => draftFrom(rules))
-  const [dirty, setDirty] = useState(false)
-  const [brush, setBrush] = useState<string>(rules[0]?.user._id ?? '')
-  // Bumped whenever the whole roster is replaced (fill, discard, reload), so
-  // each rep's quick setter re-reads its days and hours from the calendar.
-  const [version, setVersion] = useState(0)
-  useEffect(() => { if (!dirty) { setDraft(draftFrom(rules)); setVersion((v) => v + 1) } }, [rules, dirty])
-  useEffect(() => { if (!rules.some((r) => r.user._id === brush)) setBrush(rules[0]?.user._id ?? '') }, [rules, brush])
+  // Everyone shown: the people in the rotation first, in their order, then anybody else who could be.
+  const everyone = useMemo(() => {
+    const out: { _id: string; name: string; color: string; rule?: RosterRule }[] = []
+    // A colour nobody has yet, so two people never look alike.
+    const free = () => PALETTE.find((c) => !out.some((x) => x.color.toLowerCase() === c.toLowerCase())) ?? PALETTE[out.length % PALETTE.length]
+    for (const r of rules) out.push({ _id: r.user._id, name: r.user.name, color: r.color || free(), rule: r })
+    for (const p of people) if (!out.some((x) => x._id === p._id)) out.push({ _id: p._id, name: p.name, color: free() })
+    return out
+  }, [rules, people])
+  const grids = useMemo(() => Object.fromEntries(everyone.map((x) => [x._id, x.rule ? gridFrom(x.rule) : emptyGrid()])), [everyone])
+  const splitAt = useMemo(() => new Map(splits.map((c) => [keyOf(c.day, c.hour), c])), [splits])
+  const gap = useMemo(() => longestGap(Object.values(grids)), [grids])
 
-  const grids = useMemo(() => rules.map((r) => draft[r.user._id]?.grid ?? emptyGrid()), [rules, draft])
-  const gap = useMemo(() => longestGap(grids), [grids])
-
-  const update = (userId: string, fn: (d: Draft[string]) => Draft[string]) => {
-    setDraft((prev) => (prev[userId] ? { ...prev, [userId]: fn(prev[userId]) } : prev))
-    setDirty(true)
-  }
-
-  /* Painting: press on a cell to give the chosen rep that hour (or take it
-     away if they had it), keep the button down and drag to do the same to
-     every cell passed over. Works with a finger too. */
-  const paint = useRef<{ on: boolean; seen: Set<string> } | null>(null)
-  const applyCell = (day: number, hour: number) => {
-    const p = paint.current
-    if (!p || !brush) return
-    const key = `${day}:${hour}`
-    if (p.seen.has(key)) return
-    p.seen.add(key)
-    update(brush, (d) => {
-      const grid = d.grid.map((row) => [...row])
-      grid[day][hour] = p.on
-      return { ...d, grid }
-    })
-  }
+  /* Selecting: press on an hour and drag to take in more; let go and the
+     window opens for whatever was covered. Works with a finger too. */
+  const [selecting, setSelecting] = useState<Set<string> | null>(null)
+  const [open, setOpen] = useState<{ day: number; hour: number }[] | null>(null)
+  const drag = useRef<Set<string> | null>(null)
   const cellAt = (x: number, y: number) => {
     const el = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest('[data-cell]') as HTMLElement | null
-    if (!el) return null
-    return { day: Number(el.dataset.day), hour: Number(el.dataset.hour) }
+    return el ? { day: Number(el.dataset.day), hour: Number(el.dataset.hour) } : null
   }
   useEffect(() => {
-    const stop = () => { paint.current = null }
+    const stop = () => {
+      const sel = drag.current
+      drag.current = null
+      setSelecting(null)
+      if (sel?.size) setOpen([...sel].map((k) => { const [d, h] = k.split(':').map(Number); return { day: d, hour: h } }))
+    }
     window.addEventListener('pointerup', stop)
     window.addEventListener('pointercancel', stop)
     return () => { window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop) }
   }, [])
-
-  const applyPreset = () => {
-    setDraft((prev) => {
-      const next = { ...prev }
-      for (const r of rules) {
-        const p = PRESET.find((x) => x.match.test(r.user.name))
-        if (p) next[r.user._id] = { color: p.color, grid: rangeGrid(p.days, p.start, p.end) }
-      }
-      return next
-    })
-    setDirty(true)
-    setVersion((v) => v + 1)
+  const take = (c: { day: number; hour: number } | null) => {
+    if (!c || !drag.current) return
+    const k = keyOf(c.day, c.hour)
+    if (drag.current.has(k)) return
+    drag.current.add(k)
+    setSelecting(new Set(drag.current))
   }
 
-  const clearEveryone = () => {
-    setDraft((prev) => Object.fromEntries(Object.entries(prev).map(([id, d]) => [id, { ...d, grid: emptyGrid() }])))
-    setDirty(true)
-    setVersion((v) => v + 1)
+  const apply = (cells: { day: number; hour: number }[], on: Record<string, boolean>, pct: Pct, even: boolean) => {
+    const changed: { userId: string; color: string; weeklyShifts: Shift[] }[] = []
+    for (const x of everyone) {
+      const g = grids[x._id].map((row) => [...row])
+      let diff = false
+      for (const c of cells) if (g[c.day][c.hour] !== Boolean(on[x._id])) { g[c.day][c.hour] = Boolean(on[x._id]); diff = true }
+      if (diff) changed.push({ userId: x._id, color: x.color, weeklyShifts: shiftsFrom(g) })
+    }
+    const inCells = new Set(cells.map((c) => keyOf(c.day, c.hour)))
+    const kept = splits.filter((c) => !inCells.has(keyOf(c.day, c.hour)))
+    const shares = everyone.filter((x) => on[x._id]).map((x) => ({ user: x._id, pct: Number(pct[x._id]) || 0 })).filter((x) => x.pct > 0)
+    const added = even || shares.length < 2 ? [] : cells.map((c) => ({ day: c.day, hour: c.hour, shares }))
+    onApply({ rules: changed, hourSplits: [...kept, ...added] })
+    setOpen(null)
   }
 
-  const undo = () => { setDraft(draftFrom(rules)); setDirty(false); setVersion((v) => v + 1) }
-
-  const save = () => {
-    onSave(rules.filter((r) => draft[r.user._id]).map((r) => ({
-      userId: r.user._id,
-      color: draft[r.user._id].color,
-      weeklyShifts: shiftsFrom(draft[r.user._id].grid),
-    })))
-    setDirty(false)
-  }
-
-  const brushRule = rules.find((r) => r.user._id === brush)
   const cellBase = { borderRight: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}`, height: 26, padding: 0 } as const
 
   return (
     <Card>
       <CardBody className="space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#111827' }}>Weekly Lead Coverage Calendar</div>
-            <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>
-              New leads only go to whoever is on here at that hour — a rep with no hours gets none. Pink GAP hours follow the out-of-hours setting. New sales reps appear here by themselves, with no hours.
-            </div>
-          </div>
-          {/* Reset: nothing is saved until "Save roster", and "Undo changes"
-              in the save bar goes back to what was saved. */}
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={applyPreset} disabled={saving}
-              style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 12px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', cursor: 'pointer' }}>
-              Reset to coverage calendar
-            </button>
-            <button type="button" onClick={() => { if (confirm('Clear every rep\'s hours? Nothing is saved until you press Save roster.')) clearEveryone() }} disabled={saving}
-              style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 12px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', color: '#B91C1C', cursor: 'pointer' }}>
-              Clear everyone
-            </button>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#111827' }}>Weekly Lead Coverage Calendar</div>
+          <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>
+            Click an hour — or drag across several — to choose who takes leads then and how they are split. Even split: they take turns, one by one. Pink GAP: nobody on.
           </div>
         </div>
 
-        {/* Step 1: who you are editing */}
-        <div className="rounded-lg p-3" style={{ background: '#F6F7F9' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>
-            1. Pick a rep &nbsp;·&nbsp; 2. Click or drag on the calendar to add or remove their hours &nbsp;·&nbsp; 3. Save
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {rules.map((r) => {
-              const d = draft[r.user._id]
-              const active = r.user._id === brush
-              return (
-                <button key={r.user._id} type="button" onClick={() => setBrush(r.user._id)}
-                  className="inline-flex items-center gap-2"
-                  style={{
-                    padding: '6px 12px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                    border: `2px solid ${active ? d?.color : LINE}`,
-                    background: active ? d?.color : '#fff', color: active ? '#fff' : '#111827',
-                  }}>
-                  <span style={{ width: 12, height: 12, borderRadius: 3, background: active ? '#fff' : d?.color }} />
-                  {r.user.name}
-                </button>
-              )
-            })}
-            <span className="inline-flex items-center gap-2" style={{ fontSize: 12.5, fontWeight: 700, marginLeft: 6 }}>
-              <span style={{ width: 12, height: 12, borderRadius: 3, background: GAP_FG }} /> NO COVERAGE
-            </span>
-          </div>
+        <div className="flex flex-wrap items-center gap-3" style={{ fontSize: 12.5, fontWeight: 700 }}>
+          {everyone.filter((x) => grids[x._id].some((row) => row.some(Boolean))).map((x) => (
+            <span key={x._id} className="inline-flex items-center gap-1.5"><span style={{ width: 12, height: 12, borderRadius: 3, background: x.color }} />{x.name}</span>
+          ))}
+          <span className="inline-flex items-center gap-1.5"><span style={{ width: 12, height: 12, borderRadius: 3, background: GAP_FG }} />NO COVERAGE</span>
+          <span className="flex-1" />
+          {saving ? <span style={{ color: MUTED }}>Saving…</span> : error ? <span style={{ color: '#B91C1C' }}>Not saved: {error}</span> : null}
         </div>
 
-        {/* The calendar — also the editor */}
         <div style={{ overflowX: 'auto' }}>
           <table
-            style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', border: `1px solid ${LINE}`, tableLayout: 'fixed', userSelect: 'none', touchAction: 'none', cursor: brush ? 'cell' : 'default' }}
+            style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', border: `1px solid ${LINE}`, tableLayout: 'fixed', userSelect: 'none', touchAction: 'none', cursor: 'pointer' }}
             onPointerDown={(e) => {
               const c = cellAt(e.clientX, e.clientY)
-              if (!c || !brush) return
+              if (!c || saving) return
               e.preventDefault()
-              const had = draft[brush]?.grid[c.day][c.hour]
-              paint.current = { on: !had, seen: new Set() }
-              applyCell(c.day, c.hour)
+              drag.current = new Set()
+              take(c)
             }}
-            onPointerMove={(e) => {
-              if (!paint.current) return
-              const c = cellAt(e.clientX, e.clientY)
-              if (c) applyCell(c.day, c.hour)
-            }}
+            onPointerMove={(e) => { if (drag.current) take(cellAt(e.clientX, e.clientY)) }}
           >
             <thead>
               <tr>
@@ -346,29 +245,36 @@ export default function CoverageCalendar({ rules, saving, saveError, savedAt, on
                 <tr key={h}>
                   <td style={{ ...cellBase, fontSize: 11, color: '#374151', textAlign: 'center', background: '#fff' }}>{hourLabel(h)}</td>
                   {WEEK.map(([label, day]) => {
-                    const on = rules.filter((r) => draft[r.user._id]?.grid[day][h])
-                    const title = `${DAY_NAME[day]} ${hourLabel(h)} — ${on.length ? on.map((r) => r.user.name).join(', ') : 'nobody'}${brushRule ? `. Click to ${draft[brush]?.grid[day][h] ? 'remove' : 'add'} ${brushRule.user.name}` : ''}`
+                    const on = everyone.filter((x) => grids[x._id][day][h])
+                    const split = splitAt.get(keyOf(day, h))
+                    const pctFor = (id: string) => split?.shares.find((x) => x.user === id)?.pct
+                    const picked = selecting?.has(keyOf(day, h))
+                    const title = `${DAY_NAME[day]} ${hourLabel(h)} — ${on.length ? on.map((x) => `${x.name}${pctFor(x._id) ? ` ${pctFor(x._id)}%` : ''}`).join(', ') : 'nobody'}. Click to change.`
+                    const ring = picked ? { outline: '3px solid #F59E0B', outlineOffset: -3 } : {}
                     if (!on.length) {
                       return (
                         <td key={label} data-cell data-day={day} data-hour={h} title={title}
-                          style={{ ...cellBase, background: GAP_BG, color: GAP_FG, fontSize: 9.5, fontWeight: 600, textAlign: 'center' }}>GAP</td>
+                          style={{ ...cellBase, ...ring, background: GAP_BG, color: GAP_FG, fontSize: 9.5, fontWeight: 600, textAlign: 'center' }}>GAP</td>
                       )
                     }
                     return (
-                      <td key={label} data-cell data-day={day} data-hour={h} title={title} style={cellBase}>
+                      <td key={label} data-cell data-day={day} data-hour={h} title={title} style={{ ...cellBase, ...ring }}>
                         <div style={{ display: 'flex', height: '100%', pointerEvents: 'none' }}>
-                          {on.map((r) => (
-                            <div key={r.user._id}
-                              style={{
-                                flex: 1, background: draft[r.user._id]?.color || NAVY, color: '#fff',
-                                fontSize: on.length > 2 ? 8.5 : 10, fontWeight: 700, display: 'flex',
-                                alignItems: 'center', justifyContent: 'center', overflow: 'hidden', whiteSpace: 'nowrap',
-                                borderLeft: '1px solid rgba(255,255,255,.35)',
-                                outline: r.user._id === brush ? '2px solid rgba(255,255,255,.55)' : undefined, outlineOffset: -3,
-                              }}>
-                              {shortName(r.user.name)}
-                            </div>
-                          ))}
+                          {on.map((x) => {
+                            const p = pctFor(x._id)
+                            return (
+                              <div key={x._id}
+                                style={{
+                                  flex: split ? Math.max(25, p ?? 0) : 1, background: x.color, color: '#fff',
+                                  fontSize: on.length > 2 ? 8.5 : 10, fontWeight: 700, display: 'flex',
+                                  alignItems: 'center', justifyContent: 'center', overflow: 'hidden', whiteSpace: 'nowrap',
+                                  borderLeft: '1px solid rgba(255,255,255,.35)',
+                                }}>
+                                {/* A split hour is too narrow for names: its percentages, in each person's colour. */}
+                                {split ? (p ? `${p}%` : '—') : shortName(x.name)}
+                              </div>
+                            )
+                          })}
                         </div>
                       </td>
                     )
@@ -382,118 +288,95 @@ export default function CoverageCalendar({ rules, saving, saveError, savedAt, on
           <span style={{ fontWeight: 700, color: gap ? '#111827' : '#047857' }}>{gap ?? 'Covered around the clock.'}</span>
           <span style={{ color: MUTED }}>Times are Dubai time.</span>
         </div>
-
-        {/* The quick way: same hours on several days */}
-        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-          {rules.map((r) => <QuickShift key={`${r.user._id}-${version}`} rule={r} d={draft[r.user._id]} onChange={(fn) => update(r.user._id, fn)} />)}
-        </div>
-
-        {/* Save bar */}
-        <div className="sticky bottom-0 flex flex-wrap items-center gap-3 rounded-lg px-3 py-2.5"
-          style={{ background: dirty ? '#FEF3C7' : '#F6F7F9', border: `1px solid ${dirty ? '#F59E0B' : LINE}` }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: dirty ? '#92400E' : saveError ? '#B91C1C' : '#047857' }}>
-            {dirty ? 'Unsaved changes — distribution still follows the old hours until you save.'
-              : saveError ? `Not saved: ${saveError}`
-                : savedAt ? 'Roster saved. New leads follow it from now.' : 'Up to date.'}
-          </span>
-          <span className="flex-1" />
-          {dirty && (
-            <button type="button" disabled={saving} onClick={undo}
-              style={{ fontSize: 13, fontWeight: 600, padding: '8px 14px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', cursor: 'pointer' }}>
-              Undo changes
-            </button>
-          )}
-          <button type="button" disabled={!dirty || saving} onClick={save}
-            style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 8, border: 'none', cursor: dirty ? 'pointer' : 'default', background: dirty ? '#5B2BC9' : '#C4B5FD', color: '#fff' }}>
-            {saving ? 'Saving…' : 'Save roster'}
-          </button>
-        </div>
       </CardBody>
+
+      {open && (
+        <HourWindow
+          cells={open}
+          everyone={everyone}
+          onAt={(id) => open.some((c) => grids[id][c.day][c.hour])}
+          split={splitAt.get(keyOf(open[0].day, open[0].hour))}
+          onCancel={() => setOpen(null)}
+          onApply={(on, pct, even) => apply(open, on, pct, even)}
+        />
+      )}
     </Card>
   )
 }
 
-/* One rep: colour, a plain-English summary, and "these days, these hours". */
-function QuickShift({ rule, d, onChange }: {
-  rule: RosterRule
-  d?: Draft[string]
-  onChange: (fn: (d: Draft[string]) => Draft[string]) => void
+/* The window for an hour (or a few): who is on, and how the leads are split. */
+function HourWindow({ cells, everyone, onAt, split, onCancel, onApply }: {
+  cells: { day: number; hour: number }[]
+  everyone: { _id: string; name: string; color: string }[]
+  onAt: (id: string) => boolean
+  split?: HourSplit
+  onCancel: () => void
+  onApply: (on: Record<string, boolean>, pct: Pct, even: boolean) => void
 }) {
-  // Prefill from their current hours: the days they work, and the most common start/end.
-  const initial = useMemo(() => {
-    const days: number[] = []
-    let start = 9
-    let end = 18
-    if (d) {
-      for (let day = 0; day < 7; day++) if (d.grid[day].some(Boolean)) days.push(day)
-      // The longest block on any working day is the usual shift.
-      let best = 0
-      for (const day of days) {
-        const row = d.grid[day]
-        let h = 0
-        while (h < 24) {
-          if (!row[h]) { h++; continue }
-          const s = h
-          while (h < 24 && row[h]) h++
-          if (h - s > best) { best = h - s; start = s; end = h }
-        }
-      }
-    }
-    return { days, start, end }
-    // Read once per mount; the parent remounts this when the roster is replaced.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  const [days, setDays] = useState<number[]>(initial.days)
-  const [start, setStart] = useState(initial.start)
-  const [end, setEnd] = useState(initial.end)
-  if (!d) return null
+  const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(everyone.map((x) => [x._id, onAt(x._id)])))
+  const evenPct = (o: Record<string, boolean>) => {
+    const ids = everyone.filter((x) => o[x._id]).map((x) => x._id)
+    const each = ids.length ? Math.floor((100 / ids.length) * 10) / 10 : 0
+    return Object.fromEntries(ids.map((id, i) => [id, String(i === ids.length - 1 ? Math.round((100 - each * (ids.length - 1)) * 10) / 10 : each)]))
+  }
+  const [even, setEven] = useState(!split)
+  const [pct, setPct] = useState<Pct>(() => (split ? Object.fromEntries(split.shares.map((x) => [x.user, String(x.pct)])) : evenPct(on)))
+  const picked = everyone.filter((x) => on[x._id])
+  const total = Math.round(picked.reduce((s, x) => s + (Number(pct[x._id]) || 0), 0) * 10) / 10
+  const ok = even || picked.length < 2 || total === 100
+
+  const toggle = (id: string) => {
+    const next = { ...on, [id]: !on[id] }
+    setOn(next)
+    if (even) setPct(evenPct(next))
+  }
 
   return (
-    <div className="rounded-lg p-3 space-y-2.5" style={{ border: `1px solid ${LINE}`, borderLeft: `5px solid ${d.color}` }}>
-      <div className="flex items-center justify-between gap-2">
-        <div style={{ fontWeight: 700, fontSize: 14 }}>{rule.user.name}</div>
-        <label className="inline-flex items-center gap-1.5" style={{ fontSize: 11.5, color: MUTED, cursor: 'pointer' }}>
-          Colour
-          <input type="color" value={d.color} onChange={(e) => onChange((x) => ({ ...x, color: e.target.value }))}
-            style={{ width: 24, height: 24, border: 'none', padding: 0, background: 'none', cursor: 'pointer' }} />
-        </label>
-      </div>
-      <div style={{ fontSize: 12.5, color: '#374151' }}>{describe(d.grid)}</div>
+    <div onClick={onCancel} style={{ position: 'fixed', inset: 0, background: 'rgba(20,8,31,.35)', zIndex: 60, display: 'grid', placeItems: 'center', padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Who takes leads this hour"
+        style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420, padding: 20, boxShadow: '0 20px 50px rgba(20,8,31,.25)' }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>{selectionLabel(cells)}</div>
+        <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>Who takes new leads then, and how they are split.</div>
 
-      <div className="flex flex-wrap gap-1">
-        {WEEK.map(([label, day]) => {
-          const on = days.includes(day)
-          return (
-            <button key={label} type="button" onClick={() => setDays(on ? days.filter((x) => x !== day) : [...days, day])}
-              style={{
-                width: 38, height: 30, borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                border: `1px solid ${on ? d.color : LINE}`, background: on ? d.color : '#fff', color: on ? '#fff' : MUTED,
-              }}>
-              {label.slice(0, 3)}
-            </button>
-          )
-        })}
-      </div>
-      <div className="flex flex-wrap items-center gap-2" style={{ fontSize: 12.5 }}>
-        <select value={start} onChange={(e) => setStart(Number(e.target.value))} style={{ padding: '5px 6px', borderRadius: 6, border: `1px solid ${LINE}` }}>
-          {HOURS.map((h) => <option key={h} value={h}>{hourLabel(h)}</option>)}
-        </select>
-        to
-        <select value={end} onChange={(e) => setEnd(Number(e.target.value))} style={{ padding: '5px 6px', borderRadius: 6, border: `1px solid ${LINE}` }}>
-          {[...HOURS.slice(1), 24].map((h) => <option key={h} value={h}>{hourLabel(h)}</option>)}
-        </select>
-        <button type="button" disabled={start === end}
-          onClick={() => onChange((x) => ({ ...x, grid: rangeGrid(days, start, end % 24 === 0 ? 24 : end) }))}
-          style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: '#111827', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
-          Apply
-        </button>
-        <button type="button" onClick={() => onChange((x) => ({ ...x, grid: emptyGrid() }))}
-          style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${LINE}`, background: '#fff', color: GAP_FG, fontWeight: 600, cursor: 'pointer' }}>
-          Clear hours
-        </button>
-      </div>
-      <div style={{ fontSize: 11.5, color: MUTED }}>
-        Apply sets exactly these days to these hours (other days off). Fine-tune single hours on the calendar.
+        <div className="mt-4 space-y-1.5">
+          {everyone.map((x) => (
+            <label key={x._id} className="flex items-center gap-3 rounded-lg px-3 py-2" style={{ border: `1px solid ${on[x._id] ? x.color : LINE}`, cursor: 'pointer' }}>
+              <input type="checkbox" checked={Boolean(on[x._id])} onChange={() => toggle(x._id)} style={{ width: 16, height: 16, accentColor: x.color }} />
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: x.color }} />
+              <span className="flex-1" style={{ fontSize: 14, fontWeight: 600 }}>{x.name}</span>
+              {on[x._id] && picked.length > 1 && (
+                <span className="inline-flex items-center gap-1" onClick={(e) => e.preventDefault()}>
+                  <input value={pct[x._id] ?? ''} inputMode="decimal" aria-label={`${x.name} share`}
+                    onChange={(e) => { setEven(false); setPct({ ...pct, [x._id]: e.target.value.replace(/[^\d.]/g, '') }) }}
+                    style={{ width: 54, textAlign: 'right', padding: '4px 6px', borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 13 }} />
+                  <span style={{ fontSize: 12.5, color: MUTED }}>%</span>
+                </span>
+              )}
+            </label>
+          ))}
+        </div>
+
+        {picked.length > 1 && (
+          <div className="flex items-center justify-between gap-2 mt-3" style={{ fontSize: 12.5 }}>
+            {even
+              ? <span style={{ color: '#047857', fontWeight: 600 }}>Even split — they take turns, one by one.</span>
+              : <span style={{ color: total === 100 ? '#047857' : '#B91C1C', fontWeight: 600 }}>Total {total}%{total === 100 ? '' : ' — needs to be 100%'}</span>}
+            {!even && (
+              <button type="button" onClick={() => { setEven(true); setPct(evenPct(on)) }}
+                style={{ fontWeight: 600, color: '#5B2BC9', background: 'none', border: 'none', cursor: 'pointer' }}>Split evenly</button>
+            )}
+          </div>
+        )}
+        {!picked.length && <div className="mt-3" style={{ fontSize: 12.5, color: GAP_FG, fontWeight: 600 }}>Nobody on — this becomes a gap.</div>}
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button type="button" onClick={onCancel}
+            style={{ fontSize: 13, fontWeight: 600, padding: '8px 14px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', cursor: 'pointer' }}>Cancel</button>
+          <button type="button" disabled={!ok} onClick={() => onApply(on, pct, even)}
+            style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 8, border: 'none', cursor: ok ? 'pointer' : 'default', background: ok ? '#5B2BC9' : '#C4B5FD', color: '#fff' }}>
+            Apply{cells.length > 1 ? ` to ${cells.length} hours` : ''}
+          </button>
+        </div>
       </div>
     </div>
   )

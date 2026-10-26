@@ -355,3 +355,49 @@ test('the traffic light: green with a rep on, amber when only the AI answers, re
    assert.equal(coverageSignal({ nobodyOn: true, aiAnswering: true }), 'amber');
    assert.equal(coverageSignal({ nobodyOn: true, aiAnswering: false }), 'red');
 });
+
+test('roster hours: reps on the same hour take turns one by one', async () => {
+   const { pickOwner: pick } = await import('./leadRouting.js');
+   const rules = [rep('ahmed', 100), rep('sara', 100), rep('omar', 100)];
+   const at = new Date('2026-10-26T11:20:00Z'); // Monday 3:20pm in Dubai
+   const counts = {};
+   const hour = {};
+   const order = [];
+   for (let i = 0; i < 6; i++) {
+      const d = pick({ rules, counts, hourCounts: hour, at, splits: [] });
+      order.push(d.ownerId);
+      counts[d.ownerId] = (counts[d.ownerId] || 0) + 1;
+      hour[d.ownerId] = (hour[d.ownerId] || 0) + 1;
+   }
+   assert.deepEqual(order, ['ahmed', 'sara', 'omar', 'ahmed', 'sara', 'omar']);
+   // The first lead of an hour goes to whoever has had fewer today.
+   assert.equal(pick({ rules, counts: { ahmed: 5, sara: 2, omar: 4 }, hourCounts: {}, at, splits: [] }).ownerId, 'sara');
+});
+
+test('roster hours: an hour with its own split follows the percentages', async () => {
+   const { pickOwner: pick, cleanHourSplits } = await import('./leadRouting.js');
+   const ids = { ahmed: 'a'.repeat(24), sara: 'b'.repeat(24), omar: 'c'.repeat(24) };
+   const rules = Object.values(ids).map((id) => rep(id, 100));
+   const splits = cleanHourSplits([{ day: 1, hour: 15, shares: [{ user: ids.ahmed, pct: 70 }, { user: ids.sara, pct: 15 }, { user: ids.omar, pct: 15 }] }]);
+   const at = new Date('2026-10-26T11:20:00Z'); // Monday 3pm hour in Dubai
+   assert.equal(pick({ rules, at, splits, random: () => 0.5 }).ownerId, ids.ahmed);  // 0–70
+   assert.equal(pick({ rules, at, splits, random: () => 0.75 }).ownerId, ids.sara);  // 70–85
+   assert.equal(pick({ rules, at, splits, random: () => 0.95 }).ownerId, ids.omar);  // 85–100
+   assert.match(pick({ rules, at, splits, random: () => 0.5 }).reason, /70% of this hour/);
+   // Another hour has no split: turns.
+   assert.match(pick({ rules, at: new Date('2026-10-26T12:20:00Z'), splits }).reason, /taking turns/);
+   // Somebody in the split who is off shift is left out, and the rest share it.
+   const offOmar = rules.map((r) => (r.user === ids.omar ? { ...r, status: 'paused' } : r));
+   assert.equal(pick({ rules: offOmar, at, splits, random: () => 0.99 }).ownerId, ids.sara);
+});
+
+test('roster hours: splits are cleaned', async () => {
+   const { cleanHourSplits } = await import('./leadRouting.js');
+   const id = 'a'.repeat(24);
+   assert.deepEqual(cleanHourSplits([
+      { day: 1, hour: 15, shares: [{ user: id, pct: 70 }, { user: 'x', pct: 30 }, { user: id, pct: 0 }] },
+      { day: 9, hour: 15, shares: [{ user: id, pct: 50 }] },
+      { day: 2, hour: 3, shares: [] },
+   ]), [{ day: 1, hour: 15, shares: [{ user: id, pct: 70 }] }]);
+   assert.deepEqual(cleanHourSplits('nope'), []);
+});

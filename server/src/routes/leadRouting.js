@@ -8,7 +8,7 @@ import { Router } from 'express';
 import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, PushSubscription, User, WhatsAppMessage } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { softDelete } from '../utils/softDelete.js';
-import { availability, cleanWeeklyShifts, countsForToday, coverageNow, coverageSignal, digitTail, pickOwner, rosterInUse, startOfDayIn, targetShares } from '../services/leadRouting.js';
+import { availability, cleanHourSplits, cleanWeeklyShifts, countsForToday, countsSince, coverageNow, coverageSignal, digitTail, pickOwner, rosterInUse, startOfDayIn, startOfHour, targetShares } from '../services/leadRouting.js';
 import { runLeadSla } from '../services/leadSla.js';
 import { getAiBotConfig } from '../services/aiBot.js';
 import { openaiConfigured } from '../services/openai.js';
@@ -84,6 +84,7 @@ router.put('/config', async (req, res) => {
       }
       if (req.body.enabled !== undefined) config.enabled = Boolean(req.body.enabled);
       if (req.body.randomize !== undefined) config.randomize = Boolean(req.body.randomize);
+      if (req.body.hourSplits !== undefined) config.hourSplits = cleanHourSplits(req.body.hourSplits);
       if (req.body.timeZone) config.timeZone = String(req.body.timeZone);
       /* The two marks on the unanswered-lead clock, in minutes. Clamped rather
          than rejected: a typo should not be able to set a reminder to fire in
@@ -243,18 +244,21 @@ router.delete('/rules/:userId', async (req, res) => {
 router.get('/preview', async (req, res) => {
    try {
       const n = Math.min(100, Math.max(1, Number(req.query.n) || 20));
-      const [rules, counts, config] = await Promise.all([
+      const [rules, counts, hourCounts, config] = await Promise.all([
          LeadRoutingRule.find({}).populate('user', 'name').lean(),
          countsForToday(),
+         countsSince(startOfHour()),
          loadConfig(),
       ]);
       const live = rules.filter((r) => r.user);
       const tally = { ...counts };
+      const hourTally = { ...hourCounts };
       const order = [];
       for (let i = 0; i < n; i++) {
-         const d = pickOwner({ rules: live, counts: tally, timeZone: config.timeZone });
+         const d = pickOwner({ rules: live, counts: tally, hourCounts: hourTally, timeZone: config.timeZone, splits: config.hourSplits || [] });
          if (!d.ownerId) { order.push({ name: null, reason: d.reason }); continue; }
          tally[d.ownerId] = (tally[d.ownerId] || 0) + 1;
+         hourTally[d.ownerId] = (hourTally[d.ownerId] || 0) + 1;
          order.push({ name: live.find((r) => String(r.user._id) === d.ownerId)?.user?.name ?? '—', reason: d.reason });
       }
       /* Somebody can have leads today without having a rule — they were given

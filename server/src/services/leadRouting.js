@@ -203,11 +203,14 @@ export function targetShares({ rules = [], available = [] }) {
  * first lead of the day everyone is at zero, so the biggest share goes first —
  * which is what somebody expects from "Ahmed takes half of them".
  */
-export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone = 'Asia/Dubai', exclude = [], random = null } = {}) {
+export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone = 'Asia/Dubai', exclude = [], random = null, splits, hourCounts } = {}) {
    const { available, excluded } = availability({ rules, counts, at, timeZone, exclude });
    if (!available.length) {
       return { ownerId: null, reason: excluded.length ? 'nobody is available' : 'no distribution rules are set', excluded };
    }
+
+   // The roster calendar's own rule: who is on this hour, and how it is split.
+   if (splits !== undefined) return pickForHour({ available, excluded, counts, hourCounts, at, timeZone, splits, random });
 
    const shares = targetShares({ rules, available });
    const totalShare = [...shares.values()].reduce((s, v) => s + v, 0);
@@ -241,6 +244,70 @@ export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone =
       ownerId: best.id,
       reason: `${Math.round(best.share * 100)}% share, ${best.taken} of ${handedOutToday} today`,
       share: best.share,
+      excluded,
+   };
+}
+
+/* ── Per hour, as set on the roster calendar ─────────────────────────────────
+ *
+ * Each hour of the week can carry its own split between the reps on then
+ * ("Mon 3pm: Randa 70, Mahmoud 15, Emad 15"). An hour without one is shared
+ * evenly: the reps on take turns, one by one.
+ */
+
+/** The calendar cell an instant falls in: weekday (0 = Sunday) and hour, in the shop's zone. */
+export function hourCell(at = new Date(), timeZone = 'Asia/Dubai') {
+   return { day: weekdayIn(at, timeZone), hour: Math.floor(minutesInDay(at, timeZone) / 60) };
+}
+
+/** Splits as sent by the calendar, cleaned: real cells, real people, positive percentages. */
+export function cleanHourSplits(input) {
+   if (!Array.isArray(input)) return [];
+   const seen = new Map();
+   for (const c of input) {
+      const day = Number(c?.day);
+      const hour = Number(c?.hour);
+      if (!Number.isInteger(day) || day < 0 || day > 6 || !Number.isInteger(hour) || hour < 0 || hour > 23) continue;
+      const shares = (Array.isArray(c.shares) ? c.shares : [])
+         .map((x) => ({ user: String(x?.user || ''), pct: Math.round(Number(x?.pct) * 10) / 10 }))
+         .filter((x) => /^[0-9a-f]{24}$/i.test(x.user) && x.pct > 0 && x.pct <= 100);
+      if (shares.length) seen.set(`${day}:${hour}`, { day, hour, shares });
+   }
+   return [...seen.values()];
+}
+
+/**
+ * Even split: strict turns within the hour — whoever has had fewest this hour
+ * goes next, and between two level, whoever has had fewer today, so the first
+ * lead of each hour does not always go to the same person.
+ *
+ * Custom split: each lead is a draw weighted by the percentages. With a lead
+ * or two an hour, strict turns would give the 70% rep every one; a weighted
+ * draw lands at 70/15/15 over the week.
+ */
+export function pickForHour({ available = [], excluded = [], counts = {}, hourCounts, at = new Date(), timeZone = 'Asia/Dubai', splits = [], random }) {
+   const { day, hour } = hourCell(at, timeZone);
+   const cell = (splits || []).find((c) => c.day === day && c.hour === hour);
+   const pctOf = (id) => Number(cell?.shares?.find((x) => String(x.user) === id)?.pct) || 0;
+   const weighted = cell ? available.map((a) => ({ a, w: pctOf(a.id) })).filter((x) => x.w > 0) : [];
+   if (weighted.length) {
+      const total = weighted.reduce((s, x) => s + x.w, 0);
+      let roll = (typeof random === 'function' ? random() : Math.random()) * total;
+      let pick = weighted[weighted.length - 1];
+      for (const x of weighted) { if (roll < x.w) { pick = x; break; } roll -= x.w; }
+      const share = pick.w / total;
+      return { ownerId: pick.a.id, reason: `${Math.round(share * 100)}% of this hour (set on the roster)`, share, excluded };
+   }
+   const hc = hourCounts || {};
+   let best = null;
+   for (const a of available) {
+      const thisHour = Number(hc[a.id] || 0);
+      if (!best || thisHour < best.thisHour || (thisHour === best.thisHour && a.taken < best.taken)) best = { ...a, thisHour };
+   }
+   return {
+      ownerId: best.id,
+      reason: `taking turns: ${best.thisHour} this hour, ${best.taken} today, ${available.length} on`,
+      share: 1 / available.length,
       excluded,
    };
 }
@@ -292,7 +359,11 @@ export function startOfDayIn(at = new Date(), timeZone = 'Asia/Dubai') {
 /** How many leads each rep has been given today. This is the counter — there
  *  is no separate tally to drift out of step with the leads themselves. */
 export async function countsForToday({ at = new Date(), timeZone = 'Asia/Dubai' } = {}) {
-   const since = startOfDayIn(at, timeZone);
+   return countsSince(startOfDayIn(at, timeZone));
+}
+
+/** The same count from a given instant — the start of this hour, for taking turns within it. */
+export async function countsSince(since) {
    const rows = await Lead.aggregate([
       /* Only what the rules themselves handed out.
        *
@@ -306,6 +377,9 @@ export async function countsForToday({ at = new Date(), timeZone = 'Asia/Dubai' 
    ]);
    return Object.fromEntries(rows.map((r) => [String(r._id), r.n]));
 }
+
+/** The instant the current hour began. */
+export const startOfHour = (at = new Date()) => new Date(Math.floor(at.getTime() / 3600000) * 3600000);
 
 /**
  * Who should own a chat from this number.
@@ -355,8 +429,8 @@ export async function routeInboundLead({ phoneNormalized, at = new Date() } = {}
    const allRules = await LeadRoutingRule.find({}).lean();
    const liveUsers = new Set((await User.find({ _id: { $in: allRules.map((r) => r.user) }, isActive: { $ne: false } }).select('_id').lean()).map((u) => String(u._id)));
    const rules = allRules.filter((r) => liveUsers.has(String(r.user)));
-   const counts = await countsForToday({ at, timeZone });
-   const decision = pickOwner({ rules, counts, at, timeZone, random: config.randomize === false ? null : Math.random });
+   const [counts, hourCounts] = await Promise.all([countsForToday({ at, timeZone }), countsSince(startOfHour(at))]);
+   const decision = pickOwner({ rules, counts, hourCounts, at, timeZone, splits: config.hourSplits || [] });
    if (decision.ownerId) return decision;
 
    // Nobody on shift.

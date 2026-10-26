@@ -2649,6 +2649,10 @@ const leadRoutingConfigSchema = new Schema({
      account with a history, and go to whoever looks after accounts rather than
      into the rotation. Null keeps them in it. */
   existingCustomerUser: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  /* The roster calendar's per-hour splits: [{ day, hour, shares: [{ user, pct }] }].
+     An hour not listed is shared evenly, the reps on it taking turns
+     (services/leadRouting.js pickForHour). */
+  hourSplits: { type: [Schema.Types.Mixed], default: [] },
   /* The clock on a lead nobody has answered yet — see services/leadSla.js.
      Minutes from being handed over to a reminder, and from being handed over
      to being taken back and given to somebody else. 0 turns either off. */
