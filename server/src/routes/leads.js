@@ -13,7 +13,14 @@ import { customerContactKeys } from '../services/customerLeads.js';
 import { digitTail, startOfDayIn } from '../services/leadRouting.js';
 import { buildFunnel } from '../services/leadFunnel.js';
 import { scoreForLead, highIntentToday, intakeChecklist, intentForLeads, snapshotIntentAtClose } from '../services/leadScore.js';
-import { summariseConversation } from '../services/conversationSummary.js';
+import { buildTranscript, summariseConversation } from '../services/conversationSummary.js';
+import { claudeChatJson, claudeConfigured } from '../services/claude.js';
+import { buildFacts } from '../services/aiBot.js';
+import { computeUnitAvailability } from '../services/unitAvailability.js';
+import { windowOpenFor } from '../services/whatsapp.js';
+import { PROPOSE_TOOL, runAction, takeProposal } from '../services/assistant/actions.js';
+import { toolByName } from '../services/assistant/tools.js';
+import { getAssistantConfig } from '../services/assistant/index.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { dubaiDayRange } from '../services/automationEngine.js';
 import { describeChanges, handOverText } from '../services/leadActivity.js';
@@ -2140,6 +2147,202 @@ router.get('/:id/messages', async (req, res) => {
         .limit(limit)
         .lean();
     res.json({ ok: true, messages });
+});
+
+const SUGGEST_SYSTEM = [
+    'You write the next WhatsApp message a sales rep at PurpleBox, a self-storage company in Dubai, sends to a lead.',
+    'Read the conversation and the notes, then write the one message most likely to move this lead forward.',
+    'Answer anything the customer asked that nobody answered. Refer to what they actually said: their items, size, dates, area.',
+    'If they went quiet, give a light, specific reason to reply (a question they can answer in a word, or a concrete next step such as a visit or a price) — never "just following up" or "would you like help with the next step".',
+    'If there is no conversation yet, introduce yourself briefly and ask what they need to store and when.',
+    'Prices and availability: use ONLY the PRICES and FREE NOW sections you are given. Quote a price as the monthly AED range shown for that size, and say a final quote follows; if the size is not known yet, ask for it rather than list every price. Never invent prices, availability, discounts or dates.',
+    'If WHATSAPP WINDOW says closed, the customer has not written in 24 hours: write the message anyway, short, as a re-opener the rep can send as a template.',
+    'Write in the language the customer writes in (Arabic if they write Arabic). Plain, warm, human: 1-3 short sentences, at most one emoji, no sign-off with a company slogan.',
+    'Shape: {"message": string}',
+].join('\n');
+
+/** "- 50 sqft: 4 free" lines for units free today, by the bookings not the status flag. */
+async function freeUnitsBySize() {
+    const from = new Date();
+    const { allUnits, bookedUnitIds } = await computeUnitAvailability({ from, to: new Date(from.getTime() + 86400_000) });
+    const free = new Map();
+    for (const u of allUnits) {
+        if (bookedUnitIds.has(String(u._id)) || !(Number(u.sizeSqf) > 0)) continue;
+        free.set(u.sizeSqf, (free.get(u.sizeSqf) || 0) + 1);
+    }
+    return [...free.entries()].sort((a, b) => a[0] - b[0]).map(([size, n]) => `- ${size} sqft: ${n} free`).join('\n');
+}
+
+/**
+ * Draft the next WhatsApp message to a lead, for the rep to send or edit.
+ *
+ * Asked for one lead at a time, when the rep opens it, so the feed never fires
+ * a round of model calls just for being on screen. Nothing is sent or stored.
+ */
+router.post('/:id/suggest-message', async (req, res) => {
+    try {
+        if (!claudeConfigured()) return res.status(400).json({ error: 'Claude is not configured' });
+        const lead = await Lead.findById(req.params.id).lean();
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        const [messages, rep, freeNow] = await Promise.all([
+            WhatsAppMessage.find({ phoneNormalized: lead.phoneNormalized, deletedAt: null })
+                .sort({ occurredAt: -1 }).limit(40)
+                .select('direction type text transcript sentByAi occurredAt').lean(),
+            User.findById(req.user.id).select('name').lean(),
+            freeUnitsBySize(),
+        ]);
+        // Oldest first, with a voice note's transcript standing in for its text.
+        const thread = messages.reverse().map((m) => ({ ...m, text: m.text || m.transcript || '' }));
+        const lastInbound = [...thread].reverse().find((m) => m.direction === 'inbound');
+        const windowOpen = windowOpenFor({ lastInboundAt: lastInbound?.occurredAt });
+        // The same price sheet the WhatsApp bot answers from; if the customer
+        // named dates, it also checks what is free for exactly those dates.
+        const prices = await buildFacts(lastInbound?.text || '', { useAvailability: true }).catch(() => null);
+        const notes = (lead.timeline || [])
+            .filter((t) => t.type === 'note' && t.text)
+            .slice(-5)
+            .map((t) => `- ${String(t.text).slice(0, 300)}`);
+
+        const facts = [
+            `Customer name: ${lead.fullName || 'unknown'}`,
+            `Rep name: ${rep?.name || 'unknown'}`,
+            `Lead status: ${lead.status}`,
+            lead.followUpNote && `Follow-up note: ${lead.followUpNote}`,
+            lead.followUpAt && `Follow-up was due: ${new Date(lead.followUpAt).toISOString().slice(0, 10)}`,
+            lead.siteVisitAt && `Site visit: ${new Date(lead.siteVisitAt).toISOString().slice(0, 16).replace('T', ' ')} UTC`,
+            lead.storingWhat && `Storing: ${lead.storingWhat}`,
+            lead.spaceNeeded && `Space needed: ${lead.spaceNeeded}`,
+            lead.storageSizeValue > 0 && `Size: ${lead.storageSizeValue} ${lead.storageSizeUnit || 'sqft'}`,
+            lead.durationValue > 0 && `Duration: ${lead.durationValue} ${lead.durationUnit || 'month'}(s)`,
+            lead.whenNeeded && `When needed: ${lead.whenNeeded}`,
+            lead.whyTheyWant && `Why they want storage: ${lead.whyTheyWant}`,
+            notes.length && `Rep notes:\n${notes.join('\n')}`,
+            `Today: ${new Date().toISOString().slice(0, 10)}`,
+            `WHATSAPP WINDOW: ${windowOpen ? 'open' : 'closed'}`,
+            prices?.text && `PRICES:\n${prices.text}`,
+            freeNow && `FREE NOW (units free today, by size):\n${freeNow}`,
+        ].filter(Boolean).join('\n');
+        const transcript = buildTranscript(thread) || '(no WhatsApp messages yet)';
+
+        const parsed = await claudeChatJson({
+            system: SUGGEST_SYSTEM,
+            messages: [{ role: 'user', content: `${facts}\n\nConversation:\n${transcript}` }],
+            effort: 'medium',
+            timeout: 60000,
+        });
+        const message = String(parsed?.message || '').trim();
+        if (!message) return res.status(502).json({ error: 'Claude had nothing to suggest' });
+        res.json({ ok: true, message, windowOpen });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Why a lead is being closed as lost, read from the conversation, so the
+ * rep picks a real reason instead of skipping it. A suggestion only — the
+ * rep chooses, and PATCH /:id/status still requires one of LOST_REASONS.
+ */
+router.post('/:id/suggest-lost-reason', async (req, res) => {
+    try {
+        if (!claudeConfigured()) return res.json({ ok: true, reason: null, why: '' });
+        const lead = await Lead.findById(req.params.id).lean();
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+        const messages = await WhatsAppMessage.find({ phoneNormalized: lead.phoneNormalized, deletedAt: null })
+            .sort({ occurredAt: -1 }).limit(30)
+            .select('direction type text transcript occurredAt').lean();
+        const thread = messages.reverse().map((m) => ({ ...m, text: m.text || m.transcript || '' }));
+        const lastInbound = [...thread].reverse().find((m) => m.direction === 'inbound');
+        const facts = [
+            `Lead status: ${lead.status}`,
+            `Contact attempts logged: ${(lead.attempts || []).length}`,
+            `Last customer message: ${lastInbound ? new Date(lastInbound.occurredAt).toISOString().slice(0, 10) : 'never'}`,
+            `Today: ${new Date().toISOString().slice(0, 10)}`,
+        ].join('\n');
+        const parsed = await claudeChatJson({
+            system: [
+                'A sales rep at a self-storage company is closing this lead as lost. From the conversation, pick the one reason that best explains it.',
+                `Reasons: ${LOST_REASONS.join(', ')}.`,
+                'price = said it is too expensive; timing = not now / plans changed; wrong_size = we do not have what they need; went_elsewhere = chose another company; no_response = stopped replying to us; not_interested = said no without a reason; wrong_number = not a real storage enquiry; other = none of these.',
+                'Only pick a reason the conversation supports. If there is no conversation, or the customer simply stopped writing, that is no_response.',
+                'Shape: {"reason": one of the reasons, "why": string (max 12 words, quoting or paraphrasing what the customer said)}',
+            ].join('\n'),
+            messages: [{ role: 'user', content: `${facts}\n\nConversation:\n${buildTranscript(thread) || '(no WhatsApp messages)'}` }],
+            effort: 'low',
+            timeout: 30000,
+        });
+        const reason = LOST_REASONS.includes(parsed?.reason) ? parsed.reason : null;
+        res.json({ ok: true, reason, why: reason ? String(parsed?.why || '').slice(0, 120) : '' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/* ── Quote this lead, from the chat ─────────────────────────────────────
+ *
+ * The assistant's own quotation action, called directly instead of through
+ * a typed request: preview prices the cheapest free unit of that size for
+ * those dates and holds the proposal; confirm creates the quote (holding the
+ * unit) and sends the PDF on WhatsApp, or by email when the 24-hour window
+ * is closed. Same code, same permissions, same attribution as the assistant's
+ * Confirm card — there is no second way of making a quote. */
+
+async function mayQuote(req) {
+    const c = await getAssistantConfig();
+    if (c.actionsEnabled === false) return false;
+    return (c.actionRoles?.length ? c.actionRoles : ['admin', 'sales_rep']).includes(req.user?.role);
+}
+
+router.post('/:id/quote/preview', async (req, res) => {
+    try {
+        if (!(await mayQuote(req))) return res.status(403).json({ error: 'You are not allowed to send quotations' });
+        const lead = await Lead.findById(req.params.id).lean();
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+        const { sizeSqf, unitNumber, startDate, endDate } = req.body || {};
+        const out = await toolByName(PROPOSE_TOOL).run({
+            customerName: displayNameFor(lead) || lead.fullName,
+            phone: lead.phone,
+            email: lead.email || '',
+            sizeSqf: Number(sizeSqf) || undefined,
+            unitNumber: unitNumber || undefined,
+            startDate,
+            endDate,
+            sendVia: 'whatsapp',
+        }, { user: req.user });
+        if (out.error) return res.status(400).json({ error: out.error });
+        res.json({ ok: true, proposalId: out.proposalId, summary: out.summary, total: out.total, unit: out.unit });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post('/:id/quote/confirm', async (req, res) => {
+    try {
+        if (!(await mayQuote(req))) return res.status(403).json({ error: 'You are not allowed to send quotations' });
+        const lead = await Lead.findById(req.params.id);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+        const p = takeProposal(String(req.body?.proposalId || ''), req.user?.id);
+        if (!p) return res.status(410).json({ error: 'That quote preview has expired — prepare it again.' });
+        // Always tied to this lead, even when the phone also matched a customer.
+        p.spec.leadId = lead._id;
+        const out = await runAction(p, { authHeader: req.headers.authorization || '' });
+        // The assistant's send marks the quote sent directly, so the lead is
+        // moved on here — forward only, never back from won/lost/customer.
+        const sent = /(^|\. )Sent (on WhatsApp|by email)/.test(out.message || '');
+        if (sent && ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled'].includes(lead.status)) {
+            lead.status = 'quotation_sent';
+            lead.timeline.push({ type: 'status_changed', text: `Status changed to quotation_sent — quote ${out.quoteNo} sent from the chat` });
+            await lead.save();
+        }
+        res.json({ ...out, sent });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
 });
 
 router.delete('/:id', async (req, res) => {
