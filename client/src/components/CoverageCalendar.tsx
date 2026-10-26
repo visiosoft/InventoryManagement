@@ -24,10 +24,10 @@ export type RosterRule = {
   rosterManaged?: boolean
 }
 
-const NAVY = '#1B2238'
-const GAP_BG = '#FBE5E5'
+const GAP_BG = '#FDF2F2'
+const GAP_LINE = '#F5D0D0'
 const GAP_FG = '#D9534F'
-const LINE = '#D9DCE3'
+const LINE = '#ECEDF1'
 const MUTED = '#6B7280'
 const PALETTE = ['#1B2238', '#7B4BBF', '#3E8E6E', '#C2410C', '#0E7490', '#B91C77']
 
@@ -97,27 +97,6 @@ function shiftsFrom(g: Grid): Shift[] {
   return out
 }
 
-/** The longest stretch of the week with nobody on, wrapping Sunday into Monday. */
-function longestGap(grids: Grid[]) {
-  const slots: boolean[] = []
-  for (const [, day] of WEEK) for (const h of HOURS) slots.push(grids.some((g) => g[day][h]))
-  if (!slots.some(Boolean)) return 'Nobody has any hours yet — every lead waits for the out-of-hours setting.'
-  if (slots.every(Boolean)) return null
-  const n = slots.length
-  let best = { len: 0, from: 0 }
-  for (let i = 0; i < n; i++) {
-    if (slots[i] || !slots[(i - 1 + n) % n]) continue
-    let len = 0
-    while (!slots[(i + len) % n] && len < n) len++
-    if (len > best.len) best = { len, from: i }
-  }
-  const at = (i: number) => {
-    const idx = ((i % n) + n) % n
-    return `${DAY_NAME[WEEK[Math.floor(idx / 24)][1]]} ${hourLabel(idx % 24)}`
-  }
-  return `Key gap: ${at(best.from)} – ${at(best.from + best.len)} = ${best.len} continuous hours without lead coverage.`
-}
-
 type Pct = Record<string, string>
 
 const keyOf = (day: number, hour: number) => `${day}:${hour}`
@@ -153,7 +132,6 @@ export default function CoverageCalendar({ rules, people, splits, saving, error,
   }, [rules, people])
   const grids = useMemo(() => Object.fromEntries(everyone.map((x) => [x._id, x.rule ? gridFrom(x.rule) : emptyGrid()])), [everyone])
   const splitAt = useMemo(() => new Map(splits.map((c) => [keyOf(c.day, c.hour), c])), [splits])
-  const gap = useMemo(() => longestGap(Object.values(grids)), [grids])
 
   /* Selecting: press on an hour and drag to take in more; let go and the
      window opens for whatever was covered. Works with a finger too. */
@@ -199,30 +177,25 @@ export default function CoverageCalendar({ rules, people, splits, saving, error,
     setOpen(null)
   }
 
-  const cellBase = { borderRight: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}`, height: 26, padding: 0 } as const
+  const cellBase = { height: 24, padding: 0, borderRadius: 5, overflow: 'hidden' } as const
 
   return (
     <Card>
       <CardBody className="space-y-4">
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: '#111827' }}>Weekly Lead Coverage Calendar</div>
-          <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>
-            Click an hour — or drag across several — to choose who takes leads then and how they are split. Even split: they take turns, one by one. Pink GAP: nobody on.
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3" style={{ fontSize: 12.5, fontWeight: 700 }}>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2" style={{ fontSize: 12.5, fontWeight: 600, color: '#374151' }}>
           {everyone.filter((x) => grids[x._id].some((row) => row.some(Boolean))).map((x) => (
-            <span key={x._id} className="inline-flex items-center gap-1.5"><span style={{ width: 12, height: 12, borderRadius: 3, background: x.color }} />{x.name}</span>
+            <span key={x._id} className="inline-flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: x.color }} />{x.name}</span>
           ))}
-          <span className="inline-flex items-center gap-1.5"><span style={{ width: 12, height: 12, borderRadius: 3, background: GAP_FG }} />NO COVERAGE</span>
+          <span className="inline-flex items-center gap-1.5" style={{ color: MUTED }}><span style={{ width: 10, height: 10, borderRadius: 999, background: GAP_BG, border: `1px solid ${GAP_LINE}` }} />Nobody on</span>
           <span className="flex-1" />
-          {saving ? <span style={{ color: MUTED }}>Saving…</span> : error ? <span style={{ color: '#B91C1C' }}>Not saved: {error}</span> : null}
+          <span style={{ color: saving ? MUTED : error ? '#B91C1C' : MUTED, fontWeight: 500 }}>
+            {saving ? 'Saving…' : error ? `Not saved: ${error}` : 'Click or drag hours to edit · Dubai time'}
+          </span>
         </div>
 
         <div style={{ overflowX: 'auto' }}>
           <table
-            style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', border: `1px solid ${LINE}`, tableLayout: 'fixed', userSelect: 'none', touchAction: 'none', cursor: 'pointer' }}
+            style={{ width: '100%', minWidth: 900, borderCollapse: 'separate', borderSpacing: 2, tableLayout: 'fixed', userSelect: 'none', touchAction: 'none', cursor: 'pointer' }}
             onPointerDown={(e) => {
               const c = cellAt(e.clientX, e.clientY)
               if (!c || saving) return
@@ -234,27 +207,27 @@ export default function CoverageCalendar({ rules, people, splits, saving, error,
           >
             <thead>
               <tr>
-                <th style={{ background: NAVY, color: '#fff', fontSize: 12, fontWeight: 700, padding: '9px 4px', width: 78 }}>TIME</th>
+                <th style={{ width: 64 }} />
                 {WEEK.map(([label]) => (
-                  <th key={label} style={{ background: NAVY, color: '#fff', fontSize: 12, fontWeight: 700, padding: '9px 4px' }}>{label}</th>
+                  <th key={label} style={{ color: MUTED, fontSize: 11, fontWeight: 700, letterSpacing: '.06em', padding: '4px 4px 8px' }}>{label.slice(0, 3)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {HOURS.map((h) => (
                 <tr key={h}>
-                  <td style={{ ...cellBase, fontSize: 11, color: '#374151', textAlign: 'center', background: '#fff' }}>{hourLabel(h)}</td>
+                  <td style={{ ...cellBase, fontSize: 10.5, color: MUTED, textAlign: 'right', paddingRight: 8 }}>{h % 3 === 0 ? hourLabel(h).replace(':00', '') : ''}</td>
                   {WEEK.map(([label, day]) => {
                     const on = everyone.filter((x) => grids[x._id][day][h])
                     const split = splitAt.get(keyOf(day, h))
                     const pctFor = (id: string) => split?.shares.find((x) => x.user === id)?.pct
                     const picked = selecting?.has(keyOf(day, h))
                     const title = `${DAY_NAME[day]} ${hourLabel(h)} — ${on.length ? on.map((x) => `${x.name}${pctFor(x._id) ? ` ${pctFor(x._id)}%` : ''}`).join(', ') : 'nobody'}. Click to change.`
-                    const ring = picked ? { outline: '3px solid #F59E0B', outlineOffset: -3 } : {}
+                    const ring = picked ? { outline: '2px solid #F59E0B', outlineOffset: -2 } : {}
                     if (!on.length) {
                       return (
                         <td key={label} data-cell data-day={day} data-hour={h} title={title}
-                          style={{ ...cellBase, ...ring, background: GAP_BG, color: GAP_FG, fontSize: 9.5, fontWeight: 600, textAlign: 'center' }}>GAP</td>
+                          style={{ ...cellBase, ...ring, background: GAP_BG }} />
                       )
                     }
                     return (
@@ -268,7 +241,7 @@ export default function CoverageCalendar({ rules, people, splits, saving, error,
                                   flex: split ? Math.max(25, p ?? 0) : 1, background: x.color, color: '#fff',
                                   fontSize: on.length > 2 ? 8.5 : 10, fontWeight: 700, display: 'flex',
                                   alignItems: 'center', justifyContent: 'center', overflow: 'hidden', whiteSpace: 'nowrap',
-                                  borderLeft: '1px solid rgba(255,255,255,.35)',
+                                  borderLeft: '1px solid rgba(255,255,255,.4)', letterSpacing: '.02em',
                                 }}>
                                 {/* A split hour is too narrow for names: its percentages, in each person's colour. */}
                                 {split ? (p ? `${p}%` : '—') : shortName(x.name)}
@@ -283,10 +256,6 @@ export default function CoverageCalendar({ rules, people, splits, saving, error,
               ))}
             </tbody>
           </table>
-        </div>
-        <div className="flex flex-wrap justify-between gap-2" style={{ fontSize: 12.5 }}>
-          <span style={{ fontWeight: 700, color: gap ? '#111827' : '#047857' }}>{gap ?? 'Covered around the clock.'}</span>
-          <span style={{ color: MUTED }}>Times are Dubai time.</span>
         </div>
       </CardBody>
 
@@ -336,7 +305,6 @@ function HourWindow({ cells, everyone, onAt, split, onCancel, onApply }: {
       <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Who takes leads this hour"
         style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420, padding: 20, boxShadow: '0 20px 50px rgba(20,8,31,.25)' }}>
         <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>{selectionLabel(cells)}</div>
-        <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>Who takes new leads then, and how they are split.</div>
 
         <div className="mt-4 space-y-1.5">
           {everyone.map((x) => (
@@ -359,15 +327,15 @@ function HourWindow({ cells, everyone, onAt, split, onCancel, onApply }: {
         {picked.length > 1 && (
           <div className="flex items-center justify-between gap-2 mt-3" style={{ fontSize: 12.5 }}>
             {even
-              ? <span style={{ color: '#047857', fontWeight: 600 }}>Even split — they take turns, one by one.</span>
-              : <span style={{ color: total === 100 ? '#047857' : '#B91C1C', fontWeight: 600 }}>Total {total}%{total === 100 ? '' : ' — needs to be 100%'}</span>}
+              ? <span style={{ color: '#047857', fontWeight: 600 }}>Taking turns</span>
+              : <span style={{ color: total === 100 ? '#047857' : '#B91C1C', fontWeight: 600 }}>Total {total}%</span>}
             {!even && (
               <button type="button" onClick={() => { setEven(true); setPct(evenPct(on)) }}
                 style={{ fontWeight: 600, color: '#5B2BC9', background: 'none', border: 'none', cursor: 'pointer' }}>Split evenly</button>
             )}
           </div>
         )}
-        {!picked.length && <div className="mt-3" style={{ fontSize: 12.5, color: GAP_FG, fontWeight: 600 }}>Nobody on — this becomes a gap.</div>}
+        {!picked.length && <div className="mt-3" style={{ fontSize: 12.5, color: GAP_FG, fontWeight: 600 }}>Nobody on</div>}
 
         <div className="flex justify-end gap-2 mt-5">
           <button type="button" onClick={onCancel}

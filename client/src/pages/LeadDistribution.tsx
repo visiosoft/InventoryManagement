@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { PageHeader, Card, CardBody, Spinner, Button } from '../components/ui'
+import { PageHeader, Spinner } from '../components/ui'
 import CoverageCalendar, { type HourSplit, type Shift } from '../components/CoverageCalendar'
 
 /**
@@ -14,7 +14,6 @@ import CoverageCalendar, { type HourSplit, type Shift } from '../components/Cove
  * existing customers) keep the values they were last given.
  */
 
-const INK = '#14081F'
 const MUTED = 'rgba(20,8,31,.55)'
 
 
@@ -96,49 +95,29 @@ export default function LeadDistribution() {
     <div>
       <PageHeader
         title="Lead Distribution"
-        subtitle="Who gets the next WhatsApp lead — whoever is on the calendar at that hour"
+        action={config && (
+          <button type="button" onClick={() => saveConfig.mutate({ enabled: !config.enabled })} disabled={saveConfig.isPending}
+            aria-pressed={config.enabled} title={config.enabled ? 'Leads are shared out — click to turn off' : 'Off — click to turn on'}
+            className="inline-flex items-center gap-2.5 cursor-pointer"
+            style={{ padding: '6px 8px 6px 14px', borderRadius: 999, border: `1px solid ${config.enabled ? '#BBF7D0' : 'rgba(20,8,31,.12)'}`, background: config.enabled ? '#F0FDF4' : '#fff', fontSize: 13, fontWeight: 700, color: config.enabled ? '#047857' : MUTED }}>
+            {config.enabled ? 'On' : 'Off'}
+            <span style={{ width: 36, height: 20, borderRadius: 999, background: config.enabled ? '#10B981' : '#D1D5DB', position: 'relative', transition: 'background .15s' }}>
+              <span style={{ position: 'absolute', top: 2, left: config.enabled ? 18 : 2, width: 16, height: 16, borderRadius: 999, background: '#fff', transition: 'left .15s' }} />
+            </span>
+          </button>
+        )}
       />
 
       {isLoading || !data || !config ? <Spinner /> : (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {err && (
             <div className="rounded-lg px-3 py-2" style={{ background: '#FEE2E2', color: '#B91C1C', fontSize: 13 }}>{err}</div>
           )}
 
-          {/* On or off */}
-          <Card>
-            <CardBody>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: INK }}>
-                    Distribute new WhatsApp leads automatically
-                  </div>
-                  <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>
-                    {config.enabled
-                      ? 'On. New chats are shared out by the rules below.'
-                      : 'Off. Every new chat goes to the first user on the system, as it always has.'}
-                  </div>
-                </div>
-                <Button
-                  variant={config.enabled ? 'outline' : 'default'}
-                  onClick={() => saveConfig.mutate({ enabled: !config.enabled })}
-                  disabled={saveConfig.isPending}
-                >
-                  {config.enabled ? 'Turn off' : 'Turn on'}
-                </Button>
-              </div>
-            </CardBody>
-          </Card>
-
           {data.rules.length > 0 && data.rules.every((r) => !r.pushEnabled) && (
-            <div className="rounded-lg px-3 py-2.5 flex items-start gap-2" style={{ background: '#FEF3C7', color: '#92400E', fontSize: 12.5 }}>
-              <AlertTriangle size={15} style={{ marginTop: 1, flexShrink: 0 }} />
-              <span>
-                <strong>Nobody would be told.</strong> None of these reps has switched notifications on,
-                so a lead would land on their board silently. Each of them needs to open
-                <strong> My Account</strong> on the phone or laptop they actually use and turn notifications
-                on — once, per device. They will still get an email if one is configured.
-              </span>
+            <div className="rounded-lg px-3 py-2 flex items-center gap-2" style={{ background: '#FFFBEB', color: '#92400E', fontSize: 12.5 }}>
+              <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+              No rep has notifications on — turn them on under My Account.
             </div>
           )}
 
