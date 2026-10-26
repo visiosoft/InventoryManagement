@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { User, AuditLog } from '../models/index.js';
 import { signToken, requireAuth, effectiveRole } from '../middleware/auth.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
+import { cleanDashboardLayout } from '../services/dashboardLayout.js';
 
 const router = Router();
 
@@ -122,6 +123,22 @@ router.get('/me', requireAuth, async (req, res) => {
     });
   } catch {
     res.json({ user: req.user });
+  }
+});
+
+// The signed-in person's own dashboard layout (null = the default).
+router.get('/me/dashboard', requireAuth, async (req, res) => {
+  const user = await User.findById(req.user.id).select('dashboardLayout').lean().catch(() => null);
+  res.json({ layout: user?.dashboardLayout ?? null });
+});
+
+router.put('/me/dashboard', requireAuth, async (req, res) => {
+  try {
+    const layout = cleanDashboardLayout(req.body?.layout);
+    await User.updateOne({ _id: req.user.id }, { $set: { dashboardLayout: layout } });
+    res.json({ layout });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

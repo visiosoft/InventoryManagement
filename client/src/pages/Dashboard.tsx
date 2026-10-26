@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, GripVertical, ChevronDown } from 'lucide-react'
+import { AlertTriangle, GripVertical, ChevronDown, ArrowUp, ArrowDown, EyeOff, Plus, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError, leadApi, type HighIntentLead, type WebsiteLead, type WebsiteAnalytics, type MonthFunnelStage } from '../lib/api'
 import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
@@ -50,7 +50,7 @@ const TABS: { key: TabKey; label: string; widgets: WidgetId[]; adminOnly?: boole
   { key: 'finance', label: 'Finance', widgets: [], adminOnly: true },
   { key: 'feedback', label: 'Customer Feedback', widgets: ['customer-feedback', 'whatsapp-id'] },
 ]
-const tabOf = (id: WidgetId): TabKey => TABS.find((t) => t.widgets.includes(id))?.key ?? 'overview'
+const defaultTabOf = (id: WidgetId): TabKey => TABS.find((t) => t.widgets.includes(id))?.key ?? 'overview'
 
 const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
@@ -72,11 +72,9 @@ const DEFAULT_LAYOUT: WidgetId[] = [
   'whatsapp-id',
 ]
 
-function safeLoadLayout() {
+/** A saved card order made whole again: unknown ids dropped, cards added since put back near their neighbours. */
+function normalizeOrder(parsed: unknown): WidgetId[] {
   try {
-    const raw = localStorage.getItem(DASHBOARD_LAYOUT_KEY)
-    if (!raw) return DEFAULT_LAYOUT
-    const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return DEFAULT_LAYOUT
     const result = parsed.filter((x): x is WidgetId => DEFAULT_LAYOUT.includes(x as WidgetId))
 
@@ -110,6 +108,39 @@ function safeLoadLayout() {
   } catch {
     return DEFAULT_LAYOUT
   }
+}
+
+function safeLoadLayout() {
+  try {
+    const raw = localStorage.getItem(DASHBOARD_LAYOUT_KEY)
+    return raw ? normalizeOrder(JSON.parse(raw)) : DEFAULT_LAYOUT
+  } catch {
+    return DEFAULT_LAYOUT
+  }
+}
+
+/* Each person's own dashboard, kept on their account (GET/PUT
+   /auth/me/dashboard) so it follows them to any computer: the order, the
+   cards they hid, and cards they moved to another tab. */
+type Layout = { order: WidgetId[]; hidden: WidgetId[]; tabs: Partial<Record<WidgetId, TabKey>> }
+const DEFAULT_SAVED: Layout = { order: DEFAULT_LAYOUT, hidden: [], tabs: {} }
+
+const WIDGET_LABEL: Record<WidgetId, string> = {
+  stats: 'Key numbers',
+  'zoho-sales': 'Sales (Zoho)',
+  'zoho-receivables': 'Receivables (Zoho)',
+  'lead-coverage': 'Who is on now',
+  'lead-distribution': 'Lead distribution',
+  'high-intent-leads': 'High-intent leads',
+  'website-leads-today': 'Website leads today',
+  'lead-funnel': 'Lead funnel',
+  'website-analytics': 'Website analytics',
+  'units-by-size': 'Units by size',
+  'floor-occupancy': 'Floor occupancy',
+  'expiring-contracts': 'Contracts expiring soon',
+  'team-tasks': 'Latest team tasks',
+  'customer-feedback': 'Customer feedback',
+  'whatsapp-id': 'WhatsApp ID submissions',
 }
 
 const KPI_SKELETON = (
@@ -195,14 +226,39 @@ export default function Dashboard() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
-  const [layout, setLayout] = useState<WidgetId[]>(() => safeLoadLayout())
+  const qc = useQueryClient()
+  const [layout, setLayoutState] = useState<Layout>(() => ({ ...DEFAULT_SAVED, order: safeLoadLayout() }))
+  const [customizing, setCustomizing] = useState(false)
+  // The saved layout, once it arrives, replaces this browser's own order.
+  const { data: savedLayout } = useQuery<{ layout: Layout | null }>({
+    queryKey: ['dashboard-layout'],
+    queryFn: () => api.get('/auth/me/dashboard').then((r) => r.data),
+    staleTime: Infinity,
+  })
+  const [adopted, setAdopted] = useState<typeof savedLayout>(undefined)
+  if (savedLayout && savedLayout !== adopted) {
+    setAdopted(savedLayout)
+    const l = savedLayout.layout
+    if (l) setLayoutState({ order: normalizeOrder(l.order), hidden: l.hidden ?? [], tabs: l.tabs ?? {} })
+  }
+  const saveLayout = useCallback((next: Layout) => {
+    setLayoutState(next)
+    try { localStorage.setItem(DASHBOARD_LAYOUT_KEY, JSON.stringify(next.order)) } catch { /* private window */ }
+    const body = next === DEFAULT_SAVED ? null : next
+    qc.setQueryData(['dashboard-layout'], { layout: body })
+    api.put('/auth/me/dashboard', { layout: body }).catch(() => { /* kept in this browser at least */ })
+  }, [qc])
+  const tabOf = (id: WidgetId): TabKey => layout.tabs[id] ?? defaultTabOf(id)
 
   // The open tab lives in the URL (?tab=leads) so a link or a refresh keeps it.
   const [searchParams, setSearchParams] = useSearchParams()
   const tabs = TABS.filter((t) => !t.adminOnly || isAdmin)
   const tab: TabKey = tabs.some((t) => t.key === searchParams.get('tab')) ? (searchParams.get('tab') as TabKey) : 'overview'
   const chooseTab = (key: TabKey) => setSearchParams((p) => { const n = new URLSearchParams(p); if (key === 'overview') n.delete('tab'); else n.set('tab', key); return n }, { replace: true })
-  const visible = layout.filter((id) => (!['lead-distribution', 'lead-coverage'].includes(id) || isAdmin) && tabOf(id) === tab)
+  const allowed = (id: WidgetId) => (!['lead-distribution', 'lead-coverage', 'zoho-sales', 'zoho-receivables'].includes(id) || isAdmin)
+  const visible = layout.order.filter((id) => allowed(id) && !layout.hidden.includes(id) && tabOf(id) === tab)
+  // A card's data is fetched only while it is on the open tab.
+  const shown = (id: WidgetId) => visible.includes(id)
   const [, setDragged] = useState<WidgetId | null>(null)
   const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
   const [sizeFilter, setSizeFilter] = useState<number | null>(null)
@@ -220,21 +276,21 @@ export default function Dashboard() {
     queryKey: ['dashboard-stats'],
     queryFn: () => api.get('/reports/stats').then((r) => r.data),
     // Each card loads only once its tab is open (see TABS).
-    enabled: tab === 'overview',
+    enabled: shown('stats') || shown('units-by-size'),
     staleTime: 5 * 60_000,
   })
 
   const { data: floor, isLoading: floorLoading, isError: floorIsError, refetch: refetchFloor } = useQuery<FloorOccupancy>({
     queryKey: ['dashboard-floor-occupancy'],
     queryFn: () => api.get('/reports/floor-occupancy').then((r) => r.data),
-    enabled: tab === 'overview',
+    enabled: shown('floor-occupancy'),
     staleTime: 5 * 60_000,
   })
 
   const { data: expiringContracts, isLoading: expiringLoading, isError: expiringIsError, refetch: refetchExpiring } = useQuery<Contract[]>({
     queryKey: ['dashboard-expiring'],
     queryFn: () => api.get('/reports/expiring', { params: { days: 15 } }).then((r) => r.data),
-    enabled: tab === 'sales',
+    enabled: shown('expiring-contracts'),
     staleTime: 5 * 60_000,
   })
 
@@ -246,7 +302,7 @@ export default function Dashboard() {
   const { data: distribution, isLoading: distributionLoading } = useQuery({
     queryKey: ['distribution-today'],
     queryFn: () => leadApi.distributionToday(),
-    enabled: isAdmin && tab === 'leads',
+    enabled: isAdmin && shown('lead-distribution'),
     staleTime: 60_000,
     refetchInterval: 120_000,
   })
@@ -254,7 +310,7 @@ export default function Dashboard() {
   const { data: highIntent, isLoading: highIntentLoading } = useQuery({
     queryKey: ['high-intent-leads'],
     queryFn: () => leadApi.highIntentToday(),
-    enabled: tab === 'sales',
+    enabled: shown('high-intent-leads'),
     staleTime: 60_000,
   })
 
@@ -264,7 +320,7 @@ export default function Dashboard() {
   const { data: websiteLeads, isLoading: websiteLeadsLoading } = useQuery({
     queryKey: ['website-leads-today'],
     queryFn: () => leadApi.newFromWebsiteToday(),
-    enabled: tab === 'leads',
+    enabled: shown('website-leads-today'),
     staleTime: 60_000,
   })
 
@@ -273,7 +329,7 @@ export default function Dashboard() {
   const { data: monthFunnel, isLoading: monthFunnelLoading, isError: monthFunnelIsError, refetch: refetchMonthFunnel } = useQuery({
     queryKey: ['lead-month-funnel'],
     queryFn: () => leadApi.monthFunnel(),
-    enabled: tab === 'sales',
+    enabled: shown('lead-funnel'),
     staleTime: 60_000,
   })
 
@@ -293,7 +349,7 @@ export default function Dashboard() {
   const { data: websiteAnalytics, isLoading: websiteAnalyticsLoading, error: websiteAnalyticsError } = useQuery<WebsiteAnalytics>({
     queryKey: ['website-analytics'],
     queryFn: () => api.get('/reports/website-analytics', { params: { days: 30 } }).then((r) => r.data),
-    enabled: tab === 'leads',
+    enabled: shown('website-analytics'),
     staleTime: 5 * 60_000,
   })
 
@@ -320,7 +376,7 @@ export default function Dashboard() {
   const { data: teamTasks, isLoading: tasksLoading } = useQuery<TeamTask[]>({
     queryKey: ['team-tasks-latest'],
     queryFn: () => api.get('/tasks', { params: { limit: 5, sort: 'createdAt' } }).then((r) => r.data),
-    enabled: tab === 'overview',
+    enabled: shown('team-tasks'),
     staleTime: 60_000,
   })
 
@@ -329,20 +385,39 @@ export default function Dashboard() {
   const onDrop = useCallback((targetId: WidgetId) => {
     setDragged((dragged) => {
       if (!dragged || dragged === targetId) return dragged
-      setLayout((prev) => {
-        const next = [...prev]
-        const from = next.indexOf(dragged)
-        const to = next.indexOf(targetId)
-        if (from < 0 || to < 0) return prev
+      const next = [...layout.order]
+      const from = next.indexOf(dragged)
+      const to = next.indexOf(targetId)
+      if (from >= 0 && to >= 0) {
         next.splice(from, 1)
         next.splice(to, 0, dragged)
-        localStorage.setItem(DASHBOARD_LAYOUT_KEY, JSON.stringify(next))
-        return next
-      })
+        saveLayout({ ...layout, order: next })
+      }
       return null
     })
-  }, [])
+  }, [layout, saveLayout])
   const dragHandlers = { onDragStart, onDragOver, onDrop }
+
+  /* Customize: move a card up or down among the cards on this tab, send it
+     to another tab, hide it, or bring a hidden one back onto this tab. */
+  const moveCard = (id: WidgetId, dir: -1 | 1) => {
+    const i = visible.indexOf(id)
+    const other = visible[i + dir]
+    if (!other) return
+    const next = [...layout.order]
+    const a = next.indexOf(id), b = next.indexOf(other)
+    ;[next[a], next[b]] = [next[b], next[a]]
+    saveLayout({ ...layout, order: next })
+  }
+  const setCardTab = (id: WidgetId, to: TabKey) =>
+    saveLayout({ ...layout, tabs: { ...layout.tabs, [id]: to === defaultTabOf(id) ? undefined : to } })
+  const hideCard = (id: WidgetId) => saveLayout({ ...layout, hidden: [...layout.hidden, id] })
+  const showCard = (id: WidgetId) => saveLayout({
+    ...layout,
+    hidden: layout.hidden.filter((x) => x !== id),
+    tabs: { ...layout.tabs, [id]: tab === defaultTabOf(id) ? undefined : tab },
+  })
+  const hiddenHere = layout.order.filter((id) => allowed(id) && layout.hidden.includes(id))
 
   const widgets = useMemo<Record<WidgetId, React.ReactNode>>(
     () => {
@@ -871,7 +946,42 @@ export default function Dashboard() {
             {t.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setCustomizing((v) => !v)}
+          className="ml-auto inline-flex items-center gap-1.5 cursor-pointer"
+          style={{ padding: '8px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600, border: `1px solid ${customizing ? '#4A1FA0' : 'rgba(20,8,31,0.12)'}`, color: customizing ? '#fff' : '#4A1FA0', background: customizing ? '#4A1FA0' : '#fff' }}
+        >
+          <SlidersHorizontal size={14} /> {customizing ? 'Done' : 'Customize'}
+        </button>
       </div>
+
+      {customizing && (
+        <div className="mb-6 rounded-2xl px-5 py-4" style={{ background: '#F6F2FD', border: '1px solid #E4DAF8' }}>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[220px]">
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 14.5, color: INK }}>Customize your dashboard</div>
+              <div className="text-xs mt-0.5" style={{ color: MUTED_CLR }}>Move cards up or down, send one to another tab, or hide it. Saved to your account, on every computer.</div>
+            </div>
+            <button type="button" onClick={() => { if (confirm('Put every card back where it started?')) saveLayout(DEFAULT_SAVED) }}
+              className="inline-flex items-center gap-1 text-xs font-semibold cursor-pointer" style={{ color: '#4A1FA0' }}>
+              <RotateCcw size={12} /> Reset to default
+            </button>
+          </div>
+          {hiddenHere.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <span className="text-xs font-semibold" style={{ color: MUTED_CLR }}>Hidden — add to this tab:</span>
+              {hiddenHere.map((id) => (
+                <button key={id} type="button" onClick={() => showCard(id)}
+                  className="inline-flex items-center gap-1 cursor-pointer"
+                  style={{ padding: '5px 11px', borderRadius: 16, fontSize: 12, fontWeight: 600, border: '1px dashed #B9A5E8', background: '#fff', color: '#4A1FA0' }}>
+                  <Plus size={12} /> {WIDGET_LABEL[id]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {tab === 'overview' && <div className="mb-6"><DashboardAsk /></div>}
 
@@ -901,7 +1011,32 @@ export default function Dashboard() {
       )}
 
       <div className="space-y-8">
-        {visible.map((id) => {
+        {visible.length === 0 && customizing && (
+          <div className="text-sm text-center py-10 rounded-2xl" style={{ color: MUTED_CLR, border: '1px dashed rgba(20,8,31,0.15)' }}>No cards on this tab. Add a hidden one above, or move one here from another tab.</div>
+        )}
+        {visible.map((id, i) => {
+          // While customizing every card gets its own row and a bar of controls.
+          if (customizing) {
+            const btn = { width: 30, height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,0.12)', background: '#fff', display: 'inline-grid', placeItems: 'center' } as const
+            return (
+              <div key={id} style={{ border: '2px dashed #C9B8F0', borderRadius: 18, padding: 10 }}>
+                <div className="flex flex-wrap items-center gap-2 mb-3 px-1">
+                  <span style={{ ...HEADING, fontWeight: 700, fontSize: 14, color: INK }} className="mr-auto">{WIDGET_LABEL[id]}</span>
+                  <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => moveCard(id, -1)} className="cursor-pointer disabled:opacity-30" style={btn}><ArrowUp size={14} /></button>
+                  <button type="button" aria-label="Move down" disabled={i === visible.length - 1} onClick={() => moveCard(id, 1)} className="cursor-pointer disabled:opacity-30" style={btn}><ArrowDown size={14} /></button>
+                  <select value={tabOf(id)} onChange={(e) => setCardTab(id, e.target.value as TabKey)} aria-label="Tab"
+                    style={{ height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,0.12)', fontSize: 12.5, padding: '0 8px', background: '#fff' }}>
+                    {tabs.map((t) => <option key={t.key} value={t.key}>{t.key === tab ? `On ${t.label}` : `Move to ${t.label}`}</option>)}
+                  </select>
+                  <button type="button" onClick={() => hideCard(id)} className="inline-flex items-center gap-1 cursor-pointer"
+                    style={{ height: 30, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,0.12)', background: '#fff', fontSize: 12.5, fontWeight: 600, color: '#B91C1C' }}>
+                    <EyeOff size={13} /> Hide
+                  </button>
+                </div>
+                <div style={{ pointerEvents: 'none', opacity: 0.85, maxHeight: 260, overflow: 'hidden' }}>{widgets[id]}</div>
+              </div>
+            )
+          }
           if (id === 'stats') {
             return (
               <div key={id} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>

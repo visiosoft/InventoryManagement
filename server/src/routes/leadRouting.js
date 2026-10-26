@@ -8,7 +8,7 @@ import { Router } from 'express';
 import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, PushSubscription, User, WhatsAppMessage } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { softDelete } from '../utils/softDelete.js';
-import { availability, cleanWeeklyShifts, countsForToday, coverageNow, coverageSignal, digitTail, pickOwner, rosterInUse, startOfDayIn, targetShares } from '../services/leadRouting.js';
+import { cleanHourSplits, cleanWeeklyShifts, countsForToday, countsSince, coverageNow, coverageSignal, digitTail, outOfHoursIds, pickOwner, rosterInUse, startOfDayIn, startOfHour } from '../services/leadRouting.js';
 import { runLeadSla } from '../services/leadSla.js';
 import { getAiBotConfig } from '../services/aiBot.js';
 import { openaiConfigured } from '../services/openai.js';
@@ -34,42 +34,25 @@ async function loadConfig() {
  */
 router.get('/', async (_req, res) => {
    try {
-      const [config, rules, people, counts, subscribed] = await Promise.all([
+      const [config, rules, people, staff, subscribed] = await Promise.all([
          loadConfig(),
-         LeadRoutingRule.find({}).populate('user', 'name email role isActive').populate('fallbackUser', 'name').lean(),
-         // `$ne: false` — a user created before isActive existed has no such
-         // field, and `true` would quietly leave them out of the rota.
+         LeadRoutingRule.find({}).populate('user', 'name email role isActive').lean(),
+         // `$ne: false` — a user created before isActive existed has no such field.
          User.find({ isActive: { $ne: false }, role: { $in: ROLES } }).select('name email role').sort({ name: 1 }).lean(),
-         countsForToday(),
-         /* Who would actually hear about it.
-          *
-          * Sharing leads out is half a feature if the person it lands on is not
-          * told, and a browser push only reaches somebody who has switched it
-          * on once under My Account. Surfaced per rep so it is obvious who
-          * still needs to, rather than being a silent gap. */
+         // Anybody can be an out-of-hours person — an admin, typically.
+         User.find({ isActive: { $ne: false } }).select('name role').sort({ name: 1 }).lean(),
+         /* A browser push only reaches somebody who has switched it on once
+          * under My Account; the page warns when no rep has. */
          PushSubscription.distinct('user'),
       ]);
       const notified = new Set(subscribed.map(String));
-
       // A rule for somebody who has since been deactivated is noise, not a rep.
       const live = rules.filter((r) => r.user && r.user.isActive !== false);
-      const { available, excluded } = availability({ rules: live, counts });
-      const shares = targetShares({ rules: live, available });
-      const totalShare = [...shares.values()].reduce((s, v) => s + v, 0);
-
       res.json({
-         config,
+         config: { ...config.toObject(), outOfHoursUsers: outOfHoursIds(config) },
          people,
-         rules: live.map((r) => ({
-            ...r,
-            todayCount: counts[String(r.user._id)] || 0,
-            // What they are actually due right now, once absences are handed
-            // on — which is not the same as the share they were typed in with.
-            effectivePct: totalShare > 0 ? Math.round(((shares.get(String(r.user._id)) || 0) / totalShare) * 1000) / 10 : 0,
-            unavailableBecause: excluded.find((e) => e.id === String(r.user._id))?.reason ?? null,
-            pushEnabled: notified.has(String(r.user._id)),
-         })),
-         totalSharePct: live.reduce((s, r) => s + (Number(r.sharePct) || 0), 0),
+         staff,
+         rules: live.map((r) => ({ ...r, pushEnabled: notified.has(String(r.user._id)) })),
       });
    } catch (e) {
       res.status(500).json({ error: e.message });
@@ -79,11 +62,17 @@ router.get('/', async (_req, res) => {
 router.put('/config', async (req, res) => {
    try {
       const config = await loadConfig();
-      for (const key of ['enabled', 'timeZone', 'outOfHoursMode', 'outOfHoursUser', 'existingCustomerUser']) {
+      for (const key of ['enabled', 'timeZone']) {
          if (req.body[key] !== undefined) config[key] = req.body[key] || (key === 'enabled' ? false : null);
       }
       if (req.body.enabled !== undefined) config.enabled = Boolean(req.body.enabled);
-      if (req.body.randomize !== undefined) config.randomize = Boolean(req.body.randomize);
+      if (req.body.hourSplits !== undefined) config.hourSplits = cleanHourSplits(req.body.hourSplits);
+      if (req.body.outOfHoursUsers !== undefined) {
+         config.outOfHoursUsers = [...new Set((Array.isArray(req.body.outOfHoursUsers) ? req.body.outOfHoursUsers : []).map(String))].filter((id) => /^[0-9a-f]{24}$/i.test(id));
+         // The list replaces the old single out-of-hours person.
+         config.outOfHoursMode = 'unassigned';
+         config.outOfHoursUser = null;
+      }
       if (req.body.timeZone) config.timeZone = String(req.body.timeZone);
       /* The two marks on the unanswered-lead clock, in minutes. Clamped rather
          than rejected: a typo should not be able to set a reminder to fire in
@@ -115,6 +104,7 @@ router.get('/now', async (_req, res) => {
          LeadRoutingRule.find({}).populate('user', 'name isActive').lean(),
          countsForToday({ at }),
       ]);
+      const outOfHours = (await User.find({ _id: { $in: outOfHoursIds(config) }, isActive: { $ne: false } }).select('name').lean()).map((u) => u.name);
       const live = rules.filter((r) => r.user && r.user.isActive !== false);
       const ids = live.map((r) => r.user._id);
       const dayStart = startOfDayIn(at, config.timeZone);
@@ -151,7 +141,7 @@ router.get('/now', async (_req, res) => {
       const nameOf = Object.fromEntries(cover.reps.map((r) => [r.id, r.name]));
       res.json({
          enabled: config.enabled,
-         outOfHoursMode: config.outOfHoursMode,
+         outOfHours,
          ai: { enabled: !!bot?.enabled, mode: bot?.mode || 'draft', answering: aiAnswering },
          signal: coverageSignal({ nobodyOn: cover.nobodyOn, aiAnswering }),
          live: {
@@ -183,7 +173,7 @@ router.get('/sla/preview', async (_req, res) => {
    }
 });
 
-const FIELDS = ['sharePct', 'status', 'absentFrom', 'absentTo', 'dailyCap', 'workingHours', 'weeklyShifts', 'color', 'fallbackMode', 'fallbackUser', 'notes'];
+const FIELDS = ['status', 'weeklyShifts', 'color', 'notes'];
 
 /** One row per rep, created on first save. */
 router.put('/rules/:userId', async (req, res) => {
@@ -193,17 +183,10 @@ router.put('/rules/:userId', async (req, res) => {
 
       const update = {};
       for (const key of FIELDS) if (req.body[key] !== undefined) update[key] = req.body[key];
-      if (update.sharePct !== undefined) update.sharePct = Math.max(0, Number(update.sharePct) || 0);
-      if (update.dailyCap !== undefined) update.dailyCap = Math.max(0, Number(update.dailyCap) || 0);
-      if (update.fallbackUser === '') update.fallbackUser = null;
       if (update.weeklyShifts !== undefined) update.weeklyShifts = cleanWeeklyShifts(update.weeklyShifts);
       // Saved from the calendar: from now on the roster alone decides their hours.
       if (update.weeklyShifts !== undefined) update.rosterManaged = true;
       if (update.color !== undefined) update.color = /^#[0-9a-f]{6}$/i.test(String(update.color)) ? String(update.color) : '';
-      // A stand-in cannot be the person they are standing in for.
-      if (update.fallbackUser && String(update.fallbackUser) === String(user._id)) {
-         return res.status(400).json({ error: 'Somebody cannot be their own stand-in' });
-      }
 
       // A rep removed earlier keeps a soft-deleted row. The default query
       // hides it, so a plain upsert inserted a second row and collided with
@@ -216,7 +199,7 @@ router.put('/rules/:userId', async (req, res) => {
       const rule = await LeadRoutingRule.findOneAndUpdate(
          { user: user._id }, { $set: { ...update, deletedAt: null, deletedBy: null }, $setOnInsert: onInsert },
          { new: true, upsert: true, runValidators: true, includeDeleted: true },
-      ).populate('user', 'name email role').populate('fallbackUser', 'name');
+      ).populate('user', 'name email role');
       res.json(rule);
    } catch (e) {
       res.status(400).json({ error: e.message });
@@ -243,18 +226,21 @@ router.delete('/rules/:userId', async (req, res) => {
 router.get('/preview', async (req, res) => {
    try {
       const n = Math.min(100, Math.max(1, Number(req.query.n) || 20));
-      const [rules, counts, config] = await Promise.all([
+      const [rules, counts, hourCounts, config] = await Promise.all([
          LeadRoutingRule.find({}).populate('user', 'name').lean(),
          countsForToday(),
+         countsSince(startOfHour()),
          loadConfig(),
       ]);
       const live = rules.filter((r) => r.user);
       const tally = { ...counts };
+      const hourTally = { ...hourCounts };
       const order = [];
       for (let i = 0; i < n; i++) {
-         const d = pickOwner({ rules: live, counts: tally, timeZone: config.timeZone });
+         const d = pickOwner({ rules: live, counts: tally, hourCounts: hourTally, timeZone: config.timeZone, splits: config.hourSplits || [] });
          if (!d.ownerId) { order.push({ name: null, reason: d.reason }); continue; }
          tally[d.ownerId] = (tally[d.ownerId] || 0) + 1;
+         hourTally[d.ownerId] = (hourTally[d.ownerId] || 0) + 1;
          order.push({ name: live.find((r) => String(r.user._id) === d.ownerId)?.user?.name ?? '—', reason: d.reason });
       }
       /* Somebody can have leads today without having a rule — they were given

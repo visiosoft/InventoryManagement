@@ -53,6 +53,9 @@ const userSchema = new Schema(
        registration and drops it the moment Expo reports the device gone,
        so this never grows stale. */
     pushTokens: { type: [String], default: [] },
+    /* Their own dashboard: card order, hidden cards, cards moved to another
+       tab (services/dashboardLayout.js). Null is the default layout. */
+    dashboardLayout: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true }
 );
@@ -2646,6 +2649,13 @@ const leadRoutingConfigSchema = new Schema({
      account with a history, and go to whoever looks after accounts rather than
      into the rotation. Null keeps them in it. */
   existingCustomerUser: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  /* Who takes leads when nobody is on the roster: they take turns. Empty:
+     the lead waits unassigned until a shift starts. */
+  outOfHoursUsers: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] },
+  /* The roster calendar's per-hour splits: [{ day, hour, shares: [{ user, pct }] }].
+     An hour not listed is shared evenly, the reps on it taking turns
+     (services/leadRouting.js pickForHour). */
+  hourSplits: { type: [Schema.Types.Mixed], default: [] },
   /* The clock on a lead nobody has answered yet — see services/leadSla.js.
      Minutes from being handed over to a reminder, and from being handed over
      to being taken back and given to somebody else. 0 turns either off. */

@@ -154,7 +154,13 @@ router.get('/summary', async (req, res) => {
  * list too. /summary itself is left as it was for whatever else still
  * calls it; this is additive, not a replacement.
  */
-router.get('/stats', async (req, res) => {
+const MOVE_LIST_FIELDS = 'contractNo customer unit startDate endDate status';
+
+// Express 4 does not catch a rejected async handler: without the catch a
+// failure here left the request hanging and the KPI row loading for good.
+router.get('/stats', (req, res) => statsHandler(req, res).catch((e) => res.status(500).json({ error: e.message })));
+
+async function statsHandler(req, res) {
   const scope = await siteScope(req.query.site);
   const uF = scope ? scope.unitFilter : {};
   const cF = scope ? scope.contractFilter : {};
@@ -186,10 +192,13 @@ router.get('/stats', async (req, res) => {
         { $group: { _id: null, total: { $sum: '$amount' } } },
       ]),
       Contract.countDocuments({ ...cF, status: 'active' }),
+      // Only what the move-in / move-out lists show: whole contracts carry the
+      // agreement text, which made this response megabytes and the KPI row
+      // sit on its loading placeholders.
       Contract.find({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: monthStart, $lt: monthEnd } })
-        .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ startDate: 1 }).lean(),
+        .select(MOVE_LIST_FIELDS).populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ startDate: 1 }).lean(),
       Contract.find({ ...cF, status: 'ended', endDate: { $gte: monthStart, $lt: monthEnd } })
-        .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ endDate: 1 }).lean(),
+        .select(MOVE_LIST_FIELDS).populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ endDate: 1 }).lean(),
       Contract.countDocuments({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: lastMonthStart, $lt: monthStart } }),
       Contract.countDocuments({ ...cF, status: 'ended', endDate: { $gte: lastMonthStart, $lt: monthStart } }),
       Contract.countDocuments({ ...cF, status: 'active', endDate: { $gte: monthStart, $lt: monthEnd } }),
@@ -243,7 +252,7 @@ router.get('/stats', async (req, res) => {
     moveOutsList: moveOutsThisMonthList,
     availableUnitsList: availableUnits.map(u => ({ _id: u._id, unitNumber: u.unitNumber, floor: u.floor, sizeSqf: u.sizeSqf, monthlyRent: u.price || 0 })),
   });
-});
+}
 
 /** Today's website visits, the last N days by country, and the last N days'
  *  trend — its own card, own load, same reasoning as floor-occupancy below:
