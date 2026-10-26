@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { Skeleton } from './ui'
+import { repAccent } from '../lib/repColors'
 import TrafficLight, { type Signal } from './TrafficLight'
 import LiveCounter, { LiveCounterStyles } from './LiveCounter'
 
@@ -51,7 +52,7 @@ export default function LeadCoverageCard() {
 
   const on = data.reps.filter((r) => r.on)
   const off = data.reps.filter((r) => !r.on)
-  const dot = (c: string) => <span style={{ width: 10, height: 10, borderRadius: 3, background: c || '#5B2BC9', flex: '0 0 auto' }} />
+  const dot = (c: string) => <span style={{ width: 10, height: 10, borderRadius: 3, background: c || '#4C8CE4', flex: '0 0 auto' }} />
 
   const signal: Signal = data.signal ?? (data.nobodyOn ? 'red' : 'green')
   const SIGNAL_TEXT: Record<Signal, { title: string; line: string; color: string; bg: string }> = {
@@ -130,7 +131,7 @@ export default function LeadCoverageCard() {
             const m = minsAgo(r.lastReplyAt)
             return (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', border: `1px solid ${LINE}`, borderRadius: 12, padding: '10px 12px' }}>
-                {dot(r.color)}
+                {dot(repAccent(r.color))}
                 <div style={{ minWidth: 120 }}>
                   <div style={{ fontWeight: 700, color: INK }}>{r.name}</div>
                   <div style={{ fontSize: 11.5, color: MUTED }}>{r.until ? `on until ${r.until}` : 'on'}</div>
@@ -172,7 +173,7 @@ export default function LeadCoverageCard() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {off.map((r) => (
             <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: MUTED, border: `1px solid ${LINE}`, borderRadius: 999, padding: '4px 10px' }}>
-              {dot(r.color)} <b style={{ color: '#4A4357' }}>{r.name}</b>
+              {dot(repAccent(r.color))} <b style={{ color: '#4A4357' }}>{r.name}</b>
               {r.why === 'off shift' ? (r.nextOn ? `back ${r.nextOn}` : 'no hours on the roster') : r.why}
               {r.waiting > 0 && <b style={{ color: '#B91C1C' }}> · {r.waiting} waiting</b>}
             </span>

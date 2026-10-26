@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Card, CardBody } from './ui'
+import { SWATCHES, repAccent, swatch } from '../lib/repColors'
 
 /**
  * The weekly lead coverage calendar — and the place the roster is edited.
@@ -23,12 +24,12 @@ export type RosterRule = {
   rosterManaged?: boolean
 }
 
-const GAP_BG = '#FDF2F2'
-const GAP_LINE = '#F5D0D0'
+const GAP_BG = '#F4F5F8'
+const GAP_LINE = '#E3E6EE'
 const GAP_FG = '#D9534F'
 const LINE = '#ECEDF1'
 const MUTED = '#6B7280'
-const PALETTE = ['#1B2238', '#7B4BBF', '#3E8E6E', '#C2410C', '#0E7490', '#B91C77']
+const PALETTE = SWATCHES.map((x) => x.accent)
 
 // Monday first, as the calendar reads. Values are Date.getDay() numbers.
 const WEEK = [['MONDAY', 1], ['TUESDAY', 2], ['WEDNESDAY', 3], ['THURSDAY', 4], ['FRIDAY', 5], ['SATURDAY', 6], ['SUNDAY', 0]] as const
@@ -116,7 +117,9 @@ export default function CoverageCalendar({ rules, people, splits, saving, error,
     const out: { _id: string; name: string; color: string; rule?: RosterRule }[] = []
     // A colour nobody has yet, so two people never look alike.
     const free = () => PALETTE.find((c) => !out.some((x) => x.color.toLowerCase() === c.toLowerCase())) ?? PALETTE[out.length % PALETTE.length]
-    for (const r of rules) out.push({ _id: r.user._id, name: r.user.name, color: r.color || free(), rule: r })
+    for (const r of rules) {
+      out.push({ _id: r.user._id, name: r.user.name, color: repAccent(r.color) || free(), rule: r })
+    }
     for (const p of people) if (!out.some((x) => x._id === p._id)) out.push({ _id: p._id, name: p.name, color: free() })
     return out
   }, [rules, people])
@@ -222,19 +225,23 @@ export default function CoverageCalendar({ rules, people, splits, saving, error,
                     }
                     return (
                       <td key={label} data-cell data-day={day} data-hour={h} title={title} style={{ ...cellBase, ...ring }}>
-                        <div style={{ display: 'flex', height: '100%', pointerEvents: 'none' }}>
+                        <div style={{ display: 'flex', gap: 2, height: '100%', pointerEvents: 'none' }}>
                           {on.map((x) => {
                             const p = pctFor(x._id)
+                            const sw = swatch(x.color)
+                            // The name once, at the start of their block; the hours after it just carry the colour.
+                            const starts = h === 0 || !grids[x._id][day][h - 1] || Boolean(splitAt.get(keyOf(day, h - 1))) !== Boolean(split)
                             return (
                               <div key={x._id}
                                 style={{
-                                  flex: split ? Math.max(25, p ?? 0) : 1, background: x.color, color: '#fff',
-                                  fontSize: on.length > 2 ? 8.5 : 10, fontWeight: 700, display: 'flex',
-                                  alignItems: 'center', justifyContent: 'center', overflow: 'hidden', whiteSpace: 'nowrap',
-                                  borderLeft: '1px solid rgba(255,255,255,.4)', letterSpacing: '.02em',
+                                  flex: split ? Math.max(25, p ?? 0) : 1, background: sw.tint, color: sw.ink,
+                                  borderLeft: `3px solid ${sw.accent}`, borderRadius: 4,
+                                  fontSize: on.length > 1 ? 8.5 : 10, fontWeight: 700, display: 'flex',
+                                  alignItems: 'center', justifyContent: 'flex-start', paddingLeft: on.length > 1 ? 4 : 7, overflow: 'hidden', whiteSpace: 'nowrap',
+                                  letterSpacing: '.03em',
                                 }}>
                                 {/* A split hour is too narrow for names: its percentages, in each person's colour. */}
-                                {split ? (p ? `${p}%` : '—') : shortName(x.name)}
+                                {split ? (p ? `${p}%` : '—') : starts ? shortName(x.name) : ''}
                               </div>
                             )
                           })}
