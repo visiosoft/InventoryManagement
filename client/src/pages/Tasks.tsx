@@ -1,15 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Circle, Flag, KanbanSquare, List, Plus, Search } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { PageHeader, Card, CardBody, Button, Field, Input, Select, Textarea, SlideOver, Spinner } from '../components/ui'
+import { Button, Field, Input, Select, Textarea, SlideOver, Spinner } from '../components/ui'
 import { RenewalsCard } from './SalesBoard'
-import { formatDate, formatDateTime } from '../lib/utils'
 import {
   type TaskItem, type AssignableUser,
-  KANBAN_COLUMNS, KanbanBoard, KanbanCard, KanbanColumn, TaskDetailModal, TypePill,
-  PRIORITY_DOT, PRIORITY_PILL, STATUS_PILL, isDueSoon, INK, MUTED, PURPLE,
+  KANBAN_COLUMNS, KanbanBoard, KanbanCard, KanbanColumn, TaskDetailModal, TypePill, Avatar, taskLinkTo,
+  PRIORITY_DOT, PRIORITY_PILL, INK, MUTED, PURPLE,
 } from './tasks/shared'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -22,11 +21,124 @@ const LEAD_TYPE_OPTIONS = [
 ]
 
 type ViewMode = 'kanban' | 'list' | 'calendar'
-const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
-  { value: 'kanban', label: 'Board' },
-  { value: 'list', label: 'List' },
-  { value: 'calendar', label: 'Calendar' },
+const VIEW_OPTIONS: { value: ViewMode; label: string; icon: typeof List }[] = [
+  { value: 'list', label: 'List', icon: List },
+  { value: 'kanban', label: 'Board', icon: KanbanSquare },
+  { value: 'calendar', label: 'Calendar', icon: CalendarDays },
 ]
+const VIEW_KEY = 'pb_tasks_view'
+const LINE = 'rgba(20,8,31,.08)'
+
+/* ── The list: grouped by when it is due, the way task apps read ─────────── */
+
+type Group = { key: string; label: string; tone: 'overdue' | 'today' | 'normal'; items: TaskItem[] }
+
+/** Open tasks by due date — Overdue, Today, Tomorrow, This week, Later, No date — each soonest first. */
+function groupOpen(tasks: TaskItem[], now = new Date()): Group[] {
+  const day = 86400000
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const groups: Group[] = [
+    { key: 'overdue', label: 'Overdue', tone: 'overdue', items: [] },
+    { key: 'today', label: 'Today', tone: 'today', items: [] },
+    { key: 'tomorrow', label: 'Tomorrow', tone: 'normal', items: [] },
+    { key: 'week', label: 'This week', tone: 'normal', items: [] },
+    { key: 'later', label: 'Later', tone: 'normal', items: [] },
+    { key: 'none', label: 'No due date', tone: 'normal', items: [] },
+  ]
+  const by = Object.fromEntries(groups.map((g) => [g.key, g]))
+  for (const t of tasks) {
+    if (!t.dueDate) { by.none.items.push(t); continue }
+    const d = new Date(t.dueDate).getTime()
+    if (d < today) by.overdue.items.push(t)
+    else if (d < today + day) by.today.items.push(t)
+    else if (d < today + 2 * day) by.tomorrow.items.push(t)
+    else if (d < today + 7 * day) by.week.items.push(t)
+    else by.later.items.push(t)
+  }
+  for (const g of groups) {
+    g.items.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || '') || new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
+  }
+  return groups.filter((g) => g.items.length)
+}
+
+/** "Today 3:00 pm", "Tomorrow", "Mon 3 Nov", "12 Oct" — short, like a task app's due chip. */
+function dueLabel(iso: string, now = new Date()) {
+  const d = new Date(iso)
+  const dateOnly = /T00:00:00(\.000)?Z$/.test(iso)
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const that = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const days = Math.round((that - today) / 86400000)
+  const time = dateOnly ? '' : ` ${d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+  if (days === 0) return `Today${time}`
+  if (days === 1) return `Tomorrow${time}`
+  if (days === -1) return 'Yesterday'
+  if (days > 1 && days < 7) return `${d.toLocaleDateString('en-GB', { weekday: 'short' })}${time}`
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) })
+}
+
+function TaskRow({ task, tone, onOpen, onToggle }: { task: TaskItem; tone: Group['tone']; onOpen: () => void; onToggle: () => void }) {
+  const done = task.status === 'done'
+  const dueColor = done ? MUTED : tone === 'overdue' ? '#B91C1C' : tone === 'today' ? '#B45309' : MUTED
+  return (
+    <div onClick={onOpen}
+      className="group flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-[#FBF8F2] transition-colors"
+      style={{ borderTop: `1px solid ${LINE}` }}>
+      <button type="button" aria-label={done ? `Mark "${task.title}" as not done` : `Complete "${task.title}"`}
+        onClick={(e) => { e.stopPropagation(); onToggle() }}
+        className="shrink-0 cursor-pointer" style={{ color: done ? '#16A34A' : task.priority === 'high' ? '#DC2626' : '#9AA3B2', background: 'none', border: 'none', padding: 0, display: 'grid' }}>
+        {done ? <CheckCircle2 size={19} /> : <Circle size={19} />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          {/* The title is the row's button, so the row works from the keyboard too. */}
+          <button type="button" onClick={(e) => { e.stopPropagation(); onOpen() }} className="truncate text-left cursor-pointer"
+            style={{ fontSize: 14, fontWeight: 500, color: done ? MUTED : INK, textDecoration: done ? 'line-through' : undefined, background: 'none', border: 'none', padding: 0 }}>{task.title}</button>
+          {task.status === 'in_progress' && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#92400E', background: '#FEF3C7', borderRadius: 999, padding: '1px 7px', whiteSpace: 'nowrap' }}>In progress</span>}
+        </div>
+        {task.description && <div className="truncate" style={{ fontSize: 12, color: MUTED, marginTop: 1 }}>{task.description}</div>}
+      </div>
+      {task.leadName && <span className="hidden sm:inline-flex shrink-0 max-w-[180px]"><TypePill label={task.leadName} to={taskLinkTo(task)} /></span>}
+      {task.priority !== 'low' && !done && (
+        <span className="shrink-0" title={`${task.priority} priority`} style={{ color: PRIORITY_DOT[task.priority], display: 'grid' }}><Flag size={13} fill={task.priority === 'high' ? PRIORITY_DOT.high : 'none'} /></span>
+      )}
+      {task.dueDate && <span className="shrink-0" style={{ fontSize: 12, fontWeight: tone !== 'normal' && !done ? 700 : 500, color: dueColor, minWidth: 70, textAlign: 'right' }}>{dueLabel(task.dueDate)}</span>}
+      <span className="shrink-0" style={{ width: 22 }}>{task.assignedTo?.name && <Avatar name={task.assignedTo.name} size={22} />}</span>
+    </div>
+  )
+}
+
+function ListView({ tasks, onOpen, onToggle }: { tasks: TaskItem[]; onOpen: (t: TaskItem) => void; onToggle: (t: TaskItem) => void }) {
+  const [showDone, setShowDone] = useState(false)
+  const open = tasks.filter((t) => t.status !== 'done')
+  const done = tasks.filter((t) => t.status === 'done').sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
+  const groups = groupOpen(open)
+  const section = (key: string, label: string, color: string, count: number, children: React.ReactNode, extra?: React.ReactNode) => (
+    <section key={key} aria-label={label} style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 14, overflow: 'hidden' }}>
+      <div className="flex items-center gap-2 px-4 py-2.5" style={{ fontSize: 12.5, fontWeight: 700, color }}>
+        {label}<span style={{ color: MUTED, fontWeight: 600 }}>{count}</span>{extra}
+      </div>
+      {children}
+    </section>
+  )
+  return (
+    <div className="space-y-3">
+      {groups.length === 0 && (
+        <div className="text-center py-12" style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 14, fontSize: 14, color: MUTED }}>
+          <CheckCircle2 size={22} style={{ margin: '0 auto 8px', color: '#16A34A' }} />
+          All clear — nothing open.
+        </div>
+      )}
+      {groups.map((g) => section(g.key, g.label, g.tone === 'overdue' ? '#B91C1C' : g.tone === 'today' ? '#B45309' : INK, g.items.length,
+        g.items.map((t) => <TaskRow key={t._id} task={t} tone={g.tone} onOpen={() => onOpen(t)} onToggle={() => onToggle(t)} />)))}
+      {done.length > 0 && section('done', 'Completed', MUTED, done.length,
+        showDone ? done.slice(0, 50).map((t) => <TaskRow key={t._id} task={t} tone="normal" onOpen={() => onOpen(t)} onToggle={() => onToggle(t)} />) : null,
+        <button type="button" onClick={() => setShowDone((v) => !v)} aria-expanded={showDone}
+          className="ml-auto inline-flex items-center gap-1 cursor-pointer" style={{ fontSize: 12, fontWeight: 600, color: PURPLE, background: 'none', border: 'none' }}>
+          {showDone ? 'Hide' : 'Show'} <ChevronDown size={13} style={{ transform: showDone ? 'rotate(180deg)' : undefined }} />
+        </button>)}
+    </div>
+  )
+}
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -277,7 +389,12 @@ export default function Tasks({ embedded = false }: { embedded?: boolean } = {})
   const isAdmin = user?.role === 'admin' || user?.role === 'staff'
   // Accounts chase invoices, not renewals — that queue belongs to sales.
   const isAccounts = user?.role === 'accounts'
-  const [view, setView] = useState<ViewMode>('kanban')
+  const [view, setViewState] = useState<ViewMode>(() => {
+    try { const v = localStorage.getItem(VIEW_KEY) as ViewMode | null; return v && VIEW_OPTIONS.some((o) => o.value === v) ? v : 'list' } catch { return 'list' }
+  })
+  const setView = (v: ViewMode) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v) } catch { /* private window */ } }
+  const [search, setSearch] = useState('')
+  const [quick, setQuick] = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [leadTypeFilter, setLeadTypeFilter] = useState('')
   const [createOpen, setCreateOpen] = useState<TaskItem['status'] | 'new' | null>(null)
@@ -304,18 +421,22 @@ export default function Tasks({ embedded = false }: { embedded?: boolean } = {})
     onSuccess: () => qc.invalidateQueries({ queryKey: ['all-tasks'] }),
   })
 
-  /* Newest first.
-   *
-   * This was ordered by due date, so a task raised this morning appeared below
-   * one from last week and the thing you had just been given was the hardest
-   * to find. Undated tasks sort with the rest by when they were raised rather
-   * than being swept to the bottom. */
-  const sortedForList = useMemo(
-    () => [...tasks].sort((a, b) => (
-      new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
-    )),
-    [tasks]
-  )
+  const quickAdd = useMutation({
+    mutationFn: (title: string) => api.post('/tasks', { title, priority: 'medium' }),
+    onSuccess: () => { setQuick(''); qc.invalidateQueries({ queryKey: ['all-tasks'] }) },
+  })
+
+  const q = search.trim().toLowerCase()
+  const shown = q ? tasks.filter((t) => [t.title, t.description, t.leadName, t.assignedTo?.name].some((v) => String(v || '').toLowerCase().includes(q))) : tasks
+  const openTasks = tasks.filter((t) => t.status !== 'done')
+  const overdueCount = openTasks.filter((t) => t.dueDate && new Date(t.dueDate) < new Date(new Date().toDateString())).length
+  const todayCount = openTasks.filter((t) => {
+    if (!t.dueDate) return false
+    const start = new Date(new Date().toDateString()).getTime()
+    const d = new Date(t.dueDate).getTime()
+    return d >= start && d < start + 86400000
+  }).length
+  const toggle = (t: TaskItem) => updateTask.mutate({ id: t._id, body: { status: t.status === 'done' ? 'todo' : 'done' } })
 
   return (
     // Standalone, this sits on a white card like Contracts and Units. Embedded
@@ -324,64 +445,72 @@ export default function Tasks({ embedded = false }: { embedded?: boolean } = {})
       className={embedded ? undefined : 'p-5 sm:p-7'}
       style={embedded ? undefined : { background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }}
     >
-      <PageHeader
-        title={embedded ? '' : 'Tasks'}
-        subtitle={isAdmin ? 'All tasks across the team' : 'Tasks assigned to you, and tasks you handed off'}
-        action={
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1 p-1" style={{ background: '#F6F0E4', borderRadius: 999 }}>
-              {VIEW_OPTIONS.map((o) => {
-                const active = view === o.value
-                return (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => setView(o.value)}
-                    style={{
-                      height: 28, padding: '0 14px', borderRadius: 999, border: 'none',
-                      fontSize: 12, fontWeight: 700,
-                      background: active ? 'white' : 'transparent',
-                      color: active ? INK : MUTED,
-                      boxShadow: active ? '0 1px 3px rgba(20,8,31,.10)' : undefined,
-                    }}
-                    className="cursor-pointer transition-colors"
-                  >
-                    {o.label}
-                  </button>
-                )
-              })}
-            </div>
-            <Button onClick={() => setCreateOpen('new')}><Plus size={14} /> New task</Button>
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
+        <div>
+          {!embedded && <h1 style={{ ...HEADING, fontSize: 28, fontWeight: 800, color: INK }}>Tasks</h1>}
+          <div className="flex items-center gap-3 mt-0.5" style={{ fontSize: 13, color: MUTED }}>
+            <span>{openTasks.length} open</span>
+            {overdueCount > 0 && <span style={{ color: '#B91C1C', fontWeight: 700 }}>{overdueCount} overdue</span>}
+            {todayCount > 0 && <span style={{ color: '#B45309', fontWeight: 700 }}>{todayCount} due today</span>}
           </div>
-        }
-      />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex p-0.5" role="tablist" aria-label="View" style={{ background: '#F3F1EC', borderRadius: 10 }}>
+            {VIEW_OPTIONS.map((o) => {
+              const active = view === o.value
+              const Icon = o.icon
+              return (
+                <button key={o.value} type="button" role="tab" aria-selected={active} onClick={() => setView(o.value)} title={o.label}
+                  className="inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                  style={{ height: 30, padding: '0 11px', borderRadius: 8, border: 'none', fontSize: 12.5, fontWeight: 600, background: active ? '#fff' : 'transparent', color: active ? INK : MUTED, boxShadow: active ? '0 1px 2px rgba(20,8,31,.10)' : undefined }}>
+                  <Icon size={14} /><span className="hidden sm:inline">{o.label}</span>
+                </button>
+              )
+            })}
+          </div>
+          <Button onClick={() => setCreateOpen('new')}><Plus size={14} /> New task</Button>
+        </div>
+      </div>
 
-      <div className="flex flex-wrap gap-2 mb-4">
+      {/* Quick add: type and press Enter; details later from the task itself. */}
+      <form onSubmit={(e) => { e.preventDefault(); if (quick.trim() && !quickAdd.isPending) quickAdd.mutate(quick.trim()) }}
+        className="flex items-center gap-2 px-4 mb-3" style={{ height: 46, background: '#fff', border: `1px solid ${LINE}`, borderRadius: 12 }}>
+        <Plus size={16} style={{ color: PURPLE }} />
+        <input value={quick} onChange={(e) => setQuick(e.target.value)} placeholder="Add a task — press Enter" aria-label="Add a task"
+          style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent' }} disabled={quickAdd.isPending} />
+        {quick.trim() && <span style={{ fontSize: 11.5, color: MUTED }}>Enter ↵</span>}
+      </form>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 px-3 flex-1 min-w-[200px] max-w-sm" style={{ height: 34, background: '#fff', border: `1px solid ${LINE}`, borderRadius: 10 }}>
+          <Search size={14} style={{ color: MUTED }} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tasks" aria-label="Search tasks"
+            style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13, background: 'transparent' }} />
+        </div>
         {isAdmin && (
-          <Select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="w-auto">
+          <Select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="w-auto" aria-label="Assignee">
             <option value="">Everyone</option>
-            {assignableUsers.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
+            {user?.id && <option value={user.id}>Mine</option>}
+            {assignableUsers.filter((u) => u._id !== user?.id).map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
           </Select>
         )}
-        <Select value={leadTypeFilter} onChange={(e) => setLeadTypeFilter(e.target.value)} className="w-auto">
+        <Select value={leadTypeFilter} onChange={(e) => setLeadTypeFilter(e.target.value)} className="w-auto" aria-label="Type">
           {LEAD_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </Select>
       </div>
 
       {isLoading ? (
         <Spinner />
-      ) : tasks.length === 0 ? (
-        <Card><CardBody className="text-center py-10 text-sm text-muted-foreground">No tasks match these filters.</CardBody></Card>
       ) : view === 'kanban' ? (
-        <KanbanBoard tasks={tasks} onMove={(id, status) => updateTask.mutate({ id, body: { status } })}>
+        <KanbanBoard tasks={shown} onMove={(id, status) => updateTask.mutate({ id, body: { status } })}>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {KANBAN_COLUMNS.map((col) => {
-              const items = tasks.filter((t) => t.status === col.status)
+              const items = shown.filter((t) => t.status === col.status)
               return (
                 <KanbanColumn key={col.status} col={col} count={items.length} onAddTask={() => setCreateOpen(col.status)}>
                   {items.map((t) => (
                     <KanbanCard key={t._id} task={t} onOpen={setSelectedTask}
-                      onToggleDone={(task) => updateTask.mutate({ id: task._id, body: { status: task.status === 'done' ? 'todo' : 'done' } })} />
+                      onToggleDone={toggle} />
                   ))}
                 </KanbanColumn>
               )
@@ -389,56 +518,9 @@ export default function Tasks({ embedded = false }: { embedded?: boolean } = {})
           </div>
         </KanbanBoard>
       ) : view === 'calendar' ? (
-        <CalendarView tasks={tasks} onOpenTask={setSelectedTask} />
+        <CalendarView tasks={shown} onOpenTask={setSelectedTask} />
       ) : (
-        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,.10)', borderRadius: 18, overflow: 'hidden' }}>
-          <div className="overflow-x-auto">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(20,8,31,.08)', background: '#FBF8F2' }}>
-                  {['Task', 'Type', 'Assigned to', 'Created by', 'Status', 'Due'].map((h) => (
-                    <th key={h} style={{ padding: '12px 16px', fontSize: 10.5, fontWeight: 700, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '.07em', whiteSpace: 'nowrap' }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedForList.map((t) => {
-                  const tone = isDueSoon(t)
-                  const done = t.status === 'done'
-                  const status = STATUS_PILL[t.status]
-                  return (
-                    <tr key={t._id} onClick={() => setSelectedTask(t)}
-                      style={{ borderBottom: '1px solid rgba(20,8,31,.05)' }}
-                      className="cursor-pointer hover:bg-[#FBF8F2] transition-colors">
-                      <td style={{ padding: '13px 16px' }}>
-                        <div className="flex items-center gap-2">
-                          <span title={`${t.priority} priority`}
-                            style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: PRIORITY_DOT[t.priority] || PRIORITY_DOT.low }} />
-                          <span style={{ fontSize: 13.5, fontWeight: 600, color: done ? MUTED : INK, textDecoration: done ? 'line-through' : undefined }}>
-                            {t.title}
-                          </span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '13px 16px' }}>{t.leadName ? <TypePill label={t.leadName} /> : <span style={{ fontSize: 12.5, color: MUTED }}>—</span>}</td>
-                      <td style={{ padding: '13px 16px', fontSize: 13, color: MUTED }}>{t.assignedTo?.name || '—'}</td>
-                      <td style={{ padding: '13px 16px', fontSize: 13, color: MUTED }}>{t.createdByName || '—'}</td>
-                      <td style={{ padding: '13px 16px' }}>
-                        <span style={{ display: 'inline-block', background: status.bg, color: status.fg, borderRadius: 999, padding: '3px 10px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                          {KANBAN_COLUMNS.find((c) => c.status === t.status)?.label}
-                        </span>
-                      </td>
-                      <td style={{ padding: '13px 16px', fontSize: 12.5, whiteSpace: 'nowrap', fontWeight: tone !== 'normal' ? 700 : 500, color: tone === 'overdue' ? '#991B1B' : tone === 'today' ? '#B45309' : MUTED }}>
-                        {t.dueDate ? (/T00:00:00(\.000)?Z$/.test(t.dueDate) ? formatDate(t.dueDate) : formatDateTime(t.dueDate)) : '—'}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ListView tasks={shown} onOpen={setSelectedTask} onToggle={toggle} />
       )}
 
       {createOpen && (
