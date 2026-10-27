@@ -97,6 +97,7 @@ import salesGoalRoutes from './routes/salesGoals.js';
 import agentRoutes from './agents/routes.js';
 import { runAgentTick } from './agents/service.js';
 import leaderboardRoutes from './routes/leaderboard.js';
+import staffAppRoutes from './routes/staffApp.js';
 import myDayRoutes from './routes/myDay.js';
 import leadFollowUpRoutes from './routes/leadFollowUp.js';
 import followUpQueueRoutes from './routes/followUpQueue.js';
@@ -425,6 +426,8 @@ app.use('/api/agents', requireAuth, agentRoutes);
 // Signed in is enough: a board only the manager can see recognises nobody.
 app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
 app.use('/api/my-day', requireAuth, myDayRoutes);
+// The staff phone app's admin dashboard and one-person profile (routes/staffApp.js).
+app.use('/api/staff-app', requireAuth, staffAppRoutes);
 app.use('/api/lead-follow-up', requireAuth, leadFollowUpRoutes);
 // The unified follow-up queue: waiting-on-us, gone-quiet and scheduled
 // follow-ups in one ranked list — services/followUpQueue.js.
