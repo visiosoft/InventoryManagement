@@ -242,3 +242,19 @@ test('who is told about a result, and what it says', async () => {
    assert.deepEqual(run.recipients, ['maker', 'ops']);
    assert.deepEqual(told, [['maker', 'ops']]);
 });
+
+test('a bot set to send a PDF asks for one each run and attaches it to the email', async () => {
+   const mails = [];
+   let asked = '';
+   const run = await runBot({ _id: 'b8', name: 'Leads PDF', kind: 'ai_report', instruction: 'Yesterday\'s leads', attach: 'pdf', emailTo: ['mase@purplebox.ae'] }, { now: MON_0905, deps: {
+      owner: async () => ({ _id: 'u1', role: 'admin' }),
+      ask: async (a) => { asked = a.question; return { answer: '61 leads', grounded: true, files: [{ label: 'Leads (PDF)', path: '/assistant/export?dataset=leads&format=pdf&from=2026-10-25&to=2026-10-25', format: 'pdf' }], charts: [{ type: 'bar', labels: ['Mon'], series: [{ name: 'Leads', values: [61] }] }] }; },
+      fileForEmail: async (f) => ({ filename: 'leads-2026-10-26.pdf', content: Buffer.from('%PDF'), contentType: 'application/pdf', path: f.path }),
+      sendMail: async (m) => mails.push(m),
+      saveRun: async (r) => r,
+   } });
+   assert.match(asked, /Also put the main table in a PDF file/);
+   assert.equal(mails[0].attachments[0].filename, 'leads-2026-10-26.pdf');
+   assert.equal(run.charts.length, 1, 'its chart is kept with the run');
+   assert.equal(run.emailError || '', '');
+});

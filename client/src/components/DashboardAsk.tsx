@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { Sparkles, ArrowRight, Mail, MessageCircle, X, FileText, FileSpreadsheet, Globe } from 'lucide-react'
 import AskForm, { type AskFormSpec } from './AskForm'
 import { TwilioConnectForm } from './ConnectForms'
+import ChartView, { type ChartSpec } from './ChartView'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import EmailCustomersModal from '../pages/customers/EmailCustomersModal'
@@ -39,6 +40,8 @@ type Answer = {
   sources?: { label: string; url: string }[]
   /** A connection to make once before it can do this (SMS: 'twilio'). */
   setup?: string | null
+  /** Charts drawn from the answer's own figures. */
+  charts?: ChartSpec[]
   pdfPath?: string
   quoteId?: string
   contractId?: string
@@ -72,6 +75,9 @@ const TOOL_LABEL: Record<string, string> = {
   email_inbox: 'read the inbox',
   read_email: 'read an email',
   propose_sms: 'prepared a text',
+  make_chart: 'drew a chart',
+  make_file: 'made the file',
+  create_bot: 'set up a bot',
   propose_whatsapp_message: 'prepared a WhatsApp',
   leads_list: 'listed the leads',
   sales_summary: 'read sales from Zoho',
@@ -151,11 +157,11 @@ export default function DashboardAsk() {
     setErr('')
     if (fresh) setQ(question)
     try {
-      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[]; compose?: Compose | null; files?: Answer['files']; options?: string[]; form?: AskFormSpec | null; sources?: Answer['sources']; setup?: string | null }>(
+      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[]; compose?: Compose | null; files?: Answer['files']; options?: string[]; form?: AskFormSpec | null; sources?: Answer['sources']; setup?: string | null; charts?: ChartSpec[] }>(
         '/assistant/ask', { question, history: before.slice(-10), web: Boolean(caps?.web && web) },
       )
       if (!before.length) qc.invalidateQueries({ queryKey: ['assistant-recent'] })
-      setAnswer({ content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [], files: data.files || [], options: data.options || [], form: data.form || null, sources: data.sources || [], setup: data.setup || null })
+      setAnswer({ content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [], files: data.files || [], options: data.options || [], form: data.form || null, sources: data.sources || [], setup: data.setup || null, charts: data.charts || [] })
       setThread([...before, { role: 'user' as const, content: question }, { role: 'assistant' as const, content: data.answer }].slice(-12))
       setQ('')
       // Asking to message a group IS asking for the composer, so it opens
@@ -317,6 +323,8 @@ export default function DashboardAsk() {
           }}>
             {withBold(answer.content)}
           </p>
+
+          {(answer.charts ?? []).map((c, i) => <ChartView key={i} chart={c} />)}
 
           {answer.setup === 'twilio' && (
             <div style={{ marginTop: 12, border: `1px solid ${LINE}`, borderRadius: 12, padding: '12px 14px' }}><TwilioConnectForm /></div>

@@ -106,6 +106,27 @@ router.get('/export', async (req, res) => {
    }
 });
 
+/** A table the assistant put in a file (make_file): its maker or an admin downloads it. */
+router.get('/file/:id', async (req, res) => {
+   try {
+      const { GeneratedFile } = await import('../models/index.js');
+      const f = await GeneratedFile.findById(req.params.id).lean().catch(() => null);
+      if (!f) return res.status(404).json({ error: 'That file has expired — ask for it again' });
+      if (f.user && String(f.user) !== String(req.user?.id) && req.user?.role !== 'admin') return res.status(403).json({ error: 'Not yours' });
+      const base = `${f.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date(f.createdAt).toISOString().slice(0, 10)}`;
+      if (req.query.format === 'excel') {
+         res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+         res.set('Content-Disposition', `attachment; filename="${base}.xlsx"`);
+         return res.send(await tableWorkbook(f));
+      }
+      res.set('Content-Type', 'application/pdf');
+      res.set('Content-Disposition', `inline; filename="${base}.pdf"`);
+      res.send(await tablePdf(f));
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
 router.post('/transcribe', upload.single('audio'), async (req, res) => {
    try {
       if (!(await allowed(req))) return res.status(403).json({ error: 'The assistant is not enabled for your role' });

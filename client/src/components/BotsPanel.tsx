@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bot as BotIcon, ChevronLeft, FileSpreadsheet, FileText, Globe, LayoutGrid, List as ListIcon, Loader2, Mail, MessageCircle, Pencil, Play, Plus, Pause, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { TwilioConnectForm } from './ConnectForms'
+import ChartView, { type ChartSpec } from './ChartView'
 import { SlideOver } from './ui'
 
 /**
@@ -25,11 +26,11 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 type Cadence = 'manual' | 'daily' | 'weekly' | 'monthly'
 type RunItem = { _id: string; channel?: 'email' | 'whatsapp'; phone?: string; reason?: string; name: string; email: string; unit: string; endDate: string; subject: string; body: string; status: 'pending' | 'sent' | 'skipped' | 'failed'; error?: string }
 type Run = { _id: string; createdAt: string; status: 'ok' | 'waiting' | 'failed'; summary: string; answer: string; sources: { label: string; url: string }[]; items: RunItem[]; error: string
-  trigger?: 'schedule' | 'manual' | 'chat'; question?: string; emailedTo?: string[]; emailError?: string; files?: { label: string; path: string; format: string }[]; setup?: string; pending?: { id: string; kind: string; summary: string[]; expiresAt: string } | null }
+  trigger?: 'schedule' | 'manual' | 'chat'; question?: string; emailedTo?: string[]; emailError?: string; files?: { label: string; path: string; format: string }[]; charts?: ChartSpec[]; setup?: string; pending?: { id: string; kind: string; summary: string[]; expiresAt: string } | null }
 export type BotRow = {
   _id: string; name: string; kind: 'ai_report' | 'contract_emails' | 'quiet_leads'; icon: string
   instruction: string; web: boolean; days: number; subject: string; message: string
-  quietDays: number; maxQuietDays: number; templateName: string; templateLanguage: string; emailTo?: string[]
+  quietDays: number; maxQuietDays: number; templateName: string; templateLanguage: string; emailTo?: string[]; attach?: '' | 'pdf' | 'excel'
   sendMode: 'review' | 'auto'; dailyCap: number
   schedule: { cadence: Cadence; hour: number; dayOfWeek: number; dayOfMonth: number }
   showOnDashboard: boolean; enabled: boolean; scheduleLabel: string; lastRun: Run | null; runningSince?: string | null
@@ -169,6 +170,7 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
           <button type="button" style={btn(true)} onClick={() => setChoosing(true)}><Plus size={14} /> New bot</button>
         </div>
       )}
+      {!pinnedOnly && <DescribeBot onMade={refresh} />}
       {pinnedOnly && (
         <div className="mb-3 flex items-center gap-2" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED }}>
           <BotIcon size={13} /> Bots
@@ -261,6 +263,7 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview, onDel
 
       {bot.kind === 'ai_report' && r?.answer && (
         <div style={{ marginTop: 12 }}>
+          {(r.charts?.length ?? 0) > 0 && <ChartView chart={r.charts![0]} />}
           <div style={{ fontSize: 13, lineHeight: 1.55, color: INK, whiteSpace: 'pre-wrap', maxHeight: open ? 'none' : 168, overflow: 'hidden' }}>{withBold(r.answer)}</div>
           {r.answer.length > 360 && (
             <button type="button" onClick={() => setOpen((v) => !v)} style={{ fontSize: 12, fontWeight: 600, color: PURPLE_INK, background: 'none', border: 0, padding: 0, marginTop: 4, cursor: 'pointer' }}>
@@ -365,6 +368,16 @@ function BotEditor({ draft, onClose, onSaved }: { draft: Draft; onClose: () => v
                 placeholder="you@purplebox.ae, manager@purplebox.ae" aria-label="Email the result to" style={fieldStyle} />
               <span style={{ display: 'block', fontSize: 11.5, color: MUTED, marginTop: 4 }}>Sent from the company Gmail after every run — scheduled or Run now.</span>
             </label>
+            {(d.emailTo?.length ?? 0) > 0 && (
+              <div>
+                <span style={label}>Attach the main table</span>
+                <div className="flex gap-2">
+                  {([['', 'No file'], ['pdf', 'PDF'], ['excel', 'Excel']] as const).map(([v, t]) => (
+                    <div key={v} role="button" tabIndex={0} style={seg((d.attach ?? '') === v)} onClick={() => set({ attach: v })}>{t}</div>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         ) : d.kind === 'quiet_leads' ? (
           <QuietLeadsFields d={d} set={set} seg={seg} />
@@ -696,6 +709,7 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
                       </div>
                     )}
                   </div>
+                  {(r.charts ?? []).map((c, i) => <ChartView key={i} chart={c} />)}
                   {(r.files?.length ?? 0) > 0 && (
                     <div className="flex flex-wrap gap-2" style={{ marginTop: 8 }}>
                       {r.files!.map((f) => (
@@ -814,4 +828,41 @@ async function downloadFile(f: { label: string; path: string; format: string }) 
     }
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
   } catch { /* the button stays; a retry is one click */ }
+}
+
+/* Describe a bot in a sentence; the assistant sets it up for a Confirm. */
+function DescribeBot({ onMade }: { onMade: () => void }) {
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [reply, setReply] = useState<{ answer: string; pending: Run['pending'] } | null>(null)
+  const [err, setErr] = useState('')
+  async function ask(e: React.FormEvent) {
+    e.preventDefault()
+    const text = q.trim()
+    if (!text || busy) return
+    setBusy(true); setErr(''); setReply(null)
+    try {
+      const { data } = await api.post('/assistant/ask', { question: `Set up a new bot for me: ${text}`, history: [] })
+      setReply({ answer: data.answer, pending: data.pending || null })
+      setQ('')
+    } catch (e2) { setErr(apiError(e2)) } finally { setBusy(false) }
+  }
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <form onSubmit={ask} className="flex items-center gap-2" style={{ border: `1px solid ${FIELD}`, borderRadius: 999, padding: '6px 6px 6px 16px', background: '#fff' }}>
+        <span aria-hidden style={{ fontSize: 16 }}>✨</span>
+        <input value={q} onChange={(e) => setQ(e.target.value)} disabled={busy} aria-label="Describe a bot"
+          placeholder={busy ? 'Setting it up…' : 'Describe a bot — e.g. "every day at 9 email me a PDF of yesterday\'s leads"'}
+          style={{ flex: 1, minWidth: 0, border: 0, outline: 'none', fontSize: 13.5, background: 'transparent' }} />
+        <button type="submit" disabled={busy || !q.trim()} style={{ ...btn(true), borderRadius: 999 }}>{busy ? <Loader2 size={14} className="animate-spin" /> : 'Create'}</button>
+      </form>
+      {err && <div style={{ fontSize: 12.5, color: '#B91C1C', marginTop: 6 }}>{err}</div>}
+      {reply && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ background: '#F4F2F7', borderRadius: 14, padding: '10px 14px', fontSize: 13.5, whiteSpace: 'pre-wrap', maxWidth: 720 }}>{withBold(reply.answer)}</div>
+          {reply.pending && <ConfirmCard pending={reply.pending} onDone={onMade} />}
+        </div>
+      )}
+    </div>
+  )
 }

@@ -242,6 +242,7 @@ async function defaultDeps() {
          await markFirstResponse(phoneNormalized).catch(() => {});
       },
       saveRun: (doc) => BotRun.create(doc),
+      fileForEmail: async (file, ctx) => (await import('./assistant/fileBuffers.js')).fileForEmail(file, ctx),
       setSchedule: (id, schedule) => Bot.updateOne({ _id: id }, { $set: { schedule } }),
       // A browser push to each recipient; the bell in the app reads the run itself.
       notify: async (bot, run) => {
@@ -308,13 +309,14 @@ export async function runBot(bot, { trigger = 'manual', now = new Date(), deps, 
       if (bot.kind === 'ai_report') {
          const owner = await d.owner(bot.createdBy);
          const out = await d.ask({
-            question: `${bot.instruction}\n\n(This is a scheduled report: answer in full now, with no questions back. Short lines, the figures first.)`,
+            question: `${bot.instruction}\n\n(This is a scheduled report: answer in full now, with no questions back. Short lines, the figures first.${bot.attach ? ` Also put the main table in a ${bot.attach === 'pdf' ? 'PDF' : 'Excel'} file — export_file when it is one of its lists, otherwise make_file.` : ''})`,
             user: owner ? { id: String(owner._id), name: owner.name, role: owner.role } : { role: 'admin' },
             web: Boolean(bot.web), now, rounds: 14,
          });
          run.answer = String(out?.answer || '').trim();
          run.sources = (out?.sources || []).slice(0, 8);
          run.files = (out?.files || []).slice(0, 4);
+         run.charts = (out?.charts || []).slice(0, 4);
          run.summary = run.answer.split('\n').find((l) => l.trim())?.slice(0, 160) || 'No answer';
          if (out?.grounded === false) run.status = 'failed';
          // To the team, not customers, so no Confirm: it goes out with the run.
@@ -322,7 +324,13 @@ export async function runBot(bot, { trigger = 'manual', now = new Date(), deps, 
          if (to.length && run.answer && run.status === 'ok') {
             try {
                const mail = reportEmail(bot, run, { now });
-               await d.sendMail({ to: to.join(', '), ...mail, context: { kind: 'report', label: bot.name, sentBy: 'bot' } });
+               // The file it was asked for rides along as an attachment.
+               const attachments = [];
+               for (const f of bot.attach ? run.files : []) {
+                  try { attachments.push(await d.fileForEmail(f, { user: owner ? { id: String(owner._id), role: owner.role } : { role: 'admin' } })); } catch (e) { run.emailError = `Sent without the file: ${e.message}`; }
+               }
+               if (bot.attach && !run.files.length) run.emailError = 'Sent without a file: the answer did not make one';
+               await d.sendMail({ to: to.join(', '), ...mail, ...(attachments.length ? { attachments } : {}), context: { kind: 'report', label: bot.name, sentBy: 'bot' } });
                run.emailedTo = to;
             } catch (e) {
                run.emailError = String(e.message || e).slice(0, 300);
@@ -520,7 +528,7 @@ export async function askBot(bot, question, { user, deps } = {}) {
       web: Boolean(bot.web), rounds: 12,
    });
    const answer = String(out?.answer || '').trim();
-   const saved = await d.saveRun({ bot: bot._id, trigger: 'chat', question: q, recipients: recipientsFor(bot, 'chat', user?.id || user?._id), status: out?.grounded === false ? 'failed' : 'ok', summary: answer.split('\n')[0].slice(0, 160), answer, sources: (out?.sources || []).slice(0, 8), items: [], pending: out?.pending || null, setup: out?.setup || '', files: (out?.files || []).slice(0, 4) });
+   const saved = await d.saveRun({ bot: bot._id, trigger: 'chat', question: q, charts: (out?.charts || []).slice(0, 4), recipients: recipientsFor(bot, 'chat', user?.id || user?._id), status: out?.grounded === false ? 'failed' : 'ok', summary: answer.split('\n')[0].slice(0, 160), answer, sources: (out?.sources || []).slice(0, 8), items: [], pending: out?.pending || null, setup: out?.setup || '', files: (out?.files || []).slice(0, 4) });
    if (d.notify) await d.notify(bot, saved).catch(() => null);
    return saved;
 }

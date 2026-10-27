@@ -2863,6 +2863,8 @@ const botSchema = new Schema({
   showOnDashboard: { type: Boolean, default: true },
   // ai_report: also email each result to these people (the team, not customers).
   emailTo: { type: [String], default: [] },
+  // ai_report: make the main table a file each run and attach it to the email.
+  attach: { type: String, enum: ['', 'pdf', 'excel'], default: '' },
   // Told when a scheduled run has a result, as well as whoever made the bot.
   notify: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] },
   enabled: { type: Boolean, default: true },
@@ -2908,6 +2910,8 @@ const botRunSchema = new Schema({
   emailError: { type: String, default: '' },
   // PDF or Excel downloads the answer made (the same table it counted).
   files: { type: [{ _id: false, label: String, path: String, format: String }], default: [] },
+  // Charts the answer drew from its own figures: { type, title, labels, series }.
+  charts: { type: [Schema.Types.Mixed], default: [] },
   // Who is told about this result, and who has seen it (the bell's unread).
   recipients: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [], index: true },
   seenBy: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] },
@@ -2920,6 +2924,19 @@ const botRunSchema = new Schema({
 }, { timestamps: true });
 botRunSchema.index({ bot: 1, createdAt: -1 });
 export const BotRun = model('BotRun', botRunSchema);
+
+/* A table the assistant put in a file (PDF or Excel) — any table, not only
+   the built-in lists. Kept 60 days so a download link in a bot's history or
+   an emailed report keeps working; then it goes by itself. */
+const generatedFileSchema = new Schema({
+  user: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  title: { type: String, default: '' },
+  subtitle: { type: String, default: '' },
+  columns: { type: [{ _id: false, label: String, numeric: Boolean }], default: [] },
+  rows: { type: [Schema.Types.Mixed], default: [] },
+  createdAt: { type: Date, default: Date.now, expires: 60 * 24 * 3600 },
+});
+export const GeneratedFile = model('GeneratedFile', generatedFileSchema);
 export const Contract = model('Contract', contractSchema);
 export const Quote = model('Quote', quoteSchema);
 export const Invoice = model('Invoice', invoiceSchema);

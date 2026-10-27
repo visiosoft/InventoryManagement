@@ -6,6 +6,7 @@ import { toolDefinitions, toolByName } from './tools.js';
 import { PROPOSAL_TOOLS, ACTION_TOOLS } from './actions.js';
 // Registers the staff-app tools (follow-ups, chats, invoices, Zoho, sending) on import.
 import './staffTools.js';
+import './makeTools.js';
 
 /**
  * The assistant in the corner of every page.
@@ -36,7 +37,8 @@ const RULES = `RULES YOU CANNOT BREAK:
 - Buttons to the relevant pages — a customer, a contract, a chat — are attached to your answer automatically. You may say "open it below". Do not write URLs yourself.
 - Booking a unit, making a quotation or raising an invoice works like the booking form. First look up what you can (the customer or lead by name or phone, which units of the size are free and their prices). Then, if anything is still missing, show a form with ask_details — never a numbered list of questions — with every value you already know filled in: for a booking or quotation the customer's name and phone, the unit size (a select of the free sizes), the start date (today unless they said), how long in months (or the end date), any discount (optional) and send by (WhatsApp, email or just create it); for an invoice which contract, what for, the amount and the due date. When the answers come back, check them, look up anything new, and prepare it in the same turn and tell them to press Confirm. Ask again with a form only for what is still wrong or missing.
 - When your message asks a question with a few set answers, end it with one line exactly like: Options: 25 sq ft | 50 sq ft | 100 sq ft — at most 6 short answers, separated by |. They become buttons, so leave them out of the rest of the message.
-- You can make a PDF or Excel file of a list (leads, expiring contracts, tasks, free units, calls). When someone asks for a file, PDF, Excel, export or printout, make it — the download button appears under your answer; say so in one line. Never say you cannot make files.
+- You can make a PDF or Excel file of a list (leads, expiring contracts, tasks, free units, calls) with export_file, and of any other table from this conversation with make_file. You can draw a bar, line or pie chart with make_chart. When someone asks for a file, PDF, Excel, export, printout, graph or chart, make it — the download button or chart appears under your answer; say so in one line. Never say you cannot make files or charts. Copy every figure in them exactly from tool results.
+- You can set up a new scheduled bot with create_bot when someone asks for one ("every day send me…"); "me" is the person asking.
 - When the web is switched on you may search the internet with web_search for anything outside the system (competitors, market prices, news). Keep what came from the web apart from what came from the system, and name the source. When it is off and the question needs the internet, say they can switch on Web.
 - Lead housekeeping happens straight away when asked: a new lead, a follow-up date, a site visit, a lead's stage, a note.
 - Anything that reaches a customer or moves money is only prepared: a WhatsApp message, an email, a quotation, a contract, an invoice, sending an invoice, a payment, extending a contract, a template. When you have prepared one, say so in a line and tell them to press Confirm in the card. Never say it has been created, booked, reserved, signed or sent — only a person's Confirm does that, and a contract is a draft until it is signed.
@@ -80,6 +82,28 @@ export function figuresGrounded(answer, toolResults) {
       if (!haystack.includes(n)) loose.push(raw);
    }
    return { ok: loose.length === 0, loose };
+}
+
+/**
+ * Charts and made files carry the model's numbers: each is checked against
+ * what the other tools returned (and the question itself), like the answer.
+ * Returns the charts that pass, the made files that do not, and how many fell.
+ */
+export function checkMade(results, question = '') {
+   const madeBy = ['make_chart', 'make_file'];
+   const evidence = [...results.filter((r) => !madeBy.includes(r.tool)), question];
+   // Spaced, not comma-joined: "61,74" would read as one number with a thousands comma.
+   const numbersIn = (rows) => rows.flat(2).filter((v) => typeof v === 'number').join(' ');
+   const charts = [];
+   const droppedFiles = [];
+   for (const r of results) {
+      if (r.tool === 'make_chart' && r.result?.chart) {
+         if (figuresGrounded(numbersIn(r.result.chart.series.map((x) => x.values)), evidence).ok) charts.push(r.result.chart);
+         else droppedFiles.push(null);
+      }
+      if (r.tool === 'make_file' && r.result?.file && !figuresGrounded(numbersIn(r.result.table.rows), evidence).ok) droppedFiles.push(r.result.generatedFileId);
+   }
+   return { charts, droppedFiles: droppedFiles.filter(Boolean), dropped: droppedFiles.length };
 }
 
 /** What the person is looking at in the staff app, so "send her the quote" or
@@ -275,6 +299,19 @@ export async function askAssistant({ question, history = [], siteId = null, user
       filled in. */
    /* Files made for this answer: download buttons, built from the tool
       result, never from the model. */
+   /* Charts and made files carry the model's numbers: each is checked against
+      what the other tools returned (and the question itself), like the answer.
+      One that does not match is dropped, and the answer says so. */
+   const { charts, droppedFiles, dropped } = checkMade(results, text);
+   for (const r of results) {
+      if (r.tool === 'make_file' && droppedFiles.includes(r.result?.generatedFileId)) {
+         r.result.file = null;
+         const { GeneratedFile } = await import('../../models/index.js');
+         await GeneratedFile.deleteOne({ _id: r.result.generatedFileId }).catch(() => null);
+      }
+   }
+   if (dropped) content = `${content}\n\n(${dropped === 1 ? 'A chart or file was' : `${dropped} charts or files were`} left out: a figure in it did not match the data.)`;
+
    const files = results.map((r) => r.result?.file).filter((f) => f?.path).slice(0, 4)
       .map((f) => ({ label: String(f.label || 'Download').slice(0, 60), path: String(f.path), format: f.format === 'excel' ? 'excel' : 'pdf' }));
 
@@ -309,5 +346,5 @@ export async function askAssistant({ question, history = [], siteId = null, user
       (SMS through Twilio): the page shows its own form for it. */
    const setup = results.find((r) => r.result?.setup)?.result.setup || null;
 
-   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card, files, form, setup, sources: sources.slice(0, 6), options: pending || form ? [] : options };
+   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card, files, charts: charts.slice(0, 4), form, setup, sources: sources.slice(0, 6), options: pending || form ? [] : options };
 }

@@ -39,6 +39,7 @@ export function cleanBot(b = {}, prev = {}) {
       },
       showOnDashboard: Boolean(b.showOnDashboard ?? prev.showOnDashboard ?? true),
       emailTo: cleanEmails(b.emailTo ?? prev.emailTo ?? []),
+      attach: ['pdf', 'excel'].includes(b.attach ?? prev.attach) ? (b.attach ?? prev.attach) : '',
       notify: [...new Set((Array.isArray(b.notify ?? prev.notify) ? (b.notify ?? prev.notify) : []).map(String).filter((id) => /^[0-9a-f]{24}$/i.test(id)))].slice(0, 20),
       enabled: Boolean(b.enabled ?? prev.enabled ?? true),
    };

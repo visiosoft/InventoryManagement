@@ -33,6 +33,8 @@ async function setup(page: import('@playwright/test').Page) {
     if (path === '/api/bots/recommended') return route.fulfill({ status: 201, json: { added: ['Morning summary', 'Money check'] } })
     if (path === '/api/bots' && req.method() === 'POST') return route.fulfill({ status: 201, json: { bot: {} } })
     if (path === '/api/bots/runs/r1/send') return route.fulfill({ json: { sent: 1, run: { ...RUN, items: [{ ...RUN.items[0], status: 'sent' }, RUN.items[1]] } } })
+    if (path === '/api/assistant/ask') return route.fulfill({ json: { answer: 'Ready — press Confirm to set it up.', grounded: true, tools: [{ name: 'create_bot', ok: true }], links: [], pending: { id: 'p9', kind: 'create_bot', summary: ['New bot: 📄 Leads PDF', 'Runs: Daily 09:00'], expiresAt: new Date(Date.now() + 9e5).toISOString() } } })
+    if (path === '/api/assistant/confirm') return route.fulfill({ json: { ok: true, message: 'Bot “Leads PDF” is set up.' } })
     if (path === '/api/bots/runs/r1/skip') return route.fulfill({ json: { run: RUN } })
     if (path === '/api/bots/b2/run') return route.fulfill({ status: 202, json: { running: true } })
     if (path === '/api/bots/b2/ask') { const body = JSON.parse(req.postData() || '{}'); BOTS[1].lastRun = { _id: 'c1', createdAt: new Date().toISOString(), trigger: 'chat', question: body.question, status: 'ok', summary: '', answer: 'Done — Competitor watch now runs daily 20:00.', sources: [], items: [], error: '' }; CHATS.push(BOTS[1].lastRun); return route.fulfill({ json: { run: BOTS[1].lastRun } }) }
@@ -163,4 +165,15 @@ test('a report bot can email its result to the team', async ({ page }) => {
   await expect.poll(() => calls.filter((c) => c.method === 'POST' && c.path === '/api/bots').length).toBe(1)
   const body = calls.find((c) => c.method === 'POST' && c.path === '/api/bots')!.body as Record<string, unknown>
   expect(body.emailTo).toEqual(['mase@purplebox.ae', 'ops@purplebox.ae'])
+})
+
+test('a bot described in a sentence is set up after a Confirm', async ({ page }) => {
+  const calls = await setup(page)
+  await page.goto('/bots')
+  await page.getByLabel('Describe a bot').fill('every day at 9 email me a PDF of yesterday\'s leads')
+  await page.getByRole('button', { name: 'Create' }).click()
+  await expect(page.getByText('New bot: 📄 Leads PDF')).toBeVisible()
+  await page.getByRole('button', { name: 'Confirm' }).click()
+  await expect(page.getByText('Bot “Leads PDF” is set up.')).toBeVisible()
+  expect(calls.length).toBeGreaterThan(0)
 })

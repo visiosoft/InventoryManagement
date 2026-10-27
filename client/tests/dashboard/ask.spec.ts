@@ -142,3 +142,26 @@ test('details come as boxes the AI filled in; the answers go back as the next me
   expect(sent[1].web).toBe(true)
   await expect(page.getByRole('link', { name: /Rival Storage prices/ })).toHaveAttribute('href', 'https://rival.example/prices')
 })
+
+test('a chart drawn from the answer\'s own figures shows under it', async ({ page }) => {
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/auth/me') return route.fulfill({ json: { user: { id: 'u1', name: 'Mase', role: 'admin', permissions: [] } } })
+    if (path === '/api/assistant/capabilities') return route.fulfill({ json: { enabled: true, allowed: true } })
+    if (path === '/api/assistant/recent') return route.fulfill({ json: { recent: [] } })
+    if (path === '/api/assistant/ask') return route.fulfill({ json: { answer: 'Leads per day, last 3 days.', grounded: true, links: [], tools: [{ name: 'make_chart', ok: true }], charts: [{ type: 'bar', title: 'Leads per day', labels: ['Sat', 'Sun', 'Mon'], series: [{ name: 'Leads', values: [44, 52, 61] }] }] } })
+    if (path === '/api/reports/stats') return route.fulfill({ status: 500, json: {} })
+    return route.fulfill({ json: /tasks|expiring|sites|list|conversations|messages|users/.test(path) ? [] : { items: [], total: 0, groups: [], reps: [], handovers: [], byFloor: [] } })
+  })
+  await page.addInitScript(() => {
+    localStorage.setItem('pb_token', 't')
+    localStorage.setItem('pb_user', JSON.stringify({ id: 'u1', name: 'Mase', role: 'admin', permissions: [] }))
+  })
+  await page.goto('/dashboard')
+  await page.getByPlaceholder(/Ask anything/).fill('chart leads per day')
+  await page.getByPlaceholder(/Ask anything/).press('Enter')
+  const chart = page.getByLabel('Chart: Leads per day')
+  await expect(chart).toBeVisible()
+  await expect(chart.locator('.recharts-bar-rectangle')).toHaveCount(3)
+  await expect(chart.getByRole('button', { name: 'Download chart' })).toBeVisible()
+})
