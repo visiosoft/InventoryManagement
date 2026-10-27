@@ -64,6 +64,7 @@ const TOOL_LABEL: Record<string, string> = {
   web_search: 'searched the web',
   past_checkout: 'checked who is past check-out',
   conversion_review: 'reviewed why leads convert or not',
+  rep_scorecard: 'scored each sales rep',
   leads_list: 'listed the leads',
   sales_summary: 'read sales from Zoho',
   receivables: 'read receivables from Zoho',

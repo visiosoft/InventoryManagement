@@ -342,6 +342,11 @@ export const RECOMMENDED_BOTS = [
       schedule: { cadence: 'weekly', hour: 8, dayOfWeek: 1, dayOfMonth: 1 },
    },
    {
+      name: 'Sales team performance', icon: '🏆', kind: 'ai_report',
+      instruction: 'Sales team update for the admin. For each sales rep, over the last 7 days and yesterday: leads given, contacted, quotations sent, site visits, won and win rate; median time to the first WhatsApp reply and the share answered within 15 minutes; leads never answered; chats waiting on them right now; overdue follow-ups; calls made and answered; contracts closed and their value. Then: who did best and why, who needs help and with what (one concrete action each), and anything that changed a lot since the week before. Only say what the figures show; name a rep only beside their own figures.',
+      schedule: { cadence: 'daily', hour: 18, dayOfWeek: 1, dayOfMonth: 1 },
+   },
+   {
       name: 'Improvement check', icon: '🛠️', kind: 'ai_report',
       instruction: 'Daily improvement check for the admin. Look at yesterday and the last 7 days: how fast we first replied on WhatsApp and how many leads were never answered; leads waiting for a reply now; follow-ups that are overdue; quotations sent but not followed up; bookings and contracts made; calls made by each rep; contracts past check-out. Then list the three to five most important things to improve today, each with the number behind it and who should act. Only say what the figures show.',
       schedule: { cadence: 'daily', hour: 9, dayOfWeek: 1, dayOfMonth: 1 },

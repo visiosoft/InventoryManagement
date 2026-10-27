@@ -846,6 +846,29 @@ tool({
 });
 
 tool({
+   name: 'rep_scorecard',
+   description: 'Each sales rep over the last N days (default 7): leads given, contacted, quotations, site visits, won, lost, win rate; median minutes to the first WhatsApp reply and the share answered within 15 minutes; leads never answered; chats waiting on them right now; follow-ups overdue. Admins only. Use for "how is the sales team doing", "rep performance", "who is slow to reply". For calls use calls_summary; for contracts and deal value use the rep performance report.',
+   parameters: { type: 'object', properties: { days: { type: 'number', description: 'How far back, default 7' } } },
+   async run({ days = 7 } = {}, { user, now = new Date() } = {}) {
+      if (!ADMIN_ROLES.includes(user?.role)) return { error: 'The team scorecard is for admins' };
+      const { scorecard } = await import('../repScorecard.js');
+      const n = Math.min(90, Math.max(1, Number(days) || 7));
+      const since = new Date(now.getTime() - n * 864e5);
+      const fields = 'status phoneNormalized followUpAt owner createdAt';
+      const [periodLeads, openLeads] = await Promise.all([
+         Lead.find({ createdAt: { $gte: since } }).select(fields).populate('owner', 'name').lean(),
+         Lead.find({ status: { $nin: ['won', 'lost', 'already_customer'] }, createdAt: { $gte: new Date(now.getTime() - 60 * 864e5) } }).select(fields).populate('owner', 'name').lean(),
+      ]);
+      const phones = [...new Set([...periodLeads, ...openLeads].map((l) => l.phoneNormalized).filter(Boolean))];
+      const msgs = phones.length ? await WhatsAppMessage.find({ phoneNormalized: { $in: phones }, occurredAt: { $gte: new Date(now.getTime() - 60 * 864e5) } })
+         .select('phoneNormalized direction type text occurredAt').sort({ occurredAt: 1 }).lean() : [];
+      const byPhone = new Map();
+      for (const m of msgs) { if (!byPhone.has(m.phoneNormalized)) byPhone.set(m.phoneNormalized, []); byPhone.get(m.phoneNormalized).push(m); }
+      return { period: `last ${n} days`, reps: scorecard({ periodLeads, openLeads, messagesByPhone: byPhone, now }), links: [link('Leads', '/leads')] };
+   },
+});
+
+tool({
    name: 'leads_list',
    description: 'Every lead in a date range with name, phone, status, source, owner and size — optionally only one status, source or owner. Use to list or look through leads ("all leads from yesterday", "Randa\'s leads this week", "leads still new"). For a PDF or Excel of them use export_file.',
    parameters: {
