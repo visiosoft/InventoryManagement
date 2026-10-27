@@ -222,8 +222,8 @@ export function ZohoSalesCard() {
     <div className="space-y-3">
       <div style={{ ...CARD, padding: 0 }} className="grid grid-cols-3">
         {tiles.map(([label, v], i) => (
-          <div key={label} style={{ padding: '14px 18px', borderLeft: i ? '1px solid rgba(20,8,31,0.08)' : undefined }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: INK }}>{v}</div>
+          <div key={label} style={{ padding: '12px 14px', minWidth: 0, borderLeft: i ? '1px solid rgba(20,8,31,0.08)' : undefined }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: INK, whiteSpace: 'nowrap' }}>{v}</div>
             <div style={{ fontSize: 12.5, color: MUTED }}>{label}</div>
           </div>
         ))}

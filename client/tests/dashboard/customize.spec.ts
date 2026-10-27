@@ -41,16 +41,17 @@ async function open(page: Page) {
 /** The customize frame for a card, found by its label. */
 const frame = (page: Page, label: string) => page.locator('div[style*="dashed"]').filter({ has: page.getByText(label, { exact: true }) }).first()
 
-test('half-width cards sit side by side; full-width ones span the row', async ({ page }) => {
+test('half-width cards fill two columns with no hole; full-width ones span the row', async ({ page }) => {
   await open(page)
-  const units = await frame(page, 'Units by size').boundingBox()
-  const floor = await frame(page, 'Floor occupancy').boundingBox()
-  expect(units && floor).toBeTruthy()
-  // Side by side: the same row, the second to the right of the first.
-  expect(Math.abs(units!.y - floor!.y)).toBeLessThan(4)
-  expect(floor!.x).toBeGreaterThan(units!.x + units!.width - 4)
-  const coverage = await frame(page, 'Who is on now').boundingBox()
-  expect(coverage!.width).toBeGreaterThan(units!.width * 1.8)
+  const halves = await Promise.all(['Units by size', 'Floor occupancy', 'Latest team tasks'].map((l) => frame(page, l).boundingBox()))
+  const coverage = (await frame(page, 'Who is on now').boundingBox())!
+  for (const b of halves) expect(b!.width).toBeLessThan(coverage.width * 0.55)
+  // Two columns: some half cards on the left, some on the right.
+  const xs = [...new Set(halves.map((b) => Math.round(b!.x)))]
+  expect(xs.length).toBe(2)
+  // Each column fills from the top: a card under another starts right below it, not after a hole.
+  const left = halves.filter((b) => Math.round(b!.x) === Math.min(...xs)).sort((a, b) => a!.y - b!.y)
+  for (let k = 1; k < left.length; k++) expect(left[k]!.y - (left[k - 1]!.y + left[k - 1]!.height)).toBeLessThan(30)
 })
 
 test('a card can be made half width, and back, and it is saved', async ({ page }) => {
