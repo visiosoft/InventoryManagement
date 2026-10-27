@@ -7,6 +7,7 @@ import { PROPOSAL_TOOLS, ACTION_TOOLS } from './actions.js';
 // Registers the staff-app tools (follow-ups, chats, invoices, Zoho, sending) on import.
 import './staffTools.js';
 import './makeTools.js';
+import './pricingTools.js';
 
 /**
  * The assistant in the corner of every page.

@@ -435,6 +435,11 @@ export const RECOMMENDED_BOTS = [
       schedule: { cadence: 'daily', hour: 9, dayOfWeek: 1, dayOfMonth: 1 },
    },
    {
+      name: 'Smart pricing', icon: '💰', kind: 'ai_report', web: true,
+      instruction: 'Weekly pricing review. For each unit size and floor: occupancy, free units, list price per 4 weeks, what tenants actually pay, and how many people asked for that size in the last 30 days. Look up competitor prices in Dubai for the same sizes. Then suggest price changes: raise where a size is nearly full and in demand, hold or offer a first-month discount where it sits empty, each with the figures behind it and the expected effect, best first. End by saying the admin can reply in the chat of this bot ("apply the 50 sq ft change") to have it prepared for Confirm. Draw a chart of occupancy by size.',
+      schedule: { cadence: 'weekly', hour: 9, dayOfWeek: 1, dayOfMonth: 1 },
+   },
+   {
       name: 'Improvement check', icon: '🛠️', kind: 'ai_report',
       instruction: 'Daily improvement check for the admin. Look at yesterday and the last 7 days: how fast we first replied on WhatsApp and how many leads were never answered; leads waiting for a reply now; follow-ups that are overdue; quotations sent but not followed up; bookings and contracts made; calls made by each rep; contracts past check-out. Then list the three to five most important things to improve today, each with the number behind it and who should act. Only say what the figures show.',
       schedule: { cadence: 'daily', hour: 9, dayOfWeek: 1, dayOfMonth: 1 },

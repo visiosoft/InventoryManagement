@@ -78,6 +78,8 @@ const TOOL_LABEL: Record<string, string> = {
   make_chart: 'drew a chart',
   make_file: 'made the file',
   create_bot: 'set up a bot',
+  pricing_review: 'reviewed prices against demand',
+  propose_price_change: 'prepared a price change',
   propose_whatsapp_message: 'prepared a WhatsApp',
   leads_list: 'listed the leads',
   sales_summary: 'read sales from Zoho',

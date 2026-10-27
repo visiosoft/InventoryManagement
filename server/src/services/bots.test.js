@@ -104,13 +104,13 @@ test('a bot is saved only with what it may hold', async () => {
 test('the recommended bots are all valid, and only the emails reach customers — asking first', async () => {
    const { RECOMMENDED_BOTS } = await import('./bots.js');
    const { cleanBot } = await import('../routes/bots.js');
-   assert.equal(RECOMMENDED_BOTS.length, 9);
+   assert.equal(RECOMMENDED_BOTS.length, 10);
    assert.ok(!RECOMMENDED_BOTS.some((b) => b.name === 'Past check-out watch'), 'taken out at the admin\'s request');
    for (const b of RECOMMENDED_BOTS) assert.deepEqual(cleanBot(b).errors, [], b.name);
    const emailers = RECOMMENDED_BOTS.filter((b) => b.kind === 'contract_emails');
    assert.equal(emailers.length, 1);
    assert.equal(cleanBot(emailers[0]).bot.sendMode, 'review');
-   assert.deepEqual(RECOMMENDED_BOTS.filter((b) => b.web).map((b) => b.name), ['Why leads don\'t convert', 'Competitor watch']);
+   assert.deepEqual(RECOMMENDED_BOTS.filter((b) => b.web).map((b) => b.name), ['Smart pricing', 'Why leads don\'t convert', 'Competitor watch']);
 });
 
 test('quiet good leads: open, far along or warm, silent a few days, nothing planned, not messaged this week', async () => {
