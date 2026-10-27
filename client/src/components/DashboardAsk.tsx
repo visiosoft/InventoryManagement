@@ -29,9 +29,16 @@ type Answer = {
   links: { label: string; path: string }[]
   /** Files the answer made: PDF or Excel downloads. */
   files?: { label: string; path: string; format: 'pdf' | 'excel' }[]
+  /** Short answers to the question it just asked, as buttons ("25 sq ft", "WhatsApp"). */
+  options?: string[]
   pdfPath?: string
   quoteId?: string
   contractId?: string
+}
+
+/** **bold** as bold — the assistant writes it, and the raw stars read as noise. */
+function withBold(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => (part.startsWith('**') && part.endsWith('**') && part.length > 4 ? <b key={i}>{part.slice(2, -2)}</b> : part))
 }
 
 /* What a tool is, in words a person recognises — never the tool's name. */
@@ -65,9 +72,11 @@ function composeCount(c: Compose): number {
 }
 
 const STARTERS = [
-  'Which contracts expire in the next 15 days?',
-  "Who's still waiting for a WhatsApp reply?",
+  'Book a unit',
+  'Make a quotation',
+  'Raise an invoice',
   "Today's leads as a PDF",
+  'Which contracts expire in the next 15 days?',
   'Who is on shift now?',
 ]
 
@@ -91,6 +100,9 @@ export default function DashboardAsk() {
   const [err, setErr] = useState('')
   const [acting, setActing] = useState(false)
   const [compose, setCompose] = useState<Compose | null>(null)
+  /* The conversation so far, so it can ask what a booking needs and
+     remember the answers. Cleared with the X. */
+  const [thread, setThread] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
 
   const { data: caps } = useQuery({
     queryKey: ['assistant-capabilities'],
@@ -107,11 +119,12 @@ export default function DashboardAsk() {
     setBusy(true)
     setErr('')
     try {
-      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[]; compose?: Compose | null; files?: Answer['files'] }>(
-        '/assistant/ask', { question, history: [] },
+      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[]; compose?: Compose | null; files?: Answer['files']; options?: string[] }>(
+        '/assistant/ask', { question, history: thread.slice(-10) },
       )
-      setAnswer({ content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [], files: data.files || [] })
-      setQ(question)
+      setAnswer({ content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [], files: data.files || [], options: data.options || [] })
+      setThread((t) => [...t, { role: 'user' as const, content: question }, { role: 'assistant' as const, content: data.answer }].slice(-12))
+      setQ('')
       // Asking to message a group IS asking for the composer, so it opens
       // rather than waiting for a second click — same rule the corner
       // widget follows for the same reason.
@@ -132,6 +145,7 @@ export default function DashboardAsk() {
         `/assistant/${go ? 'confirm' : 'cancel'}`, { id: answer.pending.id },
       )
       setAnswer({ content: data.message, tools: [], grounded: true, pending: null, links: [], pdfPath: data.pdfPath, quoteId: data.quoteId, contractId: data.contractId })
+      setThread((t) => [...t, { role: 'assistant' as const, content: data.message }].slice(-12))
     } catch (e) {
       setErr(apiError(e))
     } finally {
@@ -174,6 +188,7 @@ export default function DashboardAsk() {
     setAnswer(null)
     setQ('')
     setErr('')
+    setThread([])
   }
 
   return (
@@ -193,7 +208,7 @@ export default function DashboardAsk() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Ask about occupancy, expiring contracts, WhatsApp activity…"
+          placeholder={answer ? 'Reply, or ask something new…' : 'Ask anything, or book a unit, quote or invoice…'}
           style={{ flex: 1, minWidth: 0, border: 0, outline: 'none', fontSize: 14.5, color: INK, background: 'transparent' }}
         />
         {answer && (
@@ -213,7 +228,7 @@ export default function DashboardAsk() {
       </form>
 
       {!answer && !busy && (
-        <div className="flex flex-wrap gap-1.5" style={{ marginTop: 10 }}>
+        <div className="flex flex-wrap gap-1.5" style={{ marginTop: 10 }} aria-label="Suggestions">
           {STARTERS.map((s) => (
             <button
               key={s}
@@ -242,12 +257,32 @@ export default function DashboardAsk() {
           padding: '16px 18px', background: '#fff', border: `1px solid ${PURPLE}`, borderTop: 'none',
           borderRadius: '0 0 16px 16px', boxShadow: '0 8px 24px rgba(20,8,31,.04)',
         }}>
+          {thread.length > 2 && (
+            <div className="space-y-1.5" style={{ marginBottom: 12, paddingBottom: 10, borderBottom: `1px solid ${LINE}` }}>
+              {thread.slice(0, -1).slice(-6).map((t, n) => (
+                <div key={n} style={{ fontSize: 12.5, lineHeight: 1.5, color: t.role === 'user' ? PURPLE_INK : MUTED, fontWeight: t.role === 'user' ? 600 : 400, whiteSpace: 'pre-wrap' }}>
+                  {t.role === 'user' ? `You: ${t.content}` : withBold(t.content)}
+                </div>
+              ))}
+            </div>
+          )}
           <p style={{
             fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: 0,
             color: answer.grounded === false ? '#6B4500' : INK,
           }}>
-            {answer.content}
+            {withBold(answer.content)}
           </p>
+
+          {(answer.options?.length ?? 0) > 0 && !answer.pending && (
+            <div className="flex flex-wrap gap-1.5" style={{ marginTop: 12 }} aria-label="Answers">
+              {answer.options!.map((o) => (
+                <button key={o} type="button" onClick={() => ask(o)} className="cursor-pointer"
+                  style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: PURPLE, border: 0, borderRadius: 999, padding: '6px 14px' }}>
+                  {o}
+                </button>
+              ))}
+            </div>
+          )}
 
           {answer.pending && (
             <div style={{ marginTop: 12, background: TINT, border: `1px solid ${PURPLE_LINE}`, borderRadius: 12, padding: '12px 14px' }}>

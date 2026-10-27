@@ -33,6 +33,8 @@ const RULES = `RULES YOU CANNOT BREAK:
 - Dates you pass to tools are YYYY-MM-DD. "Today" and relative dates are worked out from the date given below.
 - Do not mention tools by name to the user. Speak as the system.
 - Buttons to the relevant pages — a customer, a contract, a chat — are attached to your answer automatically. You may say "open it below". Do not write URLs yourself.
+- Booking a unit, making a quotation or raising an invoice works like the booking form. First look up what you can (the customer or lead by name or phone, which units of the size are free and their prices). Then ask only for what is still missing, in one short message as a numbered list — for a booking or quotation: the customer's name and phone, the unit size (offer the free sizes), the start date, how long (or the end date), any discount, and whether to send it by WhatsApp, by email or just create it; for an invoice: which contract, what for, the amount and the due date. When everything is known, prepare it in the same turn and tell them to press Confirm.
+- When your message asks a question with a few set answers, end it with one line exactly like: Options: 25 sq ft | 50 sq ft | 100 sq ft — at most 6 short answers, separated by |. They become buttons, so leave them out of the rest of the message.
 - You can make a PDF or Excel file of a list (leads, expiring contracts, tasks, free units, calls). When someone asks for a file, PDF, Excel, export or printout, make it — the download button appears under your answer; say so in one line. Never say you cannot make files.
 - Lead housekeeping happens straight away when asked: a new lead, a follow-up date, a site visit, a lead's stage, a note.
 - Anything that reaches a customer or moves money is only prepared: a WhatsApp message, an email, a quotation, a contract, an invoice, sending an invoice, a payment, extending a contract, a template. When you have prepared one, say so in a line and tell them to press Confirm in the card. Never say it has been created, booked, reserved, signed or sent — only a person's Confirm does that, and a contract is a draft until it is signed.
@@ -40,6 +42,15 @@ const RULES = `RULES YOU CANNOT BREAK:
 - A booking end to end is: find or quote the unit for the dates, then prepare the quotation or the contract. Do every lookup you need in the same turn, then prepare it — do not stop to ask for something a tool can find.
 - If the person asking is a sales rep, "my leads", "my follow-ups" and "who is waiting for me" mean leads they own.
 - Answers are read on a phone: short, the name or number first, no headings, no tables.`;
+
+/** "…which size?\nOptions: 25 sq ft | 50 sq ft" → the message, and the answers as buttons. */
+export function splitOptions(text) {
+   const content = String(text || '');
+   const m = /(?:^|\n)\s*Options:\s*(.+?)\s*$/i.exec(content);
+   if (!m) return { content, options: [] };
+   const options = m[1].split('|').map((o) => o.trim().replace(/^[-*•]\s*/, '').replace(/[.。]$/, '')).filter((o) => o && o.length <= 40).slice(0, 6);
+   return { content: content.slice(0, m.index).trimEnd(), options };
+}
 
 /** Any figure that could be mistaken for a fact: money, counts, sizes, dates. */
 const NUMBERS = /\d[\d,]*(?:\.\d+)?/g;
@@ -176,6 +187,12 @@ export async function askAssistant({ question, history = [], siteId = null, user
       content = final.content;
    }
 
+   /* Suggested answers to its own question — "Options: a | b | c" on the
+      last line — become buttons. Taken off before the figure check: they are
+      replies for the person to choose, not facts being stated. */
+   let options;
+   ({ content, options } = splitOptions(content));
+
    /* No tool, but a figure — that is a guess, whatever it reads like. */
    if (!used.length && NUMBERS.test(content)) {
       return { answer: "I can't see that in the system — none of the questions I can ask the database covers it. Try asking about units, prices, contracts, customers, leads, WhatsApp, documents or tasks.", tools: used, model, rounds, grounded: false };
@@ -270,5 +287,5 @@ export async function askAssistant({ question, history = [], siteId = null, user
       if (type && !r.result?.error) { card = { type, data: r.result }; break; }
    }
 
-   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card, files };
+   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card, files, options: pending ? [] : options };
 }
