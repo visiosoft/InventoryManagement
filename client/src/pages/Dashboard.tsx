@@ -56,8 +56,8 @@ const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
 const DEFAULT_LAYOUT: WidgetId[] = [
   'stats',
-  'zoho-sales',
   'lead-coverage',
+  'zoho-sales',
   'zoho-receivables',
   'lead-funnel',
   'lead-distribution',
@@ -1016,21 +1016,17 @@ export default function Dashboard() {
         </Link>
       )}
 
-      {/* One grid: a full-width card spans both columns, two half-width cards
-          sit side by side. Dense, so a half card left alone beside a
-          full-width one is joined by the next half card instead of leaving a
-          gap and shifting every pair after it. */}
-      <div className="grid gap-x-5 gap-y-8 lg:grid-cols-2 lg:grid-flow-row-dense [&>*]:min-w-0">
-        {visible.length === 0 && customizing && (
-          <div className="lg:col-span-2 text-sm text-center py-10 rounded-2xl" style={{ color: MUTED_CLR, border: '1px dashed rgba(20,8,31,0.15)' }}>No cards on this tab. Add a hidden one above, or move one here from another tab.</div>
-        )}
-        {visible.map((id, i) => {
-          const span = sizeOf(id) === 'half' ? '' : 'lg:col-span-2'
+      {/* Full-width cards take the whole row. Half-width cards that follow one
+          another flow into two columns, each filling from the top, so a short
+          card sits under another instead of beside a tall one with a hole
+          below it. A half-width card with no partner takes the whole row. */}
+      {(() => {
+        const cardEl = (id: WidgetId, i: number): React.ReactNode => {
           // While customizing every card gets a bar of controls.
           if (customizing) {
             const btn = { width: 30, height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,0.12)', background: '#fff', display: 'inline-grid', placeItems: 'center' } as const
             return (
-              <div key={id} className={span} style={{ border: '2px dashed #C9B8F0', borderRadius: 18, padding: 10 }}>
+              <div key={id} style={{ border: '2px dashed #C9B8F0', borderRadius: 18, padding: 10 }}>
                 <div className="flex flex-wrap items-center gap-2 mb-3 px-1">
                   <span style={{ ...HEADING, fontWeight: 700, fontSize: 14, color: INK }} className="mr-auto">{WIDGET_LABEL[id]}</span>
                   <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => moveCard(id, -1)} className="cursor-pointer disabled:opacity-30" style={btn}><ArrowUp size={14} /></button>
@@ -1058,7 +1054,7 @@ export default function Dashboard() {
           }
           if (id === 'stats') {
             return (
-              <div key={id} className={span} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
+              <div key={id} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
                 <div
                   className="mb-3 flex items-center gap-2"
                   style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}
@@ -1070,12 +1066,35 @@ export default function Dashboard() {
             )
           }
           return (
-            <div key={id} className={span} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
+            <div key={id} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
               {widgets[id]}
             </div>
           )
-        })}
-      </div>
+        }
+        // Cards with nothing to show (e.g. Zoho not connected) take no space.
+        const ids = customizing ? visible : visible.filter((id) => widgets[id] != null)
+        const segments: { half: boolean; ids: WidgetId[] }[] = []
+        for (const id of ids) {
+          const half = sizeOf(id) === 'half'
+          const last = segments[segments.length - 1]
+          if (half && last?.half) last.ids.push(id)
+          else segments.push({ half, ids: [id] })
+        }
+        return (
+          <div className="space-y-5">
+            {visible.length === 0 && customizing && (
+              <div className="text-sm text-center py-10 rounded-2xl" style={{ color: MUTED_CLR, border: '1px dashed rgba(20,8,31,0.15)' }}>No cards on this tab. Add a hidden one above, or move one here from another tab.</div>
+            )}
+            {segments.map((seg) => (seg.half && seg.ids.length > 1 ? (
+              <div key={seg.ids.join('+')} className="lg:columns-2 gap-x-5 -mb-5">
+                {seg.ids.map((id) => <div key={id} className="mb-5 min-w-0" style={{ breakInside: 'avoid' }}>{cardEl(id, visible.indexOf(id))}</div>)}
+              </div>
+            ) : (
+              <div key={seg.ids[0]} className="min-w-0">{cardEl(seg.ids[0], visible.indexOf(seg.ids[0]))}</div>
+            )))}
+          </div>
+        )
+      })()}
 
       {/* Leads behind a funnel row */}
       <SlideOver

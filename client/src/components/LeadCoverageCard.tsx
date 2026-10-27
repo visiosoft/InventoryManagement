@@ -80,13 +80,13 @@ export default function LeadCoverageCard() {
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       {/* The signal */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 26, padding: '16px 24px', borderRadius: 18, background: sig.bg, border: `1px solid ${sig.color}22` }}>
-        <TrafficLight signal={signal} size={130} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, padding: '12px 20px', borderRadius: 16, background: sig.bg, border: `1px solid ${sig.color}22` }}>
+        <TrafficLight signal={signal} size={84} />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: sig.color }}>
             {signal === 'green' ? 'Green' : signal === 'amber' ? 'Amber' : 'Red'}
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: INK, lineHeight: 1.25, marginTop: 2 }}>{sig.title}</div>
+          <div style={{ fontSize: 19, fontWeight: 800, color: INK, lineHeight: 1.25, marginTop: 2 }}>{sig.title}</div>
           <div style={{ fontSize: 13, color: '#4A4357', marginTop: 4 }}>{sig.line}</div>
           {nextChange && (
             <div style={{ fontSize: 12.5, color: MUTED, marginTop: 8 }}>

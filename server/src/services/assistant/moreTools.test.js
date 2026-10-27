@@ -53,3 +53,26 @@ test('a list as the assistant hands it over becomes a real PDF and a real workbo
    assert.deepEqual(ws.getRow(5).values.slice(1), ['27 Oct 2026, 10:05', 'Daniel', '971501112233', 'contact attempted', 'Randa Mustafa', 50]);
    assert.equal(ws.getRow(6).getCell(2).value, 'Ramy assem');
 });
+
+import { splitOptions } from './index.js';
+
+test('a question\'s set answers become buttons, and leave the message', () => {
+   assert.deepEqual(splitOptions('Which size? 25 and 50 sq ft are free.\nOptions: 25 sq ft | 50 sq ft | Not sure'), {
+      content: 'Which size? 25 and 50 sq ft are free.', options: ['25 sq ft', '50 sq ft', 'Not sure'],
+   });
+   assert.deepEqual(splitOptions('How should I send it?\n\noptions: WhatsApp | Email | Just create it.'), {
+      content: 'How should I send it?', options: ['WhatsApp', 'Email', 'Just create it'],
+   });
+   assert.deepEqual(splitOptions('We received 61 leads yesterday.'), { content: 'We received 61 leads yesterday.', options: [] });
+   assert.equal(splitOptions('Pick one\nOptions: a | b | c | d | e | f | g | h').options.length, 6);
+});
+
+test('booking from the Ask box: it is told to ask for what is missing, then prepare it for Confirm', async () => {
+   const { readFileSync } = await import('fs');
+   const src = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
+   assert.match(src, /Booking a unit, making a quotation or raising an invoice works like the booking form/);
+   assert.match(src, /ask only for what is still missing/);
+   const q = toolByName('propose_quotation');
+   assert.deepEqual(q.parameters.required, ['customerName', 'startDate', 'endDate', 'sendVia']);
+   assert.ok(toolByName('propose_invoice'), 'invoices can be prepared too');
+});
