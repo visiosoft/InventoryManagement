@@ -510,7 +510,9 @@ export function chatHistory(bot, runs = []) {
          out.push({ role: 'user', content: bot.kind === 'ai_report' ? bot.instruction : `Run the ${bot.name} bot.` });
       }
       const said = r.error ? `(That run failed: ${r.error})` : r.answer || [r.summary, ...(r.items || []).slice(0, 15).map((i) => `- ${i.name}${i.unit ? ` · ${i.unit}` : ''}${i.reason ? ` · ${i.reason}` : ''} · ${i.status}`)].filter(Boolean).join('\n');
-      if (said) out.push({ role: 'assistant', content: said.slice(0, 1800) });
+      if (said) out.push({ role: 'assistant', content: said.slice(0, 8000) });
+      // A prepared action is part of what was said: "send it" may mean it.
+      if (r.pending?.summary?.length) out.push({ role: 'assistant', content: `(Prepared for Confirm: ${r.pending.summary.join(' · ').slice(0, 600)})` });
    }
    return out.slice(-8);
 }
@@ -527,8 +529,12 @@ export async function askBot(bot, question, { user, deps } = {}) {
       return d.saveRun({ bot: bot._id, trigger: 'chat', question: q, status: 'ok', summary: answer, answer, sources: [], items: [], recipients: me ? [String(me)] : [], seenBy: me ? [String(me)] : [] });
    }
    const runs = await d.recentRuns(bot._id);
+   const history = chatHistory(bot, runs)
    const out = await d.ask({
-      question: q, history: chatHistory(bot, runs),
+      // A follow-up is read against what was just said: "them", "the first
+      // group", "do that" mean the people and offers in the last answer.
+      question: history.length ? `${q}\n\n(Follow-up to the conversation above — work out who and what is meant from your last answer and act on it.)` : q,
+      history,
       user: user ? { id: String(user.id || user._id), name: user.name, role: user.role } : { role: 'admin' },
       web: Boolean(bot.web), rounds: 12,
    });

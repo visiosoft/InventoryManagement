@@ -158,7 +158,9 @@ export async function askAssistant({ question, history = [], siteId = null, user
 
    // Only the last few turns, and only their text — tool traffic is not replayed.
    const messages = [
-      ...history.slice(-8).map((h) => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').slice(0, 2000) })),
+      /* The last exchange in full — a long report ends with what it offered
+         to do next, which is what "yes, do that" refers to; older turns shorter. */
+      ...history.slice(-8).map((h, i, all) => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').slice(0, i >= all.length - 2 ? 8000 : 2000) })),
       { role: 'user', content: text.slice(0, 2000) },
    ];
 

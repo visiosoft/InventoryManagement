@@ -197,6 +197,7 @@ test('talking to a bot: a schedule change is done at once; a question goes with 
    assert.equal(asked.web, true);
    assert.deepEqual(asked.history.map((h) => h.role), ['user', 'assistant', 'user', 'assistant']);
    assert.equal(asked.history[0].content, 'Competitor prices');
+   assert.match(asked.question, /^what about GetSpace\?\n\n\(Follow-up to the conversation above/);
    assert.equal(reply.question, 'what about GetSpace?');
    assert.equal(reply.summary, 'GetSpace: AED 1,000');
    assert.deepEqual(reply.files, [{ label: 'Leads (PDF)', path: '/assistant/export?dataset=leads&format=pdf', format: 'pdf' }], 'a file the answer made comes with it');
@@ -257,4 +258,15 @@ test('a bot set to send a PDF asks for one each run and attaches it to the email
    assert.equal(mails[0].attachments[0].filename, 'leads-2026-10-26.pdf');
    assert.equal(run.charts.length, 1, 'its chart is kept with the run');
    assert.equal(run.emailError || '', '');
+});
+
+test('a long last answer is kept in full for the follow-up, with what it prepared', async () => {
+   const { chatHistory } = await import('./bots.js');
+   const long = `${'Point. '.repeat(600)}\nI can set follow-up dates, prepare WhatsApp messages, or export to Excel. Which one?`;
+   const h = chatHistory({ kind: 'ai_report', instruction: 'Daily follow-ups' }, [
+      { trigger: 'schedule', answer: long },
+      { trigger: 'chat', question: 'send whatsapp', answer: 'Ready', pending: { summary: ['WhatsApp template "checking_in" to 2 people: Rony, Maya'] } },
+   ]);
+   assert.match(h[1].content, /Which one\?$/, 'the offer at the end of a long report survives');
+   assert.equal(h[h.length - 1].content, '(Prepared for Confirm: WhatsApp template "checking_in" to 2 people: Rony, Maya)');
 });
