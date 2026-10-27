@@ -2828,6 +2828,68 @@ export const LeadRoutingConfig = model('LeadRoutingConfig', leadRoutingConfigSch
 export const DoorEvent = model('DoorEvent', doorEventSchema);
 export const DoorPerson = model('DoorPerson', doorPersonSchema);
 export const DoorConfig = model('DoorConfig', doorConfigSchema);
+
+/* ── Bots: jobs that run on a clock (services/bots.js) ─────────────────── */
+
+/* A bot does one job on a schedule and keeps its latest result for the
+   dashboard. Two kinds: an AI report (a question answered from the system,
+   and the web when allowed) and renewal emails (customers whose contract is
+   ending). Emails wait for a person unless an admin set it to send by itself. */
+export const BOT_KINDS = ['ai_report', 'contract_emails'];
+const botSchema = new Schema({
+  name: { type: String, required: true, trim: true },
+  kind: { type: String, enum: BOT_KINDS, required: true },
+  icon: { type: String, default: '' },
+  // ai_report: the question, in plain words.
+  instruction: { type: String, default: '' },
+  web: { type: Boolean, default: false },
+  // contract_emails: who, and what they are sent.
+  days: { type: Number, default: 30, min: 1, max: 120 },
+  subject: { type: String, default: '' },
+  message: { type: String, default: '' },
+  sendMode: { type: String, enum: ['review', 'auto'], default: 'review' },
+  dailyCap: { type: Number, default: 50, min: 1, max: 500 },
+  schedule: {
+    cadence: { type: String, enum: ['manual', 'daily', 'weekly', 'monthly'], default: 'weekly' },
+    hour: { type: Number, default: 9, min: 0, max: 23 },
+    dayOfWeek: { type: Number, default: 1, min: 0, max: 6 },   // 0 = Sunday, Dubai time
+    dayOfMonth: { type: Number, default: 1, min: 1, max: 28 },
+  },
+  showOnDashboard: { type: Boolean, default: true },
+  enabled: { type: Boolean, default: true },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  lastRunAt: { type: Date, default: null },
+  lastRunDay: { type: String, default: '' },
+}, { timestamps: true });
+botSchema.plugin(softDeletePlugin);
+export const Bot = model('Bot', botSchema);
+
+const botRunItemSchema = new Schema({
+  contract: { type: Schema.Types.ObjectId, ref: 'Contract', default: null },
+  customer: { type: Schema.Types.ObjectId, ref: 'Customer', default: null },
+  name: { type: String, default: '' },
+  email: { type: String, default: '' },
+  unit: { type: String, default: '' },
+  endDate: { type: Date, default: null },
+  subject: { type: String, default: '' },
+  body: { type: String, default: '' },
+  status: { type: String, enum: ['pending', 'sent', 'skipped', 'failed'], default: 'pending' },
+  error: { type: String, default: '' },
+  sentAt: { type: Date, default: null },
+}, { _id: true });
+
+const botRunSchema = new Schema({
+  bot: { type: Schema.Types.ObjectId, ref: 'Bot', required: true, index: true },
+  trigger: { type: String, enum: ['schedule', 'manual'], default: 'schedule' },
+  status: { type: String, enum: ['ok', 'waiting', 'failed'], default: 'ok' },
+  summary: { type: String, default: '' },
+  answer: { type: String, default: '' },
+  sources: { type: [{ _id: false, label: String, url: String }], default: [] },
+  items: { type: [botRunItemSchema], default: [] },
+  error: { type: String, default: '' },
+}, { timestamps: true });
+botRunSchema.index({ bot: 1, createdAt: -1 });
+export const BotRun = model('BotRun', botRunSchema);
 export const Contract = model('Contract', contractSchema);
 export const Quote = model('Quote', quoteSchema);
 export const Invoice = model('Invoice', invoiceSchema);

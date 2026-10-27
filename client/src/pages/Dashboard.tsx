@@ -10,6 +10,7 @@ import { CHART_STYLE } from './reports/shared'
 import { formatDate, formatMoney } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
 import RecentAsksCard from '../components/RecentAsksCard'
+import BotsPanel from '../components/BotsPanel'
 import CustomerFeedbackCard from '../components/CustomerFeedbackCard'
 import LeadCoverageCard from '../components/LeadCoverageCard'
 import ClientInfoSubmissionsCard from '../components/ClientInfoSubmissionsCard'
@@ -43,9 +44,10 @@ type WidgetId =
  * card on one long page. A widget not listed here falls into Overview, so a
  * card added later still shows up somewhere. Finance is the accounts
  * dashboard itself, not a copy of it. */
-type TabKey = 'overview' | 'sales' | 'leads' | 'finance' | 'feedback'
+type TabKey = 'overview' | 'bots' | 'sales' | 'leads' | 'finance' | 'feedback'
 const TABS: { key: TabKey; label: string; widgets: WidgetId[]; adminOnly?: boolean }[] = [
   { key: 'overview', label: 'Overview', widgets: ['stats', 'zoho-sales', 'lead-coverage', 'zoho-receivables', 'units-by-size', 'floor-occupancy', 'team-tasks'] },
+  { key: 'bots', label: 'Bots', widgets: [], adminOnly: true },
   { key: 'sales', label: 'Sales', widgets: ['lead-funnel', 'high-intent-leads', 'expiring-contracts'] },
   { key: 'leads', label: 'Leads', widgets: ['lead-distribution', 'website-leads-today', 'website-analytics'] },
   { key: 'finance', label: 'Finance', widgets: [], adminOnly: true },
@@ -998,6 +1000,10 @@ export default function Dashboard() {
           <RecentAsksCard />
         </div>
       )}
+
+      {/* Bots pinned to Overview, with their latest result. */}
+      {tab === 'overview' && isAdmin && <div className="mb-6"><BotsPanel pinnedOnly /></div>}
+      {tab === 'bots' && <BotsPanel />}
 
       {tab === 'finance' && (
         <div className="space-y-8">

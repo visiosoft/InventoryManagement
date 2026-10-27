@@ -1,0 +1,76 @@
+import { test, expect } from '@playwright/test'
+
+/* Bots on the dashboard: pinned ones on Overview, the Bots tab, reviewing
+   and sending a renewal run, and making a new bot. */
+
+const RUN = {
+  _id: 'r1', createdAt: '2026-10-26T05:01:00Z', status: 'waiting', summary: '2 to approve', answer: '', sources: [], error: '',
+  items: [
+    { _id: 'i1', name: 'Sara Ahmed', email: 'sara@example.com', unit: 'B-214', endDate: '2026-11-18T00:00:00Z', subject: 'Your PurpleBox storage ends on 18 November 2026', body: 'Hi Sara,\n\nYour storage unit B-214…', status: 'pending' },
+    { _id: 'i2', name: 'Omar Khalid', email: 'omar@example.com', unit: 'A-031', endDate: '2026-11-21T00:00:00Z', subject: 'Ends', body: 'Hi Omar', status: 'pending' },
+  ],
+}
+const BOTS = [
+  { _id: 'b1', name: 'Renewal reminder emails', kind: 'contract_emails', icon: '✉️', instruction: '', web: false, days: 30, subject: '', message: '', sendMode: 'review', dailyCap: 50, schedule: { cadence: 'weekly', hour: 9, dayOfWeek: 1, dayOfMonth: 1 }, showOnDashboard: true, enabled: true, scheduleLabel: 'Every Monday 09:00', lastRun: RUN },
+  { _id: 'b2', name: 'Competitor watch', kind: 'ai_report', icon: '🔎', instruction: 'prices', web: true, days: 30, subject: '', message: '', sendMode: 'review', dailyCap: 50, schedule: { cadence: 'daily', hour: 8, dayOfWeek: 1, dayOfMonth: 1 }, showOnDashboard: false, enabled: true, scheduleLabel: 'Daily 08:00',
+    lastRun: { _id: 'r2', createdAt: '2026-10-26T04:02:00Z', status: 'ok', summary: '', answer: 'Competitor A charges **AED 1,200** for 50 sq ft.', sources: [{ label: 'Competitor A', url: 'https://a.example' }], items: [], error: '' } },
+]
+
+async function setup(page: import('@playwright/test').Page) {
+  const calls: { method: string; path: string; body: unknown }[] = []
+  await page.route('**/api/**', async (route) => {
+    const req = route.request()
+    const path = new URL(req.url()).pathname
+    if (path.startsWith('/api/bots')) calls.push({ method: req.method(), path, body: req.postData() ? JSON.parse(req.postData()!) : null })
+    if (path === '/api/auth/me') return route.fulfill({ json: { user: { id: 'u1', name: 'Mase', role: 'admin', permissions: [] } } })
+    if (path === '/api/bots' && req.method() === 'GET') return route.fulfill({ json: { bots: BOTS, defaults: { subject: 'Your PurpleBox storage ends on {endDate}', message: 'Hi {name}, …' } } })
+    if (path === '/api/bots' && req.method() === 'POST') return route.fulfill({ status: 201, json: { bot: {} } })
+    if (path === '/api/bots/runs/r1/send') return route.fulfill({ json: { sent: 1, run: { ...RUN, items: [{ ...RUN.items[0], status: 'sent' }, RUN.items[1]] } } })
+    if (path === '/api/bots/runs/r1/skip') return route.fulfill({ json: { run: RUN } })
+    if (path === '/api/bots/b2/run') return route.fulfill({ json: { run: {} } })
+    if (path === '/api/assistant/capabilities') return route.fulfill({ json: { enabled: false, allowed: false } })
+    if (path === '/api/reports/stats') return route.fulfill({ status: 500, json: {} })
+    return route.fulfill({ json: /tasks|expiring|sites|list|conversations|messages/.test(path) ? [] : { items: [], total: 0, groups: [], reps: [], handovers: [], byFloor: [] } })
+  })
+  await page.addInitScript(() => {
+    localStorage.setItem('pb_token', 't')
+    localStorage.setItem('pb_user', JSON.stringify({ id: 'u1', name: 'Mase', role: 'admin', permissions: [] }))
+  })
+  return calls
+}
+
+test('a pinned bot shows on Overview; all bots are on the Bots tab with their latest result', async ({ page }) => {
+  await setup(page)
+  await page.goto('/')
+  await expect(page.getByLabel('Bot Renewal reminder emails')).toBeVisible()
+  await expect(page.getByLabel('Bot Competitor watch')).toHaveCount(0)
+  await page.getByRole('tab', { name: 'Bots' }).or(page.getByRole('button', { name: 'Bots', exact: true })).first().click()
+  const watch = page.getByLabel('Bot Competitor watch')
+  await expect(watch.getByText('AED 1,200')).toBeVisible()
+  await expect(watch.getByRole('link', { name: /Competitor A/ })).toHaveAttribute('href', 'https://a.example')
+  await expect(page.getByLabel('Bot Renewal reminder emails').getByText('2 to approve')).toBeVisible()
+})
+
+test('reviewing a run: untick one, send the rest, the other is left out', async ({ page }) => {
+  const calls = await setup(page)
+  await page.goto('/?tab=bots')
+  await page.getByRole('button', { name: 'Review & send 2' }).click()
+  await expect(page.getByText('Your storage unit B-214')).toBeVisible()
+  await page.getByLabel('Send to Omar Khalid').uncheck()
+  await page.getByRole('button', { name: 'Send 1 email' }).click()
+  await expect(page.getByText('1 sent.')).toBeVisible()
+  expect(calls.find((c) => c.path.endsWith('/send'))?.body).toEqual({ ids: ['i1'] })
+  expect(calls.find((c) => c.path.endsWith('/skip'))?.body).toEqual({ ids: ['i2'] })
+})
+
+test('a new renewal bot starts from the preset and asks first', async ({ page }) => {
+  const calls = await setup(page)
+  await page.goto('/?tab=bots')
+  await page.getByRole('button', { name: 'New bot' }).click()
+  await page.getByRole('button', { name: /Renewal reminder emails/ }).click()
+  await expect(page.getByLabel('Subject')).toHaveValue('Your PurpleBox storage ends on {endDate}')
+  await page.getByRole('button', { name: 'Save bot' }).click()
+  await expect.poll(() => calls.filter((c) => c.method === 'POST' && c.path === '/api/bots').length).toBe(1)
+  const body = calls.find((c) => c.method === 'POST' && c.path === '/api/bots')!.body as Record<string, unknown>
+  expect(body).toMatchObject({ name: 'Renewal reminder emails', kind: 'contract_emails', sendMode: 'review', days: 30, schedule: { cadence: 'weekly', hour: 9, dayOfWeek: 1 } })
+})

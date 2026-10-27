@@ -105,6 +105,8 @@ import accountsDashboardRoutes from './routes/accountsDashboard.js';
 import exportRoutes from './routes/exports.js';
 import leadRoutingRoutes from './routes/leadRouting.js';
 import doorRoutes, { pushRouter as doorPush } from './routes/door.js';
+import botRoutes from './routes/bots.js';
+import { botsTick } from './services/bots.js';
 import auditLogRoutes from './routes/auditLog.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
@@ -439,6 +441,7 @@ app.use('/api/exports', requireAuth, exportRoutes);
 // Who gets the next WhatsApp lead. Admin only, inside the router.
 app.use('/api/lead-routing', requireAuth, leadRoutingRoutes);
 app.use('/api/door', requireAuth, doorRoutes);
+app.use('/api/bots', requireAuth, botRoutes);
 app.use('/api/audit-log', requireAuth, auditLogRoutes);
 
 // Central error handler
@@ -622,6 +625,18 @@ async function start() {
    * A minute tick rather than the daily one: a follow-up set for 16:00 is no
    * use arriving at 07:00 the next morning. Idempotent through
    * followUpPushedAt, so the same lead is not pushed on every tick. */
+  /* Bots (services/bots.js): each runs at its hour, once a day at most.
+     Renewal-email bots prepare emails for a person to send unless an admin
+     set one to send by itself. */
+  setInterval(async () => {
+    try {
+      const out = await botsTick();
+      if (out.ran) console.log(`[Bots] ${out.ran} bot(s) ran`);
+    } catch (e) {
+      console.error('[Bots]', e.message);
+    }
+  }, 60_000);
+
   setInterval(async () => {
     try {
       const out = await pushDueFollowUps();
