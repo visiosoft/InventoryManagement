@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Bot, BotRun, BOT_KINDS } from '../models/index.js';
 import { softDelete } from '../utils/softDelete.js';
-import { botDeps, describeSchedule, runBot, sendItems, emailSummary, DEFAULT_MESSAGE, DEFAULT_SUBJECT, RECOMMENDED_BOTS } from '../services/bots.js';
+import { askBot, botDeps, describeSchedule, runBot, sendItems, emailSummary, DEFAULT_MESSAGE, DEFAULT_SUBJECT, RECOMMENDED_BOTS } from '../services/bots.js';
 
 /**
  * Bots (services/bots.js): admins make them, run them, and send what a
@@ -123,6 +123,30 @@ router.post('/:id/run', async (req, res) => {
       runBot(bot, { trigger: 'manual' })
          .catch((e) => console.error('[Bots] run:', e.message))
          .finally(() => Bot.updateOne({ _id: bot._id }, { $set: { runningSince: null, lastRunAt: new Date() } }).catch(() => {}));
+      res.status(202).json({ running: true });
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
+/** A message to the bot. A schedule change answers at once; a question runs in
+    the background like Run now, and its reply appears in the bot's timeline. */
+router.post('/:id/ask', async (req, res) => {
+   try {
+      const bot = await Bot.findById(req.params.id).lean();
+      if (!bot) return res.status(404).json({ error: 'No such bot' });
+      const question = String(req.body?.question || '').trim();
+      if (!question) return res.status(400).json({ error: 'Type a message' });
+      const { parseScheduleCommand } = await import('../services/bots.js');
+      if (parseScheduleCommand(question, bot.schedule)) {
+         const run = await askBot(bot, question, { user: req.user });
+         return res.json({ run });
+      }
+      if (bot.runningSince && Date.now() - new Date(bot.runningSince).getTime() < 15 * 60_000) return res.status(409).json({ error: 'It is busy — wait for it to finish' });
+      await Bot.updateOne({ _id: bot._id }, { $set: { runningSince: new Date() } });
+      askBot(bot, question, { user: req.user })
+         .catch((e) => BotRun.create({ bot: bot._id, trigger: 'chat', question, status: 'failed', error: e.message, summary: 'Could not answer' }).catch(() => {}))
+         .finally(() => Bot.updateOne({ _id: bot._id }, { $set: { runningSince: null } }).catch(() => {}));
       res.status(202).json({ running: true });
    } catch (e) {
       res.status(500).json({ error: e.message });

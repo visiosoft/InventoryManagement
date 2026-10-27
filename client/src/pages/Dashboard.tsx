@@ -1005,8 +1005,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Bots pinned to Overview, with their latest result. */}
-      {tab === 'overview' && isAdmin && <div className="mb-6"><BotsPanel pinnedOnly /></div>}
       {tab === 'bots' && <BotsPanel />}
 
       {tab === 'finance' && (

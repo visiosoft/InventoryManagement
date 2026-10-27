@@ -235,7 +235,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
    let check = figuresGrounded(content, formAsked ? [...results, text] : results);
    if (!check.ok && results.length) {
       messages.push({ role: 'assistant', content });
-      messages.push({ role: 'user', content: `Your answer used figures that did not come from the tools: ${check.loose.join(', ')}. Rewrite it using only figures that appear in the tool results, exactly as returned. If a figure you need is not there, say so instead of stating it.` });
+      messages.push({ role: 'user', content: `Your answer used figures that did not come from the tools: ${check.loose.join(', ')}. Rewrite it using only figures that appear in the tool results, exactly as returned. If a figure you need is not there, say so instead of stating it. Reply with the rewritten answer only — no remark about this check or about what you changed.` });
       const retry = await chatWithTools({ system, messages, tools: [], model, effort, maxTokens: 1500 });
       content = retry.content;
       check = figuresGrounded(content, results);
@@ -305,5 +305,9 @@ export async function askAssistant({ question, history = [], siteId = null, user
    const sources = [];
    for (const r of results) for (const w of (r.result?.web || [])) if (w?.url && !sources.some((x) => x.url === w.url)) sources.push({ label: String(w.label).slice(0, 80), url: String(w.url) });
 
-   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card, files, form, sources: sources.slice(0, 6), options: pending || form ? [] : options };
+   /* A connection that must be made once before it can do what was asked
+      (SMS through Twilio): the page shows its own form for it. */
+   const setup = results.find((r) => r.result?.setup)?.result.setup || null;
+
+   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card, files, form, setup, sources: sources.slice(0, 6), options: pending || form ? [] : options };
 }

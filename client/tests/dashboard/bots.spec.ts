@@ -10,6 +10,7 @@ const RUN = {
     { _id: 'i2', name: 'Omar Khalid', email: 'omar@example.com', unit: 'A-031', endDate: '2026-11-21T00:00:00Z', subject: 'Ends', body: 'Hi Omar', status: 'pending' },
   ],
 }
+const CHATS: unknown[] = []
 const QUIET_RUN = {
   _id: 'r3', createdAt: '2026-10-28T07:00:00Z', status: 'waiting', summary: '1 to approve', answer: '', sources: [], error: '',
   items: [{ _id: 'w1', channel: 'whatsapp', name: 'Sara Ahmed', phone: '+971501234567', reason: 'Quotation sent · quiet 4 days', email: '', unit: '', endDate: '', subject: '', body: 'Hi Sara, still looking for storage?', status: 'pending' }],
@@ -34,6 +35,8 @@ async function setup(page: import('@playwright/test').Page) {
     if (path === '/api/bots/runs/r1/send') return route.fulfill({ json: { sent: 1, run: { ...RUN, items: [{ ...RUN.items[0], status: 'sent' }, RUN.items[1]] } } })
     if (path === '/api/bots/runs/r1/skip') return route.fulfill({ json: { run: RUN } })
     if (path === '/api/bots/b2/run') return route.fulfill({ status: 202, json: { running: true } })
+    if (path === '/api/bots/b2/ask') { const body = JSON.parse(req.postData() || '{}'); BOTS[1].lastRun = { _id: 'c1', createdAt: new Date().toISOString(), trigger: 'chat', question: body.question, status: 'ok', summary: '', answer: 'Done — Competitor watch now runs daily 20:00.', sources: [], items: [], error: '' }; CHATS.push(BOTS[1].lastRun); return route.fulfill({ json: { run: BOTS[1].lastRun } }) }
+    if (path === '/api/bots/b2/runs' && CHATS.length) return route.fulfill({ json: { runs: [...CHATS].reverse() } })
     const runsOf = /^\/api\/bots\/(b\d)\/runs$/.exec(path)
     if (runsOf) return route.fulfill({ json: { runs: BOTS.filter((b) => b._id === runsOf[1]).map((b) => b.lastRun) } })
     if (path === '/api/bots/b2' && req.method() === 'DELETE') return route.fulfill({ json: { ok: true } })
@@ -49,11 +52,11 @@ async function setup(page: import('@playwright/test').Page) {
   return calls
 }
 
-test('a pinned bot shows on Overview; all bots are on the Bots tab with their latest result', async ({ page }) => {
+test('bots live on the Bots tab only, each with its latest result', async ({ page }) => {
   await setup(page)
   await page.goto('/')
-  await expect(page.getByLabel('Bot Renewal reminder emails')).toBeVisible()
-  await expect(page.getByLabel('Bot Competitor watch')).toHaveCount(0)
+  await expect(page.getByPlaceholder(/Ask anything/).or(page.getByText('Overview').first())).toBeVisible()
+  await expect(page.getByLabel('Bot Renewal reminder emails')).toHaveCount(0)
   await page.getByRole('tab', { name: 'Bots' }).or(page.getByRole('button', { name: 'Bots', exact: true })).first().click()
   const watch = page.getByLabel('Bot Competitor watch')
   await expect(watch.getByText('AED 1,200')).toBeVisible()
@@ -136,4 +139,16 @@ test('a running bot says so', async ({ page }) => {
   } finally {
     delete BOTS[1].runningSince
   }
+})
+
+test('a bot can be talked to: the message and its reply join its timeline', async ({ page }) => {
+  const calls = await setup(page)
+  await page.goto('/?tab=bots')
+  await page.getByLabel('Bot Competitor watch').getByRole('button', { name: 'Chat' }).click()
+  await page.getByLabel('Message Competitor watch').fill('run it every day at 8pm')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect.poll(() => calls.filter((c) => c.path === '/api/bots/b2/ask').length).toBe(1)
+  const pane = page.getByLabel('Bot Competitor watch history')
+  await expect(pane.getByText('run it every day at 8pm')).toBeVisible()
+  await expect(pane.getByText('Done — Competitor watch now runs daily 20:00.')).toBeVisible()
 })

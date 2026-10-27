@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { ConnectionRows } from '../components/ConnectForms'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
@@ -292,6 +293,7 @@ export default function Settings() {
       <Card>
         <CardHeader title="Integrations" />
         <CardBody className="space-y-3 text-sm">
+          {isAdmin && <ConnectionRows />}
           {/* Connecting a Shopify store holds live write access to a merchant's
               account, so it sits here with the other integrations, admin only. */}
           {isAdmin && (

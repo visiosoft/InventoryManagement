@@ -11,6 +11,8 @@ import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhat
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey, stripePublishableKey, stripeEmbeddedConfigured } from '../services/stripe.js';
 import { updateEnvFile } from '../utils/env.js';
+import { metaAdsConfigured, verifyMetaAds } from '../services/metaAds.js';
+import { twilioConfigured, verifyTwilio, toE164 } from '../services/twilio.js';
 import { openaiConfigured, openaiOwnModel, openaiKeyPresent, openaiKeyHint, verifyOpenAIKey, parseAvailabilityQuery, aiProvider, chosenProvider, PROVIDERS } from '../services/openai.js';
 import { claudeConfigured, claudeModel, claudeKeyHint, claudeEffort, verifyClaudeKey, CLAUDE_EFFORTS } from '../services/claude.js';
 import { analyticsConfigured, analyticsMissing } from '../services/googleAnalytics.js';
@@ -53,6 +55,9 @@ router.get('/status', async (_req, res) => {
         // sender rather than guessing.
         email: { configured: mailConfigured(), from: mailFromAddress() },
         whatsapp: { configured: whatsappConfigured(), missing: whatsappMissing() },
+        // Read-only ad spend for the Meta ads review; the token never leaves the server.
+        twilio: { configured: twilioConfigured(), from: process.env.TWILIO_FROM || '' },
+        metaAds: { configured: metaAdsConfigured(), accountId: process.env.META_ADS_ACCOUNT_ID || '', accountName: process.env.META_ADS_ACCOUNT_NAME || '' },
         whatsappLabelSync: getWhatsAppLabelSyncStatus(),
         /* The publishable key is returned in full on purpose — it is designed
          * to be public and the tenant renewal page needs it to render Stripe's
@@ -108,6 +113,53 @@ router.post('/stripe/connect', requireAdmin, async (req, res) => {
 });
 
 // Clears the stored Stripe keys.
+// Meta's ad account, read-only (services/metaAds.js). Checked with Meta before it is kept.
+router.post('/meta-ads/connect', requireAdmin, async (req, res) => {
+    const { accountId, token } = req.body || {};
+    if (!accountId || !token) return res.status(400).json({ error: 'Both the ad account ID and the access token are needed' });
+    try {
+        const acct = await verifyMetaAds(accountId, String(token).trim());
+        const updates = { META_ADS_ACCOUNT_ID: acct.id, META_ADS_TOKEN: String(token).trim(), META_ADS_ACCOUNT_NAME: acct.name };
+        updateEnvFile(updates);
+        Object.assign(process.env, updates);
+        res.json({ ok: true, configured: true, accountId: acct.id, accountName: acct.name, currency: acct.currency });
+    } catch (e) {
+        res.status(400).json({ error: `Meta did not accept these: ${e.message}` });
+    }
+});
+
+router.post('/meta-ads/disconnect', requireAdmin, async (_req, res) => {
+    const updates = { META_ADS_ACCOUNT_ID: '', META_ADS_TOKEN: '', META_ADS_ACCOUNT_NAME: '' };
+    updateEnvFile(updates);
+    Object.assign(process.env, updates);
+    res.json({ ok: true, configured: false });
+});
+
+// Twilio for SMS, connected once. Checked with Twilio before it is kept.
+router.post('/twilio/connect', requireAdmin, async (req, res) => {
+    const { accountSid, authToken, from } = req.body || {};
+    if (!accountSid || !authToken || !from) return res.status(400).json({ error: 'The account SID, auth token and the sending number are all needed' });
+    if (!/^AC[0-9a-f]{32}$/i.test(String(accountSid).trim())) return res.status(400).json({ error: 'The account SID starts with AC and is 34 characters long' });
+    const sender = /^[A-Za-z][A-Za-z0-9 ]{1,10}$/.test(String(from).trim()) ? String(from).trim() : toE164(from);
+    if (!sender) return res.status(400).json({ error: 'The sending number should look like +971…, or be a sender name of up to 11 letters' });
+    try {
+        const acct = await verifyTwilio(String(accountSid).trim(), String(authToken).trim());
+        const updates = { TWILIO_ACCOUNT_SID: String(accountSid).trim(), TWILIO_AUTH_TOKEN: String(authToken).trim(), TWILIO_FROM: sender };
+        updateEnvFile(updates);
+        Object.assign(process.env, updates);
+        res.json({ ok: true, configured: true, accountName: acct.name, from: sender });
+    } catch (e) {
+        res.status(400).json({ error: `Twilio did not accept these: ${e.message}` });
+    }
+});
+
+router.post('/twilio/disconnect', requireAdmin, async (_req, res) => {
+    const updates = { TWILIO_ACCOUNT_SID: '', TWILIO_AUTH_TOKEN: '', TWILIO_FROM: '' };
+    updateEnvFile(updates);
+    Object.assign(process.env, updates);
+    res.json({ ok: true, configured: false });
+});
+
 router.post('/stripe/disconnect', requireAdmin, async (_req, res) => {
     updateEnvFile({ STRIPE_SECRET_KEY: '', STRIPE_WEBHOOK_SECRET: '', STRIPE_PUBLISHABLE_KEY: '' });
     process.env.STRIPE_SECRET_KEY = '';

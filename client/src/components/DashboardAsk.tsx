@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Sparkles, ArrowRight, Mail, MessageCircle, X, FileText, FileSpreadsheet, Globe } from 'lucide-react'
 import AskForm, { type AskFormSpec } from './AskForm'
+import { TwilioConnectForm } from './ConnectForms'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import EmailCustomersModal from '../pages/customers/EmailCustomersModal'
@@ -36,6 +37,8 @@ type Answer = {
   form?: AskFormSpec | null
   /** Web pages the answer drew on, when the web was on. */
   sources?: { label: string; url: string }[]
+  /** A connection to make once before it can do this (SMS: 'twilio'). */
+  setup?: string | null
   pdfPath?: string
   quoteId?: string
   contractId?: string
@@ -65,6 +68,11 @@ const TOOL_LABEL: Record<string, string> = {
   past_checkout: 'checked who is past check-out',
   conversion_review: 'reviewed why leads convert or not',
   rep_scorecard: 'scored each sales rep',
+  meta_ads_review: 'reviewed the Meta ads',
+  email_inbox: 'read the inbox',
+  read_email: 'read an email',
+  propose_sms: 'prepared a text',
+  propose_whatsapp_message: 'prepared a WhatsApp',
   leads_list: 'listed the leads',
   sales_summary: 'read sales from Zoho',
   receivables: 'read receivables from Zoho',
@@ -143,11 +151,11 @@ export default function DashboardAsk() {
     setErr('')
     if (fresh) setQ(question)
     try {
-      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[]; compose?: Compose | null; files?: Answer['files']; options?: string[]; form?: AskFormSpec | null; sources?: Answer['sources'] }>(
+      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[]; compose?: Compose | null; files?: Answer['files']; options?: string[]; form?: AskFormSpec | null; sources?: Answer['sources']; setup?: string | null }>(
         '/assistant/ask', { question, history: before.slice(-10), web: Boolean(caps?.web && web) },
       )
       if (!before.length) qc.invalidateQueries({ queryKey: ['assistant-recent'] })
-      setAnswer({ content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [], files: data.files || [], options: data.options || [], form: data.form || null, sources: data.sources || [] })
+      setAnswer({ content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [], files: data.files || [], options: data.options || [], form: data.form || null, sources: data.sources || [], setup: data.setup || null })
       setThread([...before, { role: 'user' as const, content: question }, { role: 'assistant' as const, content: data.answer }].slice(-12))
       setQ('')
       // Asking to message a group IS asking for the composer, so it opens
@@ -309,6 +317,10 @@ export default function DashboardAsk() {
           }}>
             {withBold(answer.content)}
           </p>
+
+          {answer.setup === 'twilio' && (
+            <div style={{ marginTop: 12, border: `1px solid ${LINE}`, borderRadius: 12, padding: '12px 14px' }}><TwilioConnectForm /></div>
+          )}
 
           {answer.form && !answer.pending && (
             <AskForm key={answer.content + answer.form.fields.map((f) => f.key).join()} form={answer.form} busy={busy} onSubmit={(text) => ask(text)} />

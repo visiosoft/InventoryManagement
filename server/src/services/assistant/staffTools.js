@@ -291,6 +291,60 @@ proposal({
 });
 
 proposal({
+   name: 'propose_sms',
+   description: 'Prepare a text message (SMS) to one or more phone numbers, or to leads/customers by name. Plain, short, no prices or dates a tool did not give you. Only prepares it — sent when the person confirms. If SMS is not set up yet, say the form to connect Twilio is shown below and stop.',
+   parameters: {
+      type: 'object',
+      properties: {
+         to: { type: 'array', items: { type: 'string' }, description: 'Phone numbers, or names of leads/customers' },
+         message: { type: 'string' },
+      },
+      required: ['to', 'message'],
+   },
+   async run({ to = [], message }, { user }) {
+      const { twilioConfigured, toE164 } = await import('../twilio.js');
+      // Set up once, on a form that goes straight to the server — never typed into the chat.
+      if (!twilioConfigured()) return { error: 'SMS is not set up yet: Twilio needs connecting once.', setup: 'twilio' };
+      const text = String(message || '').trim();
+      if (!text) return { error: 'The message is empty' };
+      const numbers = [];
+      const missed = [];
+      for (const raw of (Array.isArray(to) ? to : [to]).slice(0, 50)) {
+         const q = String(raw || '').trim();
+         if (!q) continue;
+         let phone = /\d{7,}/.test(q.replace(/\D/g, '')) ? q : '';
+         let name = '';
+         if (!phone) {
+            const found = await findLead({ query: q });
+            if (found.error) { missed.push(`${q} — ${found.error}`); continue; }
+            phone = found.lead.phone || found.lead.phoneNormalized;
+            name = found.lead.fullName;
+         }
+         const e164 = toE164(phone);
+         if (!e164) { missed.push(`${q} — not a phone number`); continue; }
+         if (!numbers.some((n) => n.to === e164)) numbers.push({ to: e164, name });
+      }
+      if (!numbers.length) return { error: `Nobody to text: ${missed.join('; ') || 'no numbers given'}` };
+      return {
+         ...holdProposal({
+            user, kind: 'send_sms',
+            summary: [`SMS to ${numbers.map((n) => (n.name ? `${n.name} (${n.to})` : n.to)).join(', ')}`, ...(missed.length ? [`Cannot reach: ${missed.join('; ')}`] : []), text, `From ${process.env.TWILIO_FROM}`],
+            spec: { numbers, body: text },
+         }),
+         instruction: CONFIRM_LINE,
+      };
+   },
+}, 'send_sms', async ({ numbers, body }) => {
+   const { sendSms } = await import('../twilio.js');
+   let sent = 0;
+   const failed = [];
+   for (const n of numbers) {
+      try { await sendSms({ to: n.to, body }); sent += 1; } catch (e) { failed.push(`${n.to}: ${e.message}`); }
+   }
+   return { ok: sent > 0, message: `Text sent to ${sent} of ${numbers.length}.${failed.length ? ` Failed — ${failed.join('; ')}` : ''}` };
+});
+
+proposal({
    name: 'propose_invoice',
    description: 'Prepare an invoice against a contract (a one-off charge, an extra period, a deposit…): contract number, description, quantity, rate in AED, due date. Only prepares it — created when the person confirms.',
    parameters: {

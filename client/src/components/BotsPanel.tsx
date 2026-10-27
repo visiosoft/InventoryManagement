@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot as BotIcon, ChevronLeft, Globe, LayoutGrid, List as ListIcon, Loader2, Mail, MessageCircle, Pencil, Pin, Play, Plus, Pause, Trash2 } from 'lucide-react'
+import { Bot as BotIcon, ChevronLeft, Globe, LayoutGrid, List as ListIcon, Loader2, Mail, MessageCircle, Pencil, Play, Plus, Pause, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
+import { TwilioConnectForm } from './ConnectForms'
 import { SlideOver } from './ui'
 
 /**
@@ -22,7 +23,8 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 type Cadence = 'manual' | 'daily' | 'weekly' | 'monthly'
 type RunItem = { _id: string; channel?: 'email' | 'whatsapp'; phone?: string; reason?: string; name: string; email: string; unit: string; endDate: string; subject: string; body: string; status: 'pending' | 'sent' | 'skipped' | 'failed'; error?: string }
-type Run = { _id: string; createdAt: string; status: 'ok' | 'waiting' | 'failed'; summary: string; answer: string; sources: { label: string; url: string }[]; items: RunItem[]; error: string }
+type Run = { _id: string; createdAt: string; status: 'ok' | 'waiting' | 'failed'; summary: string; answer: string; sources: { label: string; url: string }[]; items: RunItem[]; error: string
+  trigger?: 'schedule' | 'manual' | 'chat'; question?: string; setup?: string; pending?: { id: string; kind: string; summary: string[]; expiresAt: string } | null }
 export type BotRow = {
   _id: string; name: string; kind: 'ai_report' | 'contract_emails' | 'quiet_leads'; icon: string
   instruction: string; web: boolean; days: number; subject: string; message: string
@@ -56,6 +58,8 @@ const PRESETS: { title: string; hint: string; draft: Partial<Draft> }[] = [
   { title: 'Morning lead summary', hint: 'Yesterday’s leads and what is due', draft: { name: 'Morning lead summary', kind: 'ai_report', icon: '☀️', instruction: 'How many leads came in yesterday and from which sources, which leads have not had a reply, how many follow-ups are due today, and which contracts end this week.', schedule: { cadence: 'daily', hour: 9, dayOfWeek: 1, dayOfMonth: 1 } } },
   { title: 'Quiet good leads', hint: 'WhatsApp good leads that went quiet', draft: { name: 'Quiet good leads', kind: 'quiet_leads', icon: '💬', quietDays: 3, maxQuietDays: 30, dailyCap: 30, schedule: { cadence: 'daily', hour: 11, dayOfWeek: 1, dayOfMonth: 1 } } },
   { title: 'Sales team performance', hint: 'Each rep: leads, replies, wins, calls', draft: { name: 'Sales team performance', kind: 'ai_report', icon: '🏆', instruction: 'Sales team update: for each rep over the last 7 days and yesterday — leads given, contacted, quotations, site visits, won and win rate; first-reply speed and share answered within 15 minutes; never answered; waiting now; overdue follow-ups; calls; contracts closed. Then who did best, who needs help and with what, and what changed since last week.', schedule: { cadence: 'daily', hour: 18, dayOfWeek: 1, dayOfMonth: 1 } } },
+  { title: 'Meta ads', hint: 'Which ads bring customers', draft: { name: 'Meta ads', kind: 'ai_report', icon: '📣', instruction: 'Meta ads review for the last 7 and 30 days: for each Click-to-WhatsApp ad, people who messaged, contacted, quotations, site visits, won, lost and why, win rate, and spend and cost per customer when connected. Rank the ads, name the ones bringing chats but no customers, and say which to keep, change or pause.', schedule: { cadence: 'weekly', hour: 10, dayOfWeek: 1, dayOfMonth: 1 } } },
+  { title: 'Inbox summary', hint: 'contact@purplebox.ae, every morning', draft: { name: 'Inbox summary', kind: 'ai_report', icon: '📬', instruction: 'Summarise the emails that reached contact@purplebox.ae in the last 24 hours, grouped: customers and leads, bookings and payments, suppliers and bills, anything urgent, the rest in one line. For each that needs an answer, say who should reply and what about. Skip newsletters and adverts.', schedule: { cadence: 'daily', hour: 9, dayOfWeek: 1, dayOfMonth: 1 } } },
   { title: 'Your own', hint: 'Any question, on a schedule', draft: { name: '', kind: 'ai_report', icon: '🤖', instruction: '' } },
 ]
 
@@ -91,6 +95,7 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
     refetchInterval: (q) => ((q.state.data?.bots ?? []).some(isRunning) ? 4_000 : 60_000),
   })
   const [view, setView] = useState<'cards' | 'list'>(() => { try { return localStorage.getItem('pb_bots_view') === 'list' ? 'list' : 'cards' } catch { return 'cards' } })
+  const [chatId, setChatId] = useState<string | null>(null)
   const chooseView = (v: 'cards' | 'list') => { setView(v); try { localStorage.setItem('pb_bots_view', v) } catch { /* private window */ } }
   const [editing, setEditing] = useState<Draft | null>(null)
   const [choosing, setChoosing] = useState(false)
@@ -134,7 +139,7 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
     <div>
       {!pinnedOnly && (
         <div className="flex items-center gap-3 mb-4">
-          <div style={{ fontSize: 13, color: MUTED }} className="mr-auto">Each bot runs on its schedule and keeps its latest result here. Pinned bots also show on Overview.</div>
+          <div style={{ fontSize: 13, color: MUTED }} className="mr-auto">Each bot runs on its schedule and keeps its results here. Open one in List to ask it more.</div>
           <div className="inline-flex" role="group" aria-label="View" style={{ border: `1px solid ${LINE}`, borderRadius: 9, overflow: 'hidden' }}>
             {(['cards', 'list'] as const).map((v) => (
               <button key={v} type="button" onClick={() => chooseView(v)} aria-pressed={view === v} aria-label={v === 'cards' ? 'Cards' : 'List'}
@@ -165,7 +170,7 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
           No bots yet. Make one to email renewals, watch competitors or send a morning summary.
         </div>
       ) : view === 'list' && !pinnedOnly ? (
-        <BotsList bots={bots} running={(id) => run.isPending && run.variables === id}
+        <BotsList bots={bots} initialId={chatId} running={(id) => run.isPending && run.variables === id}
           onRun={(b) => { setErr(''); run.mutate(b._id) }}
           onEdit={(b) => setEditing({ ...b })}
           onToggle={(b) => patch.mutate({ id: b._id, body: { enabled: !b.enabled } })}
@@ -179,7 +184,7 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
               onRun={() => { setErr(''); run.mutate(b._id) }}
               onEdit={() => setEditing({ ...b })}
               onToggle={() => patch.mutate({ id: b._id, body: { enabled: !b.enabled } })}
-              onPin={() => patch.mutate({ id: b._id, body: { showOnDashboard: !b.showOnDashboard } })}
+              onPin={() => { setChatId(b._id); chooseView('list') }}
               onReview={(r) => setReviewing({ bot: b, run: r })}
               onDelete={() => { if (window.confirm(`Delete the bot “${b.name}”? Its results go with it.`)) remove.mutate(b._id) }} />
           ))}
@@ -278,9 +283,8 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview, onDel
         <button type="button" style={btn()} onClick={onEdit} aria-label="Edit"><Pencil size={13} /></button>
         <button type="button" style={btn()} onClick={onToggle} aria-label={bot.enabled ? 'Pause' : 'Resume'}>{bot.enabled ? <Pause size={13} /> : <Play size={13} />}</button>
         <button type="button" style={{ ...btn(), color: '#B91C1C' }} onClick={onDelete} aria-label="Delete" title="Delete this bot"><Trash2 size={13} /></button>
-        <button type="button" onClick={onPin} aria-label={bot.showOnDashboard ? 'Unpin from Overview' : 'Pin to Overview'} title={bot.showOnDashboard ? 'On Overview' : 'Pin to Overview'}
-          style={{ ...btn(), marginLeft: 'auto', color: bot.showOnDashboard ? PURPLE : MUTED, borderColor: bot.showOnDashboard ? PURPLE : LINE }}>
-          <Pin size={13} />
+        <button type="button" onClick={onPin} aria-label="Chat" title="Open and ask it more" style={{ ...btn(), marginLeft: 'auto' }}>
+          <MessageCircle size={13} /> Chat
         </button>
       </div>
     </div>
@@ -401,8 +405,6 @@ function BotEditor({ draft, onClose, onSaved }: { draft: Draft; onClose: () => v
             </label>
           </div>
         )}
-
-        {toggle(d.showOnDashboard, () => set({ showOnDashboard: !d.showOnDashboard }), 'Show on Overview')}
 
         {err && <div style={{ fontSize: 12.5, color: '#B91C1C' }}>{err}</div>}
         <div className="flex items-center gap-2">
@@ -552,12 +554,16 @@ const dayStamp = (iso: string) => {
   return `${same ? 'Today' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' })} ${time(iso)}`
 }
 
-function BotsList({ bots, running, onRun, onEdit, onToggle, onPin, onReview, onDelete }: {
-  bots: BotRow[]; running: (id: string) => boolean
+function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, onReview, onDelete }: {
+  bots: BotRow[]; initialId?: string | null; running: (id: string) => boolean
   onRun: (b: BotRow) => void; onEdit: (b: BotRow) => void; onToggle: (b: BotRow) => void; onPin: (b: BotRow) => void
   onReview: (b: BotRow, r: Run) => void; onDelete: (b: BotRow) => void
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const qc = useQueryClient()
+  const [selectedId, setSelectedId] = useState<string | null>(initialId)
+  const [msg, setMsg] = useState('')
+  const [chatErr, setChatErr] = useState('')
+  const [sending, setSending] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const selected = bots.find((b) => b._id === selectedId) ?? bots[0]
   const busy = selected ? running(selected._id) || isRunning(selected) : false
@@ -567,6 +573,19 @@ function BotsList({ bots, running, onRun, onEdit, onToggle, onPin, onReview, onD
     enabled: Boolean(selected),
   })
   const runs = [...(runsData?.runs ?? [])].reverse()
+
+  async function send(e: React.FormEvent) {
+    e.preventDefault()
+    const q = msg.trim()
+    if (!q || !selected || sending) return
+    setSending(true); setChatErr('')
+    try {
+      await api.post(`/bots/${selected._id}/ask`, { question: q })
+      setMsg('')
+      qc.invalidateQueries({ queryKey: ['bots'] })
+      qc.invalidateQueries({ queryKey: ['bot-runs'] })
+    } catch (err) { setChatErr(apiError(err)) } finally { setSending(false) }
+  }
 
   return (
     <div className="grid lg:grid-cols-[300px_minmax(0,1fr)]" style={{ border: `1px solid ${LINE}`, borderRadius: 16, overflow: 'hidden', minHeight: 560, background: '#fff' }}>
@@ -601,7 +620,6 @@ function BotsList({ bots, running, onRun, onEdit, onToggle, onPin, onReview, onD
             <button type="button" style={btn(true)} disabled={busy} onClick={() => onRun(selected)}><Play size={13} /> {busy ? 'Running…' : 'Run now'}</button>
             <button type="button" style={btn()} onClick={() => onEdit(selected)} aria-label="Edit"><Pencil size={13} /></button>
             <button type="button" style={btn()} onClick={() => onToggle(selected)} aria-label={selected.enabled ? 'Pause' : 'Resume'}>{selected.enabled ? <Pause size={13} /> : <Play size={13} />}</button>
-            <button type="button" style={{ ...btn(), color: selected.showOnDashboard ? PURPLE : MUTED }} onClick={() => onPin(selected)} aria-label={selected.showOnDashboard ? 'Unpin from Overview' : 'Pin to Overview'}><Pin size={13} /></button>
             <button type="button" style={{ ...btn(), color: '#B91C1C' }} onClick={() => onDelete(selected)} aria-label="Delete"><Trash2 size={13} /></button>
           </div>
 
@@ -611,7 +629,12 @@ function BotsList({ bots, running, onRun, onEdit, onToggle, onPin, onReview, onD
               const pending = r.items.filter((i) => i.status === 'pending')
               return (
                 <div key={r._id}>
-                  <div style={{ textAlign: 'center', fontSize: 11.5, color: MUTED, margin: '4px 0 8px' }}>{dayStamp(r.createdAt)}</div>
+                  <div style={{ textAlign: 'center', fontSize: 11.5, color: MUTED, margin: '4px 0 8px' }}>{dayStamp(r.createdAt)}{r.trigger === 'manual' ? ' · run now' : r.trigger === 'schedule' ? ' · scheduled' : ''}</div>
+                  {r.question && (
+                    <div className="flex justify-end" style={{ marginBottom: 8 }}>
+                      <div style={{ background: PURPLE, color: '#fff', borderRadius: 14, padding: '9px 13px', fontSize: 13.5, maxWidth: '75%', whiteSpace: 'pre-wrap' }}>{r.question}</div>
+                    </div>
+                  )}
                   <div style={{ background: '#F4F2F7', borderRadius: 14, padding: '12px 14px', fontSize: 13.5, lineHeight: 1.55, color: INK, whiteSpace: 'pre-wrap', maxWidth: 760 }}>
                     {r.error ? <span style={{ color: '#B91C1C' }}>{r.error}</span> : r.answer ? withBold(r.answer) : r.summary}
                     {r.items.length > 0 && (
@@ -636,6 +659,8 @@ function BotsList({ bots, running, onRun, onEdit, onToggle, onPin, onReview, onD
                       </div>
                     )}
                   </div>
+                  {r.setup === 'twilio' && <div style={{ marginTop: 8, border: `1px solid ${LINE}`, borderRadius: 12, padding: '12px 14px' }}><TwilioConnectForm /></div>}
+                  {r.pending && <ConfirmCard pending={r.pending} onDone={() => qc.invalidateQueries({ queryKey: ['bot-runs'] })} />}
                   {pending.length > 0 && (
                     <button type="button" style={{ ...btn(true), marginTop: 8 }} onClick={() => onReview(selected, r)}>
                       {selected.kind === 'quiet_leads' ? <MessageCircle size={13} /> : <Mail size={13} />} Review &amp; send {pending.length}
@@ -650,8 +675,47 @@ function BotsList({ bots, running, onRun, onEdit, onToggle, onPin, onReview, onD
               </div>
             )}
           </div>
+          <form onSubmit={send} className="flex items-center gap-2" style={{ padding: '10px 14px', borderTop: `1px solid ${LINE}` }}>
+            <input value={msg} onChange={(e) => setMsg(e.target.value)} disabled={busy}
+              placeholder={busy ? 'Working…' : `Message ${selected.name} — ask more, or say "run daily at 7pm"`} aria-label={`Message ${selected.name}`}
+              style={{ flex: 1, minWidth: 0, height: 40, borderRadius: 999, border: `1px solid ${FIELD}`, padding: '0 16px', fontSize: 13.5 }} />
+            <button type="submit" disabled={busy || sending || !msg.trim()} aria-label="Send" style={{ ...btn(true), borderRadius: 999, height: 40, padding: '0 16px' }}>{sending ? '…' : 'Send'}</button>
+          </form>
+          {chatErr && <div style={{ fontSize: 12, color: '#B91C1C', padding: '0 16px 10px' }}>{chatErr}</div>}
         </div>
       )}
+    </div>
+  )
+}
+
+/* Something a chat answer prepared — a WhatsApp, a text, a quotation — waiting
+   for this person's Confirm, the same card the Ask box shows. */
+function ConfirmCard({ pending, onDone }: { pending: NonNullable<Run['pending']>; onDone: () => void }) {
+  const [state, setState] = useState<'' | 'busy' | string>('')
+  const [expired] = useState(() => new Date(pending.expiresAt).getTime() < Date.now())
+  async function decide(go: boolean) {
+    setState('busy')
+    try {
+      const { data } = await api.post(`/assistant/${go ? 'confirm' : 'cancel'}`, { id: pending.id })
+      setState(data.message || (go ? 'Done.' : 'Cancelled.'))
+      onDone()
+    } catch (e) { setState(apiError(e)) }
+  }
+  return (
+    <div style={{ marginTop: 8, background: TINT, border: `1px solid #DDD0FF`, borderRadius: 12, padding: '12px 14px', maxWidth: 560 }}>
+      <div style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 13.5, color: INK, marginBottom: 6 }}>Do this?</div>
+      <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12.5, color: MUTED, lineHeight: 1.6 }}>
+        {pending.summary.map((l, i) => <li key={i} style={{ whiteSpace: 'pre-wrap' }}>{l}</li>)}
+      </ul>
+      {state && state !== 'busy' ? <div style={{ fontSize: 12.5, color: INK, marginTop: 8 }}>{state}</div>
+        : expired ? <div style={{ fontSize: 12, color: MUTED, marginTop: 8 }}>This card has expired — ask again to prepare it fresh.</div>
+          : (
+            <div className="flex gap-2 mt-3">
+              <button type="button" style={btn(true)} disabled={state === 'busy'} onClick={() => decide(true)}>{state === 'busy' ? 'Doing it…' : 'Confirm'}</button>
+              <button type="button" style={btn()} disabled={state === 'busy'} onClick={() => decide(false)}>Cancel</button>
+            </div>
+          )}
+      <div style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>Nothing is sent until you confirm.</div>
     </div>
   )
 }

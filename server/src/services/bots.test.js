@@ -104,7 +104,7 @@ test('a bot is saved only with what it may hold', async () => {
 test('the recommended bots are all valid, and only the emails reach customers — asking first', async () => {
    const { RECOMMENDED_BOTS } = await import('./bots.js');
    const { cleanBot } = await import('../routes/bots.js');
-   assert.equal(RECOMMENDED_BOTS.length, 7);
+   assert.equal(RECOMMENDED_BOTS.length, 9);
    assert.ok(!RECOMMENDED_BOTS.some((b) => b.name === 'Past check-out watch'), 'taken out at the admin\'s request');
    for (const b of RECOMMENDED_BOTS) assert.deepEqual(cleanBot(b).errors, [], b.name);
    const emailers = RECOMMENDED_BOTS.filter((b) => b.kind === 'contract_emails');
@@ -159,4 +159,44 @@ test('the quiet-leads bot fills the template with the first name and waits for a
    assert.equal(run.items[0].channel, 'whatsapp');
    const noTemplate = await runBot({ _id: 'b9', kind: 'quiet_leads', templateName: '' }, { deps: { saveRun: async (r) => r } });
    assert.match(noTemplate.error, /Choose the WhatsApp template/);
+});
+
+test('telling a bot when to run changes its schedule', async () => {
+   const { parseScheduleCommand, describeSchedule } = await import('./bots.js');
+   const cur = { cadence: 'weekly', hour: 9, dayOfWeek: 1, dayOfMonth: 1 };
+   const said = (t) => { const r = parseScheduleCommand(t, cur); return r && describeSchedule(r.schedule); };
+   assert.equal(said('run this every day at 7pm'), 'Daily 19:00');
+   assert.equal(said('schedule it for Thursdays at 8 am'), 'Every Thursday 08:00');
+   assert.equal(said('run at 18:00'), 'Every Monday 18:00');
+   assert.equal(said('monthly on the 3rd at 10'), 'Monthly on the 3rd 10:00');
+   assert.equal(said('only when I run it'), 'Only when run');
+   assert.equal(parseScheduleCommand('daily at 7:30pm', cur).note, 'Bots run on the hour, so it runs at 19:00.');
+   assert.equal(parseScheduleCommand('which ad brought the most customers?', cur), null);
+   assert.equal(parseScheduleCommand('who is waiting for a reply', cur), null);
+   assert.equal(parseScheduleCommand('how many leads came at 10am?', cur), null);
+});
+
+test('talking to a bot: a schedule change is done at once; a question goes with the bot\'s recent context', async () => {
+   const { askBot } = await import('./bots.js');
+   const bot = { _id: 'b1', name: 'Competitor watch', kind: 'ai_report', instruction: 'Competitor prices', web: true, schedule: { cadence: 'weekly', hour: 10, dayOfWeek: 1, dayOfMonth: 1 } };
+   let schedule = null;
+   let asked = null;
+   const deps = {
+      setSchedule: async (_id, s) => { schedule = s; },
+      recentRuns: async () => [{ trigger: 'schedule', answer: 'Delight: AED 900' }, { trigger: 'chat', question: 'and Ruby?', answer: 'Ruby: AED 950' }],
+      ask: async (a) => { asked = a; return { answer: 'GetSpace: AED 1,000\nmore', grounded: true, sources: [] }; },
+      saveRun: async (r) => r,
+   };
+   const done = await askBot(bot, 'run it every day at 8pm', { deps });
+   assert.equal(schedule.cadence, 'daily');
+   assert.equal(schedule.hour, 20);
+   assert.equal(done.answer, 'Done — Competitor watch now runs daily 20:00.');
+   assert.equal(asked, null, 'no AI needed for that');
+
+   const reply = await askBot(bot, 'what about GetSpace?', { user: { id: 'u1', role: 'admin' }, deps });
+   assert.equal(asked.web, true);
+   assert.deepEqual(asked.history.map((h) => h.role), ['user', 'assistant', 'user', 'assistant']);
+   assert.equal(asked.history[0].content, 'Competitor prices');
+   assert.equal(reply.question, 'what about GetSpace?');
+   assert.equal(reply.summary, 'GetSpace: AED 1,000');
 });

@@ -869,6 +869,72 @@ tool({
 });
 
 tool({
+   name: 'meta_ads_review',
+   description: 'Meta (Facebook/Instagram) Click-to-WhatsApp ads over the last N days (default 30), each judged by what its people did here: people who messaged from the ad, how many became leads, were contacted, got a quotation or site visit, were won or lost (with lost reasons), and win rate; plus Meta lead-form leads. When Meta\'s ad account is connected, each ad also has its spend, cost per chat and cost per customer won, and ads that spent money but brought nobody are listed. Use for "which ad works", "Meta ads performance", "are our ads bringing customers".',
+   parameters: { type: 'object', properties: { days: { type: 'number', description: 'How far back, default 30' } } },
+   async run({ days = 30 } = {}, { now = new Date() } = {}) {
+      const { metaAdsReview } = await import('../metaAdsReview.js');
+      const n = Math.min(180, Math.max(1, Number(days) || 30));
+      const since = new Date(now.getTime() - n * 864e5);
+      const refs = await WhatsAppMessage.find({ 'raw.referral.source_id': { $exists: true }, occurredAt: { $gte: since } })
+         .select('phoneNormalized occurredAt raw.referral.source_id raw.referral.headline').lean();
+      const referrals = refs.map((m) => ({ phone: m.phoneNormalized, adId: m.raw?.referral?.source_id, headline: m.raw?.referral?.headline, at: m.occurredAt }));
+      const phones = [...new Set(referrals.map((r) => r.phone).filter(Boolean))];
+      const leads = phones.length ? await Lead.find({ phoneNormalized: { $in: phones } }).select('phoneNormalized status lostReason').lean() : [];
+      const { metaAdsConfigured, adSpendByAd } = await import('../metaAds.js');
+      let spend = null;
+      let spendError = '';
+      if (metaAdsConfigured()) {
+         try {
+            spend = await adSpendByAd({ since: since.toISOString().slice(0, 10), until: now.toISOString().slice(0, 10) });
+         } catch (e) { spendError = e.message; }
+      }
+      const out = metaAdsReview({ referrals, leadsByPhone: new Map(leads.map((l) => [l.phoneNormalized, l])), spendByAd: spend?.byAd || null });
+      const formLeads = await Lead.find({ source: 'meta_ads', createdAt: { $gte: since } }).select('status').lean();
+      return {
+         period: `last ${n} days`,
+         ...out,
+         ads: out.ads.slice(0, 25),
+         leadFormLeads: { leads: formLeads.length, won: formLeads.filter((l) => l.status === 'won').length },
+         currency: spend?.currency || '',
+         note: spend ? 'Spend is from Meta\'s ad account for the same period.' : spendError ? `Spend could not be read from Meta: ${spendError}` : 'No spend: Meta\'s ad account is not connected (Settings → Integrations → Meta Ads), so there is no cost per lead or per customer.',
+         links: [link('Leads', '/leads')],
+      };
+   },
+});
+
+tool({
+   name: 'email_inbox',
+   description: 'The company inbox (the Gmail account connected in Settings — contact@purplebox.ae): recent emails with sender, subject, date and a one-line snippet, newest first. Admins only, read-only. Use for "summarise today\'s emails", "anything from the bank", "who emailed us". Read one in full with read_email.',
+   parameters: {
+      type: 'object',
+      properties: {
+         hours: { type: 'number', description: 'How far back, default 24' },
+         unreadOnly: { type: 'boolean', description: 'Only unread ones, default false' },
+      },
+   },
+   async run({ hours = 24, unreadOnly = false } = {}, { user } = {}) {
+      if (!ADMIN_ROLES.includes(user?.role)) return { error: 'The inbox is for admins' };
+      const { gmailConfigured, listGmailInbox } = await import('../gmail.js');
+      if (!gmailConfigured()) return { error: 'Gmail is not connected (Settings → Integrations)' };
+      const rows = await listGmailInbox({ hours: Math.min(24 * 14, Math.max(1, Number(hours) || 24)), unreadOnly: unreadOnly === true, limit: 50 });
+      return { count: rows.length, emails: rows.map((r) => ({ id: r.id, from: r.from, subject: r.subject, date: r.date, unread: r.unread, snippet: r.snippet })) };
+   },
+});
+
+tool({
+   name: 'read_email',
+   description: 'One email from the company inbox in full (by the id email_inbox gave). Admins only, read-only.',
+   parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+   async run({ id }, { user } = {}) {
+      if (!ADMIN_ROLES.includes(user?.role)) return { error: 'The inbox is for admins' };
+      const { readGmailMessage } = await import('../gmail.js');
+      const m = await readGmailMessage(String(id));
+      return { from: m.from, to: m.to, subject: m.subject, date: m.date, text: m.text };
+   },
+});
+
+tool({
    name: 'leads_list',
    description: 'Every lead in a date range with name, phone, status, source, owner and size — optionally only one status, source or owner. Use to list or look through leads ("all leads from yesterday", "Randa\'s leads this week", "leads still new"). For a PDF or Excel of them use export_file.',
    parameters: {

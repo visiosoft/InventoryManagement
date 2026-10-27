@@ -2892,7 +2892,13 @@ const botRunItemSchema = new Schema({
 
 const botRunSchema = new Schema({
   bot: { type: Schema.Types.ObjectId, ref: 'Bot', required: true, index: true },
-  trigger: { type: String, enum: ['schedule', 'manual'], default: 'schedule' },
+  trigger: { type: String, enum: ['schedule', 'manual', 'chat'], default: 'schedule' },
+  // A message to the bot (trigger 'chat'): what was asked; the reply is `answer`.
+  question: { type: String, default: '' },
+  // A chat reply that prepared something for Confirm (the assistant's card),
+  // or needs a connection made first ('twilio').
+  pending: { type: Schema.Types.Mixed, default: null },
+  setup: { type: String, default: '' },
   status: { type: String, enum: ['ok', 'waiting', 'failed'], default: 'ok' },
   summary: { type: String, default: '' },
   answer: { type: String, default: '' },

@@ -195,6 +195,8 @@ async function defaultDeps() {
          await markFirstResponse(phoneNormalized).catch(() => {});
       },
       saveRun: (doc) => BotRun.create(doc),
+      setSchedule: (id, schedule) => Bot.updateOne({ _id: id }, { $set: { schedule } }),
+      recentRuns: async (id) => (await BotRun.find({ bot: id }).sort({ createdAt: -1 }).limit(8).lean()).reverse(),
    };
 }
 
@@ -347,6 +349,16 @@ export const RECOMMENDED_BOTS = [
       schedule: { cadence: 'daily', hour: 18, dayOfWeek: 1, dayOfMonth: 1 },
    },
    {
+      name: 'Meta ads', icon: '📣', kind: 'ai_report',
+      instruction: 'Weekly Meta ads review for the last 7 days and the last 30 days: for each Click-to-WhatsApp ad, how many people messaged from it, how many were contacted, got a quotation or site visit, were won or lost, the win rate and the main lost reasons; and the lead-form leads. Then rank the ads by customers won, name the ads that bring many chats but no customers, compare this week with the 30-day picture, and say which ads to keep, change or pause, and why. When spend is available, rank by cost per customer won and name ads that spent money but brought nobody; when it is not, say so.',
+      schedule: { cadence: 'weekly', hour: 10, dayOfWeek: 1, dayOfMonth: 1 },
+   },
+   {
+      name: 'Inbox summary', icon: '📬', kind: 'ai_report',
+      instruction: 'Summarise the emails that reached contact@purplebox.ae in the last 24 hours. Group them: customers and leads (what each wants), bookings and payments, suppliers and bills, anything urgent or from a bank or authority, and everything else in one line. For each that needs an answer, say who should reply and what about. Read an email in full when the snippet is not enough. Skip newsletters and adverts.',
+      schedule: { cadence: 'daily', hour: 9, dayOfWeek: 1, dayOfMonth: 1 },
+   },
+   {
       name: 'Improvement check', icon: '🛠️', kind: 'ai_report',
       instruction: 'Daily improvement check for the admin. Look at yesterday and the last 7 days: how fast we first replied on WhatsApp and how many leads were never answered; leads waiting for a reply now; follow-ups that are overdue; quotations sent but not followed up; bookings and contracts made; calls made by each rep; contracts past check-out. Then list the three to five most important things to improve today, each with the number behind it and who should act. Only say what the figures show.',
       schedule: { cadence: 'daily', hour: 9, dayOfWeek: 1, dayOfMonth: 1 },
@@ -362,3 +374,82 @@ export const RECOMMENDED_BOTS = [
       schedule: { cadence: 'weekly', hour: 10, dayOfWeek: 1, dayOfMonth: 1 },
    },
 ];
+
+/* ── Talking to a bot ───────────────────────────────────────────────────── */
+
+const DAY_WORDS = [/\bsun(day)?s?\b/, /\bmon(day)?s?\b/, /\btue(s|sday)?s?\b/, /\bwed(nesday)?s?\b/, /\bthu(r|rs|rsday)?s?\b/, /\bfri(day)?s?\b/, /\bsat(urday)?s?\b/];
+
+/**
+ * "Run this every Monday at 7pm", "daily at 9", "only when I run it" → the
+ * new schedule, or null when the message is not about when it runs. Bots run
+ * on the hour, so minutes are dropped and said so.
+ */
+export function parseScheduleCommand(text, current = {}) {
+   const t = ` ${String(text || '').toLowerCase()} `;
+   // A time alone ("leads that came at 10am") is a question, not an instruction.
+   if (!/\b(run|runs|schedule|scheduled|reschedule|every|daily|weekly|monthly)\b/.test(t)) return null;
+   const s = { cadence: current.cadence || 'weekly', hour: current.hour ?? 9, dayOfWeek: current.dayOfWeek ?? 1, dayOfMonth: current.dayOfMonth ?? 1 };
+   let changed = false;
+   let note = '';
+   if (/only when i (run|ask)|manual(ly)?|stop (the )?schedul|no schedule|don'?t (run|schedule)/.test(t)) return { schedule: { ...s, cadence: 'manual' }, note };
+   const dayIdx = DAY_WORDS.findIndex((re) => re.test(t));
+   const monthDay = /\b(?:on the |on )?(\d{1,2})(?:st|nd|rd|th)\b(?: of (?:every|each) month)?/.exec(t);
+   if (/\b(daily|every ?day|each day)\b/.test(t)) { s.cadence = 'daily'; changed = true; }
+   else if (dayIdx >= 0) { s.cadence = 'weekly'; s.dayOfWeek = dayIdx; changed = true; }
+   else if (/\b(monthly|every month|each month)\b/.test(t) || (monthDay && /month/.test(t))) {
+      s.cadence = 'monthly'; changed = true;
+      if (monthDay) { const d = Number(monthDay[1]); s.dayOfMonth = Math.min(28, Math.max(1, d)); if (d > 28) note = 'Monthly runs go up to the 28th, so it runs on the 28th.'; }
+   } else if (/\bweekly\b/.test(t)) { s.cadence = 'weekly'; changed = true; }
+   const time = /\b(?:at|@)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?|\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)|\b(\d{1,2}):(\d{2})\b/.exec(t);
+   if (time) {
+      let h = Number(time[1] ?? time[4] ?? time[7]);
+      const min = Number(time[2] ?? time[5] ?? time[8] ?? 0);
+      const ap = (time[3] ?? time[6] ?? '').replace(/\./g, '');
+      if (ap === 'pm' && h < 12) h += 12;
+      if (ap === 'am' && h === 12) h = 0;
+      if (h >= 0 && h <= 23) {
+         s.hour = h; changed = true;
+         if (min) note = `Bots run on the hour, so it runs at ${String(h).padStart(2, '0')}:00.`;
+         if (s.cadence === 'manual') s.cadence = 'daily';
+      }
+   }
+   return changed ? { schedule: s, note } : null;
+}
+
+/**
+ * The conversation so far, for a follow-up: the bot's recent runs and chat
+ * turns as user/assistant messages, oldest first.
+ */
+export function chatHistory(bot, runs = []) {
+   const out = [];
+   for (const r of runs) {
+      if (r.trigger === 'chat') {
+         if (r.question) out.push({ role: 'user', content: r.question });
+      } else {
+         out.push({ role: 'user', content: bot.kind === 'ai_report' ? bot.instruction : `Run the ${bot.name} bot.` });
+      }
+      const said = r.error ? `(That run failed: ${r.error})` : r.answer || [r.summary, ...(r.items || []).slice(0, 15).map((i) => `- ${i.name}${i.unit ? ` · ${i.unit}` : ''}${i.reason ? ` · ${i.reason}` : ''} · ${i.status}`)].filter(Boolean).join('\n');
+      if (said) out.push({ role: 'assistant', content: said.slice(0, 1800) });
+   }
+   return out.slice(-8);
+}
+
+/** A message to a bot: a schedule change is done at once; anything else is answered with the bot's context. */
+export async function askBot(bot, question, { user, deps } = {}) {
+   const d = { ...(await defaultDeps()), ...(deps || {}) };
+   const q = String(question || '').trim().slice(0, 2000);
+   const parsed = parseScheduleCommand(q, bot.schedule);
+   if (parsed) {
+      await d.setSchedule(bot._id, parsed.schedule);
+      const answer = `Done — ${bot.name} now runs ${describeSchedule(parsed.schedule).replace(/^Every/, 'every').replace(/^Daily/, 'daily').replace(/^Monthly/, 'monthly').replace(/^Only when run/, 'only when you run it')}.${parsed.note ? ` ${parsed.note}` : ''}`;
+      return d.saveRun({ bot: bot._id, trigger: 'chat', question: q, status: 'ok', summary: answer, answer, sources: [], items: [] });
+   }
+   const runs = await d.recentRuns(bot._id);
+   const out = await d.ask({
+      question: q, history: chatHistory(bot, runs),
+      user: user ? { id: String(user.id || user._id), name: user.name, role: user.role } : { role: 'admin' },
+      web: Boolean(bot.web), rounds: 12,
+   });
+   const answer = String(out?.answer || '').trim();
+   return d.saveRun({ bot: bot._id, trigger: 'chat', question: q, status: out?.grounded === false ? 'failed' : 'ok', summary: answer.split('\n')[0].slice(0, 160), answer, sources: (out?.sources || []).slice(0, 8), items: [], pending: out?.pending || null, setup: out?.setup || '' });
+}
