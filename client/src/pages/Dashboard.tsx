@@ -11,6 +11,7 @@ import { formatDate, formatMoney } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
 import RecentAsksCard from '../components/RecentAsksCard'
 import BotsPanel from '../components/BotsPanel'
+import ZohoCompareCard from '../components/ZohoCompareCard'
 import CustomerFeedbackCard from '../components/CustomerFeedbackCard'
 import LeadCoverageCard from '../components/LeadCoverageCard'
 import ClientInfoSubmissionsCard from '../components/ClientInfoSubmissionsCard'
@@ -857,7 +858,10 @@ export default function Dashboard() {
                             {c.unit?.unitNumber && <span className="text-muted-foreground"> · {c.unit.unitNumber}</span>}
                             <Badge tone={renewal.tone}>{renewal.label}</Badge>
                           </div>
-                          <div className={`text-xs mt-0.5 ${urgency}`}>expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} ({endFmt})</div>
+                          <div className="text-xs mt-0.5">
+                            {c.startDate && <span className="text-muted-foreground">Check in {new Date(c.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} · </span>}
+                            <span className={urgency}>check out {endFmt} · {daysLeft} day{daysLeft !== 1 ? 's' : ''} left</span>
+                          </div>
                         </div>
                         <span className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap hidden sm:inline">View Contract</span>
                         <span className="shrink-0 text-muted-foreground sm:hidden">›</span>
@@ -1008,6 +1012,7 @@ export default function Dashboard() {
       {tab === 'finance' && (
         <div className="space-y-8">
           <ZohoBooksOverview />
+          <ZohoCompareCard />
           <AccountsDashboard embedded />
         </div>
       )}

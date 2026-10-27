@@ -13,7 +13,9 @@
 
 import { Router } from 'express';
 import { Contract, Customer, Task } from '../models/index.js';
-import { zohoBooksConfigured, zohoOutstandingByCustomer, zohoBooksDashboard, zohoReceivables, zohoSales } from '../services/zohoBooks.js';
+import { zohoBooksConfigured, zohoOutstandingByCustomer, zohoBooksDashboard, zohoReceivables, zohoSales, listAllZohoContacts } from '../services/zohoBooks.js';
+import { compareWithZoho, COMPARE_STATUS } from '../services/zohoCompare.js';
+import { tableWorkbook } from '../services/tableExport.js';
 
 const router = Router();
 
@@ -126,6 +128,36 @@ router.get('/zoho-receivables', async (req, res) => {
       res.json(await zohoReceivables({ force: req.query.refresh === '1' }));
    } catch (e) {
       res.json({ configured: true, error: e.response?.data?.message || e.message });
+   }
+});
+
+/* GET /api/accounts-dashboard/zoho-compare — every customer with a contract
+   beside Zoho Books' contacts, matched the way invoices are (email or phone),
+   and the reason for each one that does not match. ?format=excel to download. */
+router.get('/zoho-compare', async (req, res) => {
+   try {
+      if (!zohoBooksConfigured()) return res.json({ configured: false });
+      const withContracts = await Contract.distinct('customer');
+      const [customers, { contacts }] = await Promise.all([
+         Customer.find({ _id: { $in: withContracts } }).select('fullName email phone phones').lean(),
+         listAllZohoContacts({ force: req.query.refresh === '1' }),
+      ]);
+      const out = compareWithZoho(customers, contacts);
+      if (req.query.format === 'excel') {
+         const columns = [
+            { key: 'status', label: 'Result' }, { key: 'crmName', label: 'CRM name' }, { key: 'crmEmail', label: 'CRM email' }, { key: 'crmPhone', label: 'CRM phone' },
+            { key: 'zohoName', label: 'Zoho name' }, { key: 'zohoEmail', label: 'Zoho email' }, { key: 'zohoPhone', label: 'Zoho phone' },
+            { key: 'outstanding', label: 'Zoho owed (AED)', numeric: true }, { key: 'note', label: 'What to do' },
+         ];
+         const rows = out.rows.map((r) => ({ ...r, status: COMPARE_STATUS[r.status] }));
+         const buf = await tableWorkbook({ title: 'CRM and Zoho Books — contact check', subtitle: `${customers.length} CRM customers with contracts · ${contacts.length} Zoho contacts`, columns, rows });
+         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+         res.setHeader('Content-Disposition', `attachment; filename="crm-zoho-check-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+         return res.send(Buffer.from(buf));
+      }
+      res.json({ configured: true, crmCount: customers.length, zohoCount: contacts.length, labels: COMPARE_STATUS, ...out });
+   } catch (e) {
+      res.status(502).json({ configured: true, error: e.response?.data?.message || e.message });
    }
 });
 
