@@ -8,6 +8,7 @@ import { Router } from 'express';
 import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, PushSubscription, User, WhatsAppMessage } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { softDelete } from '../utils/softDelete.js';
+import { repliesByRep, stillWaiting } from '../services/replyActivity.js';
 import { cleanHourSplits, cleanWeeklyShifts, countsForToday, countsSince, coverageNow, coverageSignal, digitTail, outOfHoursIds, pickOwner, rosterInUse, startOfDayIn, startOfHour } from '../services/leadRouting.js';
 import { runLeadSla } from '../services/leadSla.js';
 import { getAiBotConfig } from '../services/aiBot.js';
@@ -109,28 +110,34 @@ router.get('/now', async (_req, res) => {
       const ids = live.map((r) => r.user._id);
       const dayStart = startOfDayIn(at, config.timeZone);
 
-      const [replies, lastMessages] = await Promise.all([
-         WhatsAppMessage.aggregate([
-            { $match: { direction: 'outbound', sentBy: { $in: ids }, occurredAt: { $gte: new Date(at - 7 * 86400000) } } },
-            { $group: { _id: '$sentBy', lastReplyAt: { $max: '$occurredAt' }, today: { $sum: { $cond: [{ $gte: ['$occurredAt', dayStart] }, 1, 0] } } } },
-         ]),
+      const since7 = new Date(at - 7 * 86400000);
+      const [crmReplies, appReplies, lastMessages] = await Promise.all([
+         // Replies typed in the CRM carry who sent them.
+         WhatsAppMessage.find({ direction: 'outbound', sentBy: { $in: ids }, occurredAt: { $gte: since7 } }).select('sentBy occurredAt').lean(),
+         // Replies from the WhatsApp app on the team's phones arrive as echoes with no CRM user.
+         WhatsAppMessage.find({ direction: 'outbound', sentBy: null, sentByAi: { $ne: true }, 'raw.to': { $exists: true }, occurredAt: { $gte: since7 } }).select('lead occurredAt').lean(),
+         // Every chat whose latest message (last 24h) is the customer's, and whether we had replied in that time.
          WhatsAppMessage.aggregate([
             { $match: { occurredAt: { $gte: new Date(at - 86400000) }, phoneNormalized: { $nin: [null, ''] } } },
             { $sort: { occurredAt: -1 } },
-            { $group: { _id: '$phoneNormalized', direction: { $first: '$direction' } } },
+            { $group: { _id: '$phoneNormalized', direction: { $first: '$direction' }, type: { $first: '$type' }, text: { $first: '$text' }, repliedBefore: { $max: { $eq: ['$direction', 'outbound'] } } } },
             { $match: { direction: 'inbound' } },
          ]),
       ]);
-      // The live counters: every customer whose latest message (last 24h) is
-      // still unanswered, owned or not, and the leads that arrived today.
+      // A chat the customer only closed ("Okay", "Thanks", 👍) after we replied is not waiting.
+      const waitingChats = stillWaiting(lastMessages.map((m) => ({ phone: m._id, type: m.type, text: m.text, repliedBefore: m.repliedBefore })));
       const newLeadsToday = await Lead.countDocuments({ leadDateTime: { $gte: dayStart } });
-      const waitingLeads = lastMessages.length
-         ? await Lead.find({ phoneNormalized: { $in: lastMessages.map((m) => m._id) }, owner: { $in: ids } }).select('owner').lean()
-         : [];
+      const [waitingLeads, appLeads] = await Promise.all([
+         waitingChats.length ? Lead.find({ phoneNormalized: { $in: waitingChats.map((m) => m.phone) }, owner: { $in: ids } }).select('owner').lean() : [],
+         Lead.find({ _id: { $in: [...new Set(appReplies.map((m) => String(m.lead)).filter((x) => x && x !== 'null'))] } }).select('owner').lean(),
+      ]);
+      const ownerOfLead = Object.fromEntries(appLeads.filter((l) => l.owner).map((l) => [String(l._id), String(l.owner)]));
+      const replies = repliesByRep({ crm: crmReplies, app: appReplies, ownerOfLead, dayStart });
+      const repliesToday = [...crmReplies, ...appReplies].filter((m) => new Date(m.occurredAt) >= dayStart).length;
 
       const activity = {};
       const of = (id) => (activity[String(id)] ||= {});
-      for (const r of replies) Object.assign(of(r._id), { lastReplyAt: r.lastReplyAt, repliesToday: r.today });
+      for (const [id, r] of Object.entries(replies)) Object.assign(of(id), { lastReplyAt: r.lastReplyAt, repliesToday: r.today });
       for (const l of waitingLeads) of(l.owner).waiting = (of(l.owner).waiting || 0) + 1;
 
       const cover = coverageNow({ rules: live, counts, at, timeZone: config.timeZone, activity });
@@ -145,9 +152,9 @@ router.get('/now', async (_req, res) => {
          ai: { enabled: !!bot?.enabled, mode: bot?.mode || 'draft', answering: aiAnswering },
          signal: coverageSignal({ nobodyOn: cover.nobodyOn, aiAnswering }),
          live: {
-            waitingForReply: lastMessages.length,
+            waitingForReply: waitingChats.length,
             newLeadsToday,
-            repliesToday: replies.reduce((n, r) => n + (r.today || 0), 0),
+            repliesToday,
          },
          ...cover,
          handovers: cover.handovers.map((h) => ({
