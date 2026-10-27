@@ -271,7 +271,7 @@ export async function claudeWebSearch(query, { maxUses = 4, timeout = 120000 } =
                 max_tokens: 16000,
                 system: 'You research the web for a self-storage company in Dubai. Be factual and short. Today is ' + new Date().toISOString().slice(0, 10) + '.',
                 messages,
-                tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: maxUses, user_location: { type: 'approximate', city: 'Dubai', country: 'AE', timezone: 'Asia/Dubai' } }],
+                tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: maxUses }],
                 output_config: { effort: 'low' },
             }, { timeout });
         } catch (e) {
