@@ -1,4 +1,5 @@
-import { Unit, Contract, Customer, Lead, Task, Document, WhatsAppMessage } from '../../models/index.js';
+import { Unit, Contract, Customer, Lead, Task, Document, WhatsAppMessage, CallLog } from '../../models/index.js';
+import { DATASETS, buildDataset, exportPath } from './datasets.js';
 import { BLOCKS, blockCatalogue } from '../reportBlocks.js';
 import { computeUnitAvailability } from '../unitAvailability.js';
 import { quoteLines, quoteTotals, termWeeks } from '../quoteLines.js';
@@ -658,6 +659,184 @@ for (const b of blockCatalogue()) {
 export function registerTool(def) {
    return tool(def);
 }
+
+/* ── files, and the parts of the system added since ─────────────────────── */
+
+const ADMIN_ROLES = ['admin', 'accounts_admin'];
+const FINANCE_ROLES = ['admin', 'accounts_admin', 'accounts'];
+
+tool({
+   name: 'export_file',
+   description: 'Make a PDF or Excel file of a list and offer it to download: leads (a date range, optionally a status, source or owner), contracts_expiring (next N days), tasks (today, overdue, week or all_open; mine), units_available (optionally a size), calls (last N days). Use whenever someone asks for a PDF, Excel, spreadsheet, file, export, download or printout of any of these.',
+   parameters: {
+      type: 'object',
+      properties: {
+         dataset: { type: 'string', enum: DATASETS },
+         format: { type: 'string', enum: ['pdf', 'excel'], description: 'pdf to print or send, excel to sort and total. Default pdf.' },
+         from: { type: 'string', description: 'leads: first day YYYY-MM-DD' },
+         to: { type: 'string', description: 'leads: last day YYYY-MM-DD' },
+         status: { type: 'string', description: 'leads: optional status' },
+         source: { type: 'string', description: 'leads: optional source, e.g. whatsapp, website, meta' },
+         owner: { type: 'string', description: 'leads: optional owner name' },
+         days: { type: 'number', description: 'contracts_expiring or calls: how many days' },
+         when: { type: 'string', enum: ['today', 'overdue', 'week', 'all_open'], description: 'tasks: which' },
+         mine: { type: 'boolean', description: 'tasks: only the asker\'s' },
+         sizeSqf: { type: 'number', description: 'units_available: one size' },
+      },
+      required: ['dataset'],
+   },
+   async run({ dataset, format = 'pdf', ...args }, ctx) {
+      const fmt = format === 'excel' ? 'excel' : 'pdf';
+      const keep = Object.fromEntries(Object.entries(args).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+      const table = await buildDataset(dataset, keep, ctx);
+      return {
+         dataset, format: fmt, rows: table.rows.length, title: table.title, subtitle: table.subtitle,
+         file: { label: `${table.title} (${fmt === 'pdf' ? 'PDF' : 'Excel'})`, path: exportPath(dataset, fmt, keep), format: fmt },
+         note: 'The file is attached under the answer as a download button.',
+      };
+   },
+});
+
+tool({
+   name: 'leads_list',
+   description: 'Every lead in a date range with name, phone, status, source, owner and size — optionally only one status, source or owner. Use to list or look through leads ("all leads from yesterday", "Randa\'s leads this week", "leads still new"). For a PDF or Excel of them use export_file.',
+   parameters: {
+      type: 'object',
+      properties: {
+         from: { type: 'string', description: 'YYYY-MM-DD' },
+         to: { type: 'string', description: 'YYYY-MM-DD' },
+         status: { type: 'string' }, source: { type: 'string' }, owner: { type: 'string', description: 'Owner name, or "unassigned"' },
+      },
+      required: ['from', 'to'],
+   },
+   async run(args, ctx) {
+      const table = await buildDataset('leads', args, ctx);
+      return {
+         count: table.rows.length,
+         leads: table.rows.slice(0, 80).map(({ id, ...r }) => r),
+         truncated: table.rows.length > 80,
+         links: [link('Leads', '/leads'), ...table.rows.slice(0, 4).map((r) => link(r.name || 'Lead', `/leads/${r.id}`))],
+      };
+   },
+});
+
+tool({
+   name: 'sales_summary',
+   description: 'Sales invoiced in Zoho Books: today, the last 7, 31 and 90 days, each with the change on the period before, plus 90-day invoices and money collected. Use for "how much did we sell", "sales this week", "revenue". Admins and accounts only.',
+   parameters: { type: 'object', properties: {} },
+   async run(_args, { user }) {
+      if (!FINANCE_ROLES.includes(user?.role)) return { error: 'Sales figures are for admins and accounts.' };
+      const { zohoSales } = await import('../zohoBooks.js');
+      const s = await zohoSales();
+      if (!s?.configured) return { error: 'Zoho Books is not connected.' };
+      return {
+         periods: s.periods.map((p) => ({ days: p.days, sales: p.value, previousPeriod: p.before, changePct: p.change })),
+         sales90: s.sales90, invoices90: s.invoices90, collected90: s.collected90, currency: 'AED',
+         links: [link('Dashboard', '/')],
+      };
+   },
+});
+
+tool({
+   name: 'receivables',
+   description: 'Money customers owe us in Zoho Books: total unpaid, how much is overdue and how much is not due yet, and how many invoices. Use for "how much is outstanding", "unpaid invoices", "receivables". Admins and accounts only.',
+   parameters: { type: 'object', properties: {} },
+   async run(_args, { user }) {
+      if (!FINANCE_ROLES.includes(user?.role)) return { error: 'Receivables are for admins and accounts.' };
+      const { zohoReceivables } = await import('../zohoBooks.js');
+      const r = await zohoReceivables();
+      if (!r?.configured) return { error: 'Zoho Books is not connected.' };
+      if (r.error) return { error: r.error };
+      return { ...r.receivables, currency: 'AED', links: [link('Finance', '/?tab=finance')] };
+   },
+});
+
+tool({
+   name: 'calls_summary',
+   description: 'Phone calls the reps made and took (synced from their Android phones) over the last N days: per rep calls made, answered, talk time in seconds, leads called, incoming and missed. A rep sees only their own. Use for "how many calls did Randa make", "call activity this week".',
+   parameters: { type: 'object', properties: { days: { type: 'number', description: 'How many days back, default 7' } } },
+   async run({ days = 7 }, { user }) {
+      const { summariseCalls } = await import('../callLog.js');
+      const n = Math.min(90, Math.max(1, Number(days) || 7));
+      const filter = { startedAt: { $gte: new Date(Date.now() - n * 86400000) } };
+      if (!ADMIN_ROLES.includes(user?.role) && user?.id) filter.user = user.id;
+      const rows = await CallLog.find(filter).populate('user', 'name').lean();
+      return { days: n, totalCalls: rows.length, reps: summariseCalls(rows), links: [link('Calls', '/calls')] };
+   },
+});
+
+tool({
+   name: 'follow_ups_due',
+   description: 'Leads whose follow-up is due today or overdue, still open, grouped by owner, with the oldest first. Use for "who do we need to follow up", "overdue follow-ups", "Randa\'s follow-ups today".',
+   parameters: { type: 'object', properties: { owner: { type: 'string', description: 'Optional owner name' } } },
+   async run({ owner }, { now }) {
+      const { to: dayEnd } = dayRange(dayKeyFor(now));
+      let rows = await Lead.find({ followUpAt: { $ne: null, $lte: dayEnd }, status: { $nin: ['won', 'lost', 'already_customer'] } })
+         .populate('owner', 'name').sort({ followUpAt: 1 }).limit(500).lean();
+      if (owner) rows = rows.filter((l) => String(l.owner?.name || 'unassigned').toLowerCase().includes(String(owner).toLowerCase()));
+      const { from: dayStart } = dayRange(dayKeyFor(now));
+      const byOwner = {};
+      for (const l of rows) { const o = l.owner?.name || 'unassigned'; byOwner[o] = (byOwner[o] || 0) + 1; }
+      return {
+         count: rows.length,
+         overdue: rows.filter((l) => new Date(l.followUpAt) < dayStart).length,
+         byOwner,
+         leads: rows.slice(0, 40).map((l) => ({ name: l.fullName, owner: l.owner?.name || null, due: iso(l.followUpAt), status: l.status })),
+         links: [link('Follow-Ups', '/follow-ups'), ...rows.slice(0, 3).map((l) => link(l.fullName, `/leads/${l._id}`))],
+      };
+   },
+});
+
+tool({
+   name: 'door_activity',
+   description: 'The door terminal\'s access log: face, card and fingerprint checks and door events over the last N days, with who came in (linked customer when known) and counts by kind. Use for "who came in today", "door access", "when did X last visit". Admins only.',
+   parameters: {
+      type: 'object',
+      properties: { days: { type: 'number', description: 'Default 1 (today)' }, name: { type: 'string', description: 'Optional person or customer name' } },
+   },
+   async run({ days = 1, name }, { user }) {
+      if (!ADMIN_ROLES.includes(user?.role)) return { error: 'The door log is for admins.' };
+      const { DoorEvent } = await import('../../models/index.js');
+      const n = Math.min(90, Math.max(1, Number(days) || 1));
+      let rows = await DoorEvent.find({ at: { $gte: new Date(Date.now() - n * 86400000) } }).sort({ at: -1 }).limit(1000).populate('customer', 'fullName').select('-raw').lean();
+      if (name) {
+         const q = String(name).toLowerCase();
+         rows = rows.filter((e) => String(e.customer?.fullName || '').toLowerCase().includes(q) || String(e.personName || '').toLowerCase().includes(q));
+      }
+      const byKind = {};
+      for (const e of rows) byKind[e.kind] = (byKind[e.kind] || 0) + 1;
+      return {
+         days: n, count: rows.length, byKind,
+         events: rows.slice(0, 40).map((e) => ({ at: e.at, who: e.customer?.fullName || e.personName || null, what: e.label, method: e.method || null })),
+         links: [link('Door Access', '/door-access')],
+      };
+   },
+});
+
+tool({
+   name: 'roster_now',
+   description: 'Who takes new leads right now by the roster, until when, who comes on next, and today\'s handovers. Use for "who is on now", "who is taking leads", "who is on shift".',
+   parameters: { type: 'object', properties: {} },
+   async run(_args, { now }) {
+      const { LeadRoutingRule, LeadRoutingConfig } = await import('../../models/index.js');
+      const { coverageNow, countsForToday, outOfHoursIds } = await import('../leadRouting.js');
+      const [config, rules, counts] = await Promise.all([
+         LeadRoutingConfig.findOne().lean(),
+         LeadRoutingRule.find({}).populate('user', 'name isActive').lean(),
+         countsForToday({ at: now }),
+      ]);
+      const live = rules.filter((r) => r.user && r.user.isActive !== false);
+      const c = coverageNow({ rules: live, counts, at: now, timeZone: config?.timeZone || 'Asia/Dubai' });
+      return {
+         distributionOn: Boolean(config?.enabled),
+         onNow: c.reps.filter((r) => r.on).map((r) => ({ name: r.name, until: r.until, leadsToday: r.leadsToday })),
+         offNow: c.reps.filter((r) => !r.on).map((r) => ({ name: r.name, nextOn: r.nextOn })),
+         nobodyOn: c.nobodyOn,
+         outOfHoursPeople: outOfHoursIds(config || {}).length,
+         links: [link('Lead Distribution', '/settings/lead-distribution')],
+      };
+   },
+});
 
 export function toolDefinitions() {
    return tools.map((t) => ({
