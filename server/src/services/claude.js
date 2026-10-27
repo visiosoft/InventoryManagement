@@ -258,37 +258,45 @@ const WEB_MODEL = 'claude-opus-5-5';
  * search tool runs the searches; this returns a short summary and the pages
  * it came from. Only used when the person asking has switched the web on.
  */
-export async function claudeWebSearch(query, { maxUses = 4, timeout = 120000 } = {}) {
-    const q = String(query || '').trim().slice(0, 400);
+export async function claudeWebSearch(query, { maxUses = 10, timeout = 180000 } = {}) {
+    const q = String(query || '').trim().slice(0, 600);
     if (!q) return { error: 'Nothing to search for' };
-    const messages = [{ role: 'user', content: `Search the web and answer briefly, with the figures and names you found (prices with their currency, dates). Say plainly when something could not be found.\n\nQuestion: ${q}` }];
+    const messages = [{ role: 'user', content: `Search the web and answer, with the figures and names you found (prices with their currency and the unit size, dates, offers). When a search result names a company or a price page, open that page and read the price there rather than guessing from the snippet. Say plainly what could not be found.\n\nQuestion: ${q}` }];
+    // Searches find the pages; fetches read them — a price is usually only on the page itself.
+    const tools = [
+        { type: 'web_search_20260209', name: 'web_search', max_uses: maxUses },
+        { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: maxUses },
+    ];
+    const content = [];
     let res;
-    // A long search can pause mid-turn; carry on from where it stopped.
-    for (let i = 0; i < 3; i += 1) {
+    // A long search pauses mid-turn; carry on from where it stopped, keeping
+    // everything found along the way rather than only the last part.
+    for (let i = 0; i < 6; i += 1) {
         try {
             res = await client().messages.create({
                 model: WEB_MODEL,
                 max_tokens: 16000,
                 system: 'You research the web for a self-storage company in Dubai. Be factual and short. Today is ' + new Date().toISOString().slice(0, 10) + '.',
                 messages,
-                tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: maxUses }],
-                output_config: { effort: 'low' },
+                tools,
+                output_config: { effort: 'medium' },
             }, { timeout });
         } catch (e) {
             if (e instanceof Anthropic.APIError) return { error: `Web search failed: ${e.message}` };
             throw e;
         }
+        content.push(...res.content);
         if (res.stop_reason !== 'pause_turn') break;
         messages.push({ role: 'assistant', content: res.content });
     }
     if (res.stop_reason === 'refusal') return { error: 'The web search was declined' };
     const sources = [];
     const seen = new Set();
-    for (const b of res.content) {
+    const add = (url, title) => { if (url && !seen.has(url)) { seen.add(url); sources.push({ title: String(title || url).slice(0, 120), url }); } };
+    for (const b of content) {
+        if (b.type === 'web_fetch_tool_result' && b.content?.url) add(b.content.url, b.content.content?.title || b.content.url);
         if (b.type !== 'web_search_tool_result' || !Array.isArray(b.content)) continue;
-        for (const r of b.content) {
-            if (r?.type === 'web_search_result' && r.url && !seen.has(r.url)) { seen.add(r.url); sources.push({ title: String(r.title || r.url).slice(0, 120), url: r.url }); }
-        }
+        for (const r of b.content) if (r?.type === 'web_search_result') add(r.url, r.title);
     }
-    return { answer: textOf(res.content), sources: sources.slice(0, 8) };
+    return { answer: textOf(content), sources: sources.slice(0, 12) };
 }

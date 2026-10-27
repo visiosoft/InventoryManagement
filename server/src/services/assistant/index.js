@@ -112,7 +112,7 @@ function systemPromptFor(config, { user, now, context }) {
  *
  * @returns {{ answer, tools: [{name, args, ok}], model, rounds, grounded }}
  */
-export async function askAssistant({ question, history = [], siteId = null, user = null, now = new Date(), authHeader = '', context = null, web = false }) {
+export async function askAssistant({ question, history = [], siteId = null, user = null, now = new Date(), authHeader = '', context = null, web = false, rounds: roundsWanted = 0 }) {
    if (!openaiConfigured()) return { answer: 'The assistant is not set up — no AI provider is configured.', tools: [], model: '', rounds: 0, grounded: true };
    const config = await getAssistantConfig();
    if (!config.enabled) return { answer: 'The assistant is switched off.', tools: [], model: '', rounds: 0, grounded: true };
@@ -141,7 +141,8 @@ export async function askAssistant({ question, history = [], siteId = null, user
    let rounds = 0;
    // A booking end to end (find the person, price the unit, prepare it) needs
    // a few rounds; 6 is the floor so an old stored default of 4 does not cut it short.
-   const maxRounds = Math.max(6, Number(config.maxToolRounds || 6));
+   // A scheduled report may ask for more steps than a typed question gets.
+   const maxRounds = Math.max(6, Number(config.maxToolRounds || 6), Math.min(16, Number(roundsWanted) || 0));
 
    /* Whether this person may even be offered an action. If not, the proposal
       tool is simply absent — the model cannot propose what it cannot see. */

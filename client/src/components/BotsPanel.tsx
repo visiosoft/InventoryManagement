@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot as BotIcon, Globe, Mail, MessageCircle, Pencil, Pin, Play, Plus, Pause, Trash2 } from 'lucide-react'
+import { Bot as BotIcon, ChevronLeft, Globe, LayoutGrid, List as ListIcon, Loader2, Mail, MessageCircle, Pencil, Pin, Play, Plus, Pause, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { SlideOver } from './ui'
 
@@ -29,12 +29,12 @@ export type BotRow = {
   quietDays: number; maxQuietDays: number; templateName: string; templateLanguage: string
   sendMode: 'review' | 'auto'; dailyCap: number
   schedule: { cadence: Cadence; hour: number; dayOfWeek: number; dayOfMonth: number }
-  showOnDashboard: boolean; enabled: boolean; scheduleLabel: string; lastRun: Run | null
+  showOnDashboard: boolean; enabled: boolean; scheduleLabel: string; lastRun: Run | null; runningSince?: string | null
 }
 type Draft = Omit<BotRow, '_id' | 'scheduleLabel' | 'lastRun'> & { _id?: string }
 
 const btn = (primary = false): React.CSSProperties => ({
-  display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700, borderRadius: 9, padding: '7px 12px', cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700, borderRadius: 9, padding: '7px 12px', cursor: 'pointer', whiteSpace: 'nowrap',
   border: primary ? 0 : `1px solid ${LINE}`, background: primary ? PURPLE : '#fff', color: primary ? '#fff' : INK,
 })
 const fieldStyle: React.CSSProperties = { width: '100%', height: 38, border: `1px solid ${FIELD}`, borderRadius: 9, padding: '0 11px', fontSize: 13.5, background: '#fff', color: INK }
@@ -64,6 +64,18 @@ const EMPTY: Draft = {
   sendMode: 'review', dailyCap: 50, schedule: { cadence: 'weekly', hour: 9, dayOfWeek: 1, dayOfMonth: 1 }, showOnDashboard: true, enabled: true,
 }
 
+/** A run under way; one over 15 minutes old was cut short by a restart. */
+const isRunning = (b: BotRow) => Boolean(b.runningSince && Date.now() - new Date(b.runningSince).getTime() < 15 * 60_000)
+const time = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' })
+
+function RunningPill({ since }: { since: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 999, background: TINT, color: PURPLE_INK, whiteSpace: 'nowrap' }}>
+      <Loader2 size={12} className="animate-spin" /> Running… since {time(since)}
+    </span>
+  )
+}
+
 /** **bold** as bold. */
 function withBold(text: string) {
   return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => (part.startsWith('**') && part.endsWith('**') && part.length > 4 ? <b key={i}>{part.slice(2, -2)}</b> : part))
@@ -74,8 +86,11 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
   const { data, isLoading } = useQuery<{ bots: BotRow[]; defaults: { subject: string; message: string }; recommendedMissing?: string[] }>({
     queryKey: ['bots'],
     queryFn: () => api.get('/bots').then((r) => r.data),
-    refetchInterval: 60_000,
+    // Every few seconds while something is running, so the result appears by itself.
+    refetchInterval: (q) => ((q.state.data?.bots ?? []).some(isRunning) ? 4_000 : 60_000),
   })
+  const [view, setView] = useState<'cards' | 'list'>(() => { try { return localStorage.getItem('pb_bots_view') === 'list' ? 'list' : 'cards' } catch { return 'cards' } })
+  const chooseView = (v: 'cards' | 'list') => { setView(v); try { localStorage.setItem('pb_bots_view', v) } catch { /* private window */ } }
   const [editing, setEditing] = useState<Draft | null>(null)
   const [choosing, setChoosing] = useState(false)
   const [reviewing, setReviewing] = useState<{ bot: BotRow; run: Run } | null>(null)
@@ -119,6 +134,14 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
       {!pinnedOnly && (
         <div className="flex items-center gap-3 mb-4">
           <div style={{ fontSize: 13, color: MUTED }} className="mr-auto">Each bot runs on its schedule and keeps its latest result here. Pinned bots also show on Overview.</div>
+          <div className="inline-flex" role="group" aria-label="View" style={{ border: `1px solid ${LINE}`, borderRadius: 9, overflow: 'hidden' }}>
+            {(['cards', 'list'] as const).map((v) => (
+              <button key={v} type="button" onClick={() => chooseView(v)} aria-pressed={view === v} aria-label={v === 'cards' ? 'Cards' : 'List'}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700, padding: '7px 11px', border: 0, cursor: 'pointer', background: view === v ? TINT : '#fff', color: view === v ? PURPLE_INK : MUTED }}>
+                {v === 'cards' ? <LayoutGrid size={13} /> : <ListIcon size={13} />} {v === 'cards' ? 'Cards' : 'List'}
+              </button>
+            ))}
+          </div>
           {missing.length > 0 && (
             <button type="button" style={btn()} disabled={addRecommended.isPending} onClick={() => { setErr(''); addRecommended.mutate() }}
               title={`Adds: ${missing.join(', ')}. Only the renewal emails reach customers, and they wait for you to send them.`}>
@@ -140,6 +163,14 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
           <BotIcon size={22} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
           No bots yet. Make one to email renewals, watch competitors or send a morning summary.
         </div>
+      ) : view === 'list' && !pinnedOnly ? (
+        <BotsList bots={bots} running={(id) => run.isPending && run.variables === id}
+          onRun={(b) => { setErr(''); run.mutate(b._id) }}
+          onEdit={(b) => setEditing({ ...b })}
+          onToggle={(b) => patch.mutate({ id: b._id, body: { enabled: !b.enabled } })}
+          onPin={(b) => patch.mutate({ id: b._id, body: { showOnDashboard: !b.showOnDashboard } })}
+          onReview={(b, r) => setReviewing({ bot: b, run: r })}
+          onDelete={(b) => { if (window.confirm(`Delete the bot “${b.name}”? Its results go with it.`)) remove.mutate(b._id) }} />
       ) : (
         <div className="grid gap-[18px] md:grid-cols-2 xl:grid-cols-3 items-start">
           {bots.map((b) => (
@@ -196,7 +227,11 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview, onDel
             {bot.kind !== 'ai_report' && ` · ${bot.sendMode === 'auto' ? 'sends by itself' : 'asks first'}`}
             {bot.kind === 'ai_report' && bot.web && ' · searches the web'}
           </div>
-          <span style={{ display: 'inline-block', marginTop: 6, fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 999, background: pill.bg, color: pill.fg, whiteSpace: 'nowrap' }}>{pill.text}</span>
+          <div style={{ marginTop: 6 }}>
+            {isRunning(bot)
+              ? <RunningPill since={bot.runningSince!} />
+              : <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 999, background: pill.bg, color: pill.fg, whiteSpace: 'nowrap' }}>{pill.text}</span>}
+          </div>
         </div>
       </div>
 
@@ -238,7 +273,7 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview, onDel
 
       <div className="flex flex-wrap items-center gap-2" style={{ marginTop: 14 }}>
         {pending.length > 0 && r && <button type="button" style={btn(true)} onClick={() => onReview(r)}>{bot.kind === 'quiet_leads' ? <MessageCircle size={13} /> : <Mail size={13} />} Review &amp; send {pending.length}</button>}
-        <button type="button" style={btn(!pending.length)} onClick={onRun} disabled={running}><Play size={13} /> {running ? 'Running…' : 'Run now'}</button>
+        <button type="button" style={btn(!pending.length)} onClick={onRun} disabled={running || isRunning(bot)}><Play size={13} /> {running || isRunning(bot) ? 'Running…' : 'Run now'}</button>
         <button type="button" style={btn()} onClick={onEdit} aria-label="Edit"><Pencil size={13} /></button>
         <button type="button" style={btn()} onClick={onToggle} aria-label={bot.enabled ? 'Pause' : 'Resume'}>{bot.enabled ? <Pause size={13} /> : <Play size={13} />}</button>
         <button type="button" style={{ ...btn(), color: '#B91C1C' }} onClick={onDelete} aria-label="Delete" title="Delete this bot"><Trash2 size={13} /></button>
@@ -494,5 +529,128 @@ function QuietLeadsFields({ d, set, seg }: { d: Draft; set: (p: Partial<Draft>) 
         </div>
       </div>
     </>
+  )
+}
+
+/* ── List view: bots down the side, the chosen one's runs as a timeline ── */
+
+function lastLine(b: BotRow): string {
+  if (isRunning(b)) return 'Running…'
+  const r = b.lastRun
+  if (!b.enabled) return 'Paused'
+  if (!r) return `Not run yet · ${b.scheduleLabel}`
+  if (r.error) return r.error
+  if (r.status === 'waiting') return `${r.items.filter((i) => i.status === 'pending').length} waiting for you to send`
+  return (r.answer || r.summary || '').replace(/\*\*/g, '').split('\n').find((l) => l.trim()) || r.summary
+}
+
+const dayStamp = (iso: string) => {
+  const d = new Date(iso)
+  const today = new Date()
+  const same = d.toDateString() === today.toDateString()
+  return `${same ? 'Today' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' })} ${time(iso)}`
+}
+
+function BotsList({ bots, running, onRun, onEdit, onToggle, onPin, onReview, onDelete }: {
+  bots: BotRow[]; running: (id: string) => boolean
+  onRun: (b: BotRow) => void; onEdit: (b: BotRow) => void; onToggle: (b: BotRow) => void; onPin: (b: BotRow) => void
+  onReview: (b: BotRow, r: Run) => void; onDelete: (b: BotRow) => void
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const selected = bots.find((b) => b._id === selectedId) ?? bots[0]
+  const busy = selected ? running(selected._id) || isRunning(selected) : false
+  const { data: runsData } = useQuery<{ runs: Run[] }>({
+    queryKey: ['bot-runs', selected?._id, selected?.lastRun?._id, selected?.runningSince],
+    queryFn: () => api.get(`/bots/${selected!._id}/runs`).then((r) => r.data),
+    enabled: Boolean(selected),
+  })
+  const runs = [...(runsData?.runs ?? [])].reverse()
+
+  return (
+    <div className="grid lg:grid-cols-[300px_minmax(0,1fr)]" style={{ border: `1px solid ${LINE}`, borderRadius: 16, overflow: 'hidden', minHeight: 560, background: '#fff' }}>
+      <div className={mobileOpen ? 'hidden lg:block' : ''} style={{ borderRight: `1px solid ${LINE}`, background: '#FBFAFD', maxHeight: 680, overflowY: 'auto' }} aria-label="Bots">
+        {bots.map((b) => {
+          const on = selected?._id === b._id
+          const waiting = b.lastRun?.status === 'waiting'
+          return (
+            <button key={b._id} type="button" onClick={() => { setSelectedId(b._id); setMobileOpen(true) }} aria-label={`Open ${b.name}`}
+              className="flex w-full items-center gap-3 text-left"
+              style={{ padding: '12px 14px', border: 0, borderBottom: `1px solid ${LINE}`, cursor: 'pointer', background: on ? '#EFE9FB' : 'transparent' }}>
+              <span style={{ width: 38, height: 38, borderRadius: 12, background: '#fff', border: `1px solid ${LINE}`, display: 'grid', placeItems: 'center', fontSize: 18, flex: '0 0 auto', opacity: b.enabled ? 1 : 0.5 }}>{b.icon || '🤖'}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate" style={{ fontWeight: 700, fontSize: 13.5, color: INK }}>{b.name}</span>
+                <span className="block truncate" style={{ fontSize: 12, color: isRunning(b) ? PURPLE_INK : MUTED }}>{lastLine(b)}</span>
+              </span>
+              {isRunning(b) ? <Loader2 size={14} className="animate-spin" style={{ color: PURPLE }} /> : waiting ? <span aria-label="Waiting for you" style={{ width: 8, height: 8, borderRadius: 999, background: PURPLE }} /> : null}
+            </button>
+          )
+        })}
+      </div>
+
+      {selected && (
+        <div className={`${mobileOpen ? 'flex' : 'hidden lg:flex'} flex-col min-w-0`} aria-label={`Bot ${selected.name} history`}>
+          <div className="flex flex-wrap items-center gap-2" style={{ padding: '12px 16px', borderBottom: `1px solid ${LINE}` }}>
+            <span className="lg:hidden"><button type="button" onClick={() => setMobileOpen(false)} aria-label="Back" style={{ ...btn(), padding: '6px 8px' }}><ChevronLeft size={14} /></button></span>
+            <span style={{ fontSize: 20 }}>{selected.icon || '🤖'}</span>
+            <div className="min-w-0 mr-auto">
+              <div className="truncate" style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 15, color: INK }}>{selected.name}</div>
+              <div style={{ fontSize: 12, color: MUTED }}>{selected.scheduleLabel}{selected.kind === 'ai_report' && selected.web ? ' · searches the web' : ''}{selected.kind !== 'ai_report' ? ` · ${selected.sendMode === 'auto' ? 'sends by itself' : 'asks first'}` : ''}</div>
+            </div>
+            <button type="button" style={btn(true)} disabled={busy} onClick={() => onRun(selected)}><Play size={13} /> {busy ? 'Running…' : 'Run now'}</button>
+            <button type="button" style={btn()} onClick={() => onEdit(selected)} aria-label="Edit"><Pencil size={13} /></button>
+            <button type="button" style={btn()} onClick={() => onToggle(selected)} aria-label={selected.enabled ? 'Pause' : 'Resume'}>{selected.enabled ? <Pause size={13} /> : <Play size={13} />}</button>
+            <button type="button" style={{ ...btn(), color: selected.showOnDashboard ? PURPLE : MUTED }} onClick={() => onPin(selected)} aria-label={selected.showOnDashboard ? 'Unpin from Overview' : 'Pin to Overview'}><Pin size={13} /></button>
+            <button type="button" style={{ ...btn(), color: '#B91C1C' }} onClick={() => onDelete(selected)} aria-label="Delete"><Trash2 size={13} /></button>
+          </div>
+
+          <div className="flex-1 space-y-4" style={{ padding: '16px 18px', maxHeight: 620, overflowY: 'auto', background: '#fff' }}>
+            {!runs.length && !busy && <div style={{ fontSize: 13, color: MUTED, textAlign: 'center', padding: '40px 0' }}>No runs yet. Press Run now, or wait for {selected.scheduleLabel.toLowerCase()}.</div>}
+            {runs.map((r) => {
+              const pending = r.items.filter((i) => i.status === 'pending')
+              return (
+                <div key={r._id}>
+                  <div style={{ textAlign: 'center', fontSize: 11.5, color: MUTED, margin: '4px 0 8px' }}>{dayStamp(r.createdAt)}</div>
+                  <div style={{ background: '#F4F2F7', borderRadius: 14, padding: '12px 14px', fontSize: 13.5, lineHeight: 1.55, color: INK, whiteSpace: 'pre-wrap', maxWidth: 760 }}>
+                    {r.error ? <span style={{ color: '#B91C1C' }}>{r.error}</span> : r.answer ? withBold(r.answer) : r.summary}
+                    {r.items.length > 0 && (
+                      <div style={{ marginTop: 8, whiteSpace: 'normal' }}>
+                        {r.items.slice(0, 8).map((i) => (
+                          <div key={i._id} className="flex justify-between gap-3" style={{ fontSize: 12.5, padding: '4px 0', borderTop: `1px solid ${LINE}` }}>
+                            <span className="truncate">{i.name}{i.unit ? ` · ${i.unit}` : ''}</span>
+                            <span style={{ color: MUTED, whiteSpace: 'nowrap' }}>{i.status === 'pending' ? (i.channel === 'whatsapp' ? i.reason : `ends ${day(i.endDate)}`) : i.status}</span>
+                          </div>
+                        ))}
+                        {r.items.length > 8 && <div style={{ fontSize: 12, color: MUTED, paddingTop: 2 }}>+ {r.items.length - 8} more</div>}
+                      </div>
+                    )}
+                    {r.sources.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5" style={{ marginTop: 8, whiteSpace: 'normal' }}>
+                        {r.sources.slice(0, 8).map((s) => (
+                          <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1"
+                            style={{ fontSize: 11.5, fontWeight: 600, color: PURPLE_INK, background: '#fff', border: `1px solid ${LINE}`, borderRadius: 7, padding: '3px 8px', maxWidth: 220 }}>
+                            <Globe size={11} /> <span className="truncate">{s.label}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {pending.length > 0 && (
+                    <button type="button" style={{ ...btn(true), marginTop: 8 }} onClick={() => onReview(selected, r)}>
+                      {selected.kind === 'quiet_leads' ? <MessageCircle size={13} /> : <Mail size={13} />} Review &amp; send {pending.length}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+            {busy && (
+              <div className="flex items-center gap-2" style={{ fontSize: 13, color: PURPLE_INK, background: TINT, borderRadius: 14, padding: '10px 14px', width: 'fit-content' }}>
+                <Loader2 size={14} className="animate-spin" /> Working on it{selected.runningSince ? ` — started ${time(selected.runningSince)}` : ''}…
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

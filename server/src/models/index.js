@@ -2865,6 +2865,9 @@ const botSchema = new Schema({
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   lastRunAt: { type: Date, default: null },
   lastRunDay: { type: String, default: '' },
+  // Set while a run is under way, so the dashboard can say so. A run cut
+  // short by a restart leaves it behind; the page ignores one over 15 minutes old.
+  runningSince: { type: Date, default: null },
 }, { timestamps: true });
 botSchema.plugin(softDeletePlugin);
 export const Bot = model('Bot', botSchema);

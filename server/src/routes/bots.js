@@ -111,21 +111,26 @@ router.delete('/:id', async (req, res) => {
    res.json({ ok: true });
 });
 
-/** Run it now. An email bot prepares; it sends now only if it is set to send by itself. */
+/** Run it now, in the background: the card shows it running and fills in when done.
+    An email or WhatsApp bot prepares; it sends now only if set to send by itself. */
 router.post('/:id/run', async (req, res) => {
    try {
       const bot = await Bot.findById(req.params.id).lean();
       if (!bot) return res.status(404).json({ error: 'No such bot' });
-      const run = await runBot(bot, { trigger: 'manual' });
-      await Bot.updateOne({ _id: bot._id }, { $set: { lastRunAt: new Date() } });
-      res.json({ run });
+      const fresh = bot.runningSince && Date.now() - new Date(bot.runningSince).getTime() < 15 * 60_000;
+      if (fresh) return res.status(409).json({ error: 'It is already running' });
+      await Bot.updateOne({ _id: bot._id }, { $set: { runningSince: new Date() } });
+      runBot(bot, { trigger: 'manual' })
+         .catch((e) => console.error('[Bots] run:', e.message))
+         .finally(() => Bot.updateOne({ _id: bot._id }, { $set: { runningSince: null, lastRunAt: new Date() } }).catch(() => {}));
+      res.status(202).json({ running: true });
    } catch (e) {
       res.status(500).json({ error: e.message });
    }
 });
 
 router.get('/:id/runs', async (req, res) => {
-   const runs = await BotRun.find({ bot: req.params.id }).sort({ createdAt: -1 }).limit(20).lean();
+   const runs = await BotRun.find({ bot: req.params.id }).sort({ createdAt: -1 }).limit(30).lean();
    res.json({ runs });
 });
 

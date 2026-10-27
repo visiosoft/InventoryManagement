@@ -753,7 +753,7 @@ tool({
 
 tool({
    name: 'web_search',
-   description: 'Search the internet — competitors\' prices and offers, market news, a company or address, anything outside this system. Only offered when the person has switched the web on. Give one clear question; call it again for a different question. Say where each fact came from.',
+   description: 'Search the internet — competitors\' prices and offers, market news, a company or address, anything outside this system. Only offered when the person has switched the web on. Give one clear question; call it again for a different question. To compare companies, first search for the list, then call it once per company ("<company> Dubai storage prices 50 sq ft") so each one\'s own price page is read. Say where each fact came from.',
    parameters: {
       type: 'object',
       properties: { query: { type: 'string', description: 'The question, e.g. "self storage prices per month in Al Quoz Dubai 2026"' } },

@@ -254,7 +254,7 @@ export async function runBot(bot, { trigger = 'manual', now = new Date(), deps }
          const out = await d.ask({
             question: `${bot.instruction}\n\n(This is a scheduled report: answer in full now, with no questions back. Short lines, the figures first.)`,
             user: owner ? { id: String(owner._id), name: owner.name, role: owner.role } : { role: 'admin' },
-            web: Boolean(bot.web), now,
+            web: Boolean(bot.web), now, rounds: 14,
          });
          run.answer = String(out?.answer || '').trim();
          run.sources = (out?.sources || []).slice(0, 8);
@@ -311,7 +311,12 @@ export async function botsTick(now = new Date(), { deps } = {}) {
       // Claimed before running: a second server, or a restart mid-run, sees it done.
       const claimed = await Bot.updateOne({ _id: bot._id, lastRunDay: { $ne: dubaiParts(now).dayKey } }, { $set: { lastRunDay: dubaiParts(now).dayKey, lastRunAt: now } });
       if (!claimed.modifiedCount) continue;
-      await runBot(bot, { trigger: 'schedule', now, deps });
+      await Bot.updateOne({ _id: bot._id }, { $set: { runningSince: new Date() } });
+      try {
+         await runBot(bot, { trigger: 'schedule', now, deps });
+      } finally {
+         await Bot.updateOne({ _id: bot._id }, { $set: { runningSince: null } }).catch(() => {});
+      }
       ran += 1;
    }
    return { ran };
