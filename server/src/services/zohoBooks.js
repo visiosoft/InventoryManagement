@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { storageCatalogue, toZohoLines, unitNumberOf } from './zohoLineItems.js';
 
 // Zoho Books integration for invoice syncing.
 // If credentials are not configured, all operations return { configured: false }.
@@ -77,6 +78,33 @@ async function findOrCreateContact(customer) {
 }
 
 // Create an invoice in Zoho Books from our internal invoice.
+// Zoho's item list (storage sizes, padlocks, …). Cached ten minutes.
+let itemsCache = { at: 0, items: [] };
+export async function listZohoItems() {
+    if (itemsCache.items.length && Date.now() - itemsCache.at < 10 * 60_000) return itemsCache.items;
+    const token = await getAccessToken();
+    const items = [];
+    for (let page = 1; page <= 10; page += 1) {
+        const { data } = await axios.get(`${API_BASE}/items`, {
+            headers: { Authorization: `Zoho-oauthtoken ${token}` },
+            params: { ...orgParam(), per_page: 200, page },
+        });
+        items.push(...(data.items || []));
+        if (!data.page_context?.has_more_page) break;
+    }
+    itemsCache = { at: Date.now(), items };
+    return items;
+}
+
+// Each unit's size, for the unit numbers named on storage lines.
+async function unitSizesFor(items) {
+    const numbers = [...new Set(items.map((i) => unitNumberOf(i.itemDetails)).filter(Boolean))];
+    if (!numbers.length) return new Map();
+    const { Unit } = await import('../models/index.js');
+    const units = await Unit.find({ unitNumber: { $in: numbers } }).select('unitNumber sizeSqf').lean();
+    return new Map(units.map((u) => [u.unitNumber, u.sizeSqf]));
+}
+
 export async function createZohoInvoice(invoice) {
     if (!zohoBooksConfigured()) {
         return { configured: false };
@@ -88,13 +116,11 @@ export async function createZohoInvoice(invoice) {
     const customer = invoice.customer;
     const contactId = await findOrCreateContact(customer);
 
-    const lineItems = (invoice.items || []).map((item) => ({
-        name: item.itemDetails || 'Service',
-        description: item.itemDetails || '',
-        quantity: item.quantity || 1,
-        rate: item.rate || item.amount || 0,
-        discount: item.discountPct ? `${item.discountPct}%` : undefined,
-    }));
+    // Storage rent onto Zoho's item for the unit's size (services/zohoLineItems.js).
+    const lineItems = toZohoLines(invoice.items || [], {
+        unitSizes: await unitSizesFor(invoice.items || []),
+        catalogue: storageCatalogue(await listZohoItems().catch(() => [])),
+    });
 
     const BANK_INFO = `Bank Details:\nMashreq Bank\nSHORT TERM STORAGE LLC\nAccount Number: 019101745789\nIBAN Number: AE500330000019101745789\nAddress: Unit 12, ABA Avenue Al Quoz 2, Dubai`;
 
