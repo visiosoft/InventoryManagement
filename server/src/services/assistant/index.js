@@ -30,6 +30,7 @@ const RULES = `RULES YOU CANNOT BREAK:
 - Never say that a person, contract, unit or message exists, or describe it, without having looked it up in this conversation.
 - If a question has several parts, look each part up before you answer. Never say you cannot see something you have not asked a tool for.
 - If the tools returned nothing useful, say you cannot see it in the system. Do not answer from general knowledge.
+- A stay of N weeks checks out on the last day of the stay: the end date is the start date plus N×7 days minus one (4 weeks from 1 Nov ends 28 Nov — 28 days, not 29).
 - Dates you pass to tools are YYYY-MM-DD. "Today" and relative dates are worked out from the date given below.
 - Do not mention tools by name to the user. Speak as the system.
 - Buttons to the relevant pages — a customer, a contract, a chat — are attached to your answer automatically. You may say "open it below". Do not write URLs yourself.

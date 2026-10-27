@@ -122,7 +122,7 @@ router.get('/active-contracts', async (_req, res) => {
     // be worked out the way the pricing screen and the rates report do it —
     // one contract over several units is shared out in proportion to what
     // each unit asks, not repeated in full on every one.
-    .select('contractNo customer unit units endDate rate leasedPrice firstMonthDiscountPct billingPeriod')
+    .select('contractNo customer unit units startDate endDate rate leasedPrice firstMonthDiscountPct billingPeriod')
     .populate('customer', 'fullName')
     .populate('unit', 'price')
     .populate('units', 'price')
@@ -139,6 +139,7 @@ router.get('/active-contracts', async (_req, res) => {
         contractId: String(c._id),
         contractNo: c.contractNo || '',
         customerName: c.customer?.fullName || '',
+        startDate: c.startDate || null,
         endDate: c.endDate || null,
         // What this tenant actually pays for this unit, per 4 weeks.
         leased: row.leased > 0 ? row.leased : null,

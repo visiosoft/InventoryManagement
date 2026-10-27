@@ -71,7 +71,7 @@ test('term: any whole number of weeks from 4 to 32', async () => {
   const b = await request(app).post(`${BASE}/reserve`).set(auth).send({ sizeSqf: 50, startDate: today(), weeks: 7 });
   assert.equal(b.status, 201);
   const days = (new Date(b.body.unit.endDate) - new Date(b.body.unit.startDate)) / 86_400_000;
-  assert.equal(days, 49);
+  assert.equal(days, 48, '7 weeks is 49 days counting the check-in and check-out days');
 });
 
 test('reserve: holds a unit, prices it, and refuses bad input', async () => {

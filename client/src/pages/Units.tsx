@@ -231,9 +231,10 @@ function parsePhrase(input: string, sizes: number[], floors: string[]): Parsed {
     out.from = today
     out.problems.push('No start date in that phrase — assumed it starts today.')
   }
-  if (out.from && durDays) out.to = addDays(out.from, durDays)
+  // The last day counts: "for 4 weeks" from the 1st ends on the 28th.
+  if (out.from && durDays) out.to = addDays(out.from, durDays - 1)
   if (out.from && !out.to) {
-    out.to = addDays(out.from, 28)
+    out.to = addDays(out.from, 27)
     out.problems.push('No length in that phrase — assumed a 28-day stay.')
   }
   if (!out.from) out.problems.push('Could not read a date from that.')
@@ -323,7 +324,7 @@ export default function Units() {
   // its contract ends in the window, and vice versa, so this cannot be derived
   // from the current status.
   const [availFrom, setAvailFrom] = useState(() => toISO(new Date()))
-  const [availTo, setAvailTo] = useState(() => addDays(toISO(new Date()), 28))
+  const [availTo, setAvailTo] = useState(() => addDays(toISO(new Date()), 27))
   const [windowTouched, setWindowTouched] = useState(false)
   const [askOpen, setAskOpen] = useState(false)
   const [phrase, setPhrase] = useState('')
@@ -334,7 +335,7 @@ export default function Units() {
   // With no dates chosen the page still has to be useful, so it looks at the
   // next 28 days by default.
   const winFrom = rangeInvalid ? today : (availFrom || today)
-  const winTo = rangeInvalid ? addDays(today, 28) : (availTo || addDays(availFrom || today, 28))
+  const winTo = rangeInvalid ? addDays(today, 27) : (availTo || addDays(availFrom || today, 27))
 
   type Booking = {
     kind: string; ref: string; customer: string; startDate: string; endDate: string; status: string
@@ -360,7 +361,7 @@ export default function Units() {
 
   // Table sorting. Default is the natural unit order; clicking a header sorts
   // by that column, clicking again reverses it.
-  type SortKey = 'unit' | 'floor' | 'size' | 'price' | 'leased' | 'tenant' | 'checkout' | 'status' | 'shared'
+  type SortKey = 'unit' | 'floor' | 'size' | 'price' | 'leased' | 'tenant' | 'checkin' | 'checkout' | 'status' | 'shared'
   const [sortKey, setSortKey] = useState<SortKey>('unit')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   function toggleSort(k: SortKey) {
@@ -375,7 +376,7 @@ export default function Units() {
 
   // Who holds each unit right now. A shared unit can carry several active
   // contracts, so this is a list per unit, not a single tenant.
-  type UnitActiveContract = { contractId: string; contractNo: string; customerName: string; endDate: string | null; leased: number | null }
+  type UnitActiveContract = { contractId: string; contractNo: string; customerName: string; startDate?: string | null; endDate: string | null; leased: number | null }
   const { data: activeByUnit = {} } = useQuery<Record<string, UnitActiveContract[]>>({
     queryKey: ['unit-active-contracts'],
     queryFn: () => api.get('/units/active-contracts').then((r) => r.data?.byUnit ?? {}),
@@ -603,6 +604,14 @@ export default function Units() {
           if (la == null) return 1 * dir
           if (lb == null) return -1 * dir
           return la - lb
+        }
+        case 'checkin': {
+          const da = firstContract(a)?.startDate
+          const db = firstContract(b)?.startDate
+          if (!da && !db) return 0
+          if (!da) return 1 * dir
+          if (!db) return -1 * dir
+          return new Date(da).getTime() - new Date(db).getTime()
         }
         case 'checkout': {
           const da = firstContract(a)?.endDate
@@ -1078,7 +1087,7 @@ export default function Units() {
               subtitle={`${freeUnits.length} of ${filtered.length} units free for the whole window · ${windowLabel}`}
               columns={[
                 { label: 'Unit' }, { label: 'Floor' }, { label: 'Size' }, { label: 'Actual 4wk (AED)', numeric: true }, { label: 'Leased 4wk (AED)' },
-                { label: 'Tenant' }, { label: 'Check out' }, { label: 'Status' }, { label: 'Shared' }, { label: 'Notes' },
+                { label: 'Tenant' }, { label: 'Check in' }, { label: 'Check out' }, { label: 'Status' }, { label: 'Shared' }, { label: 'Notes' },
               ]}
               rows={sortedRows.map((u) => {
                 const held = activeByUnit[u._id] ?? []
@@ -1089,6 +1098,7 @@ export default function Units() {
                   u.price ?? null,
                   held.map((c) => (c.leased != null ? String(c.leased) : '—')).join('; ') || '—',
                   held.map((c) => c.customerName || '(no name)').join('; ') || '—',
+                  held.map((c) => (c.startDate ? formatDate(c.startDate) : '—')).join('; ') || '—',
                   held.map((c) => (c.endDate ? formatDate(c.endDate) : '—')).join('; ') || '—',
                   statusLabel(u.status),
                   u.shared ? 'Shared' : '—',
@@ -1102,7 +1112,7 @@ export default function Units() {
               <tr>
                 {([
                   ['unit', 'Unit'], ['floor', 'Floor'], ['size', 'Size'], ['price', 'Actual 4wk (AED)'],
-                  ['leased', 'Leased 4wk (AED)'], ['tenant', 'Tenant'], ['checkout', 'Check out'], ['status', 'Status'], ['shared', 'Shared'],
+                  ['leased', 'Leased 4wk (AED)'], ['tenant', 'Tenant'], ['checkin', 'Check in'], ['checkout', 'Check out'], ['status', 'Status'], ['shared', 'Shared'],
                 ] as [SortKey, string][]).map(([k, label]) => (
                   <Th key={k}>
                     <button type="button" onClick={() => toggleSort(k)}
@@ -1160,6 +1170,17 @@ export default function Units() {
                           <div key={c.contractId} className="truncate max-w-48" title={`${c.customerName} · ${c.contractNo}`}>
                             {c.customerName || '(no name)'}
                           </div>
+                        ))}
+                      </div>
+                    )}
+                  </Td>
+                  <Td>
+                    {(activeByUnit[u._id] ?? []).length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="space-y-0.5">
+                        {activeByUnit[u._id].map((c) => (
+                          <div key={c.contractId} className="whitespace-nowrap">{c.startDate ? formatDate(c.startDate) : '—'}</div>
                         ))}
                       </div>
                     )}

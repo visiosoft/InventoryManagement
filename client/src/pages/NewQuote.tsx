@@ -180,15 +180,18 @@ export default function NewQuote() {
   const [dateRangeTo, setDateRangeTo] = useState('')
   const [customEnd, setCustomEnd] = useState(false)
 
-  // Duration helpers — end date is picked as N weeks from the start date
+  // Duration helpers — the check-out date is the last day of the stay, so
+  // N weeks from the 1st checks out on day N×7: 4 weeks = 28 days, not 29.
   const addWeeksISO = (iso: string, weeks: number) => {
     const [y, m, d] = iso.split('-').map(Number)
-    return new Date(Date.UTC(y, m - 1, d + weeks * 7)).toISOString().slice(0, 10)
+    return new Date(Date.UTC(y, m - 1, d + weeks * 7 - 1)).toISOString().slice(0, 10)
   }
   const rangeDays = dateRangeFrom && dateRangeTo
     ? Math.round((new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()) / 86400000)
     : 0
-  const derivedWeeks = rangeDays > 0 && rangeDays % 7 === 0 ? rangeDays / 7 : null
+  // Days of the stay, check-in and check-out days both counted.
+  const stayDays = rangeDays > 0 ? rangeDays + 1 : 0
+  const derivedWeeks = stayDays > 0 && stayDays % 7 === 0 ? stayDays / 7 : null
   const WEEK_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 20, 24, 36, 52]
   const durationValue = customEnd
     ? 'custom'
@@ -1281,7 +1284,7 @@ export default function NewQuote() {
                         ) : (
                           <p className="text-xs font-medium" style={{ color: MUTED }}>
                             Ends on <span className="font-bold" style={{ color: PURPLE }}>{fmtLongDate(dateRangeTo)}</span>
-                            {' '}· {rangeDays} day{rangeDays !== 1 ? 's' : ''} · {Math.ceil(rangeDays / 7)} week{Math.ceil(rangeDays / 7) !== 1 ? 's' : ''}
+                            {' '}· {stayDays} day{stayDays !== 1 ? 's' : ''} · {Math.ceil(rangeDays / 7)} week{Math.ceil(rangeDays / 7) !== 1 ? 's' : ''}
                           </p>
                         )
                       )}

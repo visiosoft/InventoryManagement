@@ -49,7 +49,9 @@ export function parseTerm({ startDate, weeks, months }) {
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
   if (start < today) throw fail(400, 'The start date cannot be in the past');
   if (start.getTime() - today.getTime() > MAX_START_DAYS_AHEAD * DAY) throw fail(400, `The start date must be within ${MAX_START_DAYS_AHEAD} days`);
-  return { start, end: new Date(start.getTime() + w * 7 * DAY), weeks: w };
+  // The check-out day is the last day of the stay, so 4 weeks from the 1st
+  // check out on the 28th — 28 days, not 29.
+  return { start, end: new Date(start.getTime() + (w * 7 - 1) * DAY), weeks: w };
 }
 
 const unitLine = (unit, start, end) => ({
