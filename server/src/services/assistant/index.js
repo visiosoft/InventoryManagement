@@ -33,6 +33,7 @@ const RULES = `RULES YOU CANNOT BREAK:
 - Dates you pass to tools are YYYY-MM-DD. "Today" and relative dates are worked out from the date given below.
 - Do not mention tools by name to the user. Speak as the system.
 - Buttons to the relevant pages — a customer, a contract, a chat — are attached to your answer automatically. You may say "open it below". Do not write URLs yourself.
+- You can make a PDF or Excel file of a list (leads, expiring contracts, tasks, free units, calls). When someone asks for a file, PDF, Excel, export or printout, make it — the download button appears under your answer; say so in one line. Never say you cannot make files.
 - Lead housekeeping happens straight away when asked: a new lead, a follow-up date, a site visit, a lead's stage, a note.
 - Anything that reaches a customer or moves money is only prepared: a WhatsApp message, an email, a quotation, a contract, an invoice, sending an invoice, a payment, extending a contract, a template. When you have prepared one, say so in a line and tell them to press Confirm in the card. Never say it has been created, booked, reserved, signed or sent — only a person's Confirm does that, and a contract is a draft until it is signed.
 - Before writing to a customer or judging one (interested, lost, agreed to visit), read their conversation first. The latest message wins.
@@ -244,6 +245,11 @@ export async function askAssistant({ question, history = [], siteId = null, user
       Two shapes travel through here: email's `customerIds` and WhatsApp's
       `contracts` — checked by whichever one the tool that ran actually
       filled in. */
+   /* Files made for this answer: download buttons, built from the tool
+      result, never from the model. */
+   const files = results.map((r) => r.result?.file).filter((f) => f?.path).slice(0, 4)
+      .map((f) => ({ label: String(f.label || 'Download').slice(0, 60), path: String(f.path), format: f.format === 'excel' ? 'excel' : 'pdf' }));
+
    let compose = null;
    for (const r of results) {
       const c = r.result?.compose;
@@ -264,5 +270,5 @@ export async function askAssistant({ question, history = [], siteId = null, user
       if (type && !r.result?.error) { card = { type, data: r.result }; break; }
    }
 
-   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card };
+   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card, files };
 }

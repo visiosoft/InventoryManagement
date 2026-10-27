@@ -5,6 +5,9 @@ import { askAssistant, getAssistantConfig, DEFAULT_PROMPT } from '../services/as
 import { toolNames } from '../services/assistant/tools.js';
 import { takeProposal, dropProposal, runAction } from '../services/assistant/actions.js';
 import { getAdminInsight } from '../services/assistant/adminInsight.js';
+import { buildDataset, DATASETS } from '../services/assistant/datasets.js';
+import { tablePdf, tableWorkbook } from '../services/tableExport.js';
+import { siteScope } from '../utils/siteScope.js';
 import { openaiConfigured, openaiModel, transcribeAudio } from '../services/openai.js';
 import { CLAUDE_EFFORTS } from '../services/claude.js';
 
@@ -49,6 +52,36 @@ router.post('/ask', async (req, res) => {
  * voice note. Text only comes back — the caller still runs it through /ask
  * itself, exactly as if it had been typed.
  */
+/**
+ * A file the assistant offered: the same table its answer counted, rebuilt
+ * for this person (their role and site decide what is in it) and sent as a
+ * PDF or an Excel workbook.
+ */
+router.get('/export', async (req, res) => {
+   try {
+      if (!(await allowed(req))) return res.status(403).json({ error: 'The assistant is not enabled for your role' });
+      const { dataset, format, site, ...args } = req.query;
+      if (!DATASETS.includes(String(dataset))) return res.status(400).json({ error: 'Unknown list' });
+      const scope = await siteScope(site).catch(() => null);
+      const table = await buildDataset(String(dataset), args, { user: req.user, scope, now: new Date() });
+      const stamp = new Date().toISOString().slice(0, 10);
+      const base = `${table.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${stamp}`;
+      const columns = table.columns;
+      if (format === 'excel') {
+         const buf = await tableWorkbook({ title: table.title, subtitle: table.subtitle, columns, rows: table.rows });
+         res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+         res.set('Content-Disposition', `attachment; filename="${base}.xlsx"`);
+         return res.send(buf);
+      }
+      const buf = await tablePdf({ title: table.title, subtitle: table.subtitle, columns, rows: table.rows });
+      res.set('Content-Type', 'application/pdf');
+      res.set('Content-Disposition', `inline; filename="${base}.pdf"`);
+      res.send(buf);
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
 router.post('/transcribe', upload.single('audio'), async (req, res) => {
    try {
       if (!(await allowed(req))) return res.status(403).json({ error: 'The assistant is not enabled for your role' });

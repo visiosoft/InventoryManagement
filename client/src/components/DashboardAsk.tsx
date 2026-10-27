@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Sparkles, ArrowRight, Mail, MessageCircle, X } from 'lucide-react'
+import { Sparkles, ArrowRight, Mail, MessageCircle, X, FileText, FileSpreadsheet } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import EmailCustomersModal from '../pages/customers/EmailCustomersModal'
@@ -27,6 +27,8 @@ type Answer = {
   grounded: boolean
   pending: Pending | null
   links: { label: string; path: string }[]
+  /** Files the answer made: PDF or Excel downloads. */
+  files?: { label: string; path: string; format: 'pdf' | 'excel' }[]
   pdfPath?: string
   quoteId?: string
   contractId?: string
@@ -45,6 +47,14 @@ const TOOL_LABEL: Record<string, string> = {
   contracts_expiring: 'checked which contracts are expiring',
   compose_email: 'worked out who to email',
   compose_whatsapp: 'worked out who to WhatsApp',
+  export_file: 'made the file',
+  leads_list: 'listed the leads',
+  sales_summary: 'read sales from Zoho',
+  receivables: 'read receivables from Zoho',
+  calls_summary: 'counted the calls',
+  follow_ups_due: 'checked follow-ups due',
+  door_activity: 'read the door log',
+  roster_now: 'checked the roster',
 }
 const labelFor = (name: string) => TOOL_LABEL[name] || `read the ${name.replace(/^report_/, '').replace(/_/g, ' ')} report`
 
@@ -57,7 +67,8 @@ function composeCount(c: Compose): number {
 const STARTERS = [
   'Which contracts expire in the next 15 days?',
   "Who's still waiting for a WhatsApp reply?",
-  'How many 10 sq ft units are free?',
+  "Today's leads as a PDF",
+  'Who is on shift now?',
 ]
 
 /**
@@ -96,10 +107,10 @@ export default function DashboardAsk() {
     setBusy(true)
     setErr('')
     try {
-      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[]; compose?: Compose | null }>(
+      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[]; compose?: Compose | null; files?: Answer['files'] }>(
         '/assistant/ask', { question, history: [] },
       )
-      setAnswer({ content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [] })
+      setAnswer({ content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [], files: data.files || [] })
       setQ(question)
       // Asking to message a group IS asking for the composer, so it opens
       // rather than waiting for a second click — same rule the corner
@@ -133,6 +144,26 @@ export default function DashboardAsk() {
       const res = await api.get(path, { responseType: 'blob' })
       const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
       window.open(url, '_blank', 'noopener')
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (e) {
+      setErr(apiError(e))
+    }
+  }
+
+  /* A PDF opens in a new tab; a workbook is saved. Fetched with the person's
+     own login, so the file holds what they are allowed to see. */
+  async function download(file: { label: string; path: string; format: 'pdf' | 'excel' }) {
+    try {
+      const res = await api.get(file.path, { responseType: 'blob' })
+      const type = file.format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      const url = URL.createObjectURL(new Blob([res.data], { type }))
+      if (file.format === 'pdf') window.open(url, '_blank', 'noopener')
+      else {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${file.label.replace(/\s*\(.*\)$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.xlsx`
+        a.click()
+      }
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
     } catch (e) {
       setErr(apiError(e))
@@ -254,6 +285,17 @@ export default function DashboardAsk() {
                 {compose.kind === 'email_customers' ? <Mail size={13} /> : <MessageCircle size={13} />}
                 {compose.kind === 'email_customers' ? 'Email' : 'WhatsApp'} {composeCount(compose)} {composeCount(compose) === 1 ? 'person' : 'people'}
               </button>
+            </div>
+          )}
+
+          {(answer.files?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap gap-2" style={{ marginTop: 12 }}>
+              {answer.files!.map((f) => (
+                <button key={f.path} type="button" onClick={() => download(f)} className="inline-flex items-center gap-1.5 cursor-pointer"
+                  style={{ fontSize: 12.5, fontWeight: 700, color: '#fff', background: f.format === 'pdf' ? PURPLE : '#107C41', border: 0, borderRadius: 8, padding: '7px 13px' }}>
+                  {f.format === 'pdf' ? <FileText size={14} /> : <FileSpreadsheet size={14} />} Download {f.label}
+                </button>
+              ))}
             </div>
           )}
 
