@@ -224,3 +224,20 @@ test('a report can also be emailed to the team after each run', async () => {
    assert.equal(failed.emailError, 'Gmail is not connected');
    assert.equal(reportEmail({ name: 'A', schedule: {} }, { answer: 'x' }).subject.startsWith('A — '), true);
 });
+
+test('who is told about a result, and what it says', async () => {
+   const { recipientsFor, runLine } = await import('./bots.js');
+   const bot = { createdBy: 'maker', notify: ['ops', 'maker'] };
+   assert.deepEqual(recipientsFor(bot, 'schedule', null), ['maker', 'ops'], 'scheduled: the maker and the notify list');
+   assert.deepEqual(recipientsFor(bot, 'manual', 'me'), ['me'], 'Run now: whoever pressed it');
+   assert.deepEqual(recipientsFor(bot, 'chat', 'me'), ['me']);
+   assert.equal(runLine({ answer: '**Leads yesterday: 61**\nmore' }), 'Leads yesterday: 61');
+   assert.equal(runLine({ items: [{ status: 'pending' }, { status: 'pending' }, { status: 'sent' }] }), '2 waiting for you to send');
+   assert.equal(runLine({ error: 'Gmail is not connected' }), 'Failed: Gmail is not connected');
+   const told = [];
+   const run = await runBot({ _id: 'b7', name: 'Morning summary', kind: 'ai_report', instruction: 'x', createdBy: 'maker', notify: ['ops'] }, { trigger: 'schedule', deps: {
+      owner: async () => null, ask: async () => ({ answer: 'Leads: 61', grounded: true }), saveRun: async (r) => r, notify: async (b, r) => told.push(r.recipients),
+   } });
+   assert.deepEqual(run.recipients, ['maker', 'ops']);
+   assert.deepEqual(told, [['maker', 'ops']]);
+});

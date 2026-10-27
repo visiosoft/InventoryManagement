@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import { Bot, BotRun, BOT_KINDS } from '../models/index.js';
 import { softDelete } from '../utils/softDelete.js';
 import { askBot, botDeps, cleanEmails, describeSchedule, runBot, sendItems, emailSummary, DEFAULT_MESSAGE, DEFAULT_SUBJECT, RECOMMENDED_BOTS } from '../services/bots.js';
@@ -38,6 +39,7 @@ export function cleanBot(b = {}, prev = {}) {
       },
       showOnDashboard: Boolean(b.showOnDashboard ?? prev.showOnDashboard ?? true),
       emailTo: cleanEmails(b.emailTo ?? prev.emailTo ?? []),
+      notify: [...new Set((Array.isArray(b.notify ?? prev.notify) ? (b.notify ?? prev.notify) : []).map(String).filter((id) => /^[0-9a-f]{24}$/i.test(id)))].slice(0, 20),
       enabled: Boolean(b.enabled ?? prev.enabled ?? true),
    };
    const errors = [];
@@ -50,12 +52,42 @@ export function cleanBot(b = {}, prev = {}) {
 
 const view = (b, last) => ({ ...b, scheduleLabel: describeSchedule(b.schedule), lastRun: last || null });
 
-router.get('/', async (_req, res) => {
+// Results waiting for this person: their own, not yet seen, from the last two weeks.
+const unseenFilter = (userId) => ({ recipients: userId, seenBy: { $ne: userId }, createdAt: { $gte: new Date(Date.now() - 14 * 864e5) } });
+
+async function unreadByBot(userId) {
+   const rows = await BotRun.aggregate([{ $match: { ...unseenFilter(new mongoose.Types.ObjectId(String(userId))) } }, { $group: { _id: '$bot', n: { $sum: 1 } } }]);
+   return new Map(rows.map((r) => [String(r._id), r.n]));
+}
+
+/** The bell: this person's unseen bot results, newest first. */
+router.get('/inbox', async (req, res) => {
+   const { runLine } = await import('../services/bots.js');
+   const runs = await BotRun.find(unseenFilter(req.user.id)).sort({ createdAt: -1 }).limit(30).populate('bot', 'name icon').lean();
+   res.json({
+      count: runs.length,
+      items: runs.filter((r) => r.bot).map((r) => ({
+         runId: String(r._id), botId: String(r.bot._id), name: r.bot.name, icon: r.bot.icon || '🤖', at: r.createdAt,
+         line: runLine(r), replied: r.trigger === 'chat', needsAction: (r.items || []).some((i) => i.status === 'pending') || Boolean(r.pending),
+      })),
+   });
+});
+
+/** Seen: one bot's results, or all of them. */
+router.post('/inbox/seen', async (req, res) => {
+   const filter = { recipients: req.user.id, seenBy: { $ne: req.user.id } };
+   if (req.body?.botId) filter.bot = req.body.botId;
+   await BotRun.updateMany(filter, { $addToSet: { seenBy: req.user.id } });
+   res.json({ ok: true });
+});
+
+router.get('/', async (req, res) => {
    const bots = await Bot.find().sort({ createdAt: 1 }).lean();
    const lasts = await Promise.all(bots.map((b) => BotRun.findOne({ bot: b._id }).sort({ createdAt: -1 }).lean()));
+   const unread = await unreadByBot(req.user.id);
    const have = new Set(bots.map((b) => b.name.toLowerCase()));
    res.json({
-      bots: bots.map((b, i) => view(b, lasts[i])),
+      bots: bots.map((b, i) => ({ ...view(b, lasts[i]), unread: unread.get(String(b._id)) || 0 })),
       defaults: { subject: DEFAULT_SUBJECT, message: DEFAULT_MESSAGE },
       recommendedMissing: RECOMMENDED_BOTS.filter((b) => !have.has(b.name.toLowerCase())).map((b) => b.name),
    });
@@ -121,7 +153,7 @@ router.post('/:id/run', async (req, res) => {
       const fresh = bot.runningSince && Date.now() - new Date(bot.runningSince).getTime() < 15 * 60_000;
       if (fresh) return res.status(409).json({ error: 'It is already running' });
       await Bot.updateOne({ _id: bot._id }, { $set: { runningSince: new Date() } });
-      runBot(bot, { trigger: 'manual' })
+      runBot(bot, { trigger: 'manual', requestedBy: req.user?.id })
          .catch((e) => console.error('[Bots] run:', e.message))
          .finally(() => Bot.updateOne({ _id: bot._id }, { $set: { runningSince: null, lastRunAt: new Date() } }).catch(() => {}));
       res.status(202).json({ running: true });
@@ -146,7 +178,7 @@ router.post('/:id/ask', async (req, res) => {
       if (bot.runningSince && Date.now() - new Date(bot.runningSince).getTime() < 15 * 60_000) return res.status(409).json({ error: 'It is busy — wait for it to finish' });
       await Bot.updateOne({ _id: bot._id }, { $set: { runningSince: new Date() } });
       askBot(bot, question, { user: req.user })
-         .catch((e) => BotRun.create({ bot: bot._id, trigger: 'chat', question, status: 'failed', error: e.message, summary: 'Could not answer' }).catch(() => {}))
+         .catch((e) => BotRun.create({ bot: bot._id, trigger: 'chat', question, status: 'failed', error: e.message, summary: 'Could not answer', recipients: [req.user.id] }).catch(() => {}))
          .finally(() => Bot.updateOne({ _id: bot._id }, { $set: { runningSince: null } }).catch(() => {}));
       res.status(202).json({ running: true });
    } catch (e) {

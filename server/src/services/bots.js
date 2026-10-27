@@ -160,6 +160,23 @@ ${run.sources?.length ? `<p style="margin-top:16px;font-size:12px;color:#756E80"
    return { subject, text, html };
 }
 
+/* ── Telling people ─────────────────────────────────────────────────────── */
+
+/** Who hears about a result: whoever asked for it; for a scheduled run, its maker and the bot's notify list. */
+export function recipientsFor(bot, trigger, requestedBy) {
+   const ids = trigger === 'schedule' ? [bot.createdBy, ...(bot.notify || [])] : [requestedBy || bot.createdBy];
+   return [...new Set(ids.filter(Boolean).map(String))];
+}
+
+/** The one line a notification says about a run. */
+export function runLine(run) {
+   if (run.error) return `Failed: ${run.error}`.slice(0, 140);
+   const waiting = (run.items || []).filter((i) => i.status === 'pending').length;
+   if (waiting) return `${waiting} waiting for you to send`;
+   const text = String(run.answer || run.summary || '').replace(/\*\*/g, '').split('\n').map((l) => l.trim()).find(Boolean) || 'New result';
+   return text.slice(0, 140);
+}
+
 /* ── Running ───────────────────────────────────────────────────────────── */
 
 /** The real senders and lookups, for routes that act on a run. */
@@ -226,6 +243,13 @@ async function defaultDeps() {
       },
       saveRun: (doc) => BotRun.create(doc),
       setSchedule: (id, schedule) => Bot.updateOne({ _id: id }, { $set: { schedule } }),
+      // A browser push to each recipient; the bell in the app reads the run itself.
+      notify: async (bot, run) => {
+         const { pushConfigured, pushToUser } = await import('./push.js');
+         if (!pushConfigured()) return;
+         const payload = { title: `${bot.icon ? `${bot.icon} ` : ''}${bot.name}${run.trigger === 'chat' ? ' replied' : ''}`, body: runLine(run), url: `/?tab=bots&bot=${bot._id}`, tag: `bot-${bot._id}` };
+         for (const id of run.recipients || []) await pushToUser(id, payload).catch(() => null);
+      },
       recentRuns: async (id) => (await BotRun.find({ bot: id }).sort({ createdAt: -1 }).limit(8).lean()).reverse(),
    };
 }
@@ -277,9 +301,9 @@ export function emailSummary(items, kind = 'contract_emails') {
 }
 
 /** One run of a bot, now. Saves and returns the run. */
-export async function runBot(bot, { trigger = 'manual', now = new Date(), deps } = {}) {
+export async function runBot(bot, { trigger = 'manual', now = new Date(), deps, requestedBy = null } = {}) {
    const d = { ...(await defaultDeps()), ...(deps || {}) };
-   const run = { bot: bot._id, trigger, status: 'ok', summary: '', answer: '', sources: [], items: [], error: '' };
+   const run = { bot: bot._id, trigger, status: 'ok', summary: '', answer: '', sources: [], items: [], error: '', recipients: recipientsFor(bot, trigger, requestedBy) };
    try {
       if (bot.kind === 'ai_report') {
          const owner = await d.owner(bot.createdBy);
@@ -342,7 +366,9 @@ export async function runBot(bot, { trigger = 'manual', now = new Date(), deps }
       run.error = String(e.message || e).slice(0, 500);
       run.summary = 'The run failed';
    }
-   return d.saveRun(run);
+   const saved = await d.saveRun(run);
+   if (d.notify) await d.notify(bot, saved).catch(() => null);
+   return saved;
 }
 
 /** The minute tick: run every bot whose time has come. */
@@ -483,7 +509,8 @@ export async function askBot(bot, question, { user, deps } = {}) {
    if (parsed) {
       await d.setSchedule(bot._id, parsed.schedule);
       const answer = `Done — ${bot.name} now runs ${describeSchedule(parsed.schedule).replace(/^Every/, 'every').replace(/^Daily/, 'daily').replace(/^Monthly/, 'monthly').replace(/^Only when run/, 'only when you run it')}.${parsed.note ? ` ${parsed.note}` : ''}`;
-      return d.saveRun({ bot: bot._id, trigger: 'chat', question: q, status: 'ok', summary: answer, answer, sources: [], items: [] });
+      const me = user?.id || user?._id;
+      return d.saveRun({ bot: bot._id, trigger: 'chat', question: q, status: 'ok', summary: answer, answer, sources: [], items: [], recipients: me ? [String(me)] : [], seenBy: me ? [String(me)] : [] });
    }
    const runs = await d.recentRuns(bot._id);
    const out = await d.ask({
@@ -492,5 +519,7 @@ export async function askBot(bot, question, { user, deps } = {}) {
       web: Boolean(bot.web), rounds: 12,
    });
    const answer = String(out?.answer || '').trim();
-   return d.saveRun({ bot: bot._id, trigger: 'chat', question: q, status: out?.grounded === false ? 'failed' : 'ok', summary: answer.split('\n')[0].slice(0, 160), answer, sources: (out?.sources || []).slice(0, 8), items: [], pending: out?.pending || null, setup: out?.setup || '' });
+   const saved = await d.saveRun({ bot: bot._id, trigger: 'chat', question: q, recipients: recipientsFor(bot, 'chat', user?.id || user?._id), status: out?.grounded === false ? 'failed' : 'ok', summary: answer.split('\n')[0].slice(0, 160), answer, sources: (out?.sources || []).slice(0, 8), items: [], pending: out?.pending || null, setup: out?.setup || '' });
+   if (d.notify) await d.notify(bot, saved).catch(() => null);
+   return saved;
 }

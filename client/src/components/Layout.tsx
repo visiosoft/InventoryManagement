@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
+import BotBell from './BotBell'
 import {
   Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox, PhoneCall, DoorOpen } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -883,6 +884,8 @@ export default function Layout() {
               someone works, and a waiting customer should not depend on being
               in the right tab to notice. */}
           {canSeeWhatsApp && <WhatsAppBell />}
+          {/* Bot results and replies, on every page (bots are admin-only). */}
+          {isAdmin && <BotBell />}
           <div ref={profileRef} className="relative">
             <button
               onClick={() => setProfileOpen(o => !o)}

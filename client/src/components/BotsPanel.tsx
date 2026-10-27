@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bot as BotIcon, ChevronLeft, Globe, LayoutGrid, List as ListIcon, Loader2, Mail, MessageCircle, Pencil, Play, Plus, Pause, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
@@ -32,6 +33,7 @@ export type BotRow = {
   sendMode: 'review' | 'auto'; dailyCap: number
   schedule: { cadence: Cadence; hour: number; dayOfWeek: number; dayOfMonth: number }
   showOnDashboard: boolean; enabled: boolean; scheduleLabel: string; lastRun: Run | null; runningSince?: string | null
+  unread?: number; notify?: string[]
 }
 type Draft = Omit<BotRow, '_id' | 'scheduleLabel' | 'lastRun'> & { _id?: string }
 
@@ -95,8 +97,18 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
     refetchInterval: (q) => ((q.state.data?.bots ?? []).some(isRunning) ? 4_000 : 60_000),
   })
   const [view, setView] = useState<'cards' | 'list'>(() => { try { return localStorage.getItem('pb_bots_view') === 'list' ? 'list' : 'cards' } catch { return 'cards' } })
+  const [params, setParams] = useSearchParams()
   const [chatId, setChatId] = useState<string | null>(null)
-  const chooseView = (v: 'cards' | 'list') => { setView(v); try { localStorage.setItem('pb_bots_view', v) } catch { /* private window */ } }
+  // Opened from a notification (?bot=…): that bot, in List, where its reply is.
+  const botParam = params.get('bot')
+  const focusId = botParam || chatId
+  const shownView = botParam ? 'list' : view
+  const chooseView = (v: 'cards' | 'list') => {
+    if (botParam) setParams((p) => { const n = new URLSearchParams(p); n.delete('bot'); return n }, { replace: true })
+    if (v === 'cards') setChatId(null)
+    setView(v)
+    try { localStorage.setItem('pb_bots_view', v) } catch { /* private window */ }
+  }
   const [editing, setEditing] = useState<Draft | null>(null)
   const [choosing, setChoosing] = useState(false)
   const [reviewing, setReviewing] = useState<{ bot: BotRow; run: Run } | null>(null)
@@ -142,8 +154,8 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
           <div style={{ fontSize: 13, color: MUTED }} className="mr-auto">Each bot runs on its schedule and keeps its results here. Open one in List to ask it more.</div>
           <div className="inline-flex" role="group" aria-label="View" style={{ border: `1px solid ${LINE}`, borderRadius: 9, overflow: 'hidden' }}>
             {(['cards', 'list'] as const).map((v) => (
-              <button key={v} type="button" onClick={() => chooseView(v)} aria-pressed={view === v} aria-label={v === 'cards' ? 'Cards' : 'List'}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700, padding: '7px 11px', border: 0, cursor: 'pointer', background: view === v ? TINT : '#fff', color: view === v ? PURPLE_INK : MUTED }}>
+              <button key={v} type="button" onClick={() => chooseView(v)} aria-pressed={shownView === v} aria-label={v === 'cards' ? 'Cards' : 'List'}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700, padding: '7px 11px', border: 0, cursor: 'pointer', background: shownView === v ? TINT : '#fff', color: shownView === v ? PURPLE_INK : MUTED }}>
                 {v === 'cards' ? <LayoutGrid size={13} /> : <ListIcon size={13} />} {v === 'cards' ? 'Cards' : 'List'}
               </button>
             ))}
@@ -169,8 +181,8 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
           <BotIcon size={22} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
           No bots yet. Make one to email renewals, watch competitors or send a morning summary.
         </div>
-      ) : view === 'list' && !pinnedOnly ? (
-        <BotsList bots={bots} initialId={chatId} running={(id) => run.isPending && run.variables === id}
+      ) : shownView === 'list' && !pinnedOnly ? (
+        <BotsList key={focusId ?? 'list'} bots={bots} initialId={focusId} running={(id) => run.isPending && run.variables === id}
           onRun={(b) => { setErr(''); run.mutate(b._id) }}
           onEdit={(b) => setEditing({ ...b })}
           onToggle={(b) => patch.mutate({ id: b._id, body: { enabled: !b.enabled } })}
@@ -227,7 +239,10 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview, onDel
       <div className="flex items-start gap-3">
         <div style={{ width: 34, height: 34, borderRadius: 10, background: TINT, display: 'grid', placeItems: 'center', fontSize: 17, flex: '0 0 auto' }}>{bot.icon || '🤖'}</div>
         <div className="min-w-0 flex-1">
-          <div style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 15, color: INK }} className="truncate">{bot.name}</div>
+          <div className="flex items-center gap-2 min-w-0">
+            <div style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 15, color: INK }} className="truncate">{bot.name}</div>
+            {(bot.unread ?? 0) > 0 && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', background: PURPLE, borderRadius: 999, padding: '1px 7px' }}>New</span>}
+          </div>
           <div style={{ fontSize: 12, color: MUTED }}>
             {bot.scheduleLabel}
             {bot.kind !== 'ai_report' && ` · ${bot.sendMode === 'auto' ? 'sends by itself' : 'asks first'}`}
@@ -414,6 +429,8 @@ function BotEditor({ draft, onClose, onSaved }: { draft: Draft; onClose: () => v
           </div>
         )}
 
+        <NotifyPicker value={d.notify ?? []} onChange={(notify) => set({ notify })} />
+
         {err && <div style={{ fontSize: 12.5, color: '#B91C1C' }}>{err}</div>}
         <div className="flex items-center gap-2">
           <button type="submit" style={btn(true)} disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save bot'}</button>
@@ -572,8 +589,18 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
   const [msg, setMsg] = useState('')
   const [chatErr, setChatErr] = useState('')
   const [sending, setSending] = useState(false)
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(Boolean(initialId))
   const selected = bots.find((b) => b._id === selectedId) ?? bots[0]
+  // Looking at a bot is reading it: its results stop counting on the bell.
+  const unreadHere = selected?.unread ?? 0
+  const selectedKey = selected?._id
+  useEffect(() => {
+    if (!selectedKey || !unreadHere) return
+    api.post('/bots/inbox/seen', { botId: selectedKey }).then(() => {
+      qc.invalidateQueries({ queryKey: ['bot-inbox'] })
+      qc.invalidateQueries({ queryKey: ['bots'] })
+    }).catch(() => null)
+  }, [selectedKey, unreadHere, qc])
   const busy = selected ? running(selected._id) || isRunning(selected) : false
   const { data: runsData } = useQuery<{ runs: Run[] }>({
     queryKey: ['bot-runs', selected?._id, selected?.lastRun?._id, selected?.runningSince],
@@ -610,7 +637,9 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
                 <span className="block truncate" style={{ fontWeight: 700, fontSize: 13.5, color: INK }}>{b.name}</span>
                 <span className="block truncate" style={{ fontSize: 12, color: isRunning(b) ? PURPLE_INK : MUTED }}>{lastLine(b)}</span>
               </span>
-              {isRunning(b) ? <Loader2 size={14} className="animate-spin" style={{ color: PURPLE }} /> : waiting ? <span aria-label="Waiting for you" style={{ width: 8, height: 8, borderRadius: 999, background: PURPLE }} /> : null}
+              {isRunning(b) ? <Loader2 size={14} className="animate-spin" style={{ color: PURPLE }} />
+                : (b.unread ?? 0) > 0 ? <span aria-label={`${b.unread} new`} style={{ minWidth: 18, height: 18, borderRadius: 999, background: PURPLE, color: '#fff', fontSize: 10.5, fontWeight: 700, display: 'grid', placeItems: 'center', padding: '0 5px' }}>{b.unread}</span>
+                  : waiting ? <span aria-label="Waiting for you" style={{ width: 8, height: 8, borderRadius: 999, background: '#F5B83D' }} /> : null}
             </button>
           )
         })}
@@ -726,6 +755,35 @@ function ConfirmCard({ pending, onDone }: { pending: NonNullable<Run['pending']>
             </div>
           )}
       <div style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>Nothing is sent until you confirm.</div>
+    </div>
+  )
+}
+
+/* Who else hears about scheduled results (whoever made the bot always does). Admins, since bots are. */
+function NotifyPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const { data } = useQuery<{ _id: string; name: string; role: string }[]>({
+    queryKey: ['assignable-users'],
+    queryFn: () => api.get('/users/assignable').then((r) => r.data ?? []),
+    staleTime: 30 * 60_000,
+  })
+  const admins = (data ?? []).filter((u) => u.role === 'admin')
+  if (!admins.length) return null
+  const flip = (id: string) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id])
+  return (
+    <div>
+      <span style={label}>Also notify when it runs on schedule</span>
+      <div className="flex flex-wrap gap-1.5">
+        {admins.map((u) => {
+          const on = value.includes(u._id)
+          return (
+            <button key={u._id} type="button" onClick={() => flip(u._id)} aria-pressed={on}
+              style={{ fontSize: 12.5, fontWeight: 600, borderRadius: 999, padding: '5px 11px', cursor: 'pointer', border: `1px solid ${on ? PURPLE : FIELD}`, background: on ? TINT : '#fff', color: on ? PURPLE_INK : INK }}>
+              {on ? '✓ ' : ''}{u.name}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ fontSize: 11.5, color: MUTED, marginTop: 4 }}>Whoever made the bot is always told; Run now and chat replies go to whoever asked.</div>
     </div>
   )
 }
