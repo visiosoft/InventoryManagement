@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import BotBell from './BotBell'
 import {
-  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox, PhoneCall, DoorOpen } from 'lucide-react'
+  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox, PhoneCall, DoorOpen, Bot as BotIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -23,7 +23,9 @@ type NavBadgeKey = 'clientRequests'
    them sees; this only decides who gets the menu entry. */
 const CLIENT_REQUEST_PERMS = ['dashboard', 'warehouse', 'warehouse_supervisor', 'sales_board', 'leads', 'contracts', 'invoices', 'customers']
 
-const navTop: { to: string; label: string; icon: typeof Package; perm?: string | string[]; badgeKey?: NavBadgeKey }[] = [
+const navTop: { to: string; label: string; icon: typeof Package; perm?: string | string[]; badgeKey?: NavBadgeKey; adminOnly?: boolean }[] = [
+  // An admin's home: the bots. Everyone else's home is unchanged.
+  { to: '/', label: 'Bots', icon: BotIcon, adminOnly: true },
   { to: '/client-requests', label: 'Client requests', icon: Inbox, perm: CLIENT_REQUEST_PERMS, badgeKey: 'clientRequests' },
   { to: '/warehouse', label: 'Stored Inventory', icon: Package, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/service-requests', label: 'Service requests', icon: Truck, perm: ['warehouse', 'warehouse_supervisor'] },
@@ -33,7 +35,7 @@ const navTop: { to: string; label: string; icon: typeof Package; perm?: string |
   { to: '/shopify/inventory', label: 'Shopify inventory', icon: ShoppingBag, perm: ['warehouse', 'warehouse_supervisor'] },
   // Shopify merchants (onboarding a store) lives under Settings → Integrations:
   // it is configuration, not a page anyone works from day to day.
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' },
   { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'dashboard' },
 ]
 
@@ -290,6 +292,8 @@ const subLinkCls = (isActive: boolean) => cn(
 
 const PAGE_TITLES: Record<string, string> = {
   '/': 'Dashboard',
+  '/dashboard': 'Dashboard',
+  '/bots': 'Bots',
   '/quotes': 'Book Unit',
   '/units': 'Search Units',
   '/floor-map': 'Floor Map',
@@ -402,7 +406,7 @@ export default function Layout() {
   // still moving access even though it is not in the sidebar list.
   const hasMovingAccess = movingNavItems.some(({ perm }) => hasPermission(perm)) || hasPermission('moving_leads')
     || movingReportItems.some(({ perm }) => hasPermission(perm))
-  const hasStorageAccess = navTop.some(({ perm }) => !perm || hasPermission(perm))
+  const hasStorageAccess = navTop.some(({ perm, adminOnly }) => !adminOnly && (!perm || hasPermission(perm)))
     // An admin-only group must not hand a rep access to the storage nav: its
     // items carry no permission key, so without this every role passes.
     || navGroups.some(g => (!(g as { adminOnly?: boolean }).adminOnly || isAdmin)
@@ -577,7 +581,7 @@ export default function Layout() {
           )
         })()}
 
-        {showStorageNav && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon, badgeKey }) => (
+        {showStorageNav && navTop.filter(({ perm, adminOnly }) => (!adminOnly || isAdmin) && (!perm || hasPermission(perm))).map(({ to, label, icon: Icon, badgeKey }) => (
           <NavLink key={to} to={to} end={to === '/'}
             className={({ isActive }) => cn(isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive), badgeKey && 'relative')}
             title={badgeKey ? badgeTitle(badgeKey, label) : isCollapsed ? label : undefined}>
@@ -873,7 +877,7 @@ export default function Layout() {
         <ViewAsBanner />
         {/* Desktop top bar with profile dropdown */}
         <div className="hidden md:flex items-center justify-between h-14 px-6 border-b border-border/40">
-          <h1 className="text-lg font-semibold shrink-0" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
+          <h1 className="text-lg font-semibold shrink-0" style={{ color: '#14081F' }}>{location.pathname === '/' && isAdmin ? 'Bots' : getPageTitle(location.pathname)}</h1>
           <div className="flex items-center gap-3">
           {/* Which facility you are working in. Hides itself when there
               is only one, so nothing changes for a single-site company. */}

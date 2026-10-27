@@ -33,7 +33,7 @@ async function open(page: Page) {
     localStorage.setItem('pb_user', JSON.stringify({ id: 'u1', name: 'Mase', role: 'admin', permissions: [] }))
   })
   await page.setViewportSize({ width: 1400, height: 1400 })
-  await page.goto('/')
+  await page.goto('/dashboard')
   await page.getByRole('button', { name: /Customize/ }).click()
   return { puts }
 }

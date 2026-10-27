@@ -2906,6 +2906,8 @@ const botRunSchema = new Schema({
   // Who the result was emailed to, or why it could not be.
   emailedTo: { type: [String], default: [] },
   emailError: { type: String, default: '' },
+  // PDF or Excel downloads the answer made (the same table it counted).
+  files: { type: [{ _id: false, label: String, path: String, format: String }], default: [] },
   // Who is told about this result, and who has seen it (the bell's unread).
   recipients: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [], index: true },
   seenBy: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] },

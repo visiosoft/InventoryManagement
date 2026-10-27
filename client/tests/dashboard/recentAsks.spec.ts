@@ -26,7 +26,7 @@ test('recent searches list the person\'s questions and a click asks one again', 
     localStorage.setItem('pb_token', 't')
     localStorage.setItem('pb_user', JSON.stringify({ id: 'u1', name: 'Mase', role: 'admin', permissions: [] }))
   })
-  await page.goto('/')
+  await page.goto('/dashboard')
   await expect(page.getByText('Recent searches')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Ask again: Who is on shift now?' })).toBeVisible()
 

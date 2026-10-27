@@ -146,7 +146,7 @@ const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 export function reportEmail(bot, run, { now = new Date(), origin = process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae' } = {}) {
    const day = now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Dubai' });
    const subject = `${bot.icon ? `${bot.icon} ` : ''}${bot.name} — ${day}`;
-   const link = `${origin.replace(/\/$/, '')}/?tab=bots`;
+   const link = `${origin.replace(/\/$/, '')}/bots?bot=${bot._id}`;
    const sources = (run.sources || []).map((s) => `- ${s.label}: ${s.url}`).join('\n');
    const text = `${run.answer}${sources ? `\n\nSources:\n${sources}` : ''}\n\nOpen in the CRM: ${link}`;
    const body = esc(run.answer).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
@@ -247,7 +247,7 @@ async function defaultDeps() {
       notify: async (bot, run) => {
          const { pushConfigured, pushToUser } = await import('./push.js');
          if (!pushConfigured()) return;
-         const payload = { title: `${bot.icon ? `${bot.icon} ` : ''}${bot.name}${run.trigger === 'chat' ? ' replied' : ''}`, body: runLine(run), url: `/?tab=bots&bot=${bot._id}`, tag: `bot-${bot._id}` };
+         const payload = { title: `${bot.icon ? `${bot.icon} ` : ''}${bot.name}${run.trigger === 'chat' ? ' replied' : ''}`, body: runLine(run), url: `/bots?bot=${bot._id}`, tag: `bot-${bot._id}` };
          for (const id of run.recipients || []) await pushToUser(id, payload).catch(() => null);
       },
       recentRuns: async (id) => (await BotRun.find({ bot: id }).sort({ createdAt: -1 }).limit(8).lean()).reverse(),
@@ -314,6 +314,7 @@ export async function runBot(bot, { trigger = 'manual', now = new Date(), deps, 
          });
          run.answer = String(out?.answer || '').trim();
          run.sources = (out?.sources || []).slice(0, 8);
+         run.files = (out?.files || []).slice(0, 4);
          run.summary = run.answer.split('\n').find((l) => l.trim())?.slice(0, 160) || 'No answer';
          if (out?.grounded === false) run.status = 'failed';
          // To the team, not customers, so no Confirm: it goes out with the run.
@@ -519,7 +520,7 @@ export async function askBot(bot, question, { user, deps } = {}) {
       web: Boolean(bot.web), rounds: 12,
    });
    const answer = String(out?.answer || '').trim();
-   const saved = await d.saveRun({ bot: bot._id, trigger: 'chat', question: q, recipients: recipientsFor(bot, 'chat', user?.id || user?._id), status: out?.grounded === false ? 'failed' : 'ok', summary: answer.split('\n')[0].slice(0, 160), answer, sources: (out?.sources || []).slice(0, 8), items: [], pending: out?.pending || null, setup: out?.setup || '' });
+   const saved = await d.saveRun({ bot: bot._id, trigger: 'chat', question: q, recipients: recipientsFor(bot, 'chat', user?.id || user?._id), status: out?.grounded === false ? 'failed' : 'ok', summary: answer.split('\n')[0].slice(0, 160), answer, sources: (out?.sources || []).slice(0, 8), items: [], pending: out?.pending || null, setup: out?.setup || '', files: (out?.files || []).slice(0, 4) });
    if (d.notify) await d.notify(bot, saved).catch(() => null);
    return saved;
 }

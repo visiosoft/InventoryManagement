@@ -50,6 +50,10 @@ function SmartHome() {
   if (user?.role === 'accounts') {
     return <AccountsDashboard />
   }
+  /* An admin starts with the bots; the company dashboard is under Dashboard. */
+  if (user?.role === 'admin') {
+    return <BotsHome />
+  }
   /* A rep's home is their day, not a board.
    *
    * It used to be the leads list: every lead they own, sorted by nothing in
@@ -80,6 +84,7 @@ import FollowUps from './pages/FollowUps'
 import Calls from './pages/Calls'
 import RenewalRequests from './pages/RenewalRequests'
 import ExitSurveys from './pages/ExitSurveys'
+import BotsHome from './pages/BotsHome'
 import Units from './pages/Units'
 import StoredInventory from './pages/warehouse/StoredInventory'
 import ServiceRequests from './pages/warehouse/ServiceRequests'
@@ -252,6 +257,8 @@ export default function App() {
       <Route path="/sales-desk" element={<AdminGuard><SalesDesk /></AdminGuard>} />
       <Route element={<Layout />}>
         <Route path="/" element={<SmartHome />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/bots" element={<AdminGuard><BotsHome /></AdminGuard>} />
         <Route path="/units" element={<Units />} />
         <Route path="/warehouse" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><StoredInventory /></PermGuard>} />
         {/* Every staff role: the server decides which requests each team sees. */}

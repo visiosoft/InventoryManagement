@@ -184,7 +184,7 @@ test('talking to a bot: a schedule change is done at once; a question goes with 
    const deps = {
       setSchedule: async (_id, s) => { schedule = s; },
       recentRuns: async () => [{ trigger: 'schedule', answer: 'Delight: AED 900' }, { trigger: 'chat', question: 'and Ruby?', answer: 'Ruby: AED 950' }],
-      ask: async (a) => { asked = a; return { answer: 'GetSpace: AED 1,000\nmore', grounded: true, sources: [] }; },
+      ask: async (a) => { asked = a; return { answer: 'GetSpace: AED 1,000\nmore', grounded: true, sources: [], files: [{ label: 'Leads (PDF)', path: '/assistant/export?dataset=leads&format=pdf', format: 'pdf' }] }; },
       saveRun: async (r) => r,
    };
    const done = await askBot(bot, 'run it every day at 8pm', { deps });
@@ -199,6 +199,7 @@ test('talking to a bot: a schedule change is done at once; a question goes with 
    assert.equal(asked.history[0].content, 'Competitor prices');
    assert.equal(reply.question, 'what about GetSpace?');
    assert.equal(reply.summary, 'GetSpace: AED 1,000');
+   assert.deepEqual(reply.files, [{ label: 'Leads (PDF)', path: '/assistant/export?dataset=leads&format=pdf', format: 'pdf' }], 'a file the answer made comes with it');
 });
 
 test('a report can also be emailed to the team after each run', async () => {
@@ -215,7 +216,7 @@ test('a report can also be emailed to the team after each run', async () => {
    assert.equal(mails[0].to, 'mase@purplebox.ae');
    assert.equal(mails[0].subject, '☀️ Morning summary — Mon, 26 Oct 2026');
    assert.match(mails[0].html, /<b>Leads yesterday: 61<\/b><br>Waiting: 5 &lt;chats&gt;/);
-   assert.match(mails[0].text, /Open in the CRM: https:\/\/office\.purplebox\.ae\/\?tab=bots/);
+   assert.match(mails[0].text, /Open in the CRM: https:\/\/office\.purplebox\.ae\/bots\?bot=b5/);
    assert.deepEqual(run.emailedTo, ['mase@purplebox.ae']);
    const failed = await runBot({ _id: 'b5', name: 'X', kind: 'ai_report', instruction: 'x', emailTo: ['a@b.co'] }, { deps: {
       owner: async () => null, ask: async () => ({ answer: 'Hi', grounded: true }), sendMail: async () => { throw new Error('Gmail is not connected'); }, saveRun: async (r) => r,

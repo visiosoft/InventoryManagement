@@ -24,7 +24,7 @@ test('the bell counts new bot results, toasts a new one, and opens the bot', asy
     localStorage.setItem('pb_token', 't')
     localStorage.setItem('pb_user', JSON.stringify({ id: 'u1', name: 'Mase', role: 'admin', permissions: [] }))
   })
-  await page.goto('/')
+  await page.goto('/dashboard')
   const bell = page.getByRole('button', { name: /Bot results \(1 new\)/ })
   await expect(bell).toBeVisible()
 
@@ -36,7 +36,7 @@ test('the bell counts new bot results, toasts a new one, and opens the bot', asy
 
   await page.getByRole('button', { name: /Bot results \(2 new\)/ }).click()
   await page.getByRole('dialog', { name: 'Bot results' }).getByText('Morning summary').click()
-  await expect(page).toHaveURL(/tab=bots/)
+  await expect(page).toHaveURL(/\/bots/)
   await expect(page.getByLabel('Bot Morning summary history').getByText('Leads yesterday: 61')).toBeVisible()
   await expect.poll(() => seen.length).toBeGreaterThan(0)
   expect(seen[0]).toEqual({ botId: 'b1' })

@@ -52,21 +52,21 @@ async function setup(page: import('@playwright/test').Page) {
   return calls
 }
 
-test('bots live on the Bots tab only, each with its latest result', async ({ page }) => {
+test('an admin lands on the bots; the company dashboard is under Dashboard', async ({ page }) => {
   await setup(page)
   await page.goto('/')
-  await expect(page.getByPlaceholder(/Ask anything/).or(page.getByText('Overview').first())).toBeVisible()
-  await expect(page.getByLabel('Bot Renewal reminder emails')).toHaveCount(0)
-  await page.getByRole('tab', { name: 'Bots' }).or(page.getByRole('button', { name: 'Bots', exact: true })).first().click()
   const watch = page.getByLabel('Bot Competitor watch')
   await expect(watch.getByText('AED 1,200')).toBeVisible()
   await expect(watch.getByRole('link', { name: /Competitor A/ })).toHaveAttribute('href', 'https://a.example')
   await expect(page.getByLabel('Bot Renewal reminder emails').getByText('2 to approve')).toBeVisible()
+  await page.getByRole('link', { name: 'Dashboard', exact: true }).click()
+  await expect(page).toHaveURL(/\/dashboard$/)
+  await expect(page.getByLabel('Bot Renewal reminder emails')).toHaveCount(0)
 })
 
 test('reviewing a run: untick one, send the rest, the other is left out', async ({ page }) => {
   const calls = await setup(page)
-  await page.goto('/?tab=bots')
+  await page.goto('/bots')
   await page.getByRole('button', { name: 'Review & send 2' }).click()
   await expect(page.getByText('Your storage unit B-214')).toBeVisible()
   await page.getByLabel('Send to Omar Khalid').uncheck()
@@ -78,7 +78,7 @@ test('reviewing a run: untick one, send the rest, the other is left out', async 
 
 test('a new renewal bot starts from the preset and asks first', async ({ page }) => {
   const calls = await setup(page)
-  await page.goto('/?tab=bots')
+  await page.goto('/bots')
   await page.getByRole('button', { name: 'New bot' }).click()
   await page.getByRole('button', { name: /Renewal reminder emails/ }).click()
   await expect(page.getByLabel('Subject')).toHaveValue('Your PurpleBox storage ends on {endDate}')
@@ -90,14 +90,14 @@ test('a new renewal bot starts from the preset and asks first', async ({ page })
 
 test('the recommended bots are one click away', async ({ page }) => {
   const calls = await setup(page)
-  await page.goto('/?tab=bots')
+  await page.goto('/bots')
   await page.getByRole('button', { name: 'Add recommended bots (2)' }).click()
   await expect.poll(() => calls.filter((c) => c.path === '/api/bots/recommended' && c.method === 'POST').length).toBe(1)
 })
 
 test('a bot can be deleted from its card, after a confirm', async ({ page }) => {
   const calls = await setup(page)
-  await page.goto('/?tab=bots')
+  await page.goto('/bots')
   page.once('dialog', (d) => d.accept())
   await page.getByLabel('Bot Competitor watch').getByRole('button', { name: 'Delete' }).click()
   await expect.poll(() => calls.filter((c) => c.method === 'DELETE' && c.path === '/api/bots/b2').length).toBe(1)
@@ -105,7 +105,7 @@ test('a bot can be deleted from its card, after a confirm', async ({ page }) => 
 
 test('quiet good leads: the WhatsApp messages are read and sent from the review', async ({ page }) => {
   const calls = await setup(page)
-  await page.goto('/?tab=bots')
+  await page.goto('/bots')
   const card = page.getByLabel('Bot Quiet good leads')
   await expect(card.getByText('Quotation sent · quiet 4 days')).toBeVisible()
   await card.getByRole('button', { name: 'Review & send 1' }).click()
@@ -117,7 +117,7 @@ test('quiet good leads: the WhatsApp messages are read and sent from the review'
 
 test('list view: bots down the side, the chosen one\'s runs as a timeline', async ({ page }) => {
   await setup(page)
-  await page.goto('/?tab=bots')
+  await page.goto('/bots')
   await page.getByRole('button', { name: 'List' }).click()
   await expect(page.getByRole('button', { name: 'Open Renewal reminder emails' })).toContainText('2 waiting for you to send')
   await page.getByRole('button', { name: 'Open Competitor watch' }).click()
@@ -133,7 +133,7 @@ test('a running bot says so', async ({ page }) => {
   BOTS[1].runningSince = new Date().toISOString()
   try {
     await setup(page)
-    await page.goto('/?tab=bots')
+    await page.goto('/bots')
     await expect(page.getByLabel('Bot Competitor watch').getByText(/Running… since/)).toBeVisible()
     await expect(page.getByLabel('Bot Competitor watch').getByRole('button', { name: 'Running…' })).toBeDisabled()
   } finally {
@@ -143,7 +143,7 @@ test('a running bot says so', async ({ page }) => {
 
 test('a bot can be talked to: the message and its reply join its timeline', async ({ page }) => {
   const calls = await setup(page)
-  await page.goto('/?tab=bots')
+  await page.goto('/bots')
   await page.getByLabel('Bot Competitor watch').getByRole('button', { name: 'Chat' }).click()
   await page.getByLabel('Message Competitor watch').fill('run it every day at 8pm')
   await page.getByRole('button', { name: 'Send' }).click()
@@ -155,7 +155,7 @@ test('a bot can be talked to: the message and its reply join its timeline', asyn
 
 test('a report bot can email its result to the team', async ({ page }) => {
   const calls = await setup(page)
-  await page.goto('/?tab=bots')
+  await page.goto('/bots')
   await page.getByRole('button', { name: 'New bot' }).click()
   await page.getByRole('button', { name: /Morning lead summary/ }).click()
   await page.getByLabel('Email the result to').fill('mase@purplebox.ae, ops@purplebox.ae')

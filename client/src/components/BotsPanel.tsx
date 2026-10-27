@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot as BotIcon, ChevronLeft, Globe, LayoutGrid, List as ListIcon, Loader2, Mail, MessageCircle, Pencil, Play, Plus, Pause, Trash2 } from 'lucide-react'
+import { Bot as BotIcon, ChevronLeft, FileSpreadsheet, FileText, Globe, LayoutGrid, List as ListIcon, Loader2, Mail, MessageCircle, Pencil, Play, Plus, Pause, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { TwilioConnectForm } from './ConnectForms'
 import { SlideOver } from './ui'
@@ -25,7 +25,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 type Cadence = 'manual' | 'daily' | 'weekly' | 'monthly'
 type RunItem = { _id: string; channel?: 'email' | 'whatsapp'; phone?: string; reason?: string; name: string; email: string; unit: string; endDate: string; subject: string; body: string; status: 'pending' | 'sent' | 'skipped' | 'failed'; error?: string }
 type Run = { _id: string; createdAt: string; status: 'ok' | 'waiting' | 'failed'; summary: string; answer: string; sources: { label: string; url: string }[]; items: RunItem[]; error: string
-  trigger?: 'schedule' | 'manual' | 'chat'; question?: string; emailedTo?: string[]; emailError?: string; setup?: string; pending?: { id: string; kind: string; summary: string[]; expiresAt: string } | null }
+  trigger?: 'schedule' | 'manual' | 'chat'; question?: string; emailedTo?: string[]; emailError?: string; files?: { label: string; path: string; format: string }[]; setup?: string; pending?: { id: string; kind: string; summary: string[]; expiresAt: string } | null }
 export type BotRow = {
   _id: string; name: string; kind: 'ai_report' | 'contract_emails' | 'quiet_leads'; icon: string
   instruction: string; web: boolean; days: number; subject: string; message: string
@@ -696,6 +696,16 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
                       </div>
                     )}
                   </div>
+                  {(r.files?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap gap-2" style={{ marginTop: 8 }}>
+                      {r.files!.map((f) => (
+                        <button key={f.path} type="button" onClick={() => downloadFile(f)} className="inline-flex items-center gap-1.5"
+                          style={{ fontSize: 12.5, fontWeight: 700, color: '#fff', background: f.format === 'pdf' ? PURPLE : '#107C41', border: 0, borderRadius: 8, padding: '7px 13px', cursor: 'pointer' }}>
+                          {f.format === 'pdf' ? <FileText size={14} /> : <FileSpreadsheet size={14} />} Download {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {(r.emailedTo?.length ?? 0) > 0 && <div style={{ fontSize: 11.5, color: MUTED, marginTop: 4 }}>✉️ Emailed to {r.emailedTo!.join(', ')}</div>}
                   {r.emailError && <div style={{ fontSize: 11.5, color: '#B91C1C', marginTop: 4 }}>Could not email it: {r.emailError}</div>}
                   {r.setup === 'twilio' && <div style={{ marginTop: 8, border: `1px solid ${LINE}`, borderRadius: 12, padding: '12px 14px' }}><TwilioConnectForm /></div>}
@@ -766,7 +776,8 @@ function NotifyPicker({ value, onChange }: { value: string[]; onChange: (v: stri
     queryFn: () => api.get('/users/assignable').then((r) => r.data ?? []),
     staleTime: 30 * 60_000,
   })
-  const admins = (data ?? []).filter((u) => u.role === 'admin')
+  // Never lets an odd answer take the whole editor down with it.
+  const admins = (Array.isArray(data) ? data : []).filter((u) => u.role === 'admin')
   if (!admins.length) return null
   const flip = (id: string) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id])
   return (
@@ -786,4 +797,21 @@ function NotifyPicker({ value, onChange }: { value: string[]; onChange: (v: stri
       <div style={{ fontSize: 11.5, color: MUTED, marginTop: 4 }}>Whoever made the bot is always told; Run now and chat replies go to whoever asked.</div>
     </div>
   )
+}
+
+/* A PDF opens in a new tab; a workbook is saved — fetched with the person's own login. */
+async function downloadFile(f: { label: string; path: string; format: string }) {
+  try {
+    const res = await api.get(f.path, { responseType: 'blob' })
+    const type = f.format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    const url = URL.createObjectURL(new Blob([res.data], { type }))
+    if (f.format === 'pdf') window.open(url, '_blank', 'noopener')
+    else {
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${f.label.replace(/\s*\(.*\)$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.xlsx`
+      a.click()
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch { /* the button stays; a retry is one click */ }
 }

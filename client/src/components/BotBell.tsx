@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Bot as BotIcon, X } from 'lucide-react'
@@ -41,22 +41,23 @@ export default function BotBell() {
     // Coming back to the tab looks again at once, not up to 20 s later.
     refetchOnWindowFocus: true,
   })
-  const items = data?.items ?? []
+  // Defensive: the bell sits on every page and must never take one down.
+  const items = useMemo(() => (Array.isArray(data?.items) ? data!.items : []), [data])
 
   // A toast for each result that arrives while the page is open — not for
   // what was already waiting when it loaded.
   useEffect(() => {
     if (!data) return
-    const ids = new Set(data.items.map((i) => i.runId))
+    const ids = new Set(items.map((i) => i.runId))
     if (known.current) {
-      const fresh = data.items.filter((i) => !known.current!.has(i.runId))
+      const fresh = items.filter((i) => !known.current!.has(i.runId))
       if (fresh.length) {
         setToasts((t) => [...fresh.slice(0, 3), ...t].slice(0, 3))
         qc.invalidateQueries({ queryKey: ['bots'] })
       }
     }
     known.current = ids
-  }, [data, qc])
+  }, [data, items, qc])
 
   useEffect(() => {
     if (!toasts.length) return
@@ -74,7 +75,7 @@ export default function BotBell() {
   function go(i: Item) {
     setOpen(false)
     setToasts((t) => t.filter((x) => x.runId !== i.runId))
-    navigate(`/?tab=bots&bot=${i.botId}`)
+    navigate(`/bots?bot=${i.botId}`)
   }
   async function markAll() {
     await api.post('/bots/inbox/seen', {}).catch(() => null)
