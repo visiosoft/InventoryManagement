@@ -2835,7 +2835,7 @@ export const DoorConfig = model('DoorConfig', doorConfigSchema);
    dashboard. Two kinds: an AI report (a question answered from the system,
    and the web when allowed) and renewal emails (customers whose contract is
    ending). Emails wait for a person unless an admin set it to send by itself. */
-export const BOT_KINDS = ['ai_report', 'contract_emails'];
+export const BOT_KINDS = ['ai_report', 'contract_emails', 'quiet_leads'];
 const botSchema = new Schema({
   name: { type: String, required: true, trim: true },
   kind: { type: String, enum: BOT_KINDS, required: true },
@@ -2847,6 +2847,11 @@ const botSchema = new Schema({
   days: { type: Number, default: 30, min: 1, max: 120 },
   subject: { type: String, default: '' },
   message: { type: String, default: '' },
+  // quiet_leads: how long a good lead has been silent, and the template sent.
+  quietDays: { type: Number, default: 3, min: 1, max: 60 },
+  maxQuietDays: { type: Number, default: 30, min: 2, max: 180 },
+  templateName: { type: String, default: '' },
+  templateLanguage: { type: String, default: 'en' },
   sendMode: { type: String, enum: ['review', 'auto'], default: 'review' },
   dailyCap: { type: Number, default: 50, min: 1, max: 500 },
   schedule: {
@@ -2865,6 +2870,10 @@ botSchema.plugin(softDeletePlugin);
 export const Bot = model('Bot', botSchema);
 
 const botRunItemSchema = new Schema({
+  channel: { type: String, enum: ['email', 'whatsapp'], default: 'email' },
+  lead: { type: Schema.Types.ObjectId, ref: 'Lead', default: null },
+  phone: { type: String, default: '' },
+  reason: { type: String, default: '' },
   contract: { type: Schema.Types.ObjectId, ref: 'Contract', default: null },
   customer: { type: Schema.Types.ObjectId, ref: 'Customer', default: null },
   name: { type: String, default: '' },

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot as BotIcon, Globe, Mail, Pencil, Pin, Play, Plus, Pause, Trash2 } from 'lucide-react'
+import { Bot as BotIcon, Globe, Mail, MessageCircle, Pencil, Pin, Play, Plus, Pause, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { SlideOver } from './ui'
 
@@ -21,11 +21,12 @@ const HEAD = "'Bricolage Grotesque', sans-serif"
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 type Cadence = 'manual' | 'daily' | 'weekly' | 'monthly'
-type RunItem = { _id: string; name: string; email: string; unit: string; endDate: string; subject: string; body: string; status: 'pending' | 'sent' | 'skipped' | 'failed'; error?: string }
+type RunItem = { _id: string; channel?: 'email' | 'whatsapp'; phone?: string; reason?: string; name: string; email: string; unit: string; endDate: string; subject: string; body: string; status: 'pending' | 'sent' | 'skipped' | 'failed'; error?: string }
 type Run = { _id: string; createdAt: string; status: 'ok' | 'waiting' | 'failed'; summary: string; answer: string; sources: { label: string; url: string }[]; items: RunItem[]; error: string }
 export type BotRow = {
-  _id: string; name: string; kind: 'ai_report' | 'contract_emails'; icon: string
+  _id: string; name: string; kind: 'ai_report' | 'contract_emails' | 'quiet_leads'; icon: string
   instruction: string; web: boolean; days: number; subject: string; message: string
+  quietDays: number; maxQuietDays: number; templateName: string; templateLanguage: string
   sendMode: 'review' | 'auto'; dailyCap: number
   schedule: { cadence: Cadence; hour: number; dayOfWeek: number; dayOfMonth: number }
   showOnDashboard: boolean; enabled: boolean; scheduleLabel: string; lastRun: Run | null
@@ -53,11 +54,13 @@ const PRESETS: { title: string; hint: string; draft: Partial<Draft> }[] = [
   { title: 'Renewal reminder emails', hint: 'Email everyone whose contract ends soon', draft: { name: 'Renewal reminder emails', kind: 'contract_emails', icon: '✉️', days: 30, schedule: { cadence: 'weekly', hour: 9, dayOfWeek: 1, dayOfMonth: 1 } } },
   { title: 'Competitor watch', hint: 'Prices and offers from the web', draft: { name: 'Competitor watch', kind: 'ai_report', icon: '🔎', web: true, instruction: 'Find current monthly prices and any offers for self-storage units of about 25, 50 and 100 sq ft from storage companies in Dubai, and compare them with our prices for the same sizes. Name each company and where the price came from.', schedule: { cadence: 'daily', hour: 8, dayOfWeek: 1, dayOfMonth: 1 } } },
   { title: 'Morning lead summary', hint: 'Yesterday’s leads and what is due', draft: { name: 'Morning lead summary', kind: 'ai_report', icon: '☀️', instruction: 'How many leads came in yesterday and from which sources, which leads have not had a reply, how many follow-ups are due today, and which contracts end this week.', schedule: { cadence: 'daily', hour: 9, dayOfWeek: 1, dayOfMonth: 1 } } },
+  { title: 'Quiet good leads', hint: 'WhatsApp good leads that went quiet', draft: { name: 'Quiet good leads', kind: 'quiet_leads', icon: '💬', quietDays: 3, maxQuietDays: 30, dailyCap: 30, schedule: { cadence: 'daily', hour: 11, dayOfWeek: 1, dayOfMonth: 1 } } },
   { title: 'Your own', hint: 'Any question, on a schedule', draft: { name: '', kind: 'ai_report', icon: '🤖', instruction: '' } },
 ]
 
 const EMPTY: Draft = {
   name: '', kind: 'ai_report', icon: '🤖', instruction: '', web: false, days: 30, subject: '', message: '',
+  quietDays: 3, maxQuietDays: 30, templateName: '', templateLanguage: 'en',
   sendMode: 'review', dailyCap: 50, schedule: { cadence: 'weekly', hour: 9, dayOfWeek: 1, dayOfMonth: 1 }, showOnDashboard: true, enabled: true,
 }
 
@@ -85,6 +88,12 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
     onError: (e) => setErr(apiError(e)),
   })
   const missing = data?.recommendedMissing ?? []
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.delete(`/bots/${id}`),
+    onSuccess: refresh,
+    onError: (e) => setErr(apiError(e)),
+  })
 
   const run = useMutation({
     mutationFn: (id: string) => api.post(`/bots/${id}/run`).then((r) => r.data),
@@ -139,7 +148,8 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
               onEdit={() => setEditing({ ...b })}
               onToggle={() => patch.mutate({ id: b._id, body: { enabled: !b.enabled } })}
               onPin={() => patch.mutate({ id: b._id, body: { showOnDashboard: !b.showOnDashboard } })}
-              onReview={(r) => setReviewing({ bot: b, run: r })} />
+              onReview={(r) => setReviewing({ bot: b, run: r })}
+              onDelete={() => { if (window.confirm(`Delete the bot “${b.name}”? Its results go with it.`)) remove.mutate(b._id) }} />
           ))}
         </div>
       )}
@@ -163,8 +173,8 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
   )
 }
 
-function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview }: {
-  bot: BotRow; running: boolean; onRun: () => void; onEdit: () => void; onToggle: () => void; onPin: () => void; onReview: (r: Run) => void
+function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview, onDelete }: {
+  bot: BotRow; running: boolean; onRun: () => void; onEdit: () => void; onToggle: () => void; onPin: () => void; onReview: (r: Run) => void; onDelete: () => void
 }) {
   const [open, setOpen] = useState(false)
   const r = bot.lastRun
@@ -183,7 +193,7 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview }: {
           <div style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 15, color: INK }} className="truncate">{bot.name}</div>
           <div style={{ fontSize: 12, color: MUTED }}>
             {bot.scheduleLabel}
-            {bot.kind === 'contract_emails' && ` · ${bot.sendMode === 'auto' ? 'sends by itself' : 'asks first'}`}
+            {bot.kind !== 'ai_report' && ` · ${bot.sendMode === 'auto' ? 'sends by itself' : 'asks first'}`}
             {bot.kind === 'ai_report' && bot.web && ' · searches the web'}
           </div>
           <span style={{ display: 'inline-block', marginTop: 6, fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 999, background: pill.bg, color: pill.fg, whiteSpace: 'nowrap' }}>{pill.text}</span>
@@ -213,12 +223,12 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview }: {
         </div>
       )}
 
-      {bot.kind === 'contract_emails' && r && (
+      {bot.kind !== 'ai_report' && r && (
         <div style={{ marginTop: 10 }}>
           {pending.slice(0, 4).map((i) => (
             <div key={i._id} className="flex justify-between gap-3" style={{ fontSize: 12.5, padding: '6px 0', borderTop: `1px solid ${LINE}` }}>
               <span className="truncate">{i.name}{i.unit ? ` · ${i.unit}` : ''}</span>
-              <span style={{ color: MUTED, whiteSpace: 'nowrap' }}>ends {day(i.endDate)}</span>
+              <span style={{ color: MUTED, whiteSpace: 'nowrap' }}>{i.channel === 'whatsapp' ? i.reason : `ends ${day(i.endDate)}`}</span>
             </div>
           ))}
           {pending.length > 4 && <div style={{ fontSize: 12, color: MUTED, paddingTop: 4 }}>+ {pending.length - 4} more</div>}
@@ -227,10 +237,11 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview }: {
       )}
 
       <div className="flex flex-wrap items-center gap-2" style={{ marginTop: 14 }}>
-        {pending.length > 0 && r && <button type="button" style={btn(true)} onClick={() => onReview(r)}><Mail size={13} /> Review &amp; send {pending.length}</button>}
+        {pending.length > 0 && r && <button type="button" style={btn(true)} onClick={() => onReview(r)}>{bot.kind === 'quiet_leads' ? <MessageCircle size={13} /> : <Mail size={13} />} Review &amp; send {pending.length}</button>}
         <button type="button" style={btn(!pending.length)} onClick={onRun} disabled={running}><Play size={13} /> {running ? 'Running…' : 'Run now'}</button>
         <button type="button" style={btn()} onClick={onEdit} aria-label="Edit"><Pencil size={13} /></button>
         <button type="button" style={btn()} onClick={onToggle} aria-label={bot.enabled ? 'Pause' : 'Resume'}>{bot.enabled ? <Pause size={13} /> : <Play size={13} />}</button>
+        <button type="button" style={{ ...btn(), color: '#B91C1C' }} onClick={onDelete} aria-label="Delete" title="Delete this bot"><Trash2 size={13} /></button>
         <button type="button" onClick={onPin} aria-label={bot.showOnDashboard ? 'Unpin from Overview' : 'Pin to Overview'} title={bot.showOnDashboard ? 'On Overview' : 'Pin to Overview'}
           style={{ ...btn(), marginLeft: 'auto', color: bot.showOnDashboard ? PURPLE : MUTED, borderColor: bot.showOnDashboard ? PURPLE : LINE }}>
           <Pin size={13} />
@@ -267,7 +278,7 @@ function BotEditor({ draft, onClose, onSaved }: { draft: Draft; onClose: () => v
   )
 
   return (
-    <SlideOver open onClose={onClose} title={d._id ? 'Edit bot' : 'New bot'} subtitle={d.kind === 'contract_emails' ? 'Emails customers whose contract is ending.' : 'Answers your question on a schedule.'}>
+    <SlideOver open onClose={onClose} title={d._id ? 'Edit bot' : 'New bot'} subtitle={d.kind === 'contract_emails' ? 'Emails customers whose contract is ending.' : d.kind === 'quiet_leads' ? 'WhatsApps good leads that have gone quiet.' : 'Answers your question on a schedule.'}>
       <form onSubmit={(e) => { e.preventDefault(); setErr(''); save.mutate() }} className="space-y-4">
         <div className="flex gap-3">
           <label style={{ width: 70 }}><span style={label}>Icon</span><input value={d.icon} onChange={(e) => set({ icon: e.target.value })} style={{ ...fieldStyle, textAlign: 'center' }} aria-label="Icon" /></label>
@@ -279,6 +290,7 @@ function BotEditor({ draft, onClose, onSaved }: { draft: Draft; onClose: () => v
           <div className="flex gap-2">
             <div role="button" tabIndex={0} style={seg(d.kind === 'ai_report')} onClick={() => set({ kind: 'ai_report' })}>Finds out and reports</div>
             <div role="button" tabIndex={0} style={seg(d.kind === 'contract_emails')} onClick={() => set({ kind: 'contract_emails' })}>Emails ending contracts</div>
+            <div role="button" tabIndex={0} style={seg(d.kind === 'quiet_leads')} onClick={() => set({ kind: 'quiet_leads' })}>WhatsApps quiet leads</div>
           </div>
         </div>
 
@@ -291,6 +303,8 @@ function BotEditor({ draft, onClose, onSaved }: { draft: Draft; onClose: () => v
             </label>
             {toggle(d.web, () => set({ web: !d.web }), 'Can search the web')}
           </>
+        ) : d.kind === 'quiet_leads' ? (
+          <QuietLeadsFields d={d} set={set} seg={seg} />
         ) : (
           <>
             <label style={{ display: 'block' }}>
@@ -394,7 +408,7 @@ function ReviewRun({ bot, run, onClose, onDone }: { bot: BotRow; run: Run; onClo
   const flip = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
   return (
-    <SlideOver open onClose={onClose} title={`${bot.name}`} subtitle={`${pending.length} emails waiting · prepared ${when(run.createdAt)}`}>
+    <SlideOver open onClose={onClose} title={`${bot.name}`} subtitle={`${pending.length} ${bot.kind === 'quiet_leads' ? 'WhatsApp messages' : 'emails'} waiting · prepared ${when(run.createdAt)}`}>
       {done ? (
         <div className="space-y-3">
           <div style={{ fontSize: 14, color: INK }}>{done}</div>
@@ -408,12 +422,12 @@ function ReviewRun({ bot, run, onClose, onDone }: { bot: BotRow; run: Run; onClo
                 <input type="checkbox" checked={picked.has(i._id)} onChange={() => flip(i._id)} aria-label={`Send to ${i.name}`} style={{ width: 16, height: 16, accentColor: PURPLE }} />
                 <button type="button" onClick={() => setOpen(open === i._id ? null : i._id)} className="flex-1 min-w-0 text-left" style={{ background: 'none', border: 0, cursor: 'pointer', padding: 0 }}>
                   <div className="truncate" style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{i.name}{i.unit ? ` · ${i.unit}` : ''}</div>
-                  <div className="truncate" style={{ fontSize: 12, color: MUTED }}>{i.email} · ends {day(i.endDate)}</div>
+                  <div className="truncate" style={{ fontSize: 12, color: MUTED }}>{i.channel === 'whatsapp' ? `${i.phone} · ${i.reason}` : `${i.email} · ends ${day(i.endDate)}`}</div>
                 </button>
               </div>
               {open === i._id && (
                 <div style={{ borderTop: `1px solid ${LINE}`, padding: '10px 12px', background: '#FBFAFD' }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: INK, marginBottom: 6 }}>{i.subject}</div>
+                  {i.subject && <div style={{ fontSize: 12.5, fontWeight: 700, color: INK, marginBottom: 6 }}>{i.subject}</div>}
                   <div style={{ fontSize: 12.5, color: '#374151', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{i.body}</div>
                 </div>
               )}
@@ -422,12 +436,63 @@ function ReviewRun({ bot, run, onClose, onDone }: { bot: BotRow; run: Run; onClo
           {err && <div style={{ fontSize: 12.5, color: '#B91C1C' }}>{err}</div>}
           <div className="flex items-center gap-3" style={{ paddingTop: 8 }}>
             <button type="button" style={btn(true)} disabled={!picked.size || send.isPending} onClick={() => { setErr(''); send.mutate() }}>
-              <Mail size={13} /> {send.isPending ? 'Sending…' : `Send ${picked.size} email${picked.size === 1 ? '' : 's'}`}
+              {bot.kind === 'quiet_leads' ? <MessageCircle size={13} /> : <Mail size={13} />} {send.isPending ? 'Sending…' : bot.kind === 'quiet_leads' ? `Send ${picked.size} WhatsApp${picked.size === 1 ? '' : 's'}` : `Send ${picked.size} email${picked.size === 1 ? '' : 's'}`}
             </button>
             {picked.size < pending.length && <span style={{ fontSize: 12, color: MUTED }}>{pending.length - picked.size} left out of this run</span>}
           </div>
         </div>
       )}
     </SlideOver>
+  )
+}
+
+/* The quiet-leads settings: how long silent, which approved template, and
+   whether it asks first. Templates come from WhatsApp itself: approved, with
+   one blank (the first name) or none. */
+function QuietLeadsFields({ d, set, seg }: { d: Draft; set: (p: Partial<Draft>) => void; seg: (on: boolean) => React.CSSProperties }) {
+  const { data } = useQuery<{ error: string; templates: { name: string; language: string; bodyText: string; variableCount: number }[] }>({
+    queryKey: ['bot-templates'],
+    queryFn: () => api.get('/bots/templates').then((r) => r.data),
+    staleTime: 5 * 60_000,
+  })
+  const chosen = data?.templates.find((t) => t.name === d.templateName)
+  return (
+    <>
+      <div style={{ fontSize: 12.5, color: MUTED, lineHeight: 1.5 }}>
+        Picks open leads that were a good catch — hot or warm, or with a quotation, site visit or follow-up — where nothing has been said either way for a while.
+        Skips anyone with a follow-up already planned, or messaged by this bot in the last week.
+      </div>
+      <div className="flex gap-3">
+        <label style={{ flex: 1 }}><span style={label}>Quiet for at least</span>
+          <div className="flex items-center gap-2"><input type="number" min={1} max={60} value={d.quietDays} onChange={(e) => set({ quietDays: Number(e.target.value) })} style={{ ...fieldStyle, width: 80 }} aria-label="Quiet days" /><span style={{ fontSize: 13, color: MUTED }}>days</span></div>
+        </label>
+        <label style={{ flex: 1 }}><span style={label}>Customer last wrote within</span>
+          <div className="flex items-center gap-2"><input type="number" min={2} max={180} value={d.maxQuietDays} onChange={(e) => set({ maxQuietDays: Number(e.target.value) })} style={{ ...fieldStyle, width: 80 }} aria-label="Within days" /><span style={{ fontSize: 13, color: MUTED }}>days</span></div>
+        </label>
+      </div>
+      <label style={{ display: 'block' }}>
+        <span style={label}>WhatsApp template (approved by Meta — needed after 24 hours of silence)</span>
+        <select value={d.templateName} onChange={(e) => { const t = data?.templates.find((x) => x.name === e.target.value); set({ templateName: e.target.value, templateLanguage: t?.language || 'en' }) }} style={fieldStyle} aria-label="Template">
+          <option value="">Choose a template…</option>
+          {(data?.templates ?? []).map((t) => <option key={`${t.name}-${t.language}`} value={t.name}>{t.name} ({t.language})</option>)}
+        </select>
+      </label>
+      {data?.error && <div style={{ fontSize: 12, color: '#B91C1C' }}>{data.error}</div>}
+      {chosen && (
+        <div style={{ fontSize: 12.5, color: '#374151', background: '#FBFAFD', border: `1px solid ${LINE}`, borderRadius: 9, padding: '9px 11px', whiteSpace: 'pre-wrap' }}>
+          {chosen.bodyText.replaceAll('{{1}}', 'Sara')}
+        </div>
+      )}
+      <div>
+        <span style={label}>Sending</span>
+        <div className="flex gap-2">
+          <div role="button" tabIndex={0} style={seg(d.sendMode === 'review')} onClick={() => set({ sendMode: 'review' })}>Ask me first</div>
+          <div role="button" tabIndex={0} style={seg(d.sendMode === 'auto')} onClick={() => set({ sendMode: 'auto' })}>Send by itself</div>
+        </div>
+        <div style={{ fontSize: 11.5, color: MUTED, marginTop: 6 }}>
+          At most <input type="number" min={1} max={200} value={d.dailyCap} onChange={(e) => set({ dailyCap: Number(e.target.value) })} aria-label="Daily cap" style={{ width: 56, height: 24, border: `1px solid ${FIELD}`, borderRadius: 6, padding: '0 6px' }} /> a day, best leads first.
+        </div>
+      </div>
+    </>
   )
 }

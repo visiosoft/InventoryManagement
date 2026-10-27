@@ -788,6 +788,64 @@ tool({
 });
 
 tool({
+   name: 'conversion_review',
+   description: 'Why leads do or do not become customers, over the last N days (default 30): leads and how many were won, by source; where the open ones are stuck by stage; why lost ones were lost (as recorded); how fast we first replied on WhatsApp (median minutes, share within 15 minutes and within an hour) and how many were never answered. Use for "why are we not converting", "where do we lose leads", "how is our follow-up".',
+   parameters: { type: 'object', properties: { days: { type: 'number', description: 'How far back, default 30' } } },
+   async run({ days = 30 } = {}, { now = new Date() } = {}) {
+      const n = Math.min(180, Math.max(1, Number(days) || 30));
+      const since = new Date(now.getTime() - n * 864e5);
+      const leads = await Lead.find({ createdAt: { $gte: since } }).select('status source lostReason phoneNormalized createdAt').lean();
+      const won = (l) => l.status === 'won';
+      const closed = ['won', 'lost', 'already_customer'];
+      const bySource = {};
+      for (const l of leads) {
+         const k = l.source || 'unknown';
+         bySource[k] ||= { leads: 0, won: 0, lost: 0 };
+         bySource[k].leads += 1;
+         if (won(l)) bySource[k].won += 1;
+         if (l.status === 'lost') bySource[k].lost += 1;
+      }
+      const stuck = {};
+      for (const l of leads) if (!closed.includes(l.status)) stuck[l.status] = (stuck[l.status] || 0) + 1;
+      const reasons = {};
+      for (const l of leads) if (l.status === 'lost') { const r = String(l.lostReason || '').trim() || '(no reason recorded)'; reasons[r] = (reasons[r] || 0) + 1; }
+
+      // First reply: our first outbound after their first inbound, per lead phone.
+      const phones = [...new Set(leads.map((l) => l.phoneNormalized).filter(Boolean))];
+      const msgs = phones.length ? await WhatsAppMessage.find({ phoneNormalized: { $in: phones }, occurredAt: { $gte: since } })
+         .select('phoneNormalized direction occurredAt').sort({ occurredAt: 1 }).lean() : [];
+      const firstIn = new Map();
+      const replyMin = new Map();
+      for (const m of msgs) {
+         if (m.direction === 'inbound' && !firstIn.has(m.phoneNormalized)) firstIn.set(m.phoneNormalized, m.occurredAt);
+         else if (m.direction === 'outbound' && firstIn.has(m.phoneNormalized) && !replyMin.has(m.phoneNormalized)) {
+            replyMin.set(m.phoneNormalized, (new Date(m.occurredAt) - new Date(firstIn.get(m.phoneNormalized))) / 60000);
+         }
+      }
+      const times = [...replyMin.values()].sort((a, b) => a - b);
+      const pct = (k) => (times.length ? Math.round((times.filter((t) => t <= k).length / firstIn.size) * 100) : 0);
+      return {
+         period: `last ${n} days`,
+         leads: leads.length,
+         won: leads.filter(won).length,
+         winRatePct: leads.length ? Math.round((leads.filter(won).length / leads.length) * 1000) / 10 : 0,
+         bySource: Object.entries(bySource).map(([source, v]) => ({ source, ...v, winRatePct: v.leads ? Math.round((v.won / v.leads) * 1000) / 10 : 0 })).sort((a, b) => b.leads - a.leads),
+         openByStage: stuck,
+         lostReasons: Object.entries(reasons).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count).slice(0, 15),
+         whatsapp: {
+            leadsWhoWrote: firstIn.size,
+            answered: replyMin.size,
+            neverAnswered: firstIn.size - replyMin.size,
+            medianFirstReplyMinutes: times.length ? Math.round(times[Math.floor(times.length / 2)]) : null,
+            answeredWithin15MinPct: pct(15),
+            answeredWithin1HourPct: pct(60),
+         },
+         links: [link('Leads', '/leads')],
+      };
+   },
+});
+
+tool({
    name: 'leads_list',
    description: 'Every lead in a date range with name, phone, status, source, owner and size — optionally only one status, source or owner. Use to list or look through leads ("all leads from yesterday", "Randa\'s leads this week", "leads still new"). For a PDF or Excel of them use export_file.',
    parameters: {

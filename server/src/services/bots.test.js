@@ -104,10 +104,59 @@ test('a bot is saved only with what it may hold', async () => {
 test('the recommended bots are all valid, and only the emails reach customers — asking first', async () => {
    const { RECOMMENDED_BOTS } = await import('./bots.js');
    const { cleanBot } = await import('../routes/bots.js');
-   assert.equal(RECOMMENDED_BOTS.length, 5);
+   assert.equal(RECOMMENDED_BOTS.length, 6);
+   assert.ok(!RECOMMENDED_BOTS.some((b) => b.name === 'Past check-out watch'), 'taken out at the admin\'s request');
    for (const b of RECOMMENDED_BOTS) assert.deepEqual(cleanBot(b).errors, [], b.name);
    const emailers = RECOMMENDED_BOTS.filter((b) => b.kind === 'contract_emails');
    assert.equal(emailers.length, 1);
    assert.equal(cleanBot(emailers[0]).bot.sendMode, 'review');
-   assert.equal(RECOMMENDED_BOTS.filter((b) => b.web).map((b) => b.name).join(), 'Competitor watch');
+   assert.deepEqual(RECOMMENDED_BOTS.filter((b) => b.web).map((b) => b.name), ['Why leads don\'t convert', 'Competitor watch']);
+});
+
+test('quiet good leads: open, far along or warm, silent a few days, nothing planned, not messaged this week', async () => {
+   const { pickQuietLeads } = await import('./bots.js');
+   const now = new Date('2026-10-28T06:00:00Z');
+   const ago = (d) => new Date(now.getTime() - d * 864e5);
+   const leads = [
+      { _id: 'q', fullName: 'Quoted Quiet', phone: '+971501', phoneNormalized: '971501', status: 'quotation_sent', temperature: '' },
+      { _id: 'h', fullName: 'Hot Quiet', phone: '+971502', phoneNormalized: '971502', status: 'contacted', temperature: 'hot' },
+      { _id: 'c', fullName: 'Cold', phone: '+971503', phoneNormalized: '971503', status: 'contacted', temperature: 'cold' },
+      { _id: 'f', fullName: 'Talking', phone: '+971504', phoneNormalized: '971504', status: 'quotation_sent', temperature: 'hot' },
+      { _id: 'p', fullName: 'Planned', phone: '+971505', phoneNormalized: '971505', status: 'follow_up_scheduled', followUpAt: ago(-2) },
+      { _id: 'o', fullName: 'Old', phone: '+971506', phoneNormalized: '971506', status: 'quotation_sent' },
+      { _id: 'm', fullName: 'Messaged', phone: '+971507', phoneNormalized: '971507', status: 'quotation_sent' },
+   ];
+   const activity = new Map([
+      ['971501', { lastIn: ago(5), lastAny: ago(4) }],
+      ['971502', { lastIn: ago(3), lastAny: ago(3) }],
+      ['971503', { lastIn: ago(5), lastAny: ago(5) }],
+      ['971504', { lastIn: ago(1), lastAny: ago(1) }],
+      ['971505', { lastIn: ago(6), lastAny: ago(6) }],
+      ['971506', { lastIn: ago(60), lastAny: ago(60) }],
+      ['971507', { lastIn: ago(6), lastAny: ago(6) }],
+   ]);
+   const picked = pickQuietLeads(leads, activity, { quietDays: 3, maxQuietDays: 30, recentlyMessaged: new Set(['m']), now });
+   assert.deepEqual(picked.map((p) => p.lead._id), ['q', 'h']);
+   assert.equal(picked[0].why, 'Quotation sent · quiet 4 days');
+});
+
+test('the quiet-leads bot fills the template with the first name and waits for a person', async () => {
+   const sent = [];
+   const now = new Date('2026-10-28T06:00:00Z');
+   const run = await runBot({ _id: 'b9', name: 'Quiet leads', kind: 'quiet_leads', templateName: 'checking_in', quietDays: 3, sendMode: 'review' }, { now, deps: {
+      template: async () => ({ name: 'checking_in', status: 'APPROVED', variableCount: 1, bodyText: 'Hi {{1}}, still looking for storage?' }),
+      quietCandidates: async () => ({
+         leads: [{ _id: 'q', fullName: 'Sara Ahmed', phone: '+971501', phoneNormalized: '971501', status: 'quotation_sent' }],
+         activity: new Map([['971501', { lastIn: new Date(now - 5 * 864e5), lastAny: new Date(now - 5 * 864e5) }]]),
+      }),
+      recentlyMessaged: async () => new Set(),
+      sendWhatsApp: async (i) => sent.push(i),
+      saveRun: async (r) => r,
+   } });
+   assert.equal(sent.length, 0);
+   assert.equal(run.status, 'waiting');
+   assert.equal(run.items[0].body, 'Hi Sara, still looking for storage?');
+   assert.equal(run.items[0].channel, 'whatsapp');
+   const noTemplate = await runBot({ _id: 'b9', kind: 'quiet_leads', templateName: '' }, { deps: { saveRun: async (r) => r } });
+   assert.match(noTemplate.error, /Choose the WhatsApp template/);
 });

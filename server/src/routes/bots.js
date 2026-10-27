@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Bot, BotRun, BOT_KINDS } from '../models/index.js';
 import { softDelete } from '../utils/softDelete.js';
-import { describeSchedule, runBot, sendItems, emailSummary, DEFAULT_MESSAGE, DEFAULT_SUBJECT, RECOMMENDED_BOTS } from '../services/bots.js';
+import { botDeps, describeSchedule, runBot, sendItems, emailSummary, DEFAULT_MESSAGE, DEFAULT_SUBJECT, RECOMMENDED_BOTS } from '../services/bots.js';
 
 /**
  * Bots (services/bots.js): admins make them, run them, and send what a
@@ -26,6 +26,10 @@ export function cleanBot(b = {}, prev = {}) {
       days: int(b.days ?? prev.days, 1, 120, 30),
       subject: String(b.subject ?? prev.subject ?? '').slice(0, 200),
       message: String(b.message ?? prev.message ?? '').slice(0, 5000),
+      quietDays: int(b.quietDays ?? prev.quietDays, 1, 60, 3),
+      maxQuietDays: int(b.maxQuietDays ?? prev.maxQuietDays, 2, 180, 30),
+      templateName: String(b.templateName ?? prev.templateName ?? '').trim().slice(0, 120),
+      templateLanguage: String(b.templateLanguage ?? prev.templateLanguage ?? 'en').trim().slice(0, 12) || 'en',
       sendMode: (b.sendMode ?? prev.sendMode) === 'auto' ? 'auto' : 'review',
       dailyCap: int(b.dailyCap ?? prev.dailyCap, 1, 500, 50),
       schedule: {
@@ -39,6 +43,7 @@ export function cleanBot(b = {}, prev = {}) {
    if (!out.name) errors.push('Give it a name');
    if (!out.kind) errors.push('Choose what it does');
    if (out.kind === 'ai_report' && out.instruction.length < 5) errors.push('Say what it should find out');
+   if (out.kind === 'quiet_leads' && !out.templateName) errors.push('Choose the WhatsApp template it sends');
    return { bot: out, errors };
 }
 
@@ -72,6 +77,22 @@ router.post('/recommended', async (req, res) => {
       made.push(await Bot.create({ ...bot, createdBy: req.user.id }));
    }
    res.status(201).json({ added: made.map((b) => b.name) });
+});
+
+/** Approved WhatsApp templates a quiet-leads bot can send: one blank (the first name) or none. */
+router.get('/templates', async (_req, res) => {
+   try {
+      const { listWhatsAppTemplates } = await import('../services/whatsapp.js');
+      const list = await listWhatsAppTemplates();
+      res.json({
+         error: list.error || '',
+         templates: (list.templates || [])
+            .filter((t) => String(t.status).toUpperCase() === 'APPROVED' && t.variableCount <= 1 && !['IMAGE', 'VIDEO', 'DOCUMENT'].includes(t.headerFormat))
+            .map((t) => ({ name: t.name, language: t.language, bodyText: t.bodyText, variableCount: t.variableCount })),
+      });
+   } catch (e) {
+      res.json({ error: e.message, templates: [] });
+   }
 });
 
 router.put('/:id', async (req, res) => {
@@ -116,9 +137,17 @@ router.post('/runs/:runId/send', async (req, res) => {
       const bot = await Bot.findById(run.bot).lean();
       const { sendMail } = await import('../services/mail.js');
       const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
-      const sent = await sendItems(run, bot || { name: 'Bot' }, ids, { sendMail, by: req.user?.name || 'admin' });
+      let b = bot || { name: 'Bot' };
+      const deps = await botDeps();
+      if (b.kind === 'quiet_leads') {
+         // Checked again at send time: a template paused since the run must not go.
+         const tpl = await deps.template(b.templateName);
+         if (!tpl || String(tpl.status).toUpperCase() !== 'APPROVED') return res.status(400).json({ error: `The template "${b.templateName}" is not approved in WhatsApp any more` });
+         b = { ...b, templateVariableCount: tpl.variableCount };
+      }
+      const sent = await sendItems(run, b, ids, { sendMail, sendWhatsApp: deps.sendWhatsApp, by: req.user?.name || 'admin', byUser: req.user });
       run.status = run.items.some((i) => i.status === 'pending') ? 'waiting' : 'ok';
-      run.summary = emailSummary(run.items);
+      run.summary = emailSummary(run.items, b.kind);
       await run.save();
       res.json({ sent, run });
    } catch (e) {
@@ -133,7 +162,7 @@ router.post('/runs/:runId/skip', async (req, res) => {
    const ids = new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String));
    for (const i of run.items) if (i.status === 'pending' && ids.has(String(i._id))) i.status = 'skipped';
    run.status = run.items.some((i) => i.status === 'pending') ? 'waiting' : 'ok';
-   run.summary = emailSummary(run.items);
+   run.summary = emailSummary(run.items, (await Bot.findById(run.bot).select('kind').lean())?.kind);
    await run.save();
    res.json({ run });
 });
