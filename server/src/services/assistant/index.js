@@ -8,6 +8,7 @@ import { PROPOSAL_TOOLS, ACTION_TOOLS } from './actions.js';
 import './staffTools.js';
 import './makeTools.js';
 import './pricingTools.js';
+import './connectorTools.js';
 
 /**
  * The assistant in the corner of every page.

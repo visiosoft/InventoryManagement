@@ -325,3 +325,22 @@ export async function paymentMethodOfSession(session) {
   }
   return null;
 }
+
+/**
+ * Card payments that went through in the last N days, newest first — read
+ * only, for the assistant and bots. Amounts in AED (Stripe keeps fils).
+ */
+export async function recentStripePayments({ days = 30, limit = 100 } = {}) {
+  const since = Math.floor((Date.now() - Math.min(365, Math.max(1, days)) * 864e5) / 1000);
+  const list = await getClient().paymentIntents.list({ created: { gte: since }, limit: Math.min(100, limit) });
+  return list.data.map((p) => ({
+    id: p.id,
+    at: new Date(p.created * 1000).toISOString(),
+    status: p.status,
+    amountAed: Math.round(Number(p.amount_received || p.amount || 0)) / 100,
+    currency: String(p.currency || '').toUpperCase(),
+    description: p.description || p.metadata?.quoteNo || p.metadata?.invoiceNo || '',
+    email: p.receipt_email || '',
+    reference: p.metadata?.invoiceNo || p.metadata?.quoteNo || p.metadata?.contractNo || '',
+  }));
+}

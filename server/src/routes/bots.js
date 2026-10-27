@@ -61,6 +61,20 @@ async function unreadByBot(userId) {
    return new Map(rows.map((r) => [String(r._id), r.n]));
 }
 
+/** What bots can read: every connection, connected or not, and how to connect it. */
+router.get('/connections', async (_req, res) => {
+   const [{ describeConnections }, { zohoBooksConfigured }, { gmailAccess }, { whatsappConfigured }, { stripeConfigured }, { analyticsConfigured }, { driveConfigured }, { metaAdsConfigured }, { twilioConfigured }, { claudeConfigured }] = await Promise.all([
+      import('../services/connections.js'), import('../services/zohoBooks.js'), import('../services/gmail.js'), import('../services/whatsapp.js'),
+      import('../services/stripe.js'), import('../services/googleAnalytics.js'), import('../services/drive.js'), import('../services/metaAds.js'),
+      import('../services/twilio.js'), import('../services/claude.js'),
+   ]);
+   const gmail = await gmailAccess().catch(() => ({ connected: false }));
+   res.json({ connections: describeConnections({
+      zohoBooks: zohoBooksConfigured(), gmail, whatsapp: whatsappConfigured(), stripe: stripeConfigured(), analytics: analyticsConfigured(),
+      drive: driveConfigured(), metaAds: metaAdsConfigured(), twilio: twilioConfigured(), claude: claudeConfigured(),
+   }) });
+});
+
 /** The bell: this person's unseen bot results, newest first. */
 router.get('/inbox', async (req, res) => {
    const { runLine } = await import('../services/bots.js');

@@ -177,3 +177,18 @@ test('a bot described in a sentence is set up after a Confirm', async ({ page })
   await expect(page.getByText('Bot “Leads PDF” is set up.')).toBeVisible()
   expect(calls.length).toBeGreaterThan(0)
 })
+
+test('the Bots page shows what bots can read, and Gmail that only sends asks to be reconnected', async ({ page }) => {
+  await setup(page)
+  await page.route('**/api/bots/connections', (route) => route.fulfill({ json: { connections: [
+    { key: 'zohoBooks', name: 'Zoho Books', icon: '📒', connected: true, reads: 'Invoices', connect: 'settings' },
+    { key: 'gmail', name: 'Gmail', icon: '📬', connected: false, partly: true, reads: 'The inbox', note: 'Connected for sending only — reconnect and allow reading so bots can read the inbox.', account: 'contact@purplebox.ae', connect: 'oauth:gmail' },
+    { key: 'stripe', name: 'Stripe', icon: '💳', connected: false, reads: 'Card payments', connect: 'settings' },
+  ] } }))
+  await page.goto('/bots')
+  await expect(page.getByRole('button', { name: 'Connections' })).toContainText('Bots can read · 1 of 3')
+  await page.getByRole('button', { name: 'Connections' }).click()
+  await expect(page.getByText('Connected for sending only')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Reconnect' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
+})

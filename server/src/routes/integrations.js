@@ -458,7 +458,7 @@ function gmailOAuthClient() {
     return new google.auth.OAuth2(clientId, clientSecret, callbackUrl);
 }
 
-router.get('/gmail/connect', (_req, res) => {
+router.get('/gmail/connect', (req, res) => {
     const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
     if (!clientId || !clientSecret) {
@@ -471,27 +471,35 @@ router.get('/gmail/connect', (_req, res) => {
         // it each morning. An older connection granted send only; the
         // read helpers say so plainly and point here.
         scope: ['https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/gmail.readonly'],
+        // Where to come back to: the Bots page when connected from there.
+        state: req.query.from === 'bots' ? 'bots' : 'settings',
     });
     res.json({ url });
 });
 
 router.get('/gmail/callback', async (req, res) => {
     const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+    const back = req.query.state === 'bots' ? 'bots' : 'settings';
     if (req.query.error) {
-        return res.redirect(`${clientOrigin}/settings?gmailError=${encodeURIComponent(req.query.error)}`);
+        return res.redirect(`${clientOrigin}/${back}?gmailError=${encodeURIComponent(req.query.error)}`);
     }
     try {
         const oauth2 = gmailOAuthClient();
         const { tokens } = await oauth2.getToken(String(req.query.code || ''));
         if (!tokens.refresh_token) {
-            return res.redirect(`${clientOrigin}/settings?gmailError=${encodeURIComponent('No refresh token returned. Revoke access at myaccount.google.com and try again.')}`);
+            return res.redirect(`${clientOrigin}/${back}?gmailError=${encodeURIComponent('No refresh token returned. Revoke access at myaccount.google.com and try again.')}`);
         }
         updateEnvFile({ GOOGLE_GMAIL_REFRESH_TOKEN: tokens.refresh_token });
         process.env.GOOGLE_GMAIL_REFRESH_TOKEN = tokens.refresh_token;
-        res.redirect(`${clientOrigin}/settings?gmailConnected=1`);
+        /* Google lets the person untick reading on its consent screen. Sending
+           still works then, but bots cannot read the inbox — say so now. */
+        if (tokens.scope && !/gmail\.readonly|gmail\.modify/.test(tokens.scope)) {
+            return res.redirect(`${clientOrigin}/${back}?gmailError=${encodeURIComponent('Connected for sending only: reading the inbox was not allowed on Google\'s screen. Reconnect and tick "Read your email" so bots can read it.')}`);
+        }
+        res.redirect(`${clientOrigin}/${back}?gmailConnected=1`);
     } catch (err) {
         const msg = err?.message || 'Unknown error';
-        res.redirect(`${clientOrigin}/settings?gmailError=${encodeURIComponent(msg)}`);
+        res.redirect(`${clientOrigin}/${back}?gmailError=${encodeURIComponent(msg)}`);
     }
 });
 

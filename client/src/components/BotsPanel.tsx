@@ -5,6 +5,7 @@ import { Bot as BotIcon, ChevronLeft, FileSpreadsheet, FileText, Globe, LayoutGr
 import { api, apiError } from '../lib/api'
 import { TwilioConnectForm } from './ConnectForms'
 import ChartView, { type ChartSpec } from './ChartView'
+import ConnectionsStrip from './ConnectionsStrip'
 import { SlideOver } from './ui'
 
 /**
@@ -171,6 +172,7 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
           <button type="button" style={btn(true)} onClick={() => setChoosing(true)}><Plus size={14} /> New bot</button>
         </div>
       )}
+      {!pinnedOnly && <ConnectionsStrip />}
       {!pinnedOnly && <DescribeBot onMade={refresh} />}
       {pinnedOnly && (
         <div className="mb-3 flex items-center gap-2" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED }}>

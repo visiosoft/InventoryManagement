@@ -142,3 +142,33 @@ export async function sendGmail({ to, subject, text, html, attachments, cc, bcc 
     const raw = buildRawEmail({ from, to, subject, text, html, attachments, cc, bcc });
     await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
 }
+
+/**
+ * What the connected Gmail lets us do: whether a bot can read the inbox, or
+ * only send. Asked of Google itself (the token's scopes), cached ten minutes
+ * per connection, so the Bots page can say "sending only — reconnect" before
+ * a bot runs into it.
+ */
+let accessCache = { key: '', at: 0, data: null };
+export async function gmailAccess() {
+    const auth = getOAuth2Client();
+    if (!auth) return { connected: false, canRead: false, canSend: false, account: '' };
+    const key = process.env.GOOGLE_GMAIL_REFRESH_TOKEN;
+    if (accessCache.key === key && Date.now() - accessCache.at < 10 * 60_000) return accessCache.data;
+    let data;
+    try {
+        const { token } = await auth.getAccessToken();
+        const info = await auth.getTokenInfo(token);
+        const scopes = info.scopes || [];
+        data = {
+            connected: true,
+            canRead: scopes.some((s) => /gmail\.(readonly|modify)|mail\.google\.com/.test(s)),
+            canSend: scopes.some((s) => /gmail\.(send|modify|compose)|mail\.google\.com/.test(s)),
+            account: info.email || '',
+        };
+    } catch (e) {
+        data = { connected: true, canRead: false, canSend: false, account: '', error: e.message };
+    }
+    accessCache = { key, at: Date.now(), data };
+    return data;
+}
