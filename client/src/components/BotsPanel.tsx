@@ -24,11 +24,11 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 type Cadence = 'manual' | 'daily' | 'weekly' | 'monthly'
 type RunItem = { _id: string; channel?: 'email' | 'whatsapp'; phone?: string; reason?: string; name: string; email: string; unit: string; endDate: string; subject: string; body: string; status: 'pending' | 'sent' | 'skipped' | 'failed'; error?: string }
 type Run = { _id: string; createdAt: string; status: 'ok' | 'waiting' | 'failed'; summary: string; answer: string; sources: { label: string; url: string }[]; items: RunItem[]; error: string
-  trigger?: 'schedule' | 'manual' | 'chat'; question?: string; setup?: string; pending?: { id: string; kind: string; summary: string[]; expiresAt: string } | null }
+  trigger?: 'schedule' | 'manual' | 'chat'; question?: string; emailedTo?: string[]; emailError?: string; setup?: string; pending?: { id: string; kind: string; summary: string[]; expiresAt: string } | null }
 export type BotRow = {
   _id: string; name: string; kind: 'ai_report' | 'contract_emails' | 'quiet_leads'; icon: string
   instruction: string; web: boolean; days: number; subject: string; message: string
-  quietDays: number; maxQuietDays: number; templateName: string; templateLanguage: string
+  quietDays: number; maxQuietDays: number; templateName: string; templateLanguage: string; emailTo?: string[]
   sendMode: 'review' | 'auto'; dailyCap: number
   schedule: { cadence: Cadence; hour: number; dayOfWeek: number; dayOfMonth: number }
   showOnDashboard: boolean; enabled: boolean; scheduleLabel: string; lastRun: Run | null; runningSince?: string | null
@@ -65,7 +65,7 @@ const PRESETS: { title: string; hint: string; draft: Partial<Draft> }[] = [
 
 const EMPTY: Draft = {
   name: '', kind: 'ai_report', icon: '🤖', instruction: '', web: false, days: 30, subject: '', message: '',
-  quietDays: 3, maxQuietDays: 30, templateName: '', templateLanguage: 'en',
+  quietDays: 3, maxQuietDays: 30, templateName: '', templateLanguage: 'en', emailTo: [],
   sendMode: 'review', dailyCap: 50, schedule: { cadence: 'weekly', hour: 9, dayOfWeek: 1, dayOfMonth: 1 }, showOnDashboard: true, enabled: true,
 }
 
@@ -232,6 +232,7 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview, onDel
             {bot.scheduleLabel}
             {bot.kind !== 'ai_report' && ` · ${bot.sendMode === 'auto' ? 'sends by itself' : 'asks first'}`}
             {bot.kind === 'ai_report' && bot.web && ' · searches the web'}
+            {bot.kind === 'ai_report' && (bot.emailTo?.length ?? 0) > 0 && ` · emails ${bot.emailTo!.length === 1 ? bot.emailTo![0] : `${bot.emailTo!.length} people`}`}
           </div>
           <div style={{ marginTop: 6 }}>
             {isRunning(bot)
@@ -293,6 +294,7 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview, onDel
 
 function BotEditor({ draft, onClose, onSaved }: { draft: Draft; onClose: () => void; onSaved: () => void }) {
   const [d, setD] = useState<Draft>(draft)
+  const [emailText, setEmailText] = useState((draft.emailTo ?? []).join(', '))
   const [err, setErr] = useState('')
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }))
   const setS = (p: Partial<Draft['schedule']>) => setD((x) => ({ ...x, schedule: { ...x.schedule, ...p } }))
@@ -342,6 +344,12 @@ function BotEditor({ draft, onClose, onSaved }: { draft: Draft; onClose: () => v
                 style={{ ...fieldStyle, height: 'auto', padding: '9px 11px', lineHeight: 1.45, resize: 'vertical' }} />
             </label>
             {toggle(d.web, () => set({ web: !d.web }), 'Can search the web')}
+            <label style={{ display: 'block' }}>
+              <span style={label}>Also email the result to (optional, comma between addresses)</span>
+              <input value={emailText} onChange={(e) => { setEmailText(e.target.value); set({ emailTo: e.target.value.split(/[\s,;]+/).filter(Boolean) }) }}
+                placeholder="you@purplebox.ae, manager@purplebox.ae" aria-label="Email the result to" style={fieldStyle} />
+              <span style={{ display: 'block', fontSize: 11.5, color: MUTED, marginTop: 4 }}>Sent from the company Gmail after every run — scheduled or Run now.</span>
+            </label>
           </>
         ) : d.kind === 'quiet_leads' ? (
           <QuietLeadsFields d={d} set={set} seg={seg} />
@@ -659,6 +667,8 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
                       </div>
                     )}
                   </div>
+                  {(r.emailedTo?.length ?? 0) > 0 && <div style={{ fontSize: 11.5, color: MUTED, marginTop: 4 }}>✉️ Emailed to {r.emailedTo!.join(', ')}</div>}
+                  {r.emailError && <div style={{ fontSize: 11.5, color: '#B91C1C', marginTop: 4 }}>Could not email it: {r.emailError}</div>}
                   {r.setup === 'twilio' && <div style={{ marginTop: 8, border: `1px solid ${LINE}`, borderRadius: 12, padding: '12px 14px' }}><TwilioConnectForm /></div>}
                   {r.pending && <ConfirmCard pending={r.pending} onDone={() => qc.invalidateQueries({ queryKey: ['bot-runs'] })} />}
                   {pending.length > 0 && (

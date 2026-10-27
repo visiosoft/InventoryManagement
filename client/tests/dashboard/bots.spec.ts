@@ -152,3 +152,15 @@ test('a bot can be talked to: the message and its reply join its timeline', asyn
   await expect(pane.getByText('run it every day at 8pm')).toBeVisible()
   await expect(pane.getByText('Done — Competitor watch now runs daily 20:00.')).toBeVisible()
 })
+
+test('a report bot can email its result to the team', async ({ page }) => {
+  const calls = await setup(page)
+  await page.goto('/?tab=bots')
+  await page.getByRole('button', { name: 'New bot' }).click()
+  await page.getByRole('button', { name: /Morning lead summary/ }).click()
+  await page.getByLabel('Email the result to').fill('mase@purplebox.ae, ops@purplebox.ae')
+  await page.getByRole('button', { name: 'Save bot' }).click()
+  await expect.poll(() => calls.filter((c) => c.method === 'POST' && c.path === '/api/bots').length).toBe(1)
+  const body = calls.find((c) => c.method === 'POST' && c.path === '/api/bots')!.body as Record<string, unknown>
+  expect(body.emailTo).toEqual(['mase@purplebox.ae', 'ops@purplebox.ae'])
+})

@@ -2861,6 +2861,8 @@ const botSchema = new Schema({
     dayOfMonth: { type: Number, default: 1, min: 1, max: 28 },
   },
   showOnDashboard: { type: Boolean, default: true },
+  // ai_report: also email each result to these people (the team, not customers).
+  emailTo: { type: [String], default: [] },
   enabled: { type: Boolean, default: true },
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   lastRunAt: { type: Date, default: null },
@@ -2899,6 +2901,9 @@ const botRunSchema = new Schema({
   // or needs a connection made first ('twilio').
   pending: { type: Schema.Types.Mixed, default: null },
   setup: { type: String, default: '' },
+  // Who the result was emailed to, or why it could not be.
+  emailedTo: { type: [String], default: [] },
+  emailError: { type: String, default: '' },
   status: { type: String, enum: ['ok', 'waiting', 'failed'], default: 'ok' },
   summary: { type: String, default: '' },
   answer: { type: String, default: '' },

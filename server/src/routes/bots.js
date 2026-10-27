@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Bot, BotRun, BOT_KINDS } from '../models/index.js';
 import { softDelete } from '../utils/softDelete.js';
-import { askBot, botDeps, describeSchedule, runBot, sendItems, emailSummary, DEFAULT_MESSAGE, DEFAULT_SUBJECT, RECOMMENDED_BOTS } from '../services/bots.js';
+import { askBot, botDeps, cleanEmails, describeSchedule, runBot, sendItems, emailSummary, DEFAULT_MESSAGE, DEFAULT_SUBJECT, RECOMMENDED_BOTS } from '../services/bots.js';
 
 /**
  * Bots (services/bots.js): admins make them, run them, and send what a
@@ -37,6 +37,7 @@ export function cleanBot(b = {}, prev = {}) {
          hour: int(s.hour, 0, 23, 9), dayOfWeek: int(s.dayOfWeek, 0, 6, 1), dayOfMonth: int(s.dayOfMonth, 1, 28, 1),
       },
       showOnDashboard: Boolean(b.showOnDashboard ?? prev.showOnDashboard ?? true),
+      emailTo: cleanEmails(b.emailTo ?? prev.emailTo ?? []),
       enabled: Boolean(b.enabled ?? prev.enabled ?? true),
    };
    const errors = [];

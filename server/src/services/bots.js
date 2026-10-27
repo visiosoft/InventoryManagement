@@ -130,6 +130,36 @@ export function pickQuietLeads(leads, activity, { quietDays = 3, maxQuietDays = 
    return out.sort((x, y) => y.rank - x.rank || x.quiet - y.quiet).slice(0, limit);
 }
 
+/* ── Emailing a report ─────────────────────────────────────────────────── */
+
+const EMAIL_RX = /^[^\s@,;<>]+@[^\s@,;<>]+\.[a-z]{2,}$/i;
+
+/** "a@x.com, b@y.com" or a list → clean, unique addresses, at most ten. */
+export function cleanEmails(v) {
+   const list = Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/);
+   return [...new Set(list.map((e) => String(e).trim().toLowerCase()).filter((e) => EMAIL_RX.test(e)))].slice(0, 10);
+}
+
+const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** The report as an email: the answer as written, its web sources, and a link to the bot. */
+export function reportEmail(bot, run, { now = new Date(), origin = process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae' } = {}) {
+   const day = now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Dubai' });
+   const subject = `${bot.icon ? `${bot.icon} ` : ''}${bot.name} — ${day}`;
+   const link = `${origin.replace(/\/$/, '')}/?tab=bots`;
+   const sources = (run.sources || []).map((s) => `- ${s.label}: ${s.url}`).join('\n');
+   const text = `${run.answer}${sources ? `\n\nSources:\n${sources}` : ''}\n\nOpen in the CRM: ${link}`;
+   const body = esc(run.answer).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#14081F;max-width:680px">
+<h2 style="font-size:17px;margin:0 0 12px">${esc(bot.name)}</h2>
+<div>${body}</div>
+${run.sources?.length ? `<p style="margin-top:16px;font-size:12px;color:#756E80">Sources: ${run.sources.map((s) => `<a href="${esc(s.url)}">${esc(s.label)}</a>`).join(' · ')}</p>` : ''}
+<p style="margin-top:20px"><a href="${link}" style="background:#5B2BC9;color:#fff;text-decoration:none;padding:9px 16px;border-radius:8px;font-weight:bold">Open in the CRM</a></p>
+<p style="font-size:11px;color:#9CA3AF">${esc(bot.scheduleLabel || describeSchedule(bot.schedule))} · sent by the ${esc(bot.name)} bot</p>
+</div>`;
+   return { subject, text, html };
+}
+
 /* ── Running ───────────────────────────────────────────────────────────── */
 
 /** The real senders and lookups, for routes that act on a run. */
@@ -262,6 +292,17 @@ export async function runBot(bot, { trigger = 'manual', now = new Date(), deps }
          run.sources = (out?.sources || []).slice(0, 8);
          run.summary = run.answer.split('\n').find((l) => l.trim())?.slice(0, 160) || 'No answer';
          if (out?.grounded === false) run.status = 'failed';
+         // To the team, not customers, so no Confirm: it goes out with the run.
+         const to = cleanEmails(bot.emailTo);
+         if (to.length && run.answer && run.status === 'ok') {
+            try {
+               const mail = reportEmail(bot, run, { now });
+               await d.sendMail({ to: to.join(', '), ...mail, context: { kind: 'report', label: bot.name, sentBy: 'bot' } });
+               run.emailedTo = to;
+            } catch (e) {
+               run.emailError = String(e.message || e).slice(0, 300);
+            }
+         }
       } else if (bot.kind === 'contract_emails') {
          const contracts = await d.expiring(Number(bot.days) || 30, now);
          const recent = await d.recentlyEmailed(bot._id, now);

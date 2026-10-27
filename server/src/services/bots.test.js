@@ -200,3 +200,27 @@ test('talking to a bot: a schedule change is done at once; a question goes with 
    assert.equal(reply.question, 'what about GetSpace?');
    assert.equal(reply.summary, 'GetSpace: AED 1,000');
 });
+
+test('a report can also be emailed to the team after each run', async () => {
+   const { cleanEmails, reportEmail } = await import('./bots.js');
+   assert.deepEqual(cleanEmails('Mase@PurpleBox.ae, not-an-email; ops@purplebox.ae mase@purplebox.ae'), ['mase@purplebox.ae', 'ops@purplebox.ae']);
+   const mails = [];
+   const run = await runBot({ _id: 'b5', name: 'Morning summary', icon: '☀️', kind: 'ai_report', instruction: 'Summary', emailTo: ['mase@purplebox.ae'], schedule: { cadence: 'daily', hour: 9 } }, { now: MON_0905, deps: {
+      owner: async () => null,
+      ask: async () => ({ answer: '**Leads yesterday: 61**\nWaiting: 5 <chats>', grounded: true, sources: [] }),
+      sendMail: async (m) => mails.push(m),
+      saveRun: async (r) => r,
+   } });
+   assert.equal(mails.length, 1);
+   assert.equal(mails[0].to, 'mase@purplebox.ae');
+   assert.equal(mails[0].subject, '☀️ Morning summary — Mon, 26 Oct 2026');
+   assert.match(mails[0].html, /<b>Leads yesterday: 61<\/b><br>Waiting: 5 &lt;chats&gt;/);
+   assert.match(mails[0].text, /Open in the CRM: https:\/\/office\.purplebox\.ae\/\?tab=bots/);
+   assert.deepEqual(run.emailedTo, ['mase@purplebox.ae']);
+   const failed = await runBot({ _id: 'b5', name: 'X', kind: 'ai_report', instruction: 'x', emailTo: ['a@b.co'] }, { deps: {
+      owner: async () => null, ask: async () => ({ answer: 'Hi', grounded: true }), sendMail: async () => { throw new Error('Gmail is not connected'); }, saveRun: async (r) => r,
+   } });
+   assert.equal(failed.status, 'ok', 'the report itself still stands');
+   assert.equal(failed.emailError, 'Gmail is not connected');
+   assert.equal(reportEmail({ name: 'A', schedule: {} }, { answer: 'x' }).subject.startsWith('A — '), true);
+});
