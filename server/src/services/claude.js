@@ -248,3 +248,47 @@ export async function claudeChatWithTools({ system, messages = [], tools = [], m
     };
     return { content, toolCalls, message, usage: usageOf(res.usage) };
 }
+
+/* ── The web ──────────────────────────────────────────────────────────────── */
+
+const WEB_MODEL = 'claude-opus-5-5';
+
+/**
+ * One question answered from the web, with its sources. Anthropic's own
+ * search tool runs the searches; this returns a short summary and the pages
+ * it came from. Only used when the person asking has switched the web on.
+ */
+export async function claudeWebSearch(query, { maxUses = 4, timeout = 120000 } = {}) {
+    const q = String(query || '').trim().slice(0, 400);
+    if (!q) return { error: 'Nothing to search for' };
+    const messages = [{ role: 'user', content: `Search the web and answer briefly, with the figures and names you found (prices with their currency, dates). Say plainly when something could not be found.\n\nQuestion: ${q}` }];
+    let res;
+    // A long search can pause mid-turn; carry on from where it stopped.
+    for (let i = 0; i < 3; i += 1) {
+        try {
+            res = await client().messages.create({
+                model: WEB_MODEL,
+                max_tokens: 16000,
+                system: 'You research the web for a self-storage company in Dubai. Be factual and short. Today is ' + new Date().toISOString().slice(0, 10) + '.',
+                messages,
+                tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: maxUses, user_location: { type: 'approximate', city: 'Dubai', country: 'AE', timezone: 'Asia/Dubai' } }],
+                output_config: { effort: 'low' },
+            }, { timeout });
+        } catch (e) {
+            if (e instanceof Anthropic.APIError) return { error: `Web search failed: ${e.message}` };
+            throw e;
+        }
+        if (res.stop_reason !== 'pause_turn') break;
+        messages.push({ role: 'assistant', content: res.content });
+    }
+    if (res.stop_reason === 'refusal') return { error: 'The web search was declined' };
+    const sources = [];
+    const seen = new Set();
+    for (const b of res.content) {
+        if (b.type !== 'web_search_tool_result' || !Array.isArray(b.content)) continue;
+        for (const r of b.content) {
+            if (r?.type === 'web_search_result' && r.url && !seen.has(r.url)) { seen.add(r.url); sources.push({ title: String(r.title || r.url).slice(0, 120), url: r.url }); }
+        }
+    }
+    return { answer: textOf(res.content), sources: sources.slice(0, 8) };
+}

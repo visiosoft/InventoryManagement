@@ -56,6 +56,8 @@ const userSchema = new Schema(
     /* Their own dashboard: card order, hidden cards, cards moved to another
        tab (services/dashboardLayout.js). Null is the default layout. */
     dashboardLayout: { type: Schema.Types.Mixed, default: null },
+    /* Their own last questions to the dashboard Ask box (services/recentAsks.js). */
+    recentAsks: { type: [{ _id: false, q: String, at: Date }], default: [] },
   },
   { timestamps: true }
 );

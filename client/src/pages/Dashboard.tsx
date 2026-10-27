@@ -9,6 +9,7 @@ import { EmptyState, Skeleton, Table, Th, Td, Button, Badge, SlideOver, Paginati
 import { CHART_STYLE } from './reports/shared'
 import { formatDate, formatMoney } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
+import RecentAsksCard from '../components/RecentAsksCard'
 import CustomerFeedbackCard from '../components/CustomerFeedbackCard'
 import LeadCoverageCard from '../components/LeadCoverageCard'
 import ClientInfoSubmissionsCard from '../components/ClientInfoSubmissionsCard'
@@ -989,7 +990,14 @@ export default function Dashboard() {
         </div>
       )}
 
-      {tab === 'overview' && <div className="mb-6"><DashboardAsk /></div>}
+      {/* The assistant gets the top of Overview: asking on the left, the
+          person's own recent searches beside it. */}
+      {tab === 'overview' && (
+        <div className="mb-6 grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-start">
+          <DashboardAsk />
+          <RecentAsksCard />
+        </div>
+      )}
 
       {tab === 'finance' && (
         <div className="space-y-8">

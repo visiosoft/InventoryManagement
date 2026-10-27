@@ -5,6 +5,7 @@ import { computeUnitAvailability } from '../unitAvailability.js';
 import { quoteLines, quoteTotals, termWeeks } from '../quoteLines.js';
 import { dayKeyFor, dayRange, previousDay } from '../dailyDigest.js';
 import { resolveNames } from '../inboxAsk.js';
+import { claudeConfigured, claudeWebSearch } from '../claude.js';
 
 /**
  * Everything the assistant is allowed to know.
@@ -694,6 +695,76 @@ tool({
          file: { label: `${table.title} (${fmt === 'pdf' ? 'PDF' : 'Excel'})`, path: exportPath(dataset, fmt, keep), format: fmt },
          note: 'The file is attached under the answer as a download button.',
       };
+   },
+});
+
+const FIELD_TYPES = ['text', 'phone', 'email', 'number', 'date', 'select', 'textarea'];
+
+/** The form the model asked for, made safe to draw: known field types, short labels, at most 10 fields. */
+export function cleanForm({ intro, title, fields, submitLabel } = {}) {
+   const str = (v, n) => (v === undefined || v === null ? '' : String(v).trim().slice(0, n));
+   const seen = new Set();
+   const out = (Array.isArray(fields) ? fields : []).map((f) => {
+      const key = str(f?.key, 40).replace(/[^a-zA-Z0-9_]/g, '_');
+      const label = str(f?.label, 60);
+      if (!key || !label || seen.has(key)) return null;
+      seen.add(key);
+      const type = FIELD_TYPES.includes(f?.type) ? f.type : 'text';
+      const options = type === 'select' ? (Array.isArray(f?.options) ? f.options : []).map((o) => str(o, 40)).filter(Boolean).slice(0, 12) : undefined;
+      return { key, label, type: type === 'select' && !options?.length ? 'text' : type, ...(options?.length ? { options } : {}), value: str(f?.value, 300), required: f?.required !== false };
+   }).filter(Boolean).slice(0, 10);
+   if (!out.length) return null;
+   return { intro: str(intro, 200) || 'A few details:', title: str(title, 60), fields: out, submitLabel: str(submitLabel, 30) || 'Continue' };
+}
+
+tool({
+   name: 'ask_details',
+   description: 'Show the person a short form to fill in, instead of asking for several details in text. Use it whenever a booking, quotation, contract, invoice or new lead still needs details. Look up what you can first, then put every value you already know (from the conversation or a tool: the customer\'s name and phone, the size they asked for, today\'s date as the start) in `value`, so they only fill the gaps and check the rest. For a size, a sending method or anything with set answers use type select with the options (offer only sizes that are free). After calling it, stop: their answers come back as the next message.',
+   parameters: {
+      type: 'object',
+      properties: {
+         intro: { type: 'string', description: 'One short line above the form, e.g. "A few details for the quotation:"' },
+         title: { type: 'string', description: 'What the form is for, e.g. "Quotation"' },
+         fields: {
+            type: 'array',
+            items: {
+               type: 'object',
+               properties: {
+                  key: { type: 'string', description: 'Short id, e.g. customerName, phone, sizeSqf, startDate, months, discount, sendBy' },
+                  label: { type: 'string', description: 'What the person sees, e.g. "Customer name"' },
+                  type: { type: 'string', enum: FIELD_TYPES },
+                  options: { type: 'array', items: { type: 'string' }, description: 'select only: the answers to choose from' },
+                  value: { type: 'string', description: 'What you already know for this field, or empty. Dates YYYY-MM-DD.' },
+                  required: { type: 'boolean', description: 'false for optional fields such as a discount or a note' },
+               },
+               required: ['key', 'label', 'type'],
+            },
+         },
+         submitLabel: { type: 'string', description: 'The button, e.g. "Prepare quotation"' },
+      },
+      required: ['intro', 'fields'],
+   },
+   async run(args) {
+      const form = cleanForm(args);
+      if (!form) return { error: 'A form needs at least one field with a key and a label' };
+      return { form, note: 'The form is on screen. Stop here; the answers come back as the next message.' };
+   },
+});
+
+tool({
+   name: 'web_search',
+   description: 'Search the internet — competitors\' prices and offers, market news, a company or address, anything outside this system. Only offered when the person has switched the web on. Give one clear question; call it again for a different question. Say where each fact came from.',
+   parameters: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'The question, e.g. "self storage prices per month in Al Quoz Dubai 2026"' } },
+      required: ['query'],
+   },
+   async run({ query }, ctx = {}) {
+      if (!ctx.web) return { error: 'The web is switched off for this question' };
+      if (!claudeConfigured()) return { error: 'Web search needs the Claude key set in Settings' };
+      const out = await (ctx.webSearch || claudeWebSearch)(query);
+      if (out.error) return out;
+      return { ...out, links: [], web: (out.sources || []).map((s) => ({ label: s.title, url: s.url })) };
    },
 });
 

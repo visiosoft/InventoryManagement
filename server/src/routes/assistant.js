@@ -8,8 +8,10 @@ import { getAdminInsight } from '../services/assistant/adminInsight.js';
 import { buildDataset, DATASETS } from '../services/assistant/datasets.js';
 import { tablePdf, tableWorkbook } from '../services/tableExport.js';
 import { siteScope } from '../utils/siteScope.js';
+import { User } from '../models/index.js';
+import { addRecentAsk } from '../services/recentAsks.js';
 import { openaiConfigured, openaiModel, transcribeAudio } from '../services/openai.js';
-import { CLAUDE_EFFORTS } from '../services/claude.js';
+import { CLAUDE_EFFORTS, claudeConfigured } from '../services/claude.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -29,7 +31,7 @@ async function allowed(req) {
 router.post('/ask', async (req, res) => {
    try {
       if (!(await allowed(req))) return res.status(403).json({ error: 'The assistant is not enabled for your role' });
-      const { question, history, site, context } = req.body || {};
+      const { question, history, site, context, web } = req.body || {};
       const out = await askAssistant({
          question, history: Array.isArray(history) ? history : [],
          siteId: site || req.query.site || null,
@@ -37,11 +39,33 @@ router.post('/ask', async (req, res) => {
          authHeader: req.headers.authorization || '',
          // The staff app says which screen and lead it is on (see askAssistant).
          context: context && typeof context === 'object' ? context : null,
+         web: web === true,
       });
       res.json(out);
+      // The opening question of a conversation is kept for the person's
+      // "Recent searches" card. Never holds up or fails the answer.
+      if (!(Array.isArray(history) && history.length) && req.user?.id && String(question || '').trim()) {
+         User.findById(req.user.id).select('recentAsks').then((u) => {
+            if (!u) return null;
+            u.recentAsks = addRecentAsk(u.recentAsks?.map((x) => ({ q: x.q, at: x.at })), question);
+            return u.save();
+         }).catch(() => {});
+      }
    } catch (e) {
       res.status(500).json({ error: e.message });
    }
+});
+
+/** The signed-in person's own recent questions, newest first. */
+router.get('/recent', async (req, res) => {
+   const u = await User.findById(req.user?.id).select('recentAsks').lean().catch(() => null);
+   res.json({ recent: (u?.recentAsks || []).map((x) => ({ q: x.q, at: x.at })) });
+});
+
+/** Clear them. */
+router.delete('/recent', async (req, res) => {
+   await User.updateOne({ _id: req.user?.id }, { $set: { recentAsks: [] } }).catch(() => null);
+   res.json({ ok: true });
 });
 
 /**
@@ -148,6 +172,8 @@ router.get('/capabilities', async (req, res) => {
       enabled: openaiConfigured() && (await getAssistantConfig()).enabled,
       allowed: await allowed(req),
       tools: toolNames(),
+      // Searching the internet runs on Claude, so it is offered once the key is set.
+      web: claudeConfigured(),
    });
 });
 

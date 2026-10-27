@@ -33,9 +33,10 @@ const RULES = `RULES YOU CANNOT BREAK:
 - Dates you pass to tools are YYYY-MM-DD. "Today" and relative dates are worked out from the date given below.
 - Do not mention tools by name to the user. Speak as the system.
 - Buttons to the relevant pages — a customer, a contract, a chat — are attached to your answer automatically. You may say "open it below". Do not write URLs yourself.
-- Booking a unit, making a quotation or raising an invoice works like the booking form. First look up what you can (the customer or lead by name or phone, which units of the size are free and their prices). Then ask only for what is still missing, in one short message as a numbered list — for a booking or quotation: the customer's name and phone, the unit size (offer the free sizes), the start date, how long (or the end date), any discount, and whether to send it by WhatsApp, by email or just create it; for an invoice: which contract, what for, the amount and the due date. When everything is known, prepare it in the same turn and tell them to press Confirm.
+- Booking a unit, making a quotation or raising an invoice works like the booking form. First look up what you can (the customer or lead by name or phone, which units of the size are free and their prices). Then, if anything is still missing, show a form with ask_details — never a numbered list of questions — with every value you already know filled in: for a booking or quotation the customer's name and phone, the unit size (a select of the free sizes), the start date (today unless they said), how long in months (or the end date), any discount (optional) and send by (WhatsApp, email or just create it); for an invoice which contract, what for, the amount and the due date. When the answers come back, check them, look up anything new, and prepare it in the same turn and tell them to press Confirm. Ask again with a form only for what is still wrong or missing.
 - When your message asks a question with a few set answers, end it with one line exactly like: Options: 25 sq ft | 50 sq ft | 100 sq ft — at most 6 short answers, separated by |. They become buttons, so leave them out of the rest of the message.
 - You can make a PDF or Excel file of a list (leads, expiring contracts, tasks, free units, calls). When someone asks for a file, PDF, Excel, export or printout, make it — the download button appears under your answer; say so in one line. Never say you cannot make files.
+- When the web is switched on you may search the internet with web_search for anything outside the system (competitors, market prices, news). Keep what came from the web apart from what came from the system, and name the source. When it is off and the question needs the internet, say they can switch on Web.
 - Lead housekeeping happens straight away when asked: a new lead, a follow-up date, a site visit, a lead's stage, a note.
 - Anything that reaches a customer or moves money is only prepared: a WhatsApp message, an email, a quotation, a contract, an invoice, sending an invoice, a payment, extending a contract, a template. When you have prepared one, say so in a line and tell them to press Confirm in the card. Never say it has been created, booked, reserved, signed or sent — only a person's Confirm does that, and a contract is a draft until it is signed.
 - Before writing to a customer or judging one (interested, lost, agreed to visit), read their conversation first. The latest message wins.
@@ -110,7 +111,7 @@ function systemPromptFor(config, { user, now, context }) {
  *
  * @returns {{ answer, tools: [{name, args, ok}], model, rounds, grounded }}
  */
-export async function askAssistant({ question, history = [], siteId = null, user = null, now = new Date(), authHeader = '', context = null }) {
+export async function askAssistant({ question, history = [], siteId = null, user = null, now = new Date(), authHeader = '', context = null, web = false }) {
    if (!openaiConfigured()) return { answer: 'The assistant is not set up — no AI provider is configured.', tools: [], model: '', rounds: 0, grounded: true };
    const config = await getAssistantConfig();
    if (!config.enabled) return { answer: 'The assistant is switched off.', tools: [], model: '', rounds: 0, grounded: true };
@@ -122,7 +123,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
    // Carried so a write tool can call the app's own API with the asking
    // user's own token — same reason the confirmed-proposal executor does:
    // whatever it creates is attributed exactly as if they had used the page.
-   const ctx = { scope, user, now, authHeader };
+   const ctx = { scope, user, now, authHeader, web: Boolean(web) };
    const model = resolveModel(config.model);
    const effort = config.effort || undefined;
    const system = systemPromptFor(config, { user, now, context });
@@ -145,7 +146,10 @@ export async function askAssistant({ question, history = [], siteId = null, user
       tool is simply absent — the model cannot propose what it cannot see. */
    const mayAct = config.actionsEnabled !== false
       && (config.actionRoles?.length ? config.actionRoles : ['admin', 'sales_rep']).includes(user?.role);
-   const tools = toolDefinitions().filter((t) => mayAct || !ACTION_TOOLS.includes(t.function.name));
+   const tools = toolDefinitions()
+      .filter((t) => mayAct || !ACTION_TOOLS.includes(t.function.name))
+      // The internet only when the person switched it on for this question.
+      .filter((t) => web || t.function.name !== 'web_search');
    let pending = null;
 
    for (; rounds < maxRounds; rounds += 1) {
@@ -179,6 +183,10 @@ export async function askAssistant({ question, history = [], siteId = null, user
          }
          messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(out).slice(0, 12000) });
       }
+      /* A form is the question: it goes on screen as it is, and the
+         answers come back as the next message. */
+      const asked = results.find((r) => r.result?.form);
+      if (asked && !pending) { content = asked.result.form.intro; break; }
    }
 
    // Ran out of rounds mid-thought: ask once more for the answer, tools off.
@@ -221,7 +229,8 @@ export async function askAssistant({ question, history = [], siteId = null, user
       }
    }
 
-   let check = figuresGrounded(content, results);
+   const formAsked = !pending && results.some((r) => r.result?.form);
+   let check = figuresGrounded(content, formAsked ? [...results, text] : results);
    if (!check.ok && results.length) {
       messages.push({ role: 'assistant', content });
       messages.push({ role: 'user', content: `Your answer used figures that did not come from the tools: ${check.loose.join(', ')}. Rewrite it using only figures that appear in the tool results, exactly as returned. If a figure you need is not there, say so instead of stating it.` });
@@ -287,5 +296,12 @@ export async function askAssistant({ question, history = [], siteId = null, user
       if (type && !r.result?.error) { card = { type, data: r.result }; break; }
    }
 
-   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card, files, options: pending ? [] : options };
+   /* The form it asked to show, cleaned by the tool, never retyped. */
+   const form = pending ? null : (results.find((r) => r.result?.form)?.result.form ?? null);
+
+   /* Pages from the web that the answer drew on, as links out. */
+   const sources = [];
+   for (const r of results) for (const w of (r.result?.web || [])) if (w?.url && !sources.some((x) => x.url === w.url)) sources.push({ label: String(w.label).slice(0, 80), url: String(w.url) });
+
+   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card, files, form, sources: sources.slice(0, 6), options: pending || form ? [] : options };
 }

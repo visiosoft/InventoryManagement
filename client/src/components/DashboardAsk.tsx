@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Sparkles, ArrowRight, Mail, MessageCircle, X, FileText, FileSpreadsheet } from 'lucide-react'
+import { Sparkles, ArrowRight, Mail, MessageCircle, X, FileText, FileSpreadsheet, Globe } from 'lucide-react'
+import AskForm, { type AskFormSpec } from './AskForm'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import EmailCustomersModal from '../pages/customers/EmailCustomersModal'
@@ -31,6 +32,10 @@ type Answer = {
   files?: { label: string; path: string; format: 'pdf' | 'excel' }[]
   /** Short answers to the question it just asked, as buttons ("25 sq ft", "WhatsApp"). */
   options?: string[]
+  /** Details it needs, as boxes to fill in, with what it knows filled. */
+  form?: AskFormSpec | null
+  /** Web pages the answer drew on, when the web was on. */
+  sources?: { label: string; url: string }[]
   pdfPath?: string
   quoteId?: string
   contractId?: string
@@ -55,6 +60,8 @@ const TOOL_LABEL: Record<string, string> = {
   compose_email: 'worked out who to email',
   compose_whatsapp: 'worked out who to WhatsApp',
   export_file: 'made the file',
+  ask_details: 'asked for the details',
+  web_search: 'searched the web',
   leads_list: 'listed the leads',
   sales_summary: 'read sales from Zoho',
   receivables: 'read receivables from Zoho',
@@ -103,27 +110,42 @@ export default function DashboardAsk() {
   /* The conversation so far, so it can ask what a booking needs and
      remember the answers. Cleared with the X. */
   const [thread, setThread] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+  const qc = useQueryClient()
+  /* A question picked on the Recent searches card is asked here, fresh. */
+  const askRef = useRef<(text: string, fresh?: boolean) => void>(() => {})
+  useEffect(() => {
+    const onAsk = (e: Event) => {
+      const q = (e as CustomEvent<string>).detail
+      if (typeof q === 'string') askRef.current(q, true)
+    }
+    window.addEventListener('pb-ask', onAsk)
+    return () => window.removeEventListener('pb-ask', onAsk)
+  }, [])
 
+  /* Searching the internet, when the person wants it. Remembered per browser. */
+  const [web, setWeb] = useState(() => { try { return localStorage.getItem('pb_ask_web') === '1' } catch { return false } })
+  const toggleWeb = () => setWeb((w) => { try { localStorage.setItem('pb_ask_web', w ? '0' : '1') } catch { /* private window */ } return !w })
   const { data: caps } = useQuery({
     queryKey: ['assistant-capabilities'],
-    queryFn: () => api.get<{ enabled: boolean; allowed: boolean }>('/assistant/capabilities').then((r) => r.data),
+    queryFn: () => api.get<{ enabled: boolean; allowed: boolean; web?: boolean }>('/assistant/capabilities').then((r) => r.data),
     enabled: Boolean(user),
     staleTime: 5 * 60_000,
   })
 
-  if (!user || !caps?.enabled || !caps?.allowed) return null
-
-  async function ask(text: string) {
+  async function ask(text: string, fresh = false) {
     const question = text.trim()
     if (!question || busy) return
+    const before = fresh ? [] : thread
     setBusy(true)
     setErr('')
+    if (fresh) setQ(question)
     try {
-      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[]; compose?: Compose | null; files?: Answer['files']; options?: string[] }>(
-        '/assistant/ask', { question, history: thread.slice(-10) },
+      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[]; compose?: Compose | null; files?: Answer['files']; options?: string[]; form?: AskFormSpec | null; sources?: Answer['sources'] }>(
+        '/assistant/ask', { question, history: before.slice(-10), web: Boolean(caps?.web && web) },
       )
-      setAnswer({ content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [], files: data.files || [], options: data.options || [] })
-      setThread((t) => [...t, { role: 'user' as const, content: question }, { role: 'assistant' as const, content: data.answer }].slice(-12))
+      if (!before.length) qc.invalidateQueries({ queryKey: ['assistant-recent'] })
+      setAnswer({ content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [], files: data.files || [], options: data.options || [], form: data.form || null, sources: data.sources || [] })
+      setThread([...before, { role: 'user' as const, content: question }, { role: 'assistant' as const, content: data.answer }].slice(-12))
       setQ('')
       // Asking to message a group IS asking for the composer, so it opens
       // rather than waiting for a second click — same rule the corner
@@ -135,6 +157,8 @@ export default function DashboardAsk() {
       setBusy(false)
     }
   }
+
+  useEffect(() => { askRef.current = ask })
 
   async function decide(go: boolean) {
     if (!answer?.pending) return
@@ -191,8 +215,10 @@ export default function DashboardAsk() {
     setThread([])
   }
 
+  if (!user || !caps?.enabled || !caps?.allowed) return null
+
   return (
-    <div style={{ marginBottom: 4 }}>
+    <div id="dashboard-ask" style={{ marginBottom: 4 }}>
       <form
         onSubmit={(e) => { e.preventDefault(); ask(q) }}
         style={{
@@ -214,6 +240,14 @@ export default function DashboardAsk() {
         {answer && (
           <button type="button" onClick={reset} className="cursor-pointer" style={{ color: MUTED, background: 'none', border: 0, display: 'grid', placeItems: 'center', padding: 4 }} aria-label="Clear">
             <X size={16} />
+          </button>
+        )}
+        {caps?.web && (
+          <button type="button" onClick={toggleWeb} aria-pressed={web} aria-label="Search the web" title={web ? 'Searching the web too' : 'Search the web too'}
+            className="cursor-pointer inline-flex items-center gap-1"
+            style={{ height: 30, padding: '0 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, flex: '0 0 auto',
+              border: `1px solid ${web ? PURPLE : LINE}`, background: web ? PURPLE : '#fff', color: web ? '#fff' : MUTED }}>
+            <Globe size={13} /> Web
           </button>
         )}
         <button
@@ -248,7 +282,7 @@ export default function DashboardAsk() {
           padding: '14px 16px', background: '#fff', border: `1px solid ${PURPLE}`, borderTop: 'none',
           borderRadius: '0 0 16px 16px', fontSize: 13, color: MUTED,
         }}>
-          Checking the database…
+          {web && caps?.web ? 'Checking the system and the web…' : 'Checking the database…'}
         </div>
       )}
 
@@ -273,7 +307,25 @@ export default function DashboardAsk() {
             {withBold(answer.content)}
           </p>
 
-          {(answer.options?.length ?? 0) > 0 && !answer.pending && (
+          {answer.form && !answer.pending && (
+            <AskForm key={answer.content + answer.form.fields.map((f) => f.key).join()} form={answer.form} busy={busy} onSubmit={(text) => ask(text)} />
+          )}
+
+          {(answer.sources?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>From the web</div>
+              <div className="flex flex-wrap gap-1.5">
+                {answer.sources!.map((s) => (
+                  <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1"
+                    style={{ fontSize: 12, fontWeight: 600, color: PURPLE_INK, background: '#fff', border: `1px solid ${PURPLE_LINE}`, borderRadius: 8, padding: '5px 10px', maxWidth: 260 }}>
+                    <Globe size={12} /> <span className="truncate">{s.label}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(answer.options?.length ?? 0) > 0 && !answer.pending && !answer.form && (
             <div className="flex flex-wrap gap-1.5" style={{ marginTop: 12 }} aria-label="Answers">
               {answer.options!.map((o) => (
                 <button key={o} type="button" onClick={() => ask(o)} className="cursor-pointer"

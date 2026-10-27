@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { toolByName, toolDefinitions, toolNames } from './tools.js';
+import { cleanForm, toolByName, toolDefinitions, toolNames } from './tools.js';
 import { DATASETS, exportPath } from './datasets.js';
 import { tablePdf, tableWorkbook } from '../tableExport.js';
 
@@ -71,8 +71,51 @@ test('booking from the Ask box: it is told to ask for what is missing, then prep
    const { readFileSync } = await import('fs');
    const src = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
    assert.match(src, /Booking a unit, making a quotation or raising an invoice works like the booking form/);
-   assert.match(src, /ask only for what is still missing/);
+   assert.match(src, /show a form with ask_details — never a numbered list/);
    const q = toolByName('propose_quotation');
    assert.deepEqual(q.parameters.required, ['customerName', 'startDate', 'endDate', 'sendVia']);
    assert.ok(toolByName('propose_invoice'), 'invoices can be prepared too');
+});
+
+test('a form the assistant asks for is cleaned before it is drawn, and keeps what it already knows', async () => {
+   const out = await toolByName('ask_details').run({
+      intro: 'A few details for the quotation:',
+      fields: [
+         { key: 'customerName', label: 'Customer name', type: 'text', value: 'Sara Ahmed' },
+         { key: 'sizeSqf', label: 'Unit size', type: 'select', options: ['25 sq ft', '50 sq ft'], value: '50 sq ft' },
+         { key: 'startDate', label: 'Start date', type: 'date', value: '2026-11-01' },
+         { key: 'discount', label: 'Discount', type: 'number', required: false },
+         { key: 'sizeSqf', label: 'Twice', type: 'text' },
+         { key: 'weird', label: 'Odd type', type: 'colour' },
+         { key: 'empty', label: 'No choices', type: 'select', options: [] },
+         { label: 'no key' },
+      ],
+   });
+   assert.equal(out.form.intro, 'A few details for the quotation:');
+   assert.equal(out.form.submitLabel, 'Continue');
+   assert.deepEqual(out.form.fields.map((f) => [f.key, f.type, f.value, f.required]), [
+      ['customerName', 'text', 'Sara Ahmed', true],
+      ['sizeSqf', 'select', '50 sq ft', true],
+      ['startDate', 'date', '2026-11-01', true],
+      ['discount', 'number', '', false],
+      ['weird', 'text', '', true],
+      ['empty', 'text', '', true],
+   ]);
+   assert.deepEqual(out.form.fields[1].options, ['25 sq ft', '50 sq ft']);
+   assert.match((await toolByName('ask_details').run({ intro: 'x', fields: [] })).error, /at least one field/);
+   assert.equal(cleanForm({ fields: Array.from({ length: 20 }, (_, i) => ({ key: `f${i}`, label: `F${i}` })) }).fields.length, 10);
+});
+
+test('the web is searched only when switched on, and its pages come back as sources', async () => {
+   const t = toolByName('web_search');
+   assert.match((await t.run({ query: 'storage prices Al Quoz' }, {})).error, /switched off/);
+   const prev = process.env.ANTHROPIC_API_KEY;
+   process.env.ANTHROPIC_API_KEY = 'test';
+   try {
+      const out = await t.run({ query: 'storage prices Al Quoz' }, { web: true, webSearch: async (q) => ({ answer: `Found for ${q}: AED 450 a month`, sources: [{ title: 'Rival Storage', url: 'https://rival.example/prices' }] }) });
+      assert.match(out.answer, /AED 450/);
+      assert.deepEqual(out.web, [{ label: 'Rival Storage', url: 'https://rival.example/prices' }]);
+   } finally {
+      if (prev === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prev;
+   }
 });

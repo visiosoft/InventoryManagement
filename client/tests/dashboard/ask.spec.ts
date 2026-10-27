@@ -93,3 +93,52 @@ test('booking a unit: it asks what it needs, remembers the answers, and ends in 
   await page.getByRole('button', { name: 'Clear' }).click()
   await expect(page.getByRole('button', { name: 'Book a unit' })).toBeVisible()
 })
+
+test('details come as boxes the AI filled in; the answers go back as the next message', async ({ page }) => {
+  const sent: { question: string; history: unknown[]; web: boolean }[] = []
+  await page.route('**/api/**', async (route) => {
+    const req = route.request()
+    const path = new URL(req.url()).pathname
+    if (path === '/api/auth/me') return route.fulfill({ json: { user: { id: 'u1', name: 'Mase', role: 'admin', permissions: [] } } })
+    if (path === '/api/assistant/capabilities') return route.fulfill({ json: { enabled: true, allowed: true, web: true } })
+    if (path === '/api/assistant/recent') return route.fulfill({ json: { recent: [] } })
+    if (path === '/api/assistant/ask') {
+      const body = JSON.parse(req.postData() || '{}')
+      sent.push(body)
+      if (sent.length === 1) {
+        return route.fulfill({ json: { answer: 'A few details for the quotation:', grounded: true, links: [], tools: [{ name: 'ask_details', ok: true }], form: {
+          intro: 'A few details for the quotation:', title: 'Quotation', submitLabel: 'Prepare quotation',
+          fields: [
+            { key: 'customerName', label: 'Customer name', type: 'text', value: 'Sara Ahmed', required: true },
+            { key: 'phone', label: 'Phone', type: 'phone', value: '', required: true },
+            { key: 'sizeSqf', label: 'Unit size', type: 'select', options: ['25 sq ft', '50 sq ft'], value: '50 sq ft', required: true },
+            { key: 'discount', label: 'Discount', type: 'number', value: '', required: false },
+          ],
+        } } })
+      }
+      return route.fulfill({ json: { answer: 'Rival Storage charges AED 450 a month.', grounded: true, links: [], tools: [{ name: 'web_search', ok: true }], sources: [{ label: 'Rival Storage prices', url: 'https://rival.example/prices' }] } })
+    }
+    if (path === '/api/reports/stats') return route.fulfill({ status: 500, json: {} })
+    return route.fulfill({ json: /tasks|expiring|sites|list|conversations|messages/.test(path) ? [] : { items: [], total: 0, groups: [], reps: [], handovers: [], byFloor: [] } })
+  })
+  await page.addInitScript(() => {
+    localStorage.setItem('pb_token', 't')
+    localStorage.setItem('pb_user', JSON.stringify({ id: 'u1', name: 'Mase', role: 'admin', permissions: [] }))
+  })
+  await page.goto('/')
+  await page.getByPlaceholder(/Ask anything/).fill('quote for Sara')
+  await page.getByPlaceholder(/Ask anything/).press('Enter')
+  await expect(page.getByLabel('Customer name')).toHaveValue('Sara Ahmed')
+  await expect(page.getByLabel('Unit size')).toHaveValue('50 sq ft')
+  await page.getByRole('button', { name: 'Prepare quotation' }).click()
+  await expect(page.getByText('Fill in phone.')).toBeVisible()
+  expect(sent.length).toBe(1)
+  await page.getByLabel('Phone').fill('0501234567')
+  await page.getByRole('button', { name: 'Search the web' }).click()
+  await page.getByRole('button', { name: 'Prepare quotation' }).click()
+  await expect(page.getByText('AED 450 a month')).toBeVisible()
+  expect(sent[1].question).toBe('Quotation details:\n- Customer name: Sara Ahmed\n- Phone: 0501234567\n- Unit size: 50 sq ft')
+  expect(sent[1].history.length).toBe(2)
+  expect(sent[1].web).toBe(true)
+  await expect(page.getByRole('link', { name: /Rival Storage prices/ })).toHaveAttribute('href', 'https://rival.example/prices')
+})
