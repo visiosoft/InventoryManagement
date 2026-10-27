@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Bot, BotRun, BOT_KINDS } from '../models/index.js';
 import { softDelete } from '../utils/softDelete.js';
-import { describeSchedule, runBot, sendItems, emailSummary, DEFAULT_MESSAGE, DEFAULT_SUBJECT } from '../services/bots.js';
+import { describeSchedule, runBot, sendItems, emailSummary, DEFAULT_MESSAGE, DEFAULT_SUBJECT, RECOMMENDED_BOTS } from '../services/bots.js';
 
 /**
  * Bots (services/bots.js): admins make them, run them, and send what a
@@ -47,7 +47,12 @@ const view = (b, last) => ({ ...b, scheduleLabel: describeSchedule(b.schedule), 
 router.get('/', async (_req, res) => {
    const bots = await Bot.find().sort({ createdAt: 1 }).lean();
    const lasts = await Promise.all(bots.map((b) => BotRun.findOne({ bot: b._id }).sort({ createdAt: -1 }).lean()));
-   res.json({ bots: bots.map((b, i) => view(b, lasts[i])), defaults: { subject: DEFAULT_SUBJECT, message: DEFAULT_MESSAGE } });
+   const have = new Set(bots.map((b) => b.name.toLowerCase()));
+   res.json({
+      bots: bots.map((b, i) => view(b, lasts[i])),
+      defaults: { subject: DEFAULT_SUBJECT, message: DEFAULT_MESSAGE },
+      recommendedMissing: RECOMMENDED_BOTS.filter((b) => !have.has(b.name.toLowerCase())).map((b) => b.name),
+   });
 });
 
 router.post('/', async (req, res) => {
@@ -55,6 +60,18 @@ router.post('/', async (req, res) => {
    if (errors.length) return res.status(400).json({ error: errors.join('. ') });
    const doc = await Bot.create({ ...bot, createdBy: req.user.id });
    res.status(201).json({ bot: view(doc.toObject(), null) });
+});
+
+/** Add the recommended bots that are not there yet (by name). Nothing runs until its time comes. */
+router.post('/recommended', async (req, res) => {
+   const have = new Set((await Bot.find().select('name').lean()).map((b) => b.name.toLowerCase()));
+   const missing = RECOMMENDED_BOTS.filter((b) => !have.has(b.name.toLowerCase()));
+   const made = [];
+   for (const b of missing) {
+      const { bot } = cleanBot(b);
+      made.push(await Bot.create({ ...bot, createdBy: req.user.id }));
+   }
+   res.status(201).json({ added: made.map((b) => b.name) });
 });
 
 router.put('/:id', async (req, res) => {

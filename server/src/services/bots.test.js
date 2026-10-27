@@ -100,3 +100,14 @@ test('a bot is saved only with what it may hold', async () => {
    assert.match(cleanBot({ name: 'x', kind: 'ai_report' }).errors.join(), /what it should find out/);
    assert.match(cleanBot({ kind: 'nope' }).errors.join(), /name.*what it does/);
 });
+
+test('the recommended bots are all valid, and only the emails reach customers — asking first', async () => {
+   const { RECOMMENDED_BOTS } = await import('./bots.js');
+   const { cleanBot } = await import('../routes/bots.js');
+   assert.equal(RECOMMENDED_BOTS.length, 5);
+   for (const b of RECOMMENDED_BOTS) assert.deepEqual(cleanBot(b).errors, [], b.name);
+   const emailers = RECOMMENDED_BOTS.filter((b) => b.kind === 'contract_emails');
+   assert.equal(emailers.length, 1);
+   assert.equal(cleanBot(emailers[0]).bot.sendMode, 'review');
+   assert.equal(RECOMMENDED_BOTS.filter((b) => b.web).map((b) => b.name).join(), 'Competitor watch');
+});

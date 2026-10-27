@@ -62,6 +62,7 @@ const TOOL_LABEL: Record<string, string> = {
   export_file: 'made the file',
   ask_details: 'asked for the details',
   web_search: 'searched the web',
+  past_checkout: 'checked who is past check-out',
   leads_list: 'listed the leads',
   sales_summary: 'read sales from Zoho',
   receivables: 'read receivables from Zoho',

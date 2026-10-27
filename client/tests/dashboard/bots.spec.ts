@@ -23,7 +23,8 @@ async function setup(page: import('@playwright/test').Page) {
     const path = new URL(req.url()).pathname
     if (path.startsWith('/api/bots')) calls.push({ method: req.method(), path, body: req.postData() ? JSON.parse(req.postData()!) : null })
     if (path === '/api/auth/me') return route.fulfill({ json: { user: { id: 'u1', name: 'Mase', role: 'admin', permissions: [] } } })
-    if (path === '/api/bots' && req.method() === 'GET') return route.fulfill({ json: { bots: BOTS, defaults: { subject: 'Your PurpleBox storage ends on {endDate}', message: 'Hi {name}, …' } } })
+    if (path === '/api/bots' && req.method() === 'GET') return route.fulfill({ json: { bots: BOTS, defaults: { subject: 'Your PurpleBox storage ends on {endDate}', message: 'Hi {name}, …' }, recommendedMissing: ['Morning summary', 'Money check'] } })
+    if (path === '/api/bots/recommended') return route.fulfill({ status: 201, json: { added: ['Morning summary', 'Money check'] } })
     if (path === '/api/bots' && req.method() === 'POST') return route.fulfill({ status: 201, json: { bot: {} } })
     if (path === '/api/bots/runs/r1/send') return route.fulfill({ json: { sent: 1, run: { ...RUN, items: [{ ...RUN.items[0], status: 'sent' }, RUN.items[1]] } } })
     if (path === '/api/bots/runs/r1/skip') return route.fulfill({ json: { run: RUN } })
@@ -73,4 +74,11 @@ test('a new renewal bot starts from the preset and asks first', async ({ page })
   await expect.poll(() => calls.filter((c) => c.method === 'POST' && c.path === '/api/bots').length).toBe(1)
   const body = calls.find((c) => c.method === 'POST' && c.path === '/api/bots')!.body as Record<string, unknown>
   expect(body).toMatchObject({ name: 'Renewal reminder emails', kind: 'contract_emails', sendMode: 'review', days: 30, schedule: { cadence: 'weekly', hour: 9, dayOfWeek: 1 } })
+})
+
+test('the recommended bots are one click away', async ({ page }) => {
+  const calls = await setup(page)
+  await page.goto('/?tab=bots')
+  await page.getByRole('button', { name: 'Add recommended bots (2)' }).click()
+  await expect.poll(() => calls.filter((c) => c.path === '/api/bots/recommended' && c.method === 'POST').length).toBe(1)
 })

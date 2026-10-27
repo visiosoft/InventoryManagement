@@ -209,3 +209,34 @@ export async function botsTick(now = new Date(), { deps } = {}) {
    }
    return { ran };
 }
+
+/* ── The bots an admin should have ──────────────────────────────────────── */
+
+/** Added by "Add recommended bots"; only the emails reach customers, and they ask first. */
+export const RECOMMENDED_BOTS = [
+   {
+      name: 'Renewal reminder emails', icon: '✉️', kind: 'contract_emails', days: 30, sendMode: 'review',
+      subject: DEFAULT_SUBJECT, message: DEFAULT_MESSAGE,
+      schedule: { cadence: 'weekly', hour: 9, dayOfWeek: 1, dayOfMonth: 1 },
+   },
+   {
+      name: 'Morning summary', icon: '☀️', kind: 'ai_report',
+      instruction: 'Morning summary for the admin: how many leads came in yesterday and from which sources; which leads have had no reply yet; how many follow-ups are due today and for whom; which contracts end in the next 7 days. Short lines, the numbers first.',
+      schedule: { cadence: 'daily', hour: 9, dayOfWeek: 1, dayOfMonth: 1 },
+   },
+   {
+      name: 'Past check-out watch', icon: '🚪', kind: 'ai_report',
+      instruction: 'List every contract that is still active although its check-out date has passed: tenant, unit, check-out date and how many days over. Say for each that someone must either end the contract (the tenant left) or extend it and invoice (the tenant stayed). If there are none, say so in one line.',
+      schedule: { cadence: 'daily', hour: 8, dayOfWeek: 1, dayOfMonth: 1 },
+   },
+   {
+      name: 'Money check', icon: '💰', kind: 'ai_report',
+      instruction: 'Weekly money check: the total owed in Zoho Books and the ten customers who owe the most; how much was collected in the last 7 days as recorded in the CRM. If the CRM recorded little or nothing while Zoho shows payments, say that payments are not being recorded in the CRM.',
+      schedule: { cadence: 'weekly', hour: 8, dayOfWeek: 1, dayOfMonth: 1 },
+   },
+   {
+      name: 'Competitor watch', icon: '🔎', kind: 'ai_report', web: true,
+      instruction: 'Find current monthly prices and any offers for self-storage units of about 25, 50 and 100 sq ft from storage companies in Dubai, and compare them with our own prices for the same sizes. Name each company and where each price came from.',
+      schedule: { cadence: 'weekly', hour: 10, dayOfWeek: 1, dayOfMonth: 1 },
+   },
+];

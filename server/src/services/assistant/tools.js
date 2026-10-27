@@ -769,6 +769,25 @@ tool({
 });
 
 tool({
+   name: 'past_checkout',
+   description: 'Contracts still active although their check-out date has passed: tenant, unit, check-out date, days over, phone. Each one is either a tenant who left (end the contract to free the unit) or one who stayed (extend and invoice). Use for "who is past check-out", "overdue move-outs", "units we cannot rent because a contract was never closed".',
+   parameters: { type: 'object', properties: {} },
+   async run(_args, { scope, now = new Date() }) {
+      const today = new Date(new Date(now).setHours(0, 0, 0, 0));
+      const rows = await Contract.find({ ...(scope?.contractFilter || {}), status: 'active', endDate: { $lt: today } })
+         .populate('customer', 'fullName phone').populate('unit', 'unitNumber').sort({ endDate: 1 }).limit(200).lean();
+      return {
+         count: rows.length,
+         contracts: rows.map((k) => ({
+            contractNo: k.contractNo, tenant: k.customer?.fullName || '', phone: k.customer?.phone || '', unit: k.unit?.unitNumber || '',
+            checkOut: iso(k.endDate), daysOver: Math.round((today - new Date(k.endDate).setHours(0, 0, 0, 0)) / 86400000),
+         })),
+         links: [link('Search units', '/units'), ...rows.slice(0, 4).map((k) => link(k.contractNo || 'Contract', `/contracts/${k._id}`))],
+      };
+   },
+});
+
+tool({
    name: 'leads_list',
    description: 'Every lead in a date range with name, phone, status, source, owner and size — optionally only one status, source or owner. Use to list or look through leads ("all leads from yesterday", "Randa\'s leads this week", "leads still new"). For a PDF or Excel of them use export_file.',
    parameters: {

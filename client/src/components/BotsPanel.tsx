@@ -68,7 +68,7 @@ function withBold(text: string) {
 
 export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean }) {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery<{ bots: BotRow[]; defaults: { subject: string; message: string } }>({
+  const { data, isLoading } = useQuery<{ bots: BotRow[]; defaults: { subject: string; message: string }; recommendedMissing?: string[] }>({
     queryKey: ['bots'],
     queryFn: () => api.get('/bots').then((r) => r.data),
     refetchInterval: 60_000,
@@ -78,6 +78,13 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
   const [reviewing, setReviewing] = useState<{ bot: BotRow; run: Run } | null>(null)
   const [err, setErr] = useState('')
   const refresh = () => qc.invalidateQueries({ queryKey: ['bots'] })
+
+  const addRecommended = useMutation({
+    mutationFn: () => api.post('/bots/recommended').then((r) => r.data),
+    onSuccess: refresh,
+    onError: (e) => setErr(apiError(e)),
+  })
+  const missing = data?.recommendedMissing ?? []
 
   const run = useMutation({
     mutationFn: (id: string) => api.post(`/bots/${id}/run`).then((r) => r.data),
@@ -103,6 +110,12 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
       {!pinnedOnly && (
         <div className="flex items-center gap-3 mb-4">
           <div style={{ fontSize: 13, color: MUTED }} className="mr-auto">Each bot runs on its schedule and keeps its latest result here. Pinned bots also show on Overview.</div>
+          {missing.length > 0 && (
+            <button type="button" style={btn()} disabled={addRecommended.isPending} onClick={() => { setErr(''); addRecommended.mutate() }}
+              title={`Adds: ${missing.join(', ')}. Only the renewal emails reach customers, and they wait for you to send them.`}>
+              <BotIcon size={14} /> {addRecommended.isPending ? 'Adding…' : `Add recommended bots (${missing.length})`}
+            </button>
+          )}
           <button type="button" style={btn(true)} onClick={() => setChoosing(true)}><Plus size={14} /> New bot</button>
         </div>
       )}
