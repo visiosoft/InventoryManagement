@@ -15,6 +15,22 @@ const CO = {
   trn: TRN,
 };
 
+// Where a customer transfers money: the same account printed on Zoho invoices.
+const BANK = [
+  ['Bank', 'Mashreq Bank'],
+  ['Account name', 'SHORT TERM STORAGE LLC'],
+  ['Account number', '019101745789'],
+  ['IBAN', 'AE500330000019101745789'],
+];
+
+/** The short pay-by-card address for a quote that has a Stripe link, or null. */
+export function movingQuotePayUrl(quote) {
+  if (!quote?.stripePaymentLinkUrl || !quote?._id) return null;
+  const base = (process.env.API_PUBLIC_URL || 'https://api.purplebox.ae').replace(/\/$/, '');
+  return `${base}/api/moving-quotes/pay/link/${quote._id}`;
+}
+
+const PURPLE = '#5B2BC9';
 const DARK = '#1F2937';
 const GRAY = '#6B7280';
 const LGRAY = '#9CA3AF';
@@ -35,7 +51,7 @@ function dt(d) {
 
 export function generateMovingQuotePdf(quote) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 0, info: { Title: quote.quoteNo || 'Moving Quote' } });
+    const doc = new PDFDocument({ size: 'A4', margin: 0, bufferPages: true, info: { Title: quote.quoteNo || 'Moving Quote' } });
     const chunks = [];
     doc.on('data', (c) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -220,17 +236,69 @@ export function generateMovingQuotePdf(quote) {
       y = doc.y + 12;
     }
 
-    if (quote.termsAndConditions) {
-      doc.moveTo(M, y).lineTo(PW - M, y).strokeColor(BORDER).lineWidth(0.5).stroke();
-      y += 12;
-      doc.font('Helvetica-Bold').fontSize(9).fillColor(GRAY).text('Terms & Conditions', M, y);
-      y += 13;
-      doc.font('Helvetica').fontSize(8).fillColor(DARK).text(quote.termsAndConditions, M, y, { width: PW - 2 * M });
+    /* Page 1 ends with how to pay: bank transfer on the left, the card link
+       on the right, at the foot of the page. The terms follow on page 2, so
+       the quote itself stays one clean page. */
+    const payUrl = movingQuotePayUrl(quote);
+    const BLOCK_H = 96;
+    let by = PH - 45 - BLOCK_H;
+    if (y > by - 10) { doc.addPage({ size: 'A4', margin: 0 }); by = PH - 45 - BLOCK_H; }
+    doc.moveTo(M, by).lineTo(PW - M, by).strokeColor(BORDER).lineWidth(0.5).stroke();
+    by += 12;
+    const colW = (PW - 2 * M - 30) / 2;
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(DARK).text('Pay by bank transfer', M, by, { width: colW });
+    let bl = by + 15;
+    for (const [k, v] of BANK) {
+      doc.font('Helvetica').fontSize(8).fillColor(GRAY).text(k, M, bl, { width: 80 });
+      doc.font('Helvetica').fontSize(8).fillColor(BLACK).text(v, M + 82, bl, { width: colW - 82 });
+      bl += 12;
+    }
+    doc.font('Helvetica').fontSize(7.5).fillColor(GRAY).text(`Please use ${quote.quoteNo || 'the quote number'} as the payment reference.`, M, bl + 2, { width: colW });
+
+    const px = M + colW + 30;
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(DARK).text('Pay online by card', px, by, { width: colW });
+    if (payUrl) {
+      const bw = 150;
+      const bh = 26;
+      const btnY = by + 18;
+      doc.roundedRect(px, btnY, bw, bh, 6).fill(PURPLE);
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(WHITE).text('Pay online  >', px, btnY + 8.5, { width: bw, align: 'center' });
+      doc.link(px, btnY, bw, bh, payUrl);
+      doc.font('Helvetica').fontSize(7.5).fillColor(GRAY).text('Secure card payment by Stripe — tap the button.', px, btnY + bh + 8, { width: colW });
+    } else {
+      doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('Ask us for a card payment link and we will send it by WhatsApp or email.', px, by + 15, { width: colW });
     }
 
-    // Footer
-    doc.moveTo(M, PH - 35).lineTo(PW - M, PH - 35).strokeColor(BORDER).lineWidth(0.5).stroke();
-    doc.font('Helvetica').fontSize(8).fillColor(LGRAY).text('1', M, PH - 24, { width: PW - 2 * M, align: 'right' });
+    if (quote.termsAndConditions) {
+      // Pages that run on by themselves keep the same margins.
+      doc.options.margin = M;
+      doc.addPage({ size: 'A4', margin: M });
+      doc.font('Helvetica-Bold').fontSize(14).fillColor(DARK).text('Terms & Conditions', M, M, { width: PW - 2 * M });
+      doc.font('Helvetica').fontSize(8.5).fillColor(GRAY).text(`${quote.quoteNo || ''}${quote.customer?.fullName ? ` · ${quote.customer.fullName}` : ''}`, M, doc.y + 2, { width: PW - 2 * M });
+      doc.moveTo(M, doc.y + 8).lineTo(PW - M, doc.y + 8).strokeColor(BORDER).lineWidth(0.5).stroke();
+      // A numbered section title ("3. Client Responsibilities") stands out;
+      // everything else reads as body text.
+      doc.y += 18;
+      for (const line of String(quote.termsAndConditions).split('\n')) {
+        const t = line.trim();
+        if (!t) { doc.y += 4; continue; }
+        const heading = /^\d+\.\s+\S/.test(t) && !/^\d+\.\d/.test(t) && t.length < 80;
+        if (heading) doc.y += 6;
+        doc.font(heading ? 'Helvetica-Bold' : 'Helvetica').fontSize(heading ? 9.5 : 8.5).fillColor(heading ? BLACK : DARK)
+          .text(t, M, doc.y, { width: PW - 2 * M, lineGap: 2 });
+        if (heading) doc.y += 2;
+      }
+    }
+
+    // Footer on every page: a rule and "page of pages".
+    const range = doc.bufferedPageRange();
+    for (let i = range.start; i < range.start + range.count; i += 1) {
+      doc.switchToPage(i);
+      doc.page.margins.bottom = 0;
+      doc.moveTo(M, PH - 35).lineTo(PW - M, PH - 35).strokeColor(BORDER).lineWidth(0.5).stroke();
+      doc.font('Helvetica').fontSize(8).fillColor(LGRAY).text(`${quote.quoteNo || ''}`, M, PH - 24, { width: PW - 2 * M, align: 'left', lineBreak: false, height: 10 });
+      doc.font('Helvetica').fontSize(8).fillColor(LGRAY).text(`${i + 1} of ${range.count}`, M, PH - 24, { width: PW - 2 * M, align: 'right', lineBreak: false, height: 10 });
+    }
 
     doc.end();
   });
