@@ -273,7 +273,7 @@ proposal({
       const lastIn = await WhatsAppMessage.findOne({ phoneNormalized: new RegExp(`${suffix(l.phoneNormalized)}$`), direction: 'inbound' })
          .sort({ occurredAt: -1 }).select('occurredAt').lean();
       if (!lastIn || Date.now() - new Date(lastIn.occurredAt).getTime() >= DAY) {
-         return { error: `${l.fullName} has not written in the last 24 hours, so WhatsApp only allows an approved template. Open the chat and send one of the templates instead.`, links: leadLinks(l) };
+         return { error: `${l.fullName} has not written in the last 24 hours, so WhatsApp only allows an approved template. List them with whatsapp_templates and prepare one with propose_whatsapp_template.`, links: leadLinks(l) };
       }
       return {
          ...holdProposal({
@@ -342,6 +342,84 @@ proposal({
       try { await sendSms({ to: n.to, body }); sent += 1; } catch (e) { failed.push(`${n.to}: ${e.message}`); }
    }
    return { ok: sent > 0, message: `Text sent to ${sent} of ${numbers.length}.${failed.length ? ` Failed — ${failed.join('; ')}` : ''}` };
+});
+
+read({
+   name: 'whatsapp_templates',
+   description: 'The WhatsApp templates Meta has approved — marketing, utility and others: name, language, category, the text with its blanks ({{1}} …) and how many blanks. Use before propose_whatsapp_template, and whenever someone has been silent for over 24 hours (only a template can reach them then).',
+   parameters: { type: 'object', properties: { category: { type: 'string', description: 'MARKETING, UTILITY …, optional' } } },
+   async run({ category } = {}) {
+      const { listWhatsAppTemplates } = await import('../whatsapp.js');
+      const list = await listWhatsAppTemplates();
+      if (list.error) return { error: `WhatsApp templates could not be read: ${list.error}` };
+      const ok = (list.templates || []).filter((t) => String(t.status).toUpperCase() === 'APPROVED' && (!category || String(t.category).toUpperCase() === String(category).toUpperCase()));
+      return { count: ok.length, templates: ok.map((t) => ({ name: t.name, language: t.language, category: t.category, blanks: t.variableCount, text: t.bodyText, header: t.headerFormat || '' })) };
+   },
+});
+
+proposal({
+   name: 'propose_whatsapp_template',
+   description: 'Prepare an approved WhatsApp template (marketing or utility) for one or more leads or customers — the way to reach someone silent for over 24 hours. Give the people (names or phone numbers), the template name, and the value for each blank; leave values out for a template whose one blank is the first name and it is filled per person. Only prepares it — sent when the person confirms; each send is written to that chat.',
+   parameters: {
+      type: 'object',
+      properties: {
+         to: { type: 'array', items: { type: 'string' }, description: 'Names or phone numbers, up to 20' },
+         templateName: { type: 'string' },
+         values: { type: 'array', items: { type: 'string' }, description: 'One value per blank, in order. Omit when the only blank is the first name.' },
+      },
+      required: ['to', 'templateName'],
+   },
+   async run({ to = [], templateName, values }, { user }) {
+      const { listWhatsAppTemplates } = await import('../whatsapp.js');
+      const list = await listWhatsAppTemplates({ force: true });
+      if (list.error) return { error: `WhatsApp templates could not be read: ${list.error}` };
+      const t = (list.templates || []).find((x) => x.name === templateName);
+      if (!t) return { error: `There is no template called "${templateName}" — list them with whatsapp_templates` };
+      if (String(t.status).toUpperCase() !== 'APPROVED') return { error: `"${templateName}" is ${String(t.status).toLowerCase()}, not approved` };
+      if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(t.headerFormat)) return { error: `"${templateName}" needs a picture or file at the top — send it from the chat instead` };
+      const given = Array.isArray(values) ? values.map((v) => String(v ?? '').trim()) : null;
+      const byName = !given && t.variableCount === 1;
+      if (!byName && (given?.length ?? 0) !== t.variableCount) return { error: `"${templateName}" has ${t.variableCount} blank(s); give exactly ${t.variableCount} value(s)` };
+      if (given?.some((v) => !v)) return { error: 'Every blank needs a value — Meta rejects an empty one' };
+      const people = [];
+      const missed = [];
+      for (const raw of (Array.isArray(to) ? to : [to]).slice(0, 20)) {
+         const q = String(raw || '').trim();
+         if (!q) continue;
+         const found = await findLead({ query: q });
+         if (found.error) {
+            const digits = q.replace(/\D/g, '');
+            if (digits.length >= 9) people.push({ phone: digits, name: '' });
+            else missed.push(`${q} — ${found.error}`);
+            continue;
+         }
+         if (!people.some((p) => p.phone === found.lead.phoneNormalized)) people.push({ phone: found.lead.phoneNormalized, name: found.lead.fullName || '' });
+      }
+      if (!people.length) return { error: `Nobody to send to: ${missed.join('; ') || 'no one given'}` };
+      const sends = people.map((p) => {
+         const variables = byName ? [String(p.name || '').split(/\s+/)[0] || 'there'] : given || [];
+         return { ...p, variables, text: variables.reduce((x, v, i) => x.replaceAll(`{{${i + 1}}}`, v), t.bodyText || '') };
+      });
+      return {
+         ...holdProposal({
+            user, kind: 'send_whatsapp_template',
+            summary: [
+               `WhatsApp template "${t.name}" (${String(t.category || '').toLowerCase()}) to ${sends.length} ${sends.length === 1 ? 'person' : 'people'}: ${sends.map((x) => x.name || x.phone).join(', ')}`,
+               ...(missed.length ? [`Cannot reach: ${missed.join('; ')}`] : []),
+               `— ${sends[0].text}`,
+            ],
+            spec: { name: t.name, language: t.language || 'en', sends: sends.map(({ phone, name, variables }) => ({ phone, name, variables })) },
+         }),
+         instruction: CONFIRM_LINE,
+      };
+   },
+}, 'send_whatsapp_template', async ({ name, language, sends }, { authHeader }) => {
+   let sent = 0;
+   const failed = [];
+   for (const x of sends) {
+      try { await api('POST', '/whatsapp/send-template', { to: x.phone, name, language, variables: x.variables }, authHeader); sent += 1; } catch (e) { failed.push(`${x.name || x.phone}: ${e.message}`); }
+   }
+   return { ok: sent > 0, message: `Template sent to ${sent} of ${sends.length}.${failed.length ? ` Failed — ${failed.join('; ')}` : ''}` };
 });
 
 proposal({

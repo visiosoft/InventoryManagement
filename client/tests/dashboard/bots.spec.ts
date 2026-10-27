@@ -37,6 +37,7 @@ async function setup(page: import('@playwright/test').Page) {
     if (path === '/api/assistant/confirm') return route.fulfill({ json: { ok: true, message: 'Bot “Leads PDF” is set up.' } })
     if (path === '/api/bots/runs/r1/skip') return route.fulfill({ json: { run: RUN } })
     if (path === '/api/bots/b2/run') return route.fulfill({ status: 202, json: { running: true } })
+    if (path === '/api/bots/b1/ask') { BOTS[0].runningSince = new Date().toISOString(); return route.fulfill({ status: 202, json: { running: true } }) }
     if (path === '/api/bots/b2/ask') { const body = JSON.parse(req.postData() || '{}'); BOTS[1].lastRun = { _id: 'c1', createdAt: new Date().toISOString(), trigger: 'chat', question: body.question, status: 'ok', summary: '', answer: 'Done — Competitor watch now runs daily 20:00.', sources: [], items: [], error: '' }; CHATS.push(BOTS[1].lastRun); return route.fulfill({ json: { run: BOTS[1].lastRun } }) }
     if (path === '/api/bots/b2/runs' && CHATS.length) return route.fulfill({ json: { runs: [...CHATS].reverse() } })
     const runsOf = /^\/api\/bots\/(b\d)\/runs$/.exec(path)
@@ -191,4 +192,22 @@ test('the Bots page shows what bots can read, and Gmail that only sends asks to 
   await expect(page.getByText('Connected for sending only')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Reconnect' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
+})
+
+test('a question shows at once with a working sign, at the bottom of the chat', async ({ page }) => {
+  await setup(page)
+  try {
+    await page.goto('/bots')
+    await page.getByLabel('Bot Renewal reminder emails').getByRole('button', { name: 'Chat' }).click()
+    await page.getByLabel('Message Renewal reminder emails').fill('who is left out of this week?')
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
+    const pane = page.getByLabel('Bot Renewal reminder emails history')
+    await expect(pane.getByText('who is left out of this week?')).toBeVisible()
+    await expect(pane.getByLabel('Working')).toBeVisible()
+    await expect(pane.getByLabel('Working')).toBeInViewport()
+    // The conversation so far stays on screen — nothing blanks out and reloads.
+    await expect(pane.getByText('Sara Ahmed')).toBeVisible()
+  } finally {
+    delete BOTS[0].runningSince
+  }
 })

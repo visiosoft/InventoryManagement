@@ -24,3 +24,11 @@ test('a text asked for before Twilio is connected asks for the connection, once,
       Object.assign(process.env, saved);
    }
 });
+
+test('a template is prepared for a Confirm, never sent straight away', async () => {
+   await import('./assistant/staffTools.js');
+   const { toolByName } = await import('./assistant/tools.js');
+   const { PROPOSAL_TOOLS } = await import('./assistant/actions.js');
+   assert.ok(toolByName('whatsapp_templates'));
+   assert.ok(PROPOSAL_TOOLS.includes('propose_whatsapp_template'));
+});

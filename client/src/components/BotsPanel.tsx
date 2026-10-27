@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bot as BotIcon, ChevronLeft, FileSpreadsheet, FileText, Globe, LayoutGrid, List as ListIcon, Loader2, Mail, MessageCircle, Pencil, Play, Plus, Pause, Trash2 } from 'lucide-react'
@@ -605,6 +605,9 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
   const [msg, setMsg] = useState('')
   const [chatErr, setChatErr] = useState('')
   const [sending, setSending] = useState(false)
+  // What was just asked, shown at once while the answer is worked out.
+  const [asked, setAsked] = useState<{ botId: string; q: string } | null>(null)
+  const scroller = useRef<HTMLDivElement>(null)
   const [mobileOpen, setMobileOpen] = useState(Boolean(initialId))
   const selected = bots.find((b) => b._id === selectedId) ?? bots[0]
   // Looking at a bot is reading it: its results stop counting on the bell.
@@ -622,20 +625,35 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
     queryKey: ['bot-runs', selected?._id, selected?.lastRun?._id, selected?.runningSince],
     queryFn: () => api.get(`/bots/${selected!._id}/runs`).then((r) => r.data),
     enabled: Boolean(selected),
+    /* Keep showing this bot's conversation while the newer one loads — a
+       blank timeline in between reads as the page reloading. Another bot's
+       history is never shown in its place. */
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[1] === selected?._id ? prev : undefined),
   })
   const runs = [...(runsData?.runs ?? [])].reverse()
+  const answered = Boolean(asked && runs.some((r) => r.question === asked.q))
+  const waitingOn = asked && asked.botId === selectedKey && !answered ? asked.q : null
+
+  // Keep the end of the conversation in view: on opening a bot, on sending,
+  // while it works, and when the reply arrives.
+  const lastRunId = runs[runs.length - 1]?._id
+  useEffect(() => {
+    const el = scroller.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }, [selectedKey, lastRunId, waitingOn, busy])
 
   async function send(e: React.FormEvent) {
     e.preventDefault()
     const q = msg.trim()
     if (!q || !selected || sending) return
     setSending(true); setChatErr('')
+    setAsked({ botId: selected._id, q })
+    setMsg('')
     try {
       await api.post(`/bots/${selected._id}/ask`, { question: q })
-      setMsg('')
       qc.invalidateQueries({ queryKey: ['bots'] })
       qc.invalidateQueries({ queryKey: ['bot-runs'] })
-    } catch (err) { setChatErr(apiError(err)) } finally { setSending(false) }
+    } catch (err) { setChatErr(apiError(err)); setAsked(null); setMsg(q) } finally { setSending(false) }
   }
 
   return (
@@ -676,7 +694,7 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
             <button type="button" style={{ ...btn(), color: '#B91C1C' }} onClick={() => onDelete(selected)} aria-label="Delete"><Trash2 size={13} /></button>
           </div>
 
-          <div className="flex-1 space-y-4" style={{ padding: '16px 18px', maxHeight: 620, overflowY: 'auto', background: '#fff' }}>
+          <div ref={scroller} className="flex-1 space-y-4" style={{ padding: '16px 18px', maxHeight: 620, overflowY: 'auto', background: '#fff' }}>
             {!runs.length && !busy && <div style={{ fontSize: 13, color: MUTED, textAlign: 'center', padding: '40px 0' }}>No runs yet. Press Run now, or wait for {selected.scheduleLabel.toLowerCase()}.</div>}
             {runs.map((r) => {
               const pending = r.items.filter((i) => i.status === 'pending')
@@ -735,8 +753,13 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
                 </div>
               )
             })}
-            {busy && (
-              <div className="flex items-center gap-2" style={{ fontSize: 13, color: PURPLE_INK, background: TINT, borderRadius: 14, padding: '10px 14px', width: 'fit-content' }}>
+            {waitingOn && (
+              <div className="flex justify-end">
+                <div style={{ background: PURPLE, color: '#fff', borderRadius: 14, padding: '9px 13px', fontSize: 13.5, maxWidth: '75%', whiteSpace: 'pre-wrap' }}>{waitingOn}</div>
+              </div>
+            )}
+            {(busy || (waitingOn && sending)) && (
+              <div className="flex items-center gap-2" aria-label="Working" style={{ fontSize: 13, color: PURPLE_INK, background: TINT, borderRadius: 14, padding: '10px 14px', width: 'fit-content' }}>
                 <Loader2 size={14} className="animate-spin" /> Working on it{selected.runningSince ? ` — started ${time(selected.runningSince)}` : ''}…
               </div>
             )}
