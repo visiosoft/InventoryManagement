@@ -1,3 +1,4 @@
+import RevealId from '../components/RevealId'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -1835,7 +1836,7 @@ export default function ContractDetail() {
                     {p.phone && <div className="text-xs text-muted-foreground">{p.phone}</div>}
                     {(p.idType || p.idNumber) && (
                       <div className="text-xs text-muted-foreground flex items-center gap-1">
-                        <ShieldCheck size={10} /> {[p.idType, p.idNumber].filter(Boolean).join(': ')}
+                        <ShieldCheck size={10} /> {p.idType ? `${p.idType}: ` : ''}{p.idNumber ? <RevealId value={p.idNumber} kind="contract" id={c._id} field="person" index={i} /> : null}
                       </div>
                     )}
                   </div>

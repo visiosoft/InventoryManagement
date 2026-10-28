@@ -1,3 +1,4 @@
+import RevealId from '../components/RevealId'
 import { LOST_REASONS } from '../lib/types'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -696,7 +697,11 @@ export default function PersonProfile() {
                       ] as const).filter(([, v]) => v).map(([label, v]) => (
                         <div key={label} style={{ maxWidth: 280 }}>
                           <div style={{ fontSize: 11.5, color: FAINT, marginBottom: 2 }}>{label}</div>
-                          <div style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{v}</div>
+                          <div style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>
+                            {label === 'Emirates ID' || label === 'Passport'
+                              ? <RevealId value={String(v)} kind="customer" id={customer._id} field={label === 'Emirates ID' ? 'emiratesId' : 'passportNumber'} />
+                              : v}
+                          </div>
                         </div>
                       ))}
                     </div>

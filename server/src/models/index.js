@@ -3091,6 +3091,19 @@ const bulkBatchSchema = new Schema({
 }, { versionKey: false });
 export const BulkBatch = model('BulkBatch', bulkBatchSchema);
 
+// Every time someone shows a full identity number (routes/pii.js, WP-07).
+const piiRevealSchema = new Schema({
+  user: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  userName: { type: String, default: '' },
+  kind: { type: String, required: true },
+  record: { type: Schema.Types.ObjectId, required: true },
+  field: { type: String, required: true },
+  index: { type: Number, default: null },
+  reason: { type: String, required: true },
+  at: { type: Date, default: Date.now },
+}, { versionKey: false });
+export const PiiReveal = model('PiiReveal', piiRevealSchema);
+
 // One row per sync run (WP-01): what was applied and what was left for finance.
 const syncRunSchema = new Schema({
   kind: { type: String, required: true },

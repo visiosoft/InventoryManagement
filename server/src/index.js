@@ -39,6 +39,9 @@ import { retryFailedFulfillmentPushes, runInventorySync, runOrderPull } from './
 import warehouseJobPublicRoutes from './routes/warehouseJobPublic.js';
 import floorPlanRoutes from './routes/floorPlans.js';
 import siteRoutes from './routes/sites.js';
+import { Customer, Contract } from './models/index.js';
+import piiRoutes from './routes/pii.js';
+import { piiGuard } from './utils/piiGuard.js';
 import customerRoutes from './routes/customers.js';
 import contractRoutes from './routes/contracts.js';
 import paymentRoutes from './routes/payments.js';
@@ -329,7 +332,8 @@ app.use('/api/shopify', requireAuth, shopifyMerchantRoutes);
 /* Accounts read tenants and contracts to invoice against them; they do not
    agree terms or correct somebody's details. See readOnlyFor. */
 const accountsReadOnly = readOnlyFor('accounts');
-app.use('/api/customers', requireAuth, accountsReadOnly, customerRoutes);
+app.use('/api/customers', requireAuth, accountsReadOnly, piiGuard(Customer, ['accessPersons']), customerRoutes);
+app.use('/api/pii', requireAuth, piiRoutes);
 // Before the authenticated mount below: a tenant clicking the renewal link in
 // their expiry email has no account, and Express matches in order.
 app.use('/api/contracts/public', contractsPublicRoutes);
@@ -338,10 +342,13 @@ app.use(
   (req, res, next) => (req.path === '/zoho-webhook' ? next() : requireAuth(req, res, next)),
   // The webhook is Zoho's, not a person's, so it is past the role check above.
   (req, res, next) => (req.path === '/zoho-webhook' ? next() : accountsReadOnly(req, res, next)),
+  piiGuard(Contract, ['authorizedPersons']),
   contractRoutes
 );
 app.use('/api/payments', requireAuth, paymentRoutes);
-app.use('/api/documents', requireAuth, documentRoutes);
+// Reading an ID document shows the number on it, to save to the customer —
+// the person is looking at the document itself.
+app.use('/api/documents', requireAuth, piiGuard(Customer, [], { unmasked: (req) => /\/extract\/?$/.test(req.path) }), documentRoutes);
 app.use('/api/reports', requireAuth, reportRoutes);
 // Asking for a report in plain English. Admin-only inside the router itself.
 app.use('/api/ai-reports', requireAuth, aiReportRoutes);
