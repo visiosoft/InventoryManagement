@@ -1306,7 +1306,15 @@ const paymentSchema = new Schema(
     dueDate: { type: Date, required: true },
     paidDate: { type: Date },
     method: { type: String, enum: ['cash', 'bank_transfer', 'card', 'other', ''], default: '' },
-    status: { type: String, enum: ['pending', 'paid', 'overdue'], default: 'pending' },
+    // duplicate_voided: an extra copy of another unpaid row, voided by finance
+    // on review (WP-02). Never deleted; voidOf points at the row that was kept.
+    status: { type: String, enum: ['pending', 'paid', 'overdue', 'duplicate_voided'], default: 'pending' },
+    voidOf: { type: Schema.Types.ObjectId, ref: 'Payment', default: null },
+    voidedBy: { type: String, default: '' },
+    voidedAt: { type: Date, default: null },
+    voidReason: { type: String, default: '' },
+    // Set by a person for rows long overdue; nothing changes automatically.
+    reviewStatus: { type: String, enum: ['', 'needs_review', 'paid_elsewhere', 'write_off_candidate'], default: '' },
     notes: { type: String, default: '' },
     recordedBy: { type: String, default: '' },
     // Set once the accounts payment-due digest has told the team this

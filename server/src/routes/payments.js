@@ -6,6 +6,7 @@ import { renderReceiptPdf } from '../services/receiptPdf.js';
 import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 import { siteScope } from '../utils/siteScope.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
+import { duplicateGroups, agingSummary, agingBucket } from '../services/receivables.js';
 
 const router = Router();
 
@@ -34,6 +35,65 @@ router.get('/summary', async (req, res) => {
     paidThisMonth: { count: paidThisMonth.length, total: sum(paidThisMonth) },
     dueThisMonth: { count: dueThisMonth.length, total: sum(dueThisMonth) },
   });
+});
+
+/* ── Duplicates and aging (WP-02) ───────────────────────────────────────── */
+
+const unpaidRows = async (req) => {
+  const scope = await siteScope(req.query.site);
+  return Payment.find({ ...(scope ? scope.paymentFilter : {}), status: { $in: ['pending', 'overdue'] } })
+    .select('contract amount dueDate status createdAt reviewStatus').lean();
+};
+
+// Groups of unpaid rows with the same contract, amount and due day. Read-only.
+router.get('/duplicates', requireAdmin, async (req, res) => {
+  const groups = duplicateGroups(await unpaidRows(req));
+  const ids = [...new Set(groups.map((g) => g.contract))];
+  const contracts = await Contract.find({ _id: { $in: ids } }).select('contractNo customer').populate('customer', 'name').lean();
+  const byId = Object.fromEntries(contracts.map((c) => [String(c._id), c]));
+  res.json({
+    groups: groups.map((g) => ({ ...g, contractNo: byId[g.contract]?.contractNo || '', customer: byId[g.contract]?.customer?.name || '' })),
+    totals: { groups: groups.length, extraRows: groups.reduce((n, g) => n + g.extraIds.length, 0), extraTotal: Math.round(groups.reduce((n, g) => n + g.extraTotal, 0) * 100) / 100 },
+  });
+});
+
+// Finance approves: the extra rows in the chosen groups become duplicate_voided.
+// Groups are worked out again here, so only rows that are still duplicates now
+// are touched. Nothing is deleted.
+router.post('/duplicates/void', requireAdmin, async (req, res) => {
+  const keys = new Set(Array.isArray(req.body?.keys) ? req.body.keys.map(String) : []);
+  const reason = String(req.body?.reason || '').trim();
+  if (!keys.size) return res.status(400).json({ error: 'Choose the groups to void' });
+  if (reason.length < 3) return res.status(400).json({ error: 'Give a reason' });
+  const groups = duplicateGroups(await unpaidRows(req)).filter((g) => keys.has(g.key));
+  const by = req.user?.name || req.user?.email || String(req.user?.id || '');
+  const at = new Date();
+  let voided = 0;
+  for (const g of groups) {
+    const r = await Payment.updateMany(
+      { _id: { $in: g.extraIds }, status: { $in: ['pending', 'overdue'] } },
+      { $set: { status: 'duplicate_voided', voidOf: g.keepId, voidedBy: by, voidedAt: at, voidReason: reason } },
+    );
+    voided += r.modifiedCount || 0;
+  }
+  res.json({ ok: true, groups: groups.length, voided });
+});
+
+// Unpaid totals by age, duplicates shown apart: a confirmed and a maximum overdue.
+router.get('/aging', async (req, res) => {
+  res.json(agingSummary(await unpaidRows(req)));
+});
+
+// A person marks a long-overdue row for follow-up. Nothing else changes.
+router.patch('/:id/review', requireAdmin, async (req, res) => {
+  const status = String(req.body?.reviewStatus || '');
+  if (!['', 'needs_review', 'paid_elsewhere', 'write_off_candidate'].includes(status)) return res.status(400).json({ error: 'Unknown review status' });
+  const p = await Payment.findById(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Payment not found' });
+  if (status && agingBucket(p.dueDate) !== 'over 120') return res.status(400).json({ error: 'Only rows more than 120 days overdue are reviewed this way' });
+  p.reviewStatus = status;
+  await p.save();
+  res.json({ ok: true, reviewStatus: p.reviewStatus });
 });
 
 router.get('/', async (req, res) => {
