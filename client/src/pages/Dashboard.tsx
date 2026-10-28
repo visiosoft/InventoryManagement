@@ -482,7 +482,7 @@ export default function Dashboard() {
 
             <KpiTile label="Booked" value={stats.byStatus.occupied} footer={`${stats.activeContracts} active contracts`} />
 
-            <KpiTile label="Reserved" value={stats.byStatus.reserved} footer="held, not moved in yet" />
+            <KpiTile label="Reserved" value={stats.byStatus.reserved} footer="held, not signed yet" />
 
             {/* Vacant — the same units the old Available card counted, named
                 the way the team asks for them. */}

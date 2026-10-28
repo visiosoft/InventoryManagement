@@ -129,13 +129,14 @@ router.get('/summary', async (req, res) => {
   }
 
   const occ = await computeOccupancy({ siteId: req.query.site || null });
-  /* The tiles count from contracts, not only the stored status: a unit whose
-     active contract has started is booked even while its first payment waits
-     to be verified (the payment check keeps its status "reserved"). A unit
+  /* The tiles count from contracts, not only the stored status: a unit under
+     an active (signed) contract is booked, moved in or not, even while its
+     first payment waits to be verified (the payment check keeps its status
+     "reserved"). Reserved is what is not signed yet. A unit
      still marked occupied stays booked too — a contract past its end date
      means the tenant has not been checked out, not that the unit is free. */
   const units = await Unit.find(uF).select('status').lean();
-  const started = await Contract.find({ ...cF, status: 'active', startDate: { $lte: now } }).select('unit units').lean();
+  const started = await Contract.find({ ...cF, status: 'active' }).select('unit units').lean();
   const startedIds = new Set(started.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String));
   const tiles = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
   for (const u of units) {
