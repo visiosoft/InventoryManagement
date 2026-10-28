@@ -447,7 +447,9 @@ export default function Dashboard() {
                 header, big %, bar), Booked/Reserved/Vacant kept as their
                 own separate cards right after it, same as before. */}
             {(() => {
-              const lettable = stats.occupancy?.rentable ?? (stats.byStatus.available + stats.byStatus.occupied + stats.byStatus.reserved)
+              // Units that can be let: booked, reserved and vacant. Units in
+              // maintenance are out of use, so they are not in the total.
+              const lettable = stats.byStatus.available + stats.byStatus.occupied + stats.byStatus.reserved
               // The same booked count as the tiles beside it.
               const bookedPct = lettable ? Math.round((stats.byStatus.occupied / lettable) * 1000) / 10 : 0
               return (
@@ -456,7 +458,7 @@ export default function Dashboard() {
                     <div className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>
                       <ChevronDown size={13} aria-hidden="true" /> Occupancy
                     </div>
-                    <div style={{ fontSize: 11, color: '#B9A8E8' }} title={stats.occupancy?.definition}>{`${stats.byStatus.occupied} of ${lettable} units`}</div>
+                    <div style={{ fontSize: 11, color: '#B9A8E8' }} title="Booked ÷ units that can be let (booked, reserved and vacant; units in maintenance are left out)">{`${stats.byStatus.occupied} of ${lettable} units`}</div>
                   </div>
                   <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.04em' }}>{bookedPct}%</div>
                   <div style={{ height: 8, borderRadius: 999, background: 'rgba(255,255,255,.14)', overflow: 'hidden' }}>
