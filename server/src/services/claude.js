@@ -136,6 +136,7 @@ export function toClaudeTools(tools) {
 }
 
 const usageOf = (u) => (u ? {
+    cached_tokens: u.cache_read_input_tokens || 0,
     prompt_tokens: (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0),
     completion_tokens: u.output_tokens || 0,
     total_tokens: (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.output_tokens || 0),
@@ -185,7 +186,7 @@ async function create({ model, system, messages, tools, maxTokens, timeout, effo
         throw e;
     }
     const u = usageOf(res.usage);
-    if (u) recordAiUsage({ provider: 'anthropic', model: res.model || chosen, inputTokens: u.prompt_tokens, outputTokens: u.completion_tokens, kind: tools?.length ? 'tools' : 'chat' });
+    if (u) recordAiUsage({ provider: 'anthropic', model: res.model || chosen, inputTokens: u.prompt_tokens, cachedTokens: u.cached_tokens, outputTokens: u.completion_tokens, kind: tools?.length ? 'tools' : 'chat' });
     if (res.stop_reason === 'refusal') {
         throw new Error(`${chosen} declined to answer${res.stop_details?.category ? ` (${res.stop_details.category})` : ''}`);
     }
@@ -224,12 +225,18 @@ export async function claudeVisionJson({ system, imageBase64, mimeType, prompt =
 }
 
 /** chatWithTools contract: { content, toolCalls, message, usage }. */
-export async function claudeChatWithTools({ system, messages = [], tools = [], model, effort, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
+export async function claudeChatWithTools({ system, systemPrefix = '', messages = [], tools = [], model, effort, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
     const claudeTools = toClaudeTools(tools);
     // Forcing a tool call is not accepted by current models; asking works.
-    const sys = toolChoice === 'required' && claudeTools.length
+    const rest = toolChoice === 'required' && claudeTools.length
         ? `${system}\n\nIn this reply you must call one of the tools before answering.`
         : system;
+    /* A prefix that is the same on every call (an agent's own instructions)
+       is cached: tools + prefix are read back at a tenth of the price on the
+       next call and on each tool round. The per-call part comes after it. */
+    const sys = systemPrefix
+        ? [{ type: 'text', text: systemPrefix, cache_control: { type: 'ephemeral' } }, { type: 'text', text: rest }]
+        : rest;
     const res = await create({
         model,
         effort,
@@ -255,7 +262,8 @@ export async function claudeChatWithTools({ system, messages = [], tools = [], m
 
 /* ── The web ──────────────────────────────────────────────────────────────── */
 
-const WEB_MODEL = 'claude-opus-5-5';
+// Sonnet 5.5 runs the same web search and fetch tools at half Opus's price.
+const WEB_MODEL = 'claude-sonnet-5-5';
 
 /**
  * One question answered from the web, with its sources. Anthropic's own

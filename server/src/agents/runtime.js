@@ -25,7 +25,9 @@ import { pushConfigured, pushToUser } from '../services/push.js';
 import { windowOpen, customerWritesArabic, templatesForLanguage } from './guards.js';
 
 const HISTORY_DAYS = 90;
-const HISTORY_TURNS = 60;
+// The last 30 messages are plenty to reply from; older turns cost tokens on
+// every call without changing the answer.
+const HISTORY_TURNS = 30;
 // A very long message is one person's essay, not context worth paying for twice.
 const MAX_LINE_CHARS = 500;
 
@@ -290,17 +292,24 @@ async function runAgentInner({ agent, lead, leadFile, trigger, now = new Date(),
     const ownerId = lead?.owner?._id || lead?.owner || null;
     const repName = String(writer || '').trim() || lead?.owner?.name || (ownerId ? (await User.findById(ownerId).select('name').lean().catch(() => null))?.name : '') || '';
 
-    const system = [
+    /* Two parts, so the model provider can cache the first: what is the same
+       on every call for this agent (its instructions, the rules, its examples)
+       and what is about this lead and this moment. The fixed part is most of
+       the prompt, and a cached read costs about a tenth (AI cost). */
+    const systemPrefix = [
         String(agent.systemPrompt || '').trim() || 'You are the sales assistant for PurpleBox Storage in Dubai, replying to customers on WhatsApp. Be brief and warm.',
+        RULES,
+        trainingExamplesBlock(agent),
+    ].filter(Boolean).join('\n\n');
+    const systemRest = [
         identityBlock(repName),
         leadFileBlock(work, lead, cadence),
         isFollowup ? crmBlock(lead, now) : '',
         'FACTS YOU MAY USE — everything below is from the live system:',
         facts.text || '(no unit data available)',
-        RULES,
-        trainingExamplesBlock(agent),
         task,
     ].filter(Boolean).join('\n\n');
+    const system = `${systemPrefix}\n\n${systemRest}`;
 
     const defs = agentTools(agent.enabledTools);
     const tools = toOpenAiTools(defs);
@@ -321,11 +330,12 @@ async function runAgentInner({ agent, lead, leadFile, trigger, now = new Date(),
         // tool call every round until it has actually committed to one.
         const mustCommit = isTouch && !ctx.changes.template && !ctx.changes.escalate;
         const res = await chatWithTools({
-            system, messages: convo, tools, model: agent.model || undefined, effort: agent.effort || undefined,
+            system: systemRest, systemPrefix, messages: convo, tools, model: agent.model || undefined, effort: agent.effort || undefined,
             temperature: 0.3, maxTokens: 700,
             toolChoice: mustCommit ? 'required' : 'auto',
         });
-        usage = res.usage || usage;
+        // Every round is billed, so every round is counted.
+        if (res.usage) usage = usage ? Object.fromEntries(Object.entries(res.usage).map(([k, v]) => [k, typeof v === 'number' ? v + (Number(usage[k]) || 0) : v])) : { ...res.usage };
         if (!res.toolCalls.length) { content = res.content; break; }
         convo.push(res.message);
         for (const call of res.toolCalls) {

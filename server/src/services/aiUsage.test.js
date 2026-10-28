@@ -25,3 +25,8 @@ test('summary groups by provider, model, feature and day', () => {
    assert.equal(s.byProvider[0].provider, 'anthropic');
    assert.deepEqual(s.byDay.map((d) => d.day), ['2026-10-27', '2026-10-28']);
 });
+
+test('cached input is priced at a tenth', () => {
+   assert.equal(costUsd('claude-opus-5-5', 1_000_000, 0, 1_000_000), 0.4);
+   assert.equal(costUsd('claude-opus-5-5', 1_000_000, 0, 0), 4);
+});

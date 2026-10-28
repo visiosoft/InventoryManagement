@@ -416,8 +416,49 @@ export async function onInbound({ phoneNormalized, text, occurredAt, businessNum
     if (BUCKETS[file.bucket].closed || file.bucket === 'with_person' || !agent || agent.mode === 'off') {
         return { handled: true, drafted: false, bucket: file.bucket };
     }
-    const decision = await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'inbound', text: String(text || '') }, now });
-    return { handled: true, drafted: Boolean(decision.reply), bucket: file.bucket, decision };
+    // One draft per burst, not per message (AI cost): customers often send
+    // three or four lines in a row, and each used to start its own draft. Wait
+    // for the burst to end; the draft then answers every open message at once.
+    scheduleDraft(phoneNormalized, { text: String(text || ''), now });
+    return { handled: true, drafted: false, scheduled: true, bucket: file.bucket };
+}
+
+const DRAFT_DEBOUNCE_MS = Number(process.env.AGENT_DRAFT_DEBOUNCE_MS) || 45_000;
+// A person from the team replied this recently: they are handling the chat,
+// so no automatic draft (one is a click away with "Suggest a reply").
+const TEAM_ACTIVE_MS = Number(process.env.AGENT_TEAM_ACTIVE_MS) || 20 * 60_000;
+const pendingDrafts = new Map();
+
+/** Draft once a burst of messages has stopped. Pure timing; never throws. */
+export function scheduleDraft(phoneNormalized, { text, now }, run = draftNow) {
+    clearTimeout(pendingDrafts.get(phoneNormalized));
+    const t = setTimeout(() => {
+        pendingDrafts.delete(phoneNormalized);
+        run(phoneNormalized, { text, now }).catch((e) => console.error('[Agents] draft:', e?.message || e));
+    }, DRAFT_DEBOUNCE_MS);
+    t.unref?.();
+    pendingDrafts.set(phoneNormalized, t);
+}
+
+/** True when a person (not the assistant) messaged this customer recently. */
+export async function teamIsActive(phoneNormalized, at = new Date()) {
+    return Boolean(await WhatsAppMessage.exists({
+        phoneNormalized, direction: 'outbound', sentByAi: { $ne: true }, deletedAt: null,
+        occurredAt: { $gte: new Date(at.getTime() - TEAM_ACTIVE_MS) },
+    }));
+}
+
+async function draftNow(phoneNormalized, { text, now }) {
+    const lead = await Lead.findOne({ phoneNormalized }).sort({ createdAt: -1 }).lean();
+    if (!lead) return;
+    const file = await AgentLeadFile.findOne({ phoneNormalized });
+    if (!file || BUCKETS[file.bucket]?.closed || file.bucket === 'with_person') return;
+    const agent = await agentOf(file);
+    if (!agent || agent.mode === 'off') return;
+    if (agent.mode === 'shadow' && await teamIsActive(phoneNormalized)) return;
+    // The latest message is the trigger; the draft reads every open one.
+    const last = await WhatsAppMessage.findOne({ phoneNormalized, direction: 'inbound', deletedAt: null }).sort({ occurredAt: -1 }).select('text transcript occurredAt').lean();
+    await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'inbound', text: String(last?.text || last?.transcript || text || '') }, now: last?.occurredAt ? new Date(last.occurredAt) : now });
 }
 
 /* ---------- follow-up dates: one clock ---------- */

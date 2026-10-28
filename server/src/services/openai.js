@@ -4,7 +4,7 @@ import { scrubText } from '../utils/pii.js';
 import { recordAiUsage } from './aiUsage.js';
 
 // Tokens from an OpenAI reply (chat or responses shape), into the usage log.
-const logOpenAI = (model, u, kind) => { if (u) recordAiUsage({ provider: 'openai', model, inputTokens: u.prompt_tokens ?? u.input_tokens ?? 0, outputTokens: u.completion_tokens ?? u.output_tokens ?? 0, kind }); };
+const logOpenAI = (model, u, kind) => { if (u) recordAiUsage({ provider: 'openai', model, inputTokens: u.prompt_tokens ?? u.input_tokens ?? 0, cachedTokens: u.prompt_tokens_details?.cached_tokens ?? u.input_tokens_details?.cached_tokens ?? 0, outputTokens: u.completion_tokens ?? u.output_tokens ?? 0, kind }); };
 
 // OpenAI is used for exactly one thing: turning a plain-English availability
 // request into structured filters. It never decides availability itself —
@@ -315,16 +315,18 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
  *
  * @returns {{ content: string, toolCalls: Array<{id, name, args}>, message: object, usage }}
  */
-export async function chatWithTools({ system, messages = [], tools = [], model, effort, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
-    system = scrubText(system); messages = scrubMessages(messages);
+export async function chatWithTools({ system, systemPrefix = '', messages = [], tools = [], model, effort, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
+    system = scrubText(system); systemPrefix = scrubText(systemPrefix); messages = scrubMessages(messages);
     if (!openaiConfigured()) throw new Error('No AI provider is configured');
     let chosenModel = resolveModel(model);
     if (aiProvider() === 'anthropic') {
-        const r = await claudeOr(() => claudeChatWithTools({ system, messages, tools, model: chosenModel, effort, maxTokens, timeout, toolChoice }));
+        const r = await claudeOr(() => claudeChatWithTools({ system, systemPrefix, messages, tools, model: chosenModel, effort, maxTokens, timeout, toolChoice }));
         if (r) return r.out;
         chosenModel = openaiOwnModel();
         messages = forOpenAI(messages);
     }
+    // OpenAI caches a repeated start of the prompt by itself: the fixed part goes first.
+    if (systemPrefix) system = `${systemPrefix}\n\n${system}`;
     if (usesResponsesApi(chosenModel, tools.length > 0)) {
         return chatWithToolsResponses({ system, messages, tools, model: chosenModel, maxTokens, timeout, toolChoice });
     }

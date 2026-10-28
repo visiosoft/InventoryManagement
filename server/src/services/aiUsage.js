@@ -37,18 +37,20 @@ const PRICES = {
 };
 
 /** Estimated cost in US dollars, or null when the model's price is not known. Pure. */
-export function costUsd(model, inputTokens, outputTokens) {
+export function costUsd(model, inputTokens, outputTokens, cachedTokens = 0) {
    const p = PRICES[String(model || '')];
    if (!p) return null;
-   return Math.round(((inputTokens || 0) * p[0] + (outputTokens || 0) * p[1]) / 10_000) / 100;
+   // Cached input is read back at about a tenth of the price.
+   const cached = Math.min(cachedTokens || 0, inputTokens || 0);
+   return Math.round((((inputTokens || 0) - cached) * p[0] + cached * p[0] * 0.1 + (outputTokens || 0) * p[1]) / 10_000) / 100;
 }
 
 /** Log one call. Never throws and never delays the caller. */
-export function recordAiUsage({ provider, model, inputTokens = 0, outputTokens = 0, kind = 'chat', webSearches = 0 }) {
+export function recordAiUsage({ provider, model, inputTokens = 0, cachedTokens = 0, outputTokens = 0, kind = 'chat', webSearches = 0 }) {
    try {
       void AiUsage.create({
          at: new Date(), provider, model: String(model || ''), feature: currentAiFeature(), kind,
-         inputTokens, outputTokens, webSearches, costUsd: costUsd(model, inputTokens, outputTokens),
+         inputTokens, cachedTokens, outputTokens, webSearches, costUsd: costUsd(model, inputTokens, outputTokens, cachedTokens),
       }).catch(() => {});
    } catch { /* logging must never break a reply */ }
 }

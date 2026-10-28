@@ -3132,6 +3132,7 @@ const aiUsageSchema = new Schema({
   feature: { type: String, default: 'other' },
   kind: { type: String, default: 'chat' },
   inputTokens: { type: Number, default: 0 },
+  cachedTokens: { type: Number, default: 0 },
   outputTokens: { type: Number, default: 0 },
   webSearches: { type: Number, default: 0 },
   costUsd: { type: Number, default: null },
