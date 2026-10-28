@@ -3,7 +3,7 @@ import RevealId from '../components/RevealId'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, Mail, MessageSquare, PenLine, Pin, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
+import { AlertTriangle, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, Mail, MessageSquare, PenLine, Pin, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, ContractRenewal, Invoice, Payment, Unit, UnitLine } from '../lib/types'
@@ -474,6 +474,7 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
   // A booked contract's check-out moves only with a reason (WP-05). Moving
   // check-in moves check-out by the same days; that keeps the stay and needs none.
   const [endReason, setEndReason] = useState('')
+  const [endNote, setEndNote] = useState('')
   const origStart = c.startDate?.slice(0, 10) || ''
   const origEnd = c.endDate?.slice(0, 10) || ''
   const dayDiff = (a: string, b: string) => (a && b ? Math.round((Date.parse(a) - Date.parse(b)) / 86400000) : 0)
@@ -521,11 +522,11 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    if (needsEndReason && !endReason) return
+    if (needsEndReason && (!endReason || (endReason === 'other' && endNote.trim().length < 3))) return
     onSubmit({
       startDate,
       endDate,
-      ...(needsEndReason ? { endDateReason: endReason } : {}),
+      ...(needsEndReason ? { endDateReason: endReason, endDateNote: endNote.trim() } : {}),
       units: unitIds,
       rate: Number(rate) || 0,
       leasedPrice: Number(leased) || 0,
@@ -564,7 +565,14 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
               <option value="extension_long">Long extension</option>
               <option value="early_checkout">Early check-out</option>
               <option value="correction">Correcting a mistake</option>
+              <option value="other">Other</option>
             </Select>
+          </Field>
+        )}
+        {needsEndReason && (
+          <Field label={endReason === 'other' ? 'Describe the reason' : 'Description (optional)'}>
+            <Input value={endNote} onChange={(e) => setEndNote(e.target.value)} maxLength={500} required={endReason === 'other'}
+              placeholder={endReason === 'other' ? 'What is the reason?' : 'e.g. agreed on the phone with the tenant'} />
           </Field>
         )}
         <Field label="Number of Weeks">
@@ -1388,8 +1396,8 @@ export default function ContractDetail() {
           initial={String(endChange.endDate || (c.endDate || '').slice(0, 10))}
           current={(c.endDate || '').slice(0, 10)}
           onCancel={() => setEndChange(null)}
-          onSave={async (endDate, reason) => {
-            const body = { ...endChange, endDate, endDateReason: reason }
+          onSave={async (endDate, reason, note) => {
+            const body = { ...endChange, endDate, endDateReason: reason, endDateNote: note }
             setEndChange(null)
             try { const r = await api.put(`/contracts/${id}`, body); if (r.status === 202) setError(r.data?.message || 'Sent for approval'); else setError(''); invalidate() } catch (e) { setError(apiError(e)) }
           }}
@@ -1447,6 +1455,11 @@ export default function ContractDetail() {
           <Button variant="outline" size="sm" onClick={() => { setError(''); setEditModal(true) }}>
             <PenLine size={14} /> Edit
           </Button>
+          {['active', 'ended'].includes(c.status) && (
+            <Button variant="outline" size="sm" onClick={() => { setError(''); setEndChange({ endDate: (c.endDate || '').slice(0, 10) }) }}>
+              <CalendarPlus size={14} /> Extend
+            </Button>
+          )}
           {['draft', 'pending_signature'].includes(c.status) && (
             <Button size="sm" variant="outline" onClick={() => { setSignError(''); setSigningInPerson(true) }}>
               <PenLine size={14} /> Sign in person
@@ -1740,7 +1753,7 @@ export default function ContractDetail() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => startEdit('endDate', (c.endDate || '').slice(0, 10))}
+                                  onClick={() => setEndChange({ endDate: (c.endDate || '').slice(0, 10) })}
                                   className="text-xs font-bold text-emerald-800 dark:text-emerald-300 hover:underline cursor-pointer"
                                 >
                                   Extend →
@@ -3425,12 +3438,14 @@ export default function ContractDetail() {
    Every change is kept in the contract's renewal history (WP-05). */
 const END_REASONS: [string, string][] = [
   ['renewal', 'Renewal'], ['extension_short', 'Short extension'], ['extension_long', 'Long extension'],
-  ['early_checkout', 'Early check-out'], ['correction', 'Correcting a mistake'],
+  ['early_checkout', 'Early check-out'], ['correction', 'Correcting a mistake'], ['other', 'Other'],
 ]
-function EndDateDialog({ initial, current, onSave, onCancel }: { initial: string; current: string; onSave: (endDate: string, reason: string) => void; onCancel: () => void }) {
+function EndDateDialog({ initial, current, onSave, onCancel }: { initial: string; current: string; onSave: (endDate: string, reason: string, note: string) => void; onCancel: () => void }) {
   const [date, setDate] = useState(initial)
   const [reason, setReason] = useState('')
-  const ready = Boolean(date && reason && date !== current)
+  const [note, setNote] = useState('')
+  // A description is optional, except for Other, where it is the reason.
+  const ready = Boolean(date && reason && date !== current && (reason !== 'other' || note.trim().length >= 3))
   return (
     <div role="dialog" aria-label="Change check-out date" style={{ position: 'fixed', inset: 0, background: 'rgba(20,8,31,.35)', zIndex: 80, display: 'grid', placeItems: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 16, padding: 20, width: 380, maxWidth: 'calc(100vw - 32px)' }}>
@@ -3449,9 +3464,15 @@ function EndDateDialog({ initial, current, onSave, onCancel }: { initial: string
             </button>
           ))}
         </div>
+        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#756E80', marginTop: 12 }}>
+          Description{reason === 'other' ? '' : ' (optional)'}
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} maxLength={500}
+            placeholder={reason === 'other' ? 'What is the reason?' : 'Anything worth noting, e.g. agreed on the phone with the tenant'}
+            style={{ display: 'block', width: '100%', marginTop: 4, border: `1px solid ${reason === 'other' && note.trim().length < 3 ? '#C4B5FD' : 'rgba(20,8,31,.15)'}`, borderRadius: 8, padding: '8px 10px', fontSize: 13.5, fontWeight: 400, color: '#14081F', resize: 'vertical' }} />
+        </label>
         <div className="flex justify-end gap-2" style={{ marginTop: 16 }}>
           <button type="button" onClick={onCancel} className="cursor-pointer" style={{ fontSize: 13, fontWeight: 600, color: '#756E80', background: 'none', border: 0, padding: '8px 12px' }}>Cancel</button>
-          <button type="button" disabled={!ready} onClick={() => onSave(date, reason)} className="cursor-pointer"
+          <button type="button" disabled={!ready} onClick={() => onSave(date, reason, note.trim())} className="cursor-pointer"
             style={{ fontSize: 13, fontWeight: 700, color: '#fff', background: '#5B2BC9', border: 0, borderRadius: 9, padding: '8px 16px', opacity: ready ? 1 : 0.45 }}>
             Save
           </button>

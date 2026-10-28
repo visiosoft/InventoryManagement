@@ -30,7 +30,8 @@ import { brandedEmailHtml } from '../services/emailLayout.js';
 import { siteScope } from '../utils/siteScope.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 
-const END_DATE_REASONS = ['renewal', 'extension_short', 'extension_long', 'early_checkout', 'correction'];
+const END_DATE_REASONS = ['renewal', 'extension_short', 'extension_long', 'early_checkout', 'correction', 'other'];
+const END_REASON_LABEL = { renewal: 'Renewal', extension_short: 'Short extension', extension_long: 'Long extension', early_checkout: 'Early check-out', correction: 'Correction', other: 'Other' };
 
 const router = Router();
 
@@ -1212,8 +1213,12 @@ router.put('/:id', async (req, res) => {
       && ($set.startDate.getTime() - new Date(contract.startDate).getTime()) === ($set.endDate.getTime() - new Date(contract.endDate).getTime());
     const endMovedDirectly = !endShifted && !sameShift && $set.endDate && contract.endDate && $set.endDate.getTime() !== new Date(contract.endDate).getTime();
     const endReason = String(req.body.endDateReason || '');
+    const endNote = String(req.body.endDateNote || '').trim().slice(0, 500);
     if (endMovedDirectly && ['active', 'ended'].includes(contract.status) && !END_DATE_REASONS.includes(endReason)) {
       return res.status(400).json({ error: 'Say why the check-out date is changing', code: 'end_date_reason_required', reasons: END_DATE_REASONS });
+    }
+    if (endMovedDirectly && endReason === 'other' && endNote.length < 3) {
+      return res.status(400).json({ error: 'Describe the reason', code: 'end_date_reason_required', reasons: END_DATE_REASONS });
     }
     /* Approval rules (WP-04): a change an active rule catches waits as a
        request; nothing in this edit is applied until someone else approves.
@@ -1357,11 +1362,12 @@ router.put('/:id', async (req, res) => {
     if (changedKeys.length) {
       const who = req.user?.name || req.user?.email || 'System';
       const details = changedKeys.map(k => `${fieldLabels[k] || k}: ${k === 'renewalIntent' ? (renewalIntentLabels[$set[k]] || $set[k]) : $set[k] instanceof Date ? $set[k].toISOString().slice(0, 10) : $set[k]}`).join(', ');
-      const $push = { timeline: { text: `Updated ${details}`, author: who, at: new Date() } };
+      const why = endMovedDirectly && endReason ? ` — ${END_REASON_LABEL[endReason] || endReason}${endNote ? `: ${endNote}` : ''}` : '';
+      const $push = { timeline: { text: `Updated ${details}${why}`, author: who, at: new Date() } };
       // Every Check Out change on an existing contract is a renewal/extension
       // worth its own trackable record, separate from the general timeline.
       if (!endShifted && $set.endDate && contract.endDate && $set.endDate.getTime() !== new Date(contract.endDate).getTime()) {
-        $push.renewalHistory = { at: new Date(), previousEndDate: contract.endDate, newEndDate: $set.endDate, author: who, reason: endReason, source: 'edit' };
+        $push.renewalHistory = { at: new Date(), previousEndDate: contract.endDate, newEndDate: $set.endDate, author: who, reason: endReason, note: endNote, source: 'edit' };
       }
       await Contract.findByIdAndUpdate(contract._id, { $set, $push });
     } else {

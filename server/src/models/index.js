@@ -832,6 +832,7 @@ const contractSchema = new Schema(
         // extension_long, early_checkout, correction. Empty on older rows.
         reason: { type: String, default: '' },
         source: { type: String, default: '' }, // edit | extend | close
+        note: { type: String, default: '' },  // the person's own words, required for 'other'
         _id: false,
       },
     ],
