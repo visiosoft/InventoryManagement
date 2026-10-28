@@ -126,6 +126,7 @@ import { runQuietNudge } from './services/quietNudge.js';
 import { runLeadAssignReminder } from './services/leadAssignReminder.js';
 import { releaseLapsedHolds } from './utils/unitStatus.js';
 import publicBookingRoutes from './routes/publicBooking.js';
+import demoRequestRoutes from './routes/demoRequests.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
@@ -274,6 +275,8 @@ app.use('/api/moving-leads/public', express.urlencoded({ extended: true }), movi
 // See server/src/routes/publicBooking.js for what keeps it from being abused
 // (a per-IP rate limit and an atomic per-unit claim) despite that.
 app.use('/api/public/bookings', publicBookingRoutes);
+// "Book a demo" on the 2Capacity marketing site (2capacity.com) — also no login.
+app.use('/api/public/demo-requests', demoRequestRoutes);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.

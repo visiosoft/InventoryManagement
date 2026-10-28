@@ -6,6 +6,25 @@
 
   const units = D.buildUnits();
 
+  /* ---------------- three.js, fetched only when a 3D scene is shown ---------------- */
+  const THREE_SRC = 'https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js';
+  const lite3d = reduced || matchMedia('(max-width: 768px)').matches ||
+    Boolean(navigator.connection && navigator.connection.saveData);
+  let threeLoading = null;
+  function loadThree() {
+    if (window.THREE) return Promise.resolve();
+    if (!threeLoading) {
+      threeLoading = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = THREE_SRC;
+        s.onload = resolve;
+        s.onerror = () => { threeLoading = null; reject(new Error('three.js failed to load')); };
+        document.head.appendChild(s);
+      });
+    }
+    return threeLoading;
+  }
+
   const state = {
     view: 'floor',
     selectedUnit: units.find(u => u.code === 'F2-034') || units[0],
@@ -99,8 +118,12 @@
   const contactFormView = $('#contactFormView');
   const contactSuccessView = $('#contactSuccessView');
   const contactFormError = $('#contactFormError');
-  contactForm.addEventListener('submit', e => {
+  const contactSubmit = $('#contactSubmit');
+  const CONTACT_ERROR_TEXT = contactFormError.textContent;
+  const showContactError = msg => { contactFormError.textContent = msg; contactFormError.hidden = false; };
+  contactForm.addEventListener('submit', async e => {
     e.preventDefault();
+    if (contactSubmit.disabled) return;
     const name = $('#contactName').value.trim();
     const email = $('#contactEmail').value.trim();
     const company = $('#contactCompany').value.trim();
@@ -112,18 +135,36 @@
     // Honeypot: people never see the "Leave blank" field, bots fill it
     if ($('#contactWebsite').value) return;
     if (!name || !emailValid || !company || !facilities || !country) {
-      contactFormError.hidden = false;
+      showContactError(CONTACT_ERROR_TEXT);
       return;
     }
     contactFormError.hidden = true;
-    const subject = 'Demo request: ' + company;
-    const body = 'Name: ' + name + '\nEmail: ' + email + (phone ? '\nPhone / WhatsApp: ' + phone : '') +
-      '\nCompany: ' + company + '\nFacilities: ' + facilities + '\nCountry: ' + country +
-      (message ? '\n\nWhat they want to improve or automate:\n' + message : '');
-    const mailto = 'mailto:' + DEMO_EMAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-    contactFormView.hidden = true;
-    contactSuccessView.hidden = false;
-    window.location.href = mailto;
+    const track = window.BayshireTrack;
+    const submitLabel = contactSubmit.textContent;
+    contactSubmit.disabled = true;
+    contactSubmit.textContent = 'Sending…';
+    try {
+      const res = await fetch(DEMO_REQUEST_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, phone, company, facilities, country, message, source: track ? track.source() : {} })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Request failed');
+      }
+      if (track) track.demoRequested({ facilities, country });
+      contactFormView.hidden = true;
+      contactSuccessView.hidden = false;
+      contactSuccessView.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+    } catch (err) {
+      // The lead matters more than the form: fall back to plain email
+      showContactError((err.message && err.message !== 'Request failed' && err.message !== 'Failed to fetch' ? err.message + ' ' : 'We could not send your request. ') +
+        'You can also email us at ' + DEMO_EMAIL + '.');
+    } finally {
+      contactSubmit.disabled = false;
+      contactSubmit.textContent = submitLabel;
+    }
   });
   $('#contactResetBtn').addEventListener('click', () => {
     contactForm.reset();
@@ -153,6 +194,7 @@
   });
 
   const DEMO_EMAIL = 'hello@2capacity.com';
+  const DEMO_REQUEST_URL = 'https://api.purplebox.ae/api/public/demo-requests';
 
   /* ---------------- Reveal on scroll ---------------- */
   if (window.gsap && window.ScrollTrigger) {
@@ -325,15 +367,18 @@
     plan3dHint.classList.toggle('is-visible', is3d);
 
     if (is3d) {
-      if (!unitsScene) {
-        unitsScene = BayshireUnitsScene({
-          canvasEl: canvas3dEl, units,
-          getSelectedCode: () => state.selectedUnit.code,
-          onSelect: selectUnitByCode
-        });
-        window.__bayshireUnitsScene = unitsScene;
-      }
-      if (unitsScene3dVisible) unitsScene.start();
+      // The visitor asked for 3D, so this one loads three.js even on phones
+      loadThree().then(() => {
+        if (!unitsScene) {
+          unitsScene = BayshireUnitsScene({
+            canvasEl: canvas3dEl, units,
+            getSelectedCode: () => state.selectedUnit.code,
+            onSelect: selectUnitByCode
+          });
+          window.__bayshireUnitsScene = unitsScene;
+        }
+        if (unitsScene3dVisible && state.view === '3d') unitsScene.start();
+      }).catch(() => {});
     } else if (unitsScene) {
       unitsScene.stop();
     }
@@ -745,20 +790,39 @@
     </div>`).join('');
 
   /* ---------------- 3D hero scene ---------------- */
-  window.__bayshireScene = BayshireScene({
-    canvasEl: $('#heroCanvas'),
-    heroEl: $('#top'),
-    textEl: $('#heroText'),
-    metricsEl: $('#heroMetrics'),
-    units
-  });
+  // Decorative 3D is skipped on phones, for reduced motion and on Save-Data:
+  // three.js plus its render loop was most of the mobile load time and CPU.
+  if (lite3d) {
+    $('#top').classList.add('hero--static');
+  } else {
+    // After the page has loaded, so it never competes with first paint
+    const startHero = () => loadThree().then(() => {
+      window.__bayshireScene = BayshireScene({
+        canvasEl: $('#heroCanvas'),
+        heroEl: $('#top'),
+        textEl: $('#heroText'),
+        metricsEl: $('#heroMetrics'),
+        units
+      });
+    }).catch(() => {});
+    if (document.readyState === 'complete') startHero();
+    else window.addEventListener('load', startHero, { once: true });
+  }
 
   /* ---------------- Ambient 3D backdrop for closing CTA ---------------- */
   const closingCanvas = $('#closingCanvas');
-  const ambientScene = BayshireAmbientScene({ canvasEl: closingCanvas });
-  window.__bayshireAmbientScene = ambientScene;
-  new IntersectionObserver(entries => {
-    if (entries.some(e => e.isIntersecting)) ambientScene.start();
-    else ambientScene.stop();
-  }, { threshold: 0.1 }).observe(closingCanvas);
+  let ambientScene = null, closingVisible = false;
+  if (!lite3d) {
+    new IntersectionObserver(entries => {
+      closingVisible = entries.some(e => e.isIntersecting);
+      if (!closingVisible) { if (ambientScene) ambientScene.stop(); return; }
+      loadThree().then(() => {
+        if (!ambientScene) {
+          ambientScene = BayshireAmbientScene({ canvasEl: closingCanvas });
+          window.__bayshireAmbientScene = ambientScene;
+        }
+        if (closingVisible) ambientScene.start();
+      }).catch(() => {});
+    }, { threshold: 0.1 }).observe(closingCanvas);
+  }
 })();

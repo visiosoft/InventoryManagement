@@ -2890,6 +2890,35 @@ const salesGoalSchema = new Schema(
 );
 export const SalesGoal = tenantModel('SalesGoal');
 
+// "Book a demo" requests from the 2Capacity marketing site (2capacity.com).
+// Prospects for the software, not storage enquiries, so kept apart from Lead —
+// they must never show up in the storage pipeline or its reports.
+const demoRequestSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    email: { type: String, required: true, trim: true, lowercase: true },
+    phone: { type: String, default: '', trim: true },
+    company: { type: String, required: true, trim: true },
+    facilities: { type: String, required: true, trim: true },
+    country: { type: String, required: true, trim: true },
+    message: { type: String, default: '', trim: true },
+    // Where the visitor came from, for judging which ads produce demos
+    source: {
+      page: { type: String, default: '' },
+      referrer: { type: String, default: '' },
+      utmSource: { type: String, default: '' },
+      utmMedium: { type: String, default: '' },
+      utmCampaign: { type: String, default: '' },
+      utmTerm: { type: String, default: '' },
+      gclid: { type: String, default: '' },
+    },
+    notified: { type: Boolean, default: false },
+    notifyError: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+export const DemoRequest = tenantModel('DemoRequest');
+
 export async function nextContractNo() {
   const year = new Date().getFullYear();
   const counter = await Counter.findOneAndUpdate(
@@ -3078,6 +3107,7 @@ export const SCHEMAS = {
    Task: taskSchema,
    PushSubscription: pushSubscriptionSchema,
    SalesGoal: salesGoalSchema,
+   DemoRequest: demoRequestSchema,
 };
 
 /**

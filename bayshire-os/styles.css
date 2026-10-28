@@ -944,3 +944,25 @@ textarea:focus{ border-color:var(--ink); }
 .ta-step{ display:flex; align-items:center; gap:10px; background:#F8F6F1; border:1px solid var(--a-line); border-radius:9px; padding:6px 10px; }
 .ta-step i{ font-style:normal; border:1px solid var(--a-line); background:#fff; border-radius:6px; padding:3px 9px; }
 .ta-stepn{ width:20px; height:20px; border-radius:50%; background:#DBEAFE; color:#2563EB; font-size:11px; font-weight:700; display:grid; place-items:center; }
+
+/* ============ Static hero (phones, reduced motion, Save-Data: no three.js) ============ */
+.hero--static .hero__canvas{
+  background:
+    radial-gradient(ellipse 70% 45% at 20% 18%, color-mix(in oklab,var(--g2) 14%,transparent), transparent 70%),
+    radial-gradient(ellipse 60% 40% at 85% 75%, color-mix(in oklab,var(--g1) 14%,transparent), transparent 70%),
+    linear-gradient(color-mix(in oklab,var(--line) 55%,transparent) 1px, transparent 1px) 0 0/32px 32px,
+    linear-gradient(90deg, color-mix(in oklab,var(--line) 55%,transparent) 1px, transparent 1px) 0 0/32px 32px;
+  -webkit-mask-image:radial-gradient(ellipse 90% 80% at 50% 50%, #000 40%, transparent 100%);
+          mask-image:radial-gradient(ellipse 90% 80% at 50% 50%, #000 40%, transparent 100%);
+}
+
+/* ============ Cookie consent ============ */
+.consent{
+  position:fixed; left:16px; bottom:16px; z-index:80; max-width:420px; width:calc(100vw - 32px);
+  background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:var(--radius-panel);
+  padding:16px 18px; box-shadow:0 18px 40px -18px rgba(var(--shadow-color),.5); font-size:14px; line-height:1.5;
+}
+.consent p{ margin:0 0 12px; }
+.consent__actions{ display:flex; gap:8px; justify-content:flex-end; }
+.consent .btn{ padding:8px 16px; font-size:14px; }
+@media (max-width:600px){ .consent{ bottom:84px; } }

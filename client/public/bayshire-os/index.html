@@ -5,10 +5,69 @@
 <title>2Capacity — The AI operating system for self storage</title>
 <meta name="description" content="2Capacity's AI agents draft WhatsApp replies in seconds, chase quiet leads and sort your inbox, with prices from your live unit list. You approve every send. Built for self-storage operators worldwide. Book a personalized demo.">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:,">
+<link rel="canonical" href="https://2capacity.com/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="2Capacity">
+<meta property="og:url" content="https://2capacity.com/">
+<meta property="og:title" content="2Capacity — The AI operating system for self storage">
+<meta property="og:description" content="AI agents that draft WhatsApp replies, chase quiet leads and sort your inbox, with prices from your live unit list. Book a personalized demo.">
+<meta property="og:image" content="https://2capacity.com/assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="2Capacity — The AI operating system for self storage">
+<meta name="twitter:description" content="AI agents that draft WhatsApp replies, chase quiet leads and sort your inbox, with prices from your live unit list.">
+<meta name="twitter:image" content="https://2capacity.com/assets/og-image.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://2capacity.com/#organization",
+      "name": "2Capacity",
+      "url": "https://2capacity.com/",
+      "logo": "https://2capacity.com/apple-touch-icon.png",
+      "email": "hello@2capacity.com",
+      "telephone": "+1-416-930-8205",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "125 Lakeshore Rd",
+        "addressLocality": "Oakville",
+        "addressRegion": "ON",
+        "postalCode": "L6J 1H4",
+        "addressCountry": "CA"
+      }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://2capacity.com/#website",
+      "url": "https://2capacity.com/",
+      "name": "2Capacity",
+      "publisher": { "@id": "https://2capacity.com/#organization" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "2Capacity",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "description": "AI operating system for self-storage operators: WhatsApp AI inbox, CRM, inventory and floor plans, e-signature contracts, invoicing and payments.",
+      "url": "https://2capacity.com/",
+      "publisher": { "@id": "https://2capacity.com/#organization" }
+    }
+  ]
+}
+</script>
 <script>(function(){try{var t=localStorage.getItem('bayshire-theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t;}catch(e){}})();</script>
+<script src="analytics.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Manrope:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -790,16 +849,16 @@
               <label for="contactMessage">What would you most like to improve or automate? <span class="muted">(optional)</span></label>
               <textarea id="contactMessage" name="message" rows="4"></textarea>
             </div>
-            <div class="field field--error" id="contactFormError" hidden>Please add your name, a valid business email, your company name, number of facilities and country.</div>
+            <div class="field field--error" id="contactFormError" role="alert" hidden>Please add your name, a valid business email, your company name, number of facilities and country.</div>
             <div class="modal-actions" style="justify-content:flex-start">
-              <button type="submit" class="btn btn--solid">Request My Personalized Demo</button>
+              <button type="submit" class="btn btn--solid" id="contactSubmit">Request My Personalized Demo</button>
             </div>
             <p class="fine">We use your details only to arrange and tailor your demo. See our <a href="legal/privacy-policy.html">privacy policy</a>.</p>
           </form>
         </div>
         <div id="contactSuccessView" hidden>
-          <p class="modal-sub">Thanks. Your email client should now be open with your demo request addressed to our team. Once it's sent, we'll reply to arrange a time that suits you. If nothing opened, email us directly at <a href="mailto:hello@2capacity.com">hello@2capacity.com</a>.</p>
-          <button type="button" class="btn btn--outline" id="contactResetBtn">Edit my details</button>
+          <p class="modal-sub" role="status">Thanks, your demo request is in. Our team will email you within 1 business day to arrange a time that suits you.</p>
+          <button type="button" class="btn btn--outline" id="contactResetBtn">Send another request</button>
         </div>
       </div>
     </div>
@@ -853,14 +912,14 @@
   </button>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
-<script src="data.js"></script>
-<script src="scene3d.js"></script>
-<script src="unitsScene3d.js"></script>
-<script src="ambientScene3d.js"></script>
-<script src="app.js"></script>
-<script src="tour.js"></script>
+<!-- three.js is not listed here: app.js loads it only when a 3D scene is actually shown -->
+<script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<script defer src="data.js"></script>
+<script defer src="scene3d.js"></script>
+<script defer src="unitsScene3d.js"></script>
+<script defer src="ambientScene3d.js"></script>
+<script defer src="app.js"></script>
+<script defer src="tour.js"></script>
 </body>
 </html>

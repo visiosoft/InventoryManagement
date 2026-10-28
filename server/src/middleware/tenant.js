@@ -25,11 +25,11 @@ import { runInTenant } from '../tenancy/context.js';
 export const tenancyMode = () => (process.env.TENANCY_MODE === 'multi' ? 'multi' : 'single');
 
 /** The one database a single-tenant deployment serves. */
-const legacyDbName = () => process.env.DB_NAME || 'PurpleBox';
+export const legacyDbName = () => process.env.DB_NAME || 'PurpleBox';
 
 /** The organisation a single-tenant deployment reports itself as, so code that
  *  logs or labels by organisation has something true to say. */
-const legacyOrg = () => ({ id: 'single', slug: 'single', name: process.env.COMPANY_NAME || 'PurpleBox' });
+export const legacyOrg = () => ({ id: 'single', slug: 'single', name: process.env.COMPANY_NAME || 'PurpleBox' });
 
 /**
  * Enter the tenant context for this request.
