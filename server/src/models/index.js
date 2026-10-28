@@ -1,3 +1,4 @@
+import { scrubText } from '../utils/pii.js';
 import mongoose from 'mongoose';
 import { softDeletePlugin } from '../utils/softDelete.js';
 
@@ -3053,6 +3054,10 @@ automationLogSchema.index({ rule: 1, event: 1, channel: 1, status: 1 });
 automationLogSchema.index({ rule: 1, contract: 1, channel: 1, status: 1, sentAt: 1 });
 
 export const AutomationRule = model('AutomationRule', automationRuleSchema);
+// Sent messages and errors are kept with identity numbers masked (WP-07).
+automationLogSchema.pre('validate', function redactIdentity() {
+  for (const f of ['message', 'error']) if (typeof this[f] === 'string') this[f] = scrubText(this[f]);
+});
 export const AutomationLog = model('AutomationLog', automationLogSchema);
 
 /* ── Quiet-lead follow-ups ────────────────────────────────────────────────

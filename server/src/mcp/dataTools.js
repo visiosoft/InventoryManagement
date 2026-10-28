@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { isRestrictedKey, maskLast4, scrubText } from '../utils/pii.js';
 import * as M from '../models/index.js';
 import { AgentAction, AgentLeadFile, AgentProfile } from '../agents/models.js';
 import { serviceAuthHeader } from './writeTools.js';
@@ -68,10 +69,14 @@ function clean(value, depth = 0) {
   if (typeof value === 'object') {
     if (depth > 6) return '[nested]';
     const out = {};
-    for (const [k, v] of Object.entries(value)) { if (SECRET_KEY.test(k)) continue; out[k] = clean(v, depth + 1); }
+    for (const [k, v] of Object.entries(value)) {
+      if (SECRET_KEY.test(k)) continue;
+      // Identity numbers: last four only (WP-07).
+      out[k] = isRestrictedKey(k) && v != null && typeof v !== 'object' ? maskLast4(v) : clean(v, depth + 1);
+    }
     return out;
   }
-  if (typeof value === 'string' && value.length > 600) return `${value.slice(0, 600)}…`;
+  if (typeof value === 'string') return scrubText(value.length > 600 ? `${value.slice(0, 600)}…` : value);
   return value;
 }
 

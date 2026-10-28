@@ -13,6 +13,7 @@
  *                   before/after snapshot that makes revert possible.
  */
 
+import { redactDeep, scrubText } from '../utils/pii.js';
 import mongoose from 'mongoose';
 import { softDeletePlugin } from '../utils/softDelete.js';
 import { BUCKET_ORDER } from './buckets.js';
@@ -292,4 +293,10 @@ export const AgentProfile = model('AgentProfile', agentProfileSchema);
 export const AgentRehearsal = model('AgentRehearsal', agentRehearsalSchema);
 export const AgentReview = model('AgentReview', agentReviewSchema);
 export const AgentLeadFile = model('AgentLeadFile', agentLeadFileSchema);
+// The action log keeps prompts and tool results: identity numbers only as
+// their last four (WP-07). Applies to what is written from now on.
+agentActionSchema.pre('validate', function redactIdentity() {
+    if (this.detail != null && this.isModified('detail')) this.detail = redactDeep(this.detail);
+    for (const f of ['summary', 'sentText']) if (typeof this[f] === 'string') this[f] = scrubText(this[f]);
+});
 export const AgentAction = model('AgentAction', agentActionSchema);

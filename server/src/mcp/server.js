@@ -7,6 +7,7 @@ import { toolByName, toolNames } from '../services/assistant/tools.js';
 import { responseTimeReport, slowFirstReplies, customersWaitingForReply, followUpList, FOLLOW_UP_LISTS, listInvoices, pendingPayments, paymentsReceived, listQuotes, contractDetail } from './crmTools.js';
 import { signedExportUrl } from './focusExport.js';
 import { describeData, queryData, apiGet, connectorStatus } from './dataTools.js';
+import { redactDeep } from '../utils/pii.js';
 import { leadFollowUpFile, followUpBriefing, followUpAdherence } from './followUps.js';
 import { zohoOutstanding, zohoCustomerLedger, zohoExpenses } from './zohoTools.js';
 import { whatsappReplyTimeReport, whatsappVolumeReport, whatsappTopicsReport, whatsappInboundSample } from './whatsappAnalysis.js';
@@ -112,7 +113,7 @@ export function buildMcpServer(ctx) {
       // Money figures carry the warnings a reader needs before trusting them.
       if (out && typeof out === 'object' && !Array.isArray(out) && MONEY_TOOLS.test(t.name)) out = { ...out, dataWarnings: await dataHealth().catch(() => []) };
       if (out && typeof out === 'object' && !Array.isArray(out)) out = { ...out, _source: t.name, _asOf: new Date().toISOString() };
-      return { content: [{ type: 'text', text: JSON.stringify(out, null, 1).slice(0, 120_000) }] };
+      return { content: [{ type: 'text', text: JSON.stringify(redactDeep(out), null, 1).slice(0, 120_000) }] };
     } catch (e) {
       return { isError: true, content: [{ type: 'text', text: `Could not run ${t.name}: ${e.message}` }] };
     }

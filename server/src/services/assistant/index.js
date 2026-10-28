@@ -1,6 +1,7 @@
 import { AssistantConfig } from '../../models/index.js';
 import { chatWithTools, openaiConfigured, openaiModel, resolveModel } from '../openai.js';
 import { siteScope } from '../../utils/siteScope.js';
+import { redactDeep } from '../../utils/pii.js';
 import { dayKeyFor } from '../dailyDigest.js';
 import { toolDefinitions, toolByName } from './tools.js';
 import { PROPOSAL_TOOLS, ACTION_TOOLS } from './actions.js';
@@ -212,7 +213,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
          if (PROPOSAL_TOOLS.includes(call.name) && out?.proposalId) {
             pending = { id: out.proposalId, kind: out.kind || 'create_quotation', summary: out.summary, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
          }
-         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(out).slice(0, 12000) });
+         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(redactDeep(out)).slice(0, 12000) });
       }
       /* A form is the question: it goes on screen as it is, and the
          answers come back as the next message. */

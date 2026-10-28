@@ -9,6 +9,7 @@
  * `touch_proposed` action naming the approved template it would have used.
  */
 
+import { redactDeep } from '../utils/pii.js';
 import { usableFirstName, stripUnusableNames } from '../services/leadNames.js';
 import { WhatsAppMessage, Lead, User } from '../models/index.js';
 import { chatWithTools, openaiConfigured, openaiModel, resolveModel } from '../services/openai.js';
@@ -332,7 +333,7 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
             }
             toolLog.push({ name: call.name, args: call.args, result });
             toolResults.push(result);
-            convo.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+            convo.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(redactDeep(result)) });
         }
         if (round === (agent.maxToolRounds || 4)) content = '{"reply":"","needsHuman":true,"reason":"Ran out of tool rounds without answering"}';
     }

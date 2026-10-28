@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { claudeConfigured, claudeModel, claudeChatJson, claudeChatWithTools, claudeVisionJson } from './claude.js';
+import { scrubText } from '../utils/pii.js';
 
 // OpenAI is used for exactly one thing: turning a plain-English availability
 // request into structured filters. It never decides availability itself —
@@ -57,6 +58,11 @@ async function claudeOr(run) {
         return null;
     }
 }
+
+// No Emirates ID reaches a model in full, whatever built the prompt (WP-07).
+const scrubContent = (c) => (typeof c === 'string' ? scrubText(c)
+    : Array.isArray(c) ? c.map((p) => (p && typeof p.text === 'string' ? { ...p, text: scrubText(p.text) } : p)) : c);
+const scrubMessages = (messages) => messages.map((m) => (m && 'content' in m ? { ...m, content: scrubContent(m.content) } : m));
 
 // OpenAI does not accept the Claude blocks a turn carries for its next round.
 const forOpenAI = (messages) => messages.map(({ _claudeContent, ...m }) => m);
@@ -244,6 +250,7 @@ export async function verifyOpenAIKey(apiKey, model) {
  * empty answer.
  */
 export async function chatJson({ system, messages = [], temperature = 0, maxTokens = 400, timeout = 30000, model, effort }) {
+    system = scrubText(system); messages = scrubMessages(messages);
     let chosenModel = resolveModel(model);
     if (aiProvider() === 'anthropic') {
         const r = await claudeOr(() => claudeChatJson({ system, messages, maxTokens, timeout, model: chosenModel, effort }));
@@ -303,6 +310,7 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
  * @returns {{ content: string, toolCalls: Array<{id, name, args}>, message: object, usage }}
  */
 export async function chatWithTools({ system, messages = [], tools = [], model, effort, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
+    system = scrubText(system); messages = scrubMessages(messages);
     if (!openaiConfigured()) throw new Error('No AI provider is configured');
     let chosenModel = resolveModel(model);
     if (aiProvider() === 'anthropic') {
@@ -342,6 +350,7 @@ export async function chatWithTools({ system, messages = [], tools = [], model, 
 }
 
 export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000, model, effort }) {
+    system = scrubText(system); prompt = scrubText(prompt);
     let chosenModel = resolveModel(model);
     if (aiProvider() === 'anthropic') {
         const r = await claudeOr(() => claudeVisionJson({ system, imageBase64, mimeType, prompt, maxTokens, timeout, model: chosenModel, effort }));

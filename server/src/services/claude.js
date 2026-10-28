@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { scrubText } from '../utils/pii.js';
 
 /**
  * Claude, as a drop-in for the OpenAI calls in services/openai.js.
@@ -259,7 +260,7 @@ const WEB_MODEL = 'claude-opus-5-5';
  * it came from. Only used when the person asking has switched the web on.
  */
 export async function claudeWebSearch(query, { maxUses = 10, timeout = 180000 } = {}) {
-    const q = String(query || '').trim().slice(0, 600);
+    const q = scrubText(String(query || '').trim().slice(0, 600));
     if (!q) return { error: 'Nothing to search for' };
     const messages = [{ role: 'user', content: `Search the web and answer, with the figures and names you found (prices with their currency and the unit size, dates, offers). When a search result names a company or a price page, open that page and read the price there rather than guessing from the snippet. Say plainly what could not be found.\n\nQuestion: ${q}` }];
     // Searches find the pages; fetches read them — a price is usually only on the page itself.
