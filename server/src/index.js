@@ -41,6 +41,8 @@ import floorPlanRoutes from './routes/floorPlans.js';
 import siteRoutes from './routes/sites.js';
 import { Customer, Contract } from './models/index.js';
 import approvalRoutes from './routes/approvals.js';
+import { storeIntentScores } from './services/intentStore.js';
+import { snapshotForecast } from './services/forecastBacktest.js';
 import collectionRoutes from './routes/collections.js';
 import { checkPromises } from './services/collections.js';
 import piiRoutes from './routes/pii.js';
@@ -642,6 +644,14 @@ async function start() {
   /* Bots (services/bots.js): each runs at its hour, once a day at most.
      Renewal-email bots prepare emails for a person to send unless an admin
      set one to send by itself. */
+  // Intent scores saved on leads that changed, from cached summaries only (WP-14).
+  setInterval(async () => {
+    try { await storeIntentScores(); } catch (e) { console.error('[Intent]', e.message); }
+  }, 10 * 60_000);
+
+  // This week's forecast saved for checking eight weeks later (WP-22).
+  setInterval(() => { snapshotForecast().catch((e) => console.error('[Forecast]', e.message)); }, 6 * 3_600_000);
+
   // Promises to pay whose day has come: kept, or broken and escalated (WP-21).
   setInterval(async () => {
     try {

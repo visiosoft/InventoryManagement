@@ -1,3 +1,4 @@
+import { forecastAccuracy } from '../services/forecastBacktest.js';
 import { attributionReport } from '../services/attribution.js';
 import { inventoryMix } from '../services/inventoryMix.js';
 import { churnRisk } from '../services/churnRisk.js';
@@ -903,6 +904,11 @@ router.get('/retention/at-risk', async (req, res) => {
 // Leads and wins by first-touch source and campaign (WP-10).
 router.get('/attribution', async (req, res) => {
   res.json(await attributionReport({ days: req.query.days }));
+});
+
+// How close past forecasts came to what happened (WP-22).
+router.get('/forecast-accuracy', async (_req, res) => {
+  res.json(await forecastAccuracy());
 });
 
 // Active data-quality conditions for the KPI banner (WP-23).

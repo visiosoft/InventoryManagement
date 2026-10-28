@@ -389,6 +389,11 @@ const leadSchema = new Schema(
        cannot. Cleared automatically the next time the AI's own read of the
        conversation changes (services/leadScore.js), so a stale confirmation
        from before their last few messages never quietly outlives them. */
+    // Stored intent score (services/intentStore.js, WP-14).
+    intentScore: { type: Number, default: null },
+    intentBand: { type: String, default: '' },
+    intentReasons: [{ type: String }],
+    intentComputedAt: { type: Date, default: null },
     // First and latest marketing touch (services/attribution.js, WP-10).
     // first is set once and never overwritten.
     attribution: { type: Schema.Types.Mixed, default: undefined },

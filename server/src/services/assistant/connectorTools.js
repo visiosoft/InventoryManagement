@@ -98,3 +98,13 @@ registerTool({
       return attributionReport({ days });
    },
 });
+
+registerTool({
+   name: 'forecast_accuracy',
+   description: 'How close past occupancy and revenue forecasts came to what actually happened: mean absolute percentage error and a confidence label (high, medium, low). Read-only. Use before relying on a forecast, or for "how good are our forecasts".',
+   parameters: { type: 'object', properties: {} },
+   async run() {
+      const { forecastAccuracy } = await import('../forecastBacktest.js');
+      return forecastAccuracy();
+   },
+});
