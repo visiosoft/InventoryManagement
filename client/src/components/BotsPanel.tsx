@@ -5,6 +5,7 @@ import { Bot as BotIcon, ChevronLeft, FileSpreadsheet, FileText, Globe, LayoutGr
 import { api, apiError } from '../lib/api'
 import { TwilioConnectForm } from './ConnectForms'
 import ChartView, { type ChartSpec } from './ChartView'
+import ReportCard, { type Report } from './ReportCard'
 import AiSwitch from './AiSwitch'
 import { friendlyAiError } from '../lib/aiError'
 import ConnectionsStrip from './ConnectionsStrip'
@@ -29,7 +30,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 type Cadence = 'manual' | 'daily' | 'weekly' | 'monthly'
 type RunItem = { _id: string; channel?: 'email' | 'whatsapp'; phone?: string; reason?: string; name: string; email: string; unit: string; endDate: string; subject: string; body: string; status: 'pending' | 'sent' | 'skipped' | 'failed'; error?: string }
 type Run = { _id: string; createdAt: string; status: 'ok' | 'waiting' | 'failed'; summary: string; answer: string; sources: { label: string; url: string }[]; items: RunItem[]; error: string
-  trigger?: 'schedule' | 'manual' | 'chat'; question?: string; emailedTo?: string[]; emailError?: string; files?: { label: string; path: string; format: string }[]; charts?: ChartSpec[]; setup?: string; pending?: { id: string; kind: string; summary: string[]; expiresAt: string } | null }
+  trigger?: 'schedule' | 'manual' | 'chat'; question?: string; emailedTo?: string[]; emailError?: string; files?: { label: string; path: string; format: string }[]; charts?: ChartSpec[]; reports?: Report[]; setup?: string; pending?: { id: string; kind: string; summary: string[]; expiresAt: string } | null }
 export type BotRow = {
   _id: string; name: string; kind: 'ai_report' | 'contract_emails' | 'quiet_leads'; icon: string
   instruction: string; web: boolean; days: number; subject: string; message: string
@@ -269,6 +270,7 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview, onDel
 
       {bot.kind === 'ai_report' && r?.answer && (
         <div style={{ marginTop: 12 }}>
+          {(r.reports?.length ?? 0) > 0 && <div style={{ marginBottom: 10 }}><ReportCard report={r.reports![0]} /></div>}
           {(r.charts?.length ?? 0) > 0 && <ChartView chart={r.charts![0]} />}
           <div style={{ fontSize: 13, lineHeight: 1.55, color: INK, whiteSpace: 'pre-wrap', maxHeight: open ? 'none' : 168, overflow: 'hidden' }}>{withBold(r.answer)}</div>
           {r.answer.length > 360 && (
@@ -733,6 +735,9 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
                       </div>
                     )}
                   </div>
+                  {(r.reports ?? []).slice(0, 1).map((rep, i) => (
+                    <div key={i} style={{ marginTop: 10 }}><ReportCard report={rep} when={`${r.trigger === 'schedule' ? 'Scheduled run' : r.trigger === 'manual' ? 'Run now' : 'Answer'} · ${dayStamp(r.createdAt)}`} /></div>
+                  ))}
                   {(r.charts ?? []).map((c, i) => <ChartView key={i} chart={c} />)}
                   {(r.files?.length ?? 0) > 0 && (
                     <div className="flex flex-wrap gap-2" style={{ marginTop: 8 }}>

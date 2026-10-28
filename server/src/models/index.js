@@ -2939,6 +2939,8 @@ const botRunSchema = new Schema({
   files: { type: [{ _id: false, label: String, path: String, format: String }], default: [] },
   // Charts the answer drew from its own figures: { type, title, labels, series }.
   charts: { type: [Schema.Types.Mixed], default: [] },
+  // The answer laid out as a report card (make_report), figures checked.
+  reports: { type: [Schema.Types.Mixed], default: [] },
   // Who is told about this result, and who has seen it (the bell's unread).
   recipients: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [], index: true },
   seenBy: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] },

@@ -1,3 +1,4 @@
+import { reportNumbers, reportTexts } from './makeTools.js';
 import { AssistantConfig } from '../../models/index.js';
 import { chatWithTools, openaiConfigured, openaiModel, resolveModel } from '../openai.js';
 import { siteScope } from '../../utils/siteScope.js';
@@ -94,11 +95,12 @@ export function figuresGrounded(answer, toolResults) {
  * Returns the charts that pass, the made files that do not, and how many fell.
  */
 export function checkMade(results, question = '') {
-   const madeBy = ['make_chart', 'make_file'];
+   const madeBy = ['make_chart', 'make_file', 'make_report'];
    const evidence = [...results.filter((r) => !madeBy.includes(r.tool)), question];
    // Spaced, not comma-joined: "61,74" would read as one number with a thousands comma.
    const numbersIn = (rows) => rows.flat(2).filter((v) => typeof v === 'number').join(' ');
    const charts = [];
+   const reports = [];
    const droppedFiles = [];
    for (const r of results) {
       if (r.tool === 'make_chart' && r.result?.chart) {
@@ -106,8 +108,22 @@ export function checkMade(results, question = '') {
          else droppedFiles.push(null);
       }
       if (r.tool === 'make_file' && r.result?.file && !figuresGrounded(numbersIn(r.result.table.rows), evidence).ok) droppedFiles.push(r.result.generatedFileId);
+      // A report card: every stated figure must match; a sentence with a
+      // figure that does not is left off rather than shown.
+      if (r.tool === 'make_report' && r.result?.report) {
+         const card = { ...r.result.report };
+         if (!figuresGrounded(numbersIn(reportNumbers(card)), evidence).ok) { droppedFiles.push(null); continue; }
+         for (const [k, text] of Object.entries(reportTexts(card))) {
+            if (!text || figuresGrounded(text, evidence).ok) continue;
+            if (k === 'headline') card.headline = card.eyebrow || 'Report';
+            else if (k.startsWith('action')) card.actions = card.actions.map((x, i) => (`action${i}` === k ? { ...x, detail: '' } : x));
+            else if (k.startsWith('sub')) card.kpis = card.kpis.map((x, i) => (`sub${i}` === k ? { ...x, sub: '' } : x));
+            else card[k] = '';
+         }
+         reports.push(card);
+      }
    }
-   return { charts, droppedFiles: droppedFiles.filter(Boolean), dropped: droppedFiles.length };
+   return { charts, reports, droppedFiles: droppedFiles.filter(Boolean), dropped: droppedFiles.length };
 }
 
 /** What the person is looking at in the staff app, so "send her the quote" or
@@ -308,7 +324,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
    /* Charts and made files carry the model's numbers: each is checked against
       what the other tools returned (and the question itself), like the answer.
       One that does not match is dropped, and the answer says so. */
-   const { charts, droppedFiles, dropped } = checkMade(results, text);
+   const { charts, reports, droppedFiles, dropped } = checkMade(results, text);
    for (const r of results) {
       if (r.tool === 'make_file' && droppedFiles.includes(r.result?.generatedFileId)) {
          r.result.file = null;
@@ -352,5 +368,5 @@ export async function askAssistant({ question, history = [], siteId = null, user
       (SMS through Twilio): the page shows its own form for it. */
    const setup = results.find((r) => r.result?.setup)?.result.setup || null;
 
-   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card, files, charts: charts.slice(0, 4), form, setup, sources: sources.slice(0, 6), options: pending || form ? [] : options };
+   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose, card, files, charts: charts.slice(0, 4), reports: reports.slice(0, 1), form, setup, sources: sources.slice(0, 6), options: pending || form ? [] : options };
 }

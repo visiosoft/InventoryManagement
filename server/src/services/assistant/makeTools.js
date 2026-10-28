@@ -88,6 +88,73 @@ registerTool({
    },
 });
 
+/* ── a report card ──────────────────────────────────────────────────────── */
+
+const FORMATS = ['number', 'money_aed', 'money_usd', 'percent'];
+const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+
+/**
+ * A report laid out as a card: headline, key figures, a breakdown, an insight,
+ * numbered actions. Only figures go in as numbers — shares and bar lengths are
+ * worked out by the app, never typed by the model. Pure.
+ */
+export function cleanReport(a = {}) {
+   const kpis = (Array.isArray(a.kpis) ? a.kpis : []).slice(0, 4)
+      .map((k) => ({ label: str(k?.label, 40), value: num(k?.value), format: FORMATS.includes(k?.format) ? k.format : 'number', sub: str(k?.sub, 60) }))
+      .filter((k) => k.label && k.value != null);
+   const b = a.breakdown || {};
+   const columns = (Array.isArray(b.columns) ? b.columns : []).slice(0, 5).map((c) => str(c, 30)).filter(Boolean);
+   const rows = (Array.isArray(b.rows) ? b.rows : []).slice(0, 10)
+      .map((r) => ({ label: str(r?.label, 50), tag: str(r?.tag, 24), values: (Array.isArray(r?.values) ? r.values : []).slice(0, columns.length).map(num) }))
+      .filter((r) => r.label && r.values.length === columns.length && r.values.every((v) => v != null));
+   const shareOf = Number.isInteger(b.shareOf) && b.shareOf >= 0 && b.shareOf < columns.length ? b.shareOf : (columns.length ? columns.length - 1 : null);
+   const actions = (Array.isArray(a.actions) ? a.actions : []).slice(0, 5)
+      .map((x) => ({ title: str(x?.title, 90), detail: str(x?.detail, 140), value: num(x?.value), of: num(x?.of), label: str(x?.label, 24) }))
+      .filter((x) => x.title);
+   const card = {
+      eyebrow: str(a.eyebrow, 60), headline: str(a.headline, 110), badge: str(a.badge, 20),
+      kpis, breakdown: rows.length ? { title: str(b.title, 60), columns, rows, shareOf } : null,
+      callout: str(a.callout, 220), actions, footnote: str(a.footnote, 300),
+   };
+   return card.headline && (kpis.length || card.breakdown || actions.length) ? card : null;
+}
+
+/** Every figure the card states as a number, for checking against the tools. Pure. */
+export const reportNumbers = (c) => [
+   ...c.kpis.map((k) => k.value),
+   ...(c.breakdown?.rows || []).flatMap((r) => r.values),
+   ...c.actions.flatMap((x) => [x.value, x.of].filter((v) => v != null)),
+];
+
+/** The card's sentences, whose figures are checked too. Pure. */
+export const reportTexts = (c) => ({ headline: c.headline, callout: c.callout, footnote: c.footnote, ...Object.fromEntries(c.actions.map((x, i) => [`action${i}`, x.detail])), ...Object.fromEntries(c.kpis.map((k, i) => [`sub${i}`, k.sub])) });
+
+registerTool({
+   name: 'make_report',
+   description: 'Lay a report out as a card, for scheduled bot reports and any answer that is a summary of figures: a short eyebrow (e.g. "AI API USAGE · LAST 7 DAYS"), a one-line headline stating the main finding, up to 4 key figures, an optional breakdown table (columns of numbers per row; the app draws the share bar from the column given in shareOf), a one-line insight, and up to 5 numbered actions — each can carry a value and the total it is out of, which the app draws as a bar. Every number must be copied exactly from tool results; the card is checked and anything that does not match is dropped. Put shares and percentages in only if a tool returned them; otherwise give the two numbers and let the app work them out. Then answer with one or two sentences.',
+   parameters: {
+      type: 'object',
+      properties: {
+         eyebrow: { type: 'string' }, headline: { type: 'string' }, badge: { type: 'string', description: 'e.g. Estimate, Live, Needs action' },
+         kpis: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, value: { type: 'number' }, format: { type: 'string', enum: FORMATS }, sub: { type: 'string' } }, required: ['label', 'value'] } },
+         breakdown: { type: 'object', properties: {
+            title: { type: 'string' }, columns: { type: 'array', items: { type: 'string' }, description: 'Number columns, e.g. ["Calls", "Input", "Output"]' },
+            rows: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, tag: { type: 'string' }, values: { type: 'array', items: { type: 'number' } } }, required: ['label', 'values'] } },
+            shareOf: { type: 'number', description: 'Index of the column the share bar is worked out from' },
+         } },
+         callout: { type: 'string', description: 'The one thing to take away, one sentence' },
+         actions: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, detail: { type: 'string' }, value: { type: 'number' }, of: { type: 'number' }, label: { type: 'string', description: 'e.g. "of input", "of calls"' } }, required: ['title'] } },
+         footnote: { type: 'string' },
+      },
+      required: ['headline'],
+   },
+   async run(args) {
+      const report = cleanReport(args);
+      if (!report) return { error: 'A report card needs a headline and some figures, a breakdown or actions' };
+      return { report, note: 'The card is shown with the answer.' };
+   },
+});
+
 /* ── a bot from a sentence ────────────────────────────────────────────────── */
 
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];

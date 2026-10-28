@@ -314,7 +314,7 @@ async function runBotInner(bot, { trigger = 'manual', now = new Date(), deps, re
       if (bot.kind === 'ai_report') {
          const owner = await d.owner(bot.createdBy);
          const out = await d.ask({
-            question: `${bot.instruction}\n\n(This is a scheduled report: answer in full now, with no questions back. Short lines, the figures first.${bot.attach ? ` Also put the main table in a ${bot.attach === 'pdf' ? 'PDF' : 'Excel'} file — export_file when it is one of its lists, otherwise make_file.` : ''})`,
+            question: `${bot.instruction}\n\n(This is a scheduled report: answer in full now, with no questions back. Short lines, the figures first. Lay it out with make_report too: a headline stating the main finding, up to 4 key figures, a breakdown table when there is one, the one thing to take away, and numbered actions.${bot.attach ? ` Also put the main table in a ${bot.attach === 'pdf' ? 'PDF' : 'Excel'} file — export_file when it is one of its lists, otherwise make_file.` : ''})`,
             user: owner ? { id: String(owner._id), name: owner.name, role: owner.role } : { role: 'admin' },
             web: Boolean(bot.web), now, rounds: 14,
          });
@@ -322,6 +322,7 @@ async function runBotInner(bot, { trigger = 'manual', now = new Date(), deps, re
          run.sources = (out?.sources || []).slice(0, 8);
          run.files = (out?.files || []).slice(0, 4);
          run.charts = (out?.charts || []).slice(0, 4);
+         run.reports = (out?.reports || []).slice(0, 1);
          run.summary = run.answer.split('\n').find((l) => l.trim())?.slice(0, 160) || 'No answer';
          if (out?.grounded === false) run.status = 'failed';
          // To the team, not customers, so no Confirm: it goes out with the run.
@@ -548,7 +549,7 @@ async function askBotInner(bot, question, { user, deps } = {}) {
       web: Boolean(bot.web), rounds: 12,
    });
    const answer = String(out?.answer || '').trim();
-   const saved = await d.saveRun({ bot: bot._id, trigger: 'chat', question: q, charts: (out?.charts || []).slice(0, 4), recipients: recipientsFor(bot, 'chat', user?.id || user?._id), status: out?.grounded === false ? 'failed' : 'ok', summary: answer.split('\n')[0].slice(0, 160), answer, sources: (out?.sources || []).slice(0, 8), items: [], pending: out?.pending || null, setup: out?.setup || '', files: (out?.files || []).slice(0, 4) });
+   const saved = await d.saveRun({ bot: bot._id, trigger: 'chat', question: q, charts: (out?.charts || []).slice(0, 4), reports: (out?.reports || []).slice(0, 1), recipients: recipientsFor(bot, 'chat', user?.id || user?._id), status: out?.grounded === false ? 'failed' : 'ok', summary: answer.split('\n')[0].slice(0, 160), answer, sources: (out?.sources || []).slice(0, 8), items: [], pending: out?.pending || null, setup: out?.setup || '', files: (out?.files || []).slice(0, 4) });
    if (d.notify) await d.notify(bot, saved).catch(() => null);
    return saved;
 }
