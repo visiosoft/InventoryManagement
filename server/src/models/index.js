@@ -2941,6 +2941,8 @@ const botRunSchema = new Schema({
   charts: { type: [Schema.Types.Mixed], default: [] },
   // The answer laid out as a report card (make_report), figures checked.
   reports: { type: [Schema.Types.Mixed], default: [] },
+  // Replies it suggested to its own question ("Prepare WhatsApp | Not now"), shown as buttons.
+  options: { type: [String], default: [] },
   // Who is told about this result, and who has seen it (the bell's unread).
   recipients: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [], index: true },
   seenBy: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] },

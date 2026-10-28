@@ -33,3 +33,13 @@ test('a sentence with an unchecked figure is left off, the card stays', () => {
    assert.equal(out.reports[0].callout, '');
    assert.equal(out.reports[0].headline, 'Anthropic drives most token use');
 });
+
+test('report people: linked only when the phone came from a tool', () => {
+   const leads = { tool: 'leads_list', result: { leads: [{ name: 'Marlene', phone: '+971 50 123 4567' }] } };
+   const c = cleanReport({ headline: 'Follow-ups due', actions: [{ title: 'Reply to waiting chats', people: [
+      { name: 'Marlene', phone: '971501234567' }, { name: 'Made up', phone: '971559999999' }, { name: 'No phone', phone: '' },
+   ] }] });
+   assert.equal(c.actions[0].people.length, 2, 'a person with no phone is dropped');
+   const out = checkMade([leads, { tool: 'make_report', result: { report: c } }]);
+   assert.deepEqual(out.reports[0].actions[0].people, [{ name: 'Marlene', phone: '971501234567' }]);
+});

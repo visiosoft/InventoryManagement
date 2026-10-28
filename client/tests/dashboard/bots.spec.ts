@@ -211,3 +211,25 @@ test('a question shows at once with a working sign, at the bottom of the chat', 
     delete BOTS[0].runningSince
   }
 })
+
+test('a report names people as chat links and offers to act; a reply button asks the bot', async ({ page }) => {
+  const calls = await setup(page)
+  const before = BOTS[1].lastRun
+  CHATS.length = 0
+  BOTS[1].lastRun = {
+    _id: 'r9', createdAt: '2026-10-28T05:00:00Z', trigger: 'schedule', status: 'ok', summary: '', items: [], error: '', sources: [],
+    answer: '3 chats are waiting. Shall I prepare WhatsApp follow-ups for them?',
+    options: ['Prepare WhatsApp', 'Not now'],
+    reports: [{ eyebrow: 'MORNING SUMMARY', headline: '3 chats waiting', kpis: [{ label: 'Waiting', value: 3 }], actions: [
+      { title: 'Review unanswered chats', people: [{ name: 'Marlene', phone: '971501234567' }, { name: 'NaZ', phone: '971551112223' }] },
+    ] }],
+  }
+  try {
+    await page.goto('/bots?bot=b2')
+    await page.getByRole('button', { name: 'Open Competitor watch' }).click()
+    await expect(page.getByRole('link', { name: 'Marlene' })).toHaveAttribute('href', '/whatsapp?phone=971501234567')
+    await page.getByLabel('Report').screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/report-people.png` : undefined })
+    await page.getByRole('button', { name: 'Prepare WhatsApp' }).click()
+    await expect.poll(() => calls.find((c) => c.path === '/api/bots/b2/ask')?.body).toEqual({ question: 'Prepare WhatsApp' })
+  } finally { BOTS[1].lastRun = before; CHATS.length = 0 }
+})

@@ -120,6 +120,9 @@ export function checkMade(results, question = '') {
             else if (k.startsWith('sub')) card.kpis = card.kpis.map((x, i) => (`sub${i}` === k ? { ...x, sub: '' } : x));
             else card[k] = '';
          }
+         // A person is linked only if their phone came back from a tool.
+         const phones = JSON.stringify(evidence).replace(/[\s+()-]/g, '');
+         card.actions = card.actions.map((x) => ({ ...x, people: (x.people || []).filter((p) => phones.includes(p.phone.slice(-9))) }));
          reports.push(card);
       }
    }

@@ -335,7 +335,7 @@ async function runBotInner(bot, { trigger = 'manual', now = new Date(), deps, re
       if (bot.kind === 'ai_report') {
          const owner = await d.owner(bot.createdBy);
          const out = await d.ask({
-            question: `${bot.instruction}\n\n(This is a scheduled report: answer in full now, with no questions back. Short lines, the figures first. Lay it out with make_report too: a headline stating the main finding, up to 4 key figures, a breakdown table when there is one, the one thing to take away, and numbered actions.${bot.attach ? ` Also put the main table in a ${bot.attach === 'pdf' ? 'PDF' : 'Excel'} file — export_file when it is one of its lists, otherwise make_file.` : ''})`,
+            question: `${bot.instruction}\n\n(This is a scheduled report: answer in full now. Short lines, the figures first. Lay it out with make_report too: a headline stating the main finding, up to 4 key figures, a breakdown table when there is one, the one thing to take away, and numbered actions; an action about particular leads or customers lists them in its people, with the phone numbers the tools gave. When an action is something you can do — a WhatsApp follow-up, a reminder, an email — end with one question offering to prepare it (e.g. "Shall I prepare WhatsApp follow-ups for these 5?") and a last line "Options: Prepare WhatsApp | Prepare email | Not now", fitted to what you offer. Nothing is sent from here: a yes prepares it for Confirm.${bot.attach ? ` Also put the main table in a ${bot.attach === 'pdf' ? 'PDF' : 'Excel'} file — export_file when it is one of its lists, otherwise make_file.` : ''})`,
             user: owner ? { id: String(owner._id), name: owner.name, role: owner.role } : { role: 'admin' },
             web: Boolean(bot.web), now, rounds: 14,
          });
@@ -344,6 +344,7 @@ async function runBotInner(bot, { trigger = 'manual', now = new Date(), deps, re
          run.files = (out?.files || []).slice(0, 4);
          run.charts = (out?.charts || []).slice(0, 4);
          run.reports = (out?.reports || []).slice(0, 1);
+         run.options = (out?.options || []).slice(0, 4);
          run.summary = run.answer.split('\n').find((l) => l.trim())?.slice(0, 160) || 'No answer';
          if (out?.grounded === false) run.status = 'failed';
          // To the team, not customers, so no Confirm: it goes out with the run.
@@ -540,7 +541,10 @@ export function chatHistory(bot, runs = []) {
          out.push({ role: 'user', content: bot.kind === 'ai_report' ? bot.instruction : `Run the ${bot.name} bot.` });
       }
       const said = r.error ? `(That run failed: ${r.error})` : r.answer || [r.summary, ...(r.items || []).slice(0, 15).map((i) => `- ${i.name}${i.unit ? ` · ${i.unit}` : ''}${i.reason ? ` · ${i.reason}` : ''} · ${i.status}`)].filter(Boolean).join('\n');
-      if (said) out.push({ role: 'assistant', content: said.slice(0, 8000) });
+      // The people a report card named, with their phones: "yes, send them" means these.
+      const named = (r.reports || []).flatMap((c) => (c.actions || []).filter((a) => a.people?.length).map((a) => `${a.title}: ${a.people.map((p) => `${p.name} (${p.phone})`).join(', ')}`));
+      const full = [said, named.length ? `People in the report —\n${named.join('\n')}` : ''].filter(Boolean).join('\n\n');
+      if (full) out.push({ role: 'assistant', content: full.slice(0, 8000) });
       // A prepared action is part of what was said: "send it" may mean it.
       if (r.pending?.summary?.length) out.push({ role: 'assistant', content: `(Prepared for Confirm: ${r.pending.summary.join(' · ').slice(0, 600)})` });
    }
@@ -573,7 +577,7 @@ async function askBotInner(bot, question, { user, deps } = {}) {
       web: Boolean(bot.web), rounds: 12,
    });
    const answer = String(out?.answer || '').trim();
-   const saved = await d.saveRun({ bot: bot._id, trigger: 'chat', question: q, charts: (out?.charts || []).slice(0, 4), reports: (out?.reports || []).slice(0, 1), recipients: recipientsFor(bot, 'chat', user?.id || user?._id), status: out?.grounded === false ? 'failed' : 'ok', summary: answer.split('\n')[0].slice(0, 160), answer, sources: (out?.sources || []).slice(0, 8), items: [], pending: out?.pending || null, setup: out?.setup || '', files: (out?.files || []).slice(0, 4) });
+   const saved = await d.saveRun({ bot: bot._id, trigger: 'chat', question: q, charts: (out?.charts || []).slice(0, 4), reports: (out?.reports || []).slice(0, 1), options: (out?.options || []).slice(0, 4), recipients: recipientsFor(bot, 'chat', user?.id || user?._id), status: out?.grounded === false ? 'failed' : 'ok', summary: answer.split('\n')[0].slice(0, 160), answer, sources: (out?.sources || []).slice(0, 8), items: [], pending: out?.pending || null, setup: out?.setup || '', files: (out?.files || []).slice(0, 4) });
    if (d.notify) await d.notify(bot, saved).catch(() => null);
    return saved;
 }

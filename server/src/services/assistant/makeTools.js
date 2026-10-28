@@ -98,6 +98,11 @@ const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; 
  * numbered actions. Only figures go in as numbers — shares and bar lengths are
  * worked out by the app, never typed by the model. Pure.
  */
+/** The people an action is about: a name and a phone, so the card can open their chat. Pure. */
+export const cleanPeople = (list) => (Array.isArray(list) ? list : []).slice(0, 8)
+   .map((p) => ({ name: str(p?.name, 40), phone: String(p?.phone ?? '').replace(/\D/g, '').slice(-15) }))
+   .filter((p) => p.name && p.phone.length >= 9);
+
 export function cleanReport(a = {}) {
    const kpis = (Array.isArray(a.kpis) ? a.kpis : []).slice(0, 4)
       .map((k) => ({ label: str(k?.label, 40), value: num(k?.value), format: FORMATS.includes(k?.format) ? k.format : 'number', sub: str(k?.sub, 60) }))
@@ -109,7 +114,7 @@ export function cleanReport(a = {}) {
       .filter((r) => r.label && r.values.length === columns.length && r.values.every((v) => v != null));
    const shareOf = Number.isInteger(b.shareOf) && b.shareOf >= 0 && b.shareOf < columns.length ? b.shareOf : (columns.length ? columns.length - 1 : null);
    const actions = (Array.isArray(a.actions) ? a.actions : []).slice(0, 5)
-      .map((x) => ({ title: str(x?.title, 90), detail: str(x?.detail, 140), value: num(x?.value), of: num(x?.of), label: str(x?.label, 24) }))
+      .map((x) => ({ title: str(x?.title, 90), detail: str(x?.detail, 140), value: num(x?.value), of: num(x?.of), label: str(x?.label, 24), people: cleanPeople(x?.people) }))
       .filter((x) => x.title);
    const card = {
       eyebrow: str(a.eyebrow, 60), headline: str(a.headline, 110), badge: str(a.badge, 20),
@@ -131,7 +136,7 @@ export const reportTexts = (c) => ({ headline: c.headline, callout: c.callout, f
 
 registerTool({
    name: 'make_report',
-   description: 'Lay a report out as a card, for scheduled bot reports and any answer that is a summary of figures: a short eyebrow (e.g. "AI API USAGE · LAST 7 DAYS"), a one-line headline stating the main finding, up to 4 key figures, an optional breakdown table (columns of numbers per row; the app draws the share bar from the column given in shareOf), a one-line insight, and up to 5 numbered actions — each can carry a value and the total it is out of, which the app draws as a bar. Every number must be copied exactly from tool results; the card is checked and anything that does not match is dropped. Put shares and percentages in only if a tool returned them; otherwise give the two numbers and let the app work them out. Then answer with one or two sentences.',
+   description: 'Lay a report out as a card, for scheduled bot reports and any answer that is a summary of figures: a short eyebrow (e.g. "AI API USAGE · LAST 7 DAYS"), a one-line headline stating the main finding, up to 4 key figures, an optional breakdown table (columns of numbers per row; the app draws the share bar from the column given in shareOf), a one-line insight, and up to 5 numbered actions — each can carry a value and the total it is out of, which the app draws as a bar, and the people it is about (name and phone from the tools), which the app links to their chats. Every number must be copied exactly from tool results; the card is checked and anything that does not match is dropped. Put shares and percentages in only if a tool returned them; otherwise give the two numbers and let the app work them out. Then answer with one or two sentences.',
    parameters: {
       type: 'object',
       properties: {
@@ -143,7 +148,8 @@ registerTool({
             shareOf: { type: 'number', description: 'Index of the column the share bar is worked out from' },
          } },
          callout: { type: 'string', description: 'The one thing to take away, one sentence' },
-         actions: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, detail: { type: 'string' }, value: { type: 'number' }, of: { type: 'number' }, label: { type: 'string', description: 'e.g. "of input", "of calls"' } }, required: ['title'] } },
+         actions: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, detail: { type: 'string' }, value: { type: 'number' }, of: { type: 'number' }, label: { type: 'string', description: 'e.g. "of input", "of calls"' },
+            people: { type: 'array', description: 'The leads or customers this action is about, up to 8, each with the phone number exactly as a tool returned it — the app makes each one a link to their WhatsApp chat', items: { type: 'object', properties: { name: { type: 'string' }, phone: { type: 'string' } }, required: ['name', 'phone'] } } }, required: ['title'] } },
          footnote: { type: 'string' },
       },
       required: ['headline'],

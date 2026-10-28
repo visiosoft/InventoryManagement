@@ -30,7 +30,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 type Cadence = 'manual' | 'daily' | 'weekly' | 'monthly'
 type RunItem = { _id: string; channel?: 'email' | 'whatsapp'; phone?: string; reason?: string; name: string; email: string; unit: string; endDate: string; subject: string; body: string; status: 'pending' | 'sent' | 'skipped' | 'failed'; error?: string }
 type Run = { _id: string; createdAt: string; status: 'ok' | 'waiting' | 'failed'; summary: string; answer: string; sources: { label: string; url: string }[]; items: RunItem[]; error: string
-  trigger?: 'schedule' | 'manual' | 'chat'; question?: string; emailedTo?: string[]; emailError?: string; files?: { label: string; path: string; format: string }[]; charts?: ChartSpec[]; reports?: Report[]; setup?: string; pending?: { id: string; kind: string; summary: string[]; expiresAt: string } | null }
+  trigger?: 'schedule' | 'manual' | 'chat'; question?: string; emailedTo?: string[]; emailError?: string; files?: { label: string; path: string; format: string }[]; charts?: ChartSpec[]; reports?: Report[]; options?: string[]; setup?: string; pending?: { id: string; kind: string; summary: string[]; expiresAt: string } | null }
 export type BotRow = {
   _id: string; name: string; kind: 'ai_report' | 'contract_emails' | 'quiet_leads'; icon: string
   instruction: string; web: boolean; days: number; subject: string; message: string
@@ -647,9 +647,9 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [selectedKey, lastRunId, waitingOn, busy])
 
-  async function send(e: React.FormEvent) {
-    e.preventDefault()
-    const q = msg.trim()
+  async function send(e: React.FormEvent | null, text?: string) {
+    e?.preventDefault()
+    const q = (text ?? msg).trim()
     if (!q || !selected || sending) return
     setSending(true); setChatErr('')
     setAsked({ botId: selected._id, q })
@@ -753,6 +753,15 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
                   {r.emailError && <div style={{ fontSize: 11.5, color: '#B91C1C', marginTop: 4 }}>Could not email it: {r.emailError}</div>}
                   {r.setup === 'twilio' && <div style={{ marginTop: 8, border: `1px solid ${LINE}`, borderRadius: 12, padding: '12px 14px' }}><TwilioConnectForm /></div>}
                   {r.pending && <ConfirmCard pending={r.pending} onDone={() => qc.invalidateQueries({ queryKey: ['bot-runs'] })} />}
+                  {/* Its offer, as replies: only on the latest message, so an old one is not answered twice. */}
+                  {r === runs[runs.length - 1] && !r.pending && (r.options?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap gap-2" style={{ marginTop: 8 }} aria-label="Suggested replies">
+                      {r.options!.map((o) => (
+                        <button key={o} type="button" disabled={busy || sending} onClick={() => send(null, o)}
+                          style={{ ...btn(/^(prepare|send|yes)/i.test(o)), borderRadius: 999 }}>{o}</button>
+                      ))}
+                    </div>
+                  )}
                   {pending.length > 0 && (
                     <button type="button" style={{ ...btn(true), marginTop: 8 }} onClick={() => onReview(selected, r)}>
                       {selected.kind === 'quiet_leads' ? <MessageCircle size={13} /> : <Mail size={13} />} Review &amp; send {pending.length}

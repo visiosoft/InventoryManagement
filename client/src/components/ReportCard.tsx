@@ -1,4 +1,5 @@
-import { AlertCircle, Info } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { AlertCircle, Info, MessageCircle } from 'lucide-react'
 
 /**
  * A bot's answer laid out as a report: headline, key figures, a breakdown
@@ -12,7 +13,7 @@ export type Report = {
   kpis: { label: string; value: number; format?: 'number' | 'money_aed' | 'money_usd' | 'percent'; sub?: string }[]
   breakdown?: { title?: string; columns: string[]; rows: { label: string; tag?: string; values: number[] }[]; shareOf?: number | null } | null
   callout?: string
-  actions: { title: string; detail?: string; value?: number | null; of?: number | null; label?: string }[]
+  actions: { title: string; detail?: string; value?: number | null; of?: number | null; label?: string; people?: { name: string; phone: string }[] }[]
   footnote?: string
 }
 
@@ -120,7 +121,17 @@ export default function ReportCard({ report, when }: { report: Report; when?: st
                 <span style={{ width: 28, height: 28, borderRadius: 999, background: PURPLE, color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 13, flex: '0 0 auto' }}>{i + 1}</span>
                 <div className="min-w-0 flex-1">
                   <div style={{ fontWeight: 700, fontSize: 14.5 }}>{a.title}</div>
-                  {a.detail && <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>{a.detail}</div>}
+                  {a.detail && !a.people?.length && <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>{a.detail}</div>}
+                  {(a.people?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap gap-1.5" style={{ marginTop: 6 }}>
+                      {a.people!.map((p) => (
+                        <Link key={p.phone} to={`/whatsapp?phone=${p.phone}`} title={`Open ${p.name}'s WhatsApp chat`} className="inline-flex items-center gap-1"
+                          style={{ fontSize: 12, fontWeight: 600, color: PURPLE, background: '#F6F4FB', border: `1px solid ${LINE}`, borderRadius: 999, padding: '3px 9px', textDecoration: 'none' }}>
+                          <MessageCircle size={11} /> {p.name}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {hasBar && (
                   <div style={{ width: 150, flex: '0 0 auto', textAlign: 'right' }}>
