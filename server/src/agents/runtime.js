@@ -9,6 +9,7 @@
  * `touch_proposed` action naming the approved template it would have used.
  */
 
+import { withAiFeature } from '../services/aiUsage.js';
 import { redactDeep } from '../utils/pii.js';
 import { usableFirstName, stripUnusableNames } from '../services/leadNames.js';
 import { WhatsAppMessage, Lead, User } from '../models/index.js';
@@ -210,7 +211,11 @@ function parseDecision(content) {
  * @param trigger  { kind: 'inbound' | 'touch' | 'refresh' | 'simulate', text }
  * @returns the decision, already persisted and logged unless persist=false
  */
-export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(), persist = true, writer = '' }) {
+export async function runAgent(args) {
+    return withAiFeature(`agent:${args?.agent?.name || 'agent'}`, () => runAgentInner(args));
+}
+
+async function runAgentInner({ agent, lead, leadFile, trigger, now = new Date(), persist = true, writer = '' }) {
     if (!openaiConfigured()) throw new Error('No AI provider is configured');
     const cadence = cadenceFor(agent);
     const before = snapshotOf(leadFile);

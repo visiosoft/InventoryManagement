@@ -1,3 +1,4 @@
+import { withAiFeature } from '../services/aiUsage.js';
 import { Router } from 'express';
 import multer from 'multer';
 import { requireAdmin } from '../middleware/auth.js';
@@ -32,7 +33,7 @@ router.post('/ask', async (req, res) => {
    try {
       if (!(await allowed(req))) return res.status(403).json({ error: 'The assistant is not enabled for your role' });
       const { question, history, site, context, web } = req.body || {};
-      const out = await askAssistant({
+      const out = await withAiFeature('ask', () => askAssistant({
          question, history: Array.isArray(history) ? history : [],
          siteId: site || req.query.site || null,
          user: req.user,
@@ -40,7 +41,7 @@ router.post('/ask', async (req, res) => {
          // The staff app says which screen and lead it is on (see askAssistant).
          context: context && typeof context === 'object' ? context : null,
          web: web === true,
-      });
+      }));
       res.json(out);
       // The opening question of a conversation is kept for the person's
       // "Recent searches" card. Never holds up or fails the answer.

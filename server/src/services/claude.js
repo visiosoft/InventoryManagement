@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { scrubText } from '../utils/pii.js';
+import { recordAiUsage } from './aiUsage.js';
 
 /**
  * Claude, as a drop-in for the OpenAI calls in services/openai.js.
@@ -183,6 +184,8 @@ async function create({ model, system, messages, tools, maxTokens, timeout, effo
         if (e instanceof Anthropic.APIError) throw new Error(`${chosen}: ${e.message}`);
         throw e;
     }
+    const u = usageOf(res.usage);
+    if (u) recordAiUsage({ provider: 'anthropic', model: res.model || chosen, inputTokens: u.prompt_tokens, outputTokens: u.completion_tokens, kind: tools?.length ? 'tools' : 'chat' });
     if (res.stop_reason === 'refusal') {
         throw new Error(`${chosen} declined to answer${res.stop_details?.category ? ` (${res.stop_details.category})` : ''}`);
     }
@@ -286,6 +289,8 @@ export async function claudeWebSearch(query, { maxUses = 10, timeout = 180000 } 
             if (e instanceof Anthropic.APIError) return { error: `Web search failed: ${e.message}` };
             throw e;
         }
+        const u = usageOf(res.usage);
+        if (u) recordAiUsage({ provider: 'anthropic', model: WEB_MODEL, inputTokens: u.prompt_tokens, outputTokens: u.completion_tokens, kind: 'web_search', webSearches: res.usage?.server_tool_use?.web_search_requests || 0 });
         content.push(...res.content);
         if (res.stop_reason !== 'pause_turn') break;
         messages.push({ role: 'assistant', content: res.content });

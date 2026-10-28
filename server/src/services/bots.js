@@ -15,6 +15,7 @@
  * send twice.
  */
 
+import { withAiFeature } from './aiUsage.js';
 import { Bot, BotRun, Contract, Lead, User, WhatsAppMessage } from '../models/index.js';
 
 const DUBAI_OFFSET_H = 4;
@@ -302,7 +303,11 @@ export function emailSummary(items, kind = 'contract_emails') {
 }
 
 /** One run of a bot, now. Saves and returns the run. */
-export async function runBot(bot, { trigger = 'manual', now = new Date(), deps, requestedBy = null } = {}) {
+export async function runBot(bot, opts = {}) {
+   return withAiFeature(`bot:${bot?.name || 'bot'}`, () => runBotInner(bot, opts));
+}
+
+async function runBotInner(bot, { trigger = 'manual', now = new Date(), deps, requestedBy = null } = {}) {
    const d = { ...(await defaultDeps()), ...(deps || {}) };
    const run = { bot: bot._id, trigger, status: 'ok', summary: '', answer: '', sources: [], items: [], error: '', recipients: recipientsFor(bot, trigger, requestedBy) };
    try {
@@ -518,7 +523,11 @@ export function chatHistory(bot, runs = []) {
 }
 
 /** A message to a bot: a schedule change is done at once; anything else is answered with the bot's context. */
-export async function askBot(bot, question, { user, deps } = {}) {
+export async function askBot(bot, question, opts = {}) {
+   return withAiFeature(`bot:${bot?.name || 'bot'}`, () => askBotInner(bot, question, opts));
+}
+
+async function askBotInner(bot, question, { user, deps } = {}) {
    const d = { ...(await defaultDeps()), ...(deps || {}) };
    const q = String(question || '').trim().slice(0, 2000);
    const parsed = parseScheduleCommand(q, bot.schedule);

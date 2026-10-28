@@ -56,3 +56,14 @@ registerTool({
       return { count: (data.files || []).length, files: (data.files || []).map((f) => ({ name: f.name, type: f.mimeType, changed: f.modifiedTime, link: f.webViewLink })) };
    },
 });
+
+registerTool({
+   name: 'ai_usage',
+   description: 'What the AI itself costs: calls, input and output tokens and estimated US-dollar cost over the last N days (default 7), by provider (OpenAI, Claude), by model, by feature (each bot, each agent, the Ask box, web search) and by day. Every AI call is logged from when logging started; agent replies are also counted from their own log before that. Admins only, read-only. Use for "AI usage", "which bot uses the most tokens", "why did the API credit run out", "AI cost this week".',
+   parameters: { type: 'object', properties: { days: { type: 'number', description: '1–90, default 7' } } },
+   async run({ days = 7 } = {}, { user, now = new Date() } = {}) {
+      if (!ADMINS.includes(user?.role)) return { error: 'AI usage is for admins' };
+      const { aiUsageReport } = await import('../aiUsageReport.js');
+      return aiUsageReport({ days, now });
+   },
+});

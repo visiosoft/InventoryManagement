@@ -3060,6 +3060,23 @@ automationLogSchema.pre('validate', function redactIdentity() {
 });
 export const AutomationLog = model('AutomationLog', automationLogSchema);
 
+// One row per AI call (services/aiUsage.js): what the AI costs, and who spent it.
+const aiUsageSchema = new Schema({
+  at: { type: Date, default: Date.now },
+  provider: { type: String, default: '' },
+  model: { type: String, default: '' },
+  feature: { type: String, default: 'other' },
+  kind: { type: String, default: 'chat' },
+  inputTokens: { type: Number, default: 0 },
+  outputTokens: { type: Number, default: 0 },
+  webSearches: { type: Number, default: 0 },
+  costUsd: { type: Number, default: null },
+}, { versionKey: false });
+aiUsageSchema.index({ at: -1 });
+// A year is enough to compare months; older rows clear themselves.
+aiUsageSchema.index({ at: 1 }, { expireAfterSeconds: 365 * 86400, name: 'at_ttl' });
+export const AiUsage = model('AiUsage', aiUsageSchema);
+
 /* ── Quiet-lead follow-ups ────────────────────────────────────────────────
  *
  * One row per approved-template message sent to a lead that had gone quiet.

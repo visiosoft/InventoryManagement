@@ -1,6 +1,10 @@
 import axios from 'axios';
 import { claudeConfigured, claudeModel, claudeChatJson, claudeChatWithTools, claudeVisionJson } from './claude.js';
 import { scrubText } from '../utils/pii.js';
+import { recordAiUsage } from './aiUsage.js';
+
+// Tokens from an OpenAI reply (chat or responses shape), into the usage log.
+const logOpenAI = (model, u, kind) => { if (u) recordAiUsage({ provider: 'openai', model, inputTokens: u.prompt_tokens ?? u.input_tokens ?? 0, outputTokens: u.completion_tokens ?? u.output_tokens ?? 0, kind }); };
 
 // OpenAI is used for exactly one thing: turning a plain-English availability
 // request into structured filters. It never decides availability itself —
@@ -221,6 +225,7 @@ async function chatWithToolsResponses({ system, messages, tools, model, maxToken
         ...(calls.length ? { tool_calls: calls.map((c) => ({ id: c.call_id, type: 'function', function: { name: c.name, arguments: c.arguments || '{}' } })) } : {}),
     };
     const u = data?.usage;
+    logOpenAI(model, u, 'tools');
     const usage = u ? { prompt_tokens: u.input_tokens, completion_tokens: u.output_tokens, total_tokens: u.total_tokens } : null;
     return { content, toolCalls, message, usage };
 }
@@ -272,6 +277,7 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
         { headers: headers(), timeout },
     );
 
+    logOpenAI(chosenModel, data?.usage, 'chat');
     const raw = data?.choices?.[0]?.message?.content || '';
     try {
         const parsed = JSON.parse(raw);
@@ -346,6 +352,7 @@ export async function chatWithTools({ system, messages = [], tools = [], model, 
         try { args = JSON.parse(c.function?.arguments || '{}'); } catch { args = {}; }
         return { id: c.id, name: c.function?.name || '', args };
     });
+    logOpenAI(chosenModel, data?.usage, 'tools');
     return { content: String(message.content || ''), toolCalls, message, usage: data?.usage || null };
 }
 
@@ -391,6 +398,7 @@ export async function visionJson({ system, imageBase64, mimeType, prompt = '', m
     }
     // Usage comes back with the response; the caller logs it so the cost per
     // document is a measured number rather than an estimate.
+    logOpenAI(chosenModel, data?.usage, 'vision');
     return { parsed, usage: data?.usage ?? null };
 }
 
