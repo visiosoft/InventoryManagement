@@ -38,6 +38,29 @@ export function aiProvider() {
 
 const isClaudeModel = (m) => /^claude-/.test(String(m || ''));
 
+/**
+ * Claude out of credit, or its key refused: nothing will answer until someone
+ * tops up, so when an OpenAI key is saved the same call goes to OpenAI
+ * instead of every reply, bot and summary failing. Pure.
+ */
+export function claudeUnusable(err) {
+    return /credit balance is too low|purchase credits|billing|invalid x-api-key|authentication_error|permission_error/i.test(String(err?.message || err || ''));
+}
+
+/** Run on Claude; on an unusable-Claude error with an OpenAI key saved, return null so the caller carries on with OpenAI. */
+async function claudeOr(run) {
+    try {
+        return { out: await run() };
+    } catch (e) {
+        if (!claudeUnusable(e) || !openaiKeyPresent()) throw e;
+        console.warn(`[AI] Claude unusable (${String(e.message).slice(0, 120)}) — answering with OpenAI`);
+        return null;
+    }
+}
+
+// OpenAI does not accept the Claude blocks a turn carries for its next round.
+const forOpenAI = (messages) => messages.map(({ _claudeContent, ...m }) => m);
+
 /** The OpenAI model, ignoring the provider switch. */
 export function openaiOwnModel() {
     return process.env.OPENAI_MODEL || DEFAULT_MODEL;
@@ -221,8 +244,12 @@ export async function verifyOpenAIKey(apiKey, model) {
  * empty answer.
  */
 export async function chatJson({ system, messages = [], temperature = 0, maxTokens = 400, timeout = 30000, model, effort }) {
-    const chosenModel = resolveModel(model);
-    if (aiProvider() === 'anthropic') return claudeChatJson({ system, messages, maxTokens, timeout, model: chosenModel, effort });
+    let chosenModel = resolveModel(model);
+    if (aiProvider() === 'anthropic') {
+        const r = await claudeOr(() => claudeChatJson({ system, messages, maxTokens, timeout, model: chosenModel, effort }));
+        if (r) return r.out;
+        chosenModel = openaiOwnModel();
+    }
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {
@@ -277,8 +304,13 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
  */
 export async function chatWithTools({ system, messages = [], tools = [], model, effort, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
     if (!openaiConfigured()) throw new Error('No AI provider is configured');
-    const chosenModel = resolveModel(model);
-    if (aiProvider() === 'anthropic') return claudeChatWithTools({ system, messages, tools, model: chosenModel, effort, maxTokens, timeout, toolChoice });
+    let chosenModel = resolveModel(model);
+    if (aiProvider() === 'anthropic') {
+        const r = await claudeOr(() => claudeChatWithTools({ system, messages, tools, model: chosenModel, effort, maxTokens, timeout, toolChoice }));
+        if (r) return r.out;
+        chosenModel = openaiOwnModel();
+        messages = forOpenAI(messages);
+    }
     if (usesResponsesApi(chosenModel, tools.length > 0)) {
         return chatWithToolsResponses({ system, messages, tools, model: chosenModel, maxTokens, timeout, toolChoice });
     }
@@ -310,8 +342,12 @@ export async function chatWithTools({ system, messages = [], tools = [], model, 
 }
 
 export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000, model, effort }) {
-    const chosenModel = resolveModel(model);
-    if (aiProvider() === 'anthropic') return claudeVisionJson({ system, imageBase64, mimeType, prompt, maxTokens, timeout, model: chosenModel, effort });
+    let chosenModel = resolveModel(model);
+    if (aiProvider() === 'anthropic') {
+        const r = await claudeOr(() => claudeVisionJson({ system, imageBase64, mimeType, prompt, maxTokens, timeout, model: chosenModel, effort }));
+        if (r) return r.out;
+        chosenModel = openaiOwnModel();
+    }
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {

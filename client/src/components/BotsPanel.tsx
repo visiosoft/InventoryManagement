@@ -5,6 +5,8 @@ import { Bot as BotIcon, ChevronLeft, FileSpreadsheet, FileText, Globe, LayoutGr
 import { api, apiError } from '../lib/api'
 import { TwilioConnectForm } from './ConnectForms'
 import ChartView, { type ChartSpec } from './ChartView'
+import AiSwitch from './AiSwitch'
+import { friendlyAiError } from '../lib/aiError'
 import ConnectionsStrip from './ConnectionsStrip'
 import { SlideOver } from './ui'
 
@@ -172,6 +174,7 @@ export default function BotsPanel({ pinnedOnly = false }: { pinnedOnly?: boolean
           <button type="button" style={btn(true)} onClick={() => setChoosing(true)}><Plus size={14} /> New bot</button>
         </div>
       )}
+      {!pinnedOnly && <AiSwitch />}
       {!pinnedOnly && <ConnectionsStrip />}
       {!pinnedOnly && <DescribeBot onMade={refresh} />}
       {pinnedOnly && (
@@ -262,7 +265,7 @@ function BotCard({ bot, running, onRun, onEdit, onToggle, onPin, onReview, onDel
         </div>
       </div>
 
-      {r?.error && <div style={{ fontSize: 12.5, color: '#B91C1C', marginTop: 10 }}>{r.error}</div>}
+      {r?.error && <div style={{ fontSize: 12.5, color: '#B91C1C', marginTop: 10 }}>{friendlyAiError(r.error)}</div>}
 
       {bot.kind === 'ai_report' && r?.answer && (
         <div style={{ marginTop: 12 }}>
@@ -583,7 +586,7 @@ function lastLine(b: BotRow): string {
   const r = b.lastRun
   if (!b.enabled) return 'Paused'
   if (!r) return `Not run yet · ${b.scheduleLabel}`
-  if (r.error) return r.error
+  if (r.error) return /credit balance is too low|purchase credits/i.test(r.error) ? 'Claude is out of credit' : r.error
   if (r.status === 'waiting') return `${r.items.filter((i) => i.status === 'pending').length} waiting for you to send`
   return (r.answer || r.summary || '').replace(/\*\*/g, '').split('\n').find((l) => l.trim()) || r.summary
 }
@@ -707,7 +710,7 @@ function BotsList({ bots, initialId = null, running, onRun, onEdit, onToggle, on
                     </div>
                   )}
                   <div style={{ background: '#F4F2F7', borderRadius: 14, padding: '12px 14px', fontSize: 13.5, lineHeight: 1.55, color: INK, whiteSpace: 'pre-wrap', maxWidth: 760 }}>
-                    {r.error ? <span style={{ color: '#B91C1C' }}>{r.error}</span> : r.answer ? withBold(r.answer) : r.summary}
+                    {r.error ? <span style={{ color: '#B91C1C' }}>{friendlyAiError(r.error)}</span> : r.answer ? withBold(r.answer) : r.summary}
                     {r.items.length > 0 && (
                       <div style={{ marginTop: 8, whiteSpace: 'normal' }}>
                         {r.items.slice(0, 8).map((i) => (

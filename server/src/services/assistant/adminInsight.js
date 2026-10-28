@@ -1,6 +1,5 @@
 import { Lead } from '../../models/index.js';
 import { chatJson, openaiConfigured } from '../openai.js';
-import { claudeChatJson, claudeConfigured } from '../claude.js';
 import { dayKeyFor } from '../dailyDigest.js';
 import { startOfDayIn } from '../leadRouting.js';
 import { toolByName } from './tools.js';
@@ -79,8 +78,8 @@ export async function getAdminInsight() {
       'ctaLabel/ctaQuery should be null if there is genuinely nothing actionable right now.',
    ].join('\n');
    const request = { system, messages: [{ role: 'user', content: JSON.stringify(facts) }], maxTokens: 300 };
-   // Claude whenever a key is saved, whichever provider the rest of the app is set to.
-   const out = await (claudeConfigured() ? claudeChatJson({ ...request, effort: 'low' }) : chatJson(request)).catch(() => null);
+   // Whichever provider the app is switched to.
+   const out = await chatJson({ ...request, effort: 'low' }).catch(() => null);
 
    if (!out?.headline || !out?.message) {
       return { headline: 'Today so far', message: `${facts.newLeadsToday} new lead${facts.newLeadsToday === 1 ? '' : 's'}, ${facts.peopleStillWaitingForReply} waiting on a reply.`, ctaLabel: null, ctaQuery: null, facts };

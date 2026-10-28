@@ -14,7 +14,7 @@ import { digitTail, startOfDayIn } from '../services/leadRouting.js';
 import { buildFunnel } from '../services/leadFunnel.js';
 import { scoreForLead, highIntentToday, intakeChecklist, intentForLeads, snapshotIntentAtClose } from '../services/leadScore.js';
 import { buildTranscript, summariseConversation } from '../services/conversationSummary.js';
-import { claudeChatJson, claudeConfigured } from '../services/claude.js';
+import { chatJson, openaiConfigured } from '../services/openai.js';
 import { buildFacts } from '../services/aiBot.js';
 import { computeUnitAvailability } from '../services/unitAvailability.js';
 import { windowOpenFor } from '../services/whatsapp.js';
@@ -2202,7 +2202,7 @@ async function freeUnitsBySize() {
  */
 router.post('/:id/suggest-message', async (req, res) => {
     try {
-        if (!claudeConfigured()) return res.status(400).json({ error: 'Claude is not configured' });
+        if (!openaiConfigured()) return res.status(400).json({ error: 'No AI provider is configured' });
         const lead = await Lead.findById(req.params.id).lean();
         if (!lead) return res.status(404).json({ error: 'Lead not found' });
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
@@ -2247,14 +2247,14 @@ router.post('/:id/suggest-message', async (req, res) => {
         ].filter(Boolean).join('\n');
         const transcript = buildTranscript(thread) || '(no WhatsApp messages yet)';
 
-        const parsed = await claudeChatJson({
+        const parsed = await chatJson({
             system: SUGGEST_SYSTEM,
             messages: [{ role: 'user', content: `${facts}\n\nConversation:\n${transcript}` }],
             effort: 'medium',
             timeout: 60000,
         });
         const message = String(parsed?.message || '').trim();
-        if (!message) return res.status(502).json({ error: 'Claude had nothing to suggest' });
+        if (!message) return res.status(502).json({ error: 'The AI had nothing to suggest' });
         res.json({ ok: true, message, windowOpen });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -2268,7 +2268,7 @@ router.post('/:id/suggest-message', async (req, res) => {
  */
 router.post('/:id/suggest-lost-reason', async (req, res) => {
     try {
-        if (!claudeConfigured()) return res.json({ ok: true, reason: null, why: '' });
+        if (!openaiConfigured()) return res.json({ ok: true, reason: null, why: '' });
         const lead = await Lead.findById(req.params.id).lean();
         if (!lead) return res.status(404).json({ error: 'Lead not found' });
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
@@ -2283,7 +2283,7 @@ router.post('/:id/suggest-lost-reason', async (req, res) => {
             `Last customer message: ${lastInbound ? new Date(lastInbound.occurredAt).toISOString().slice(0, 10) : 'never'}`,
             `Today: ${new Date().toISOString().slice(0, 10)}`,
         ].join('\n');
-        const parsed = await claudeChatJson({
+        const parsed = await chatJson({
             system: [
                 'A sales rep at a self-storage company is closing this lead as lost. From the conversation, pick the one reason that best explains it.',
                 `Reasons: ${LOST_REASONS.join(', ')}.`,
