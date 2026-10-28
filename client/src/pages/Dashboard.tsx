@@ -44,15 +44,17 @@ type WidgetId =
  * card on one long page. A widget not listed here falls into Overview, so a
  * card added later still shows up somewhere. Finance is the accounts
  * dashboard itself, not a copy of it. */
-type TabKey = 'overview' | 'sales' | 'leads' | 'finance' | 'feedback'
+type TabKey = 'overview' | 'summary' | 'sales' | 'leads' | 'finance' | 'feedback'
 const TABS: { key: TabKey; label: string; widgets: WidgetId[]; adminOnly?: boolean }[] = [
-  { key: 'overview', label: 'Overview', widgets: ['stats', 'zoho-sales', 'lead-coverage', 'zoho-receivables', 'units-by-size', 'floor-occupancy', 'team-tasks'] },
+  // Overview is the Ask bar alone; the cards that used to sit under it are on Summary.
+  { key: 'overview', label: 'Overview', widgets: [] },
+  { key: 'summary', label: 'Summary', widgets: ['stats', 'zoho-sales', 'lead-coverage', 'zoho-receivables', 'units-by-size', 'floor-occupancy', 'team-tasks'] },
   { key: 'sales', label: 'Sales', widgets: ['lead-funnel', 'high-intent-leads', 'expiring-contracts'] },
   { key: 'leads', label: 'Leads', widgets: ['lead-distribution', 'website-leads-today', 'website-analytics'] },
   { key: 'finance', label: 'Finance', widgets: [], adminOnly: true },
   { key: 'feedback', label: 'Customer Feedback', widgets: ['customer-feedback', 'whatsapp-id'] },
 ]
-const defaultTabOf = (id: WidgetId): TabKey => TABS.find((t) => t.widgets.includes(id))?.key ?? 'overview'
+const defaultTabOf = (id: WidgetId): TabKey => TABS.find((t) => t.widgets.includes(id))?.key ?? 'summary'
 
 const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
@@ -253,7 +255,8 @@ export default function Dashboard() {
     qc.setQueryData(['dashboard-layout'], { layout: body })
     api.put('/auth/me/dashboard', { layout: body }).catch(() => { /* kept in this browser at least */ })
   }, [qc])
-  const tabOf = (id: WidgetId): TabKey => layout.tabs[id] ?? defaultTabOf(id)
+  // A card someone once moved to Overview goes to Summary: Overview holds only the Ask bar.
+  const tabOf = (id: WidgetId): TabKey => { const t = layout.tabs[id] ?? defaultTabOf(id); return t === 'overview' ? 'summary' : t }
   const sizeOf = (id: WidgetId): Size => (id === 'stats' ? 'full' : layout.sizes?.[id] ?? (HALF_BY_DEFAULT.includes(id) ? 'half' : 'full'))
 
   // The open tab lives in the URL (?tab=leads) so a link or a refresh keeps it.
@@ -364,7 +367,7 @@ export default function Dashboard() {
   const { data: pendingExpiry } = useQuery<{ groups: PendingExpiryGroup[]; total: number }>({
     queryKey: ['automation-rules-pending'],
     queryFn: () => api.get('/automation-rules/pending').then((r) => r.data),
-    enabled: isAdmin && tab === 'overview',
+    enabled: isAdmin && tab === 'summary',
     staleTime: 60_000,
   })
 
@@ -994,10 +997,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      {isAdmin && (tab === 'overview' || tab === 'finance') && <DataQualityBanner />}
+      {isAdmin && (tab === 'summary' || tab === 'finance') && <DataQualityBanner />}
 
-      {/* The assistant gets the top of Overview: asking on the left, the
-          person's own recent searches beside it. */}
+      {/* Overview is the Ask bar and nothing else, with the person's own
+          recent searches beside it (a click asks one again in the bar). */}
       {tab === 'overview' && (
         <div className="mb-6 grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-start">
           <DashboardAsk />
@@ -1013,7 +1016,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {tab === 'overview' && isAdmin && Boolean(pendingExpiry?.total) && (
+      {tab === 'summary' && isAdmin && Boolean(pendingExpiry?.total) && (
         <Link
           to="/settings/automation?tab=pending"
           className="mb-6 flex items-center gap-3 flex-wrap rounded-2xl border px-5 py-3.5 hover:bg-amber-100/60 transition-colors"
@@ -1056,7 +1059,7 @@ export default function Dashboard() {
                   )}
                   <select value={tabOf(id)} onChange={(e) => setCardTab(id, e.target.value as TabKey)} aria-label="Tab"
                     style={{ height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,0.12)', fontSize: 12.5, padding: '0 8px', background: '#fff' }}>
-                    {tabs.map((t) => <option key={t.key} value={t.key}>{t.key === tab ? `On ${t.label}` : `Move to ${t.label}`}</option>)}
+                    {tabs.filter((t) => t.key !== 'overview').map((t) => <option key={t.key} value={t.key}>{t.key === tab ? `On ${t.label}` : `Move to ${t.label}`}</option>)}
                   </select>
                   <button type="button" onClick={() => hideCard(id)} className="inline-flex items-center gap-1 cursor-pointer"
                     style={{ height: 30, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,0.12)', background: '#fff', fontSize: 12.5, fontWeight: 600, color: '#B91C1C' }}>
