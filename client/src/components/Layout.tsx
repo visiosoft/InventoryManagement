@@ -128,6 +128,7 @@ const reportItems = [
      for are the ones they already work from. */
   { to: '/reports/ask', label: 'Ask for a report', icon: Sparkles, perm: '', roles: ['admin', 'accounts'] },
   { to: '/reports/rates', label: 'Actual vs Leased', icon: Wallet, perm: 'reports_units' },
+  { to: '/reports/stock', label: 'Stock & retention', icon: PieChart, perm: 'reports_units' },
   { to: '/reports/conversations', label: 'Daily Conversations', icon: MessageCircle, perm: 'reports_conversations' },
 ]
 

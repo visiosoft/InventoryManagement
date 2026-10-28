@@ -107,6 +107,7 @@ import Reports from './pages/Reports'
 import AskReports from './pages/reports/AskReports'
 import DailyDigest from './pages/DailyDigest'
 import RatesReport from './pages/reports/RatesReport'
+import StockRetention from './pages/reports/StockRetention'
 import Settings from './pages/Settings'
 import MessageTemplates from './pages/MessageTemplates'
 import WhatsAppDebug from './pages/WhatsAppDebug'
@@ -322,6 +323,7 @@ export default function App() {
         <Route path="/reports/ask" element={<RoleGuard roles={['admin', 'accounts']}><AskReports /></RoleGuard>} />
         <Route path="/reports/conversations" element={<PermGuard module="reports_conversations"><DailyDigest /></PermGuard>} />
         <Route path="/reports/rates" element={<PermGuard module="reports_units"><RatesReport /></PermGuard>} />
+        <Route path="/reports/stock" element={<PermGuard module="reports_units"><StockRetention /></PermGuard>} />
         <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
         <Route path="/tasks" element={<TasksGuard><Tasks /></TasksGuard>} />

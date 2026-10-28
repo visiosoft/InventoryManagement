@@ -1,3 +1,5 @@
+import { inventoryMix } from '../services/inventoryMix.js';
+import { churnRisk } from '../services/churnRisk.js';
 import { dataQuality } from '../services/dataQuality.js';
 import { computeOccupancy, occupancyReconciliation } from '../services/occupancy.js';
 import { Router } from 'express';
@@ -884,6 +886,17 @@ router.get('/income-analysis', async (req, res) => {
   };
 
   res.json({ year, months, byUnit, totals });
+});
+
+// Stock against demand by size (WP-18).
+router.get('/inventory-mix', async (req, res) => {
+  res.json(await inventoryMix({ days: req.query.days }));
+});
+
+// Active contracts at risk of leaving, with the reasons (WP-27).
+router.get('/retention/at-risk', async (req, res) => {
+  if (!['admin', 'accounts_admin'].includes(req.user?.role) && req.user?.role !== 'sales_rep') return res.status(403).json({ error: 'Not available for your role' });
+  res.json(await churnRisk({ min: Number(req.query.min) || undefined }));
 });
 
 // Active data-quality conditions for the KPI banner (WP-23).

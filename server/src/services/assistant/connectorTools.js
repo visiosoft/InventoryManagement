@@ -67,3 +67,24 @@ registerTool({
       return aiUsageReport({ days, now });
    },
 });
+
+registerTool({
+   name: 'inventory_mix',
+   description: 'Stock against demand by unit size: rentable, occupied (from contracts), reserved, maintenance, available, average days vacant, and leads in the last N days (default 30) asking for each size, with stock-out and oversupply flags. Read-only. Use for "which sizes are sold out", "where is demand without stock", "which sizes sit empty".',
+   parameters: { type: 'object', properties: { days: { type: 'number' } } },
+   async run({ days = 30 } = {}) {
+      const { inventoryMix } = await import('../inventoryMix.js');
+      return inventoryMix({ days });
+   },
+});
+
+registerTool({
+   name: 'churn_risk',
+   description: 'Active contracts at risk of leaving (score 60+ by fixed rules: not renewing, undecided and ending within a week, late payments, new tenant, repeated extensions), with reasons and the rent at risk. Admins and sales, read-only. Use for "who might leave", "retention list", "at-risk tenants".',
+   parameters: { type: 'object', properties: {} },
+   async run(_a, { user } = {}) {
+      if (![...ADMINS, 'sales_rep'].includes(user?.role)) return { error: 'Not available for your role' };
+      const { churnRisk } = await import('../churnRisk.js');
+      return churnRisk({});
+   },
+});
