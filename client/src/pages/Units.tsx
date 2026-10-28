@@ -428,7 +428,9 @@ export default function Units() {
       const spans = bookings
         .map((b) => ({ b, s: dayOnly(b.startDate), e: dayOnly(b.endDate) }))
         .filter((x) => x.s && x.e && x.s <= winTo && x.e >= winFrom)
-        .map((x) => ({ b: x.b, s: x.s < winFrom ? winFrom : x.s, e: x.e > winTo ? winTo : x.e }))
+        // A signed (active) contract holds the unit from now, not only from its
+        // check-in: the days before a booked move-in cannot be sold.
+        .map((x) => ({ b: x.b, s: x.s < winFrom || (x.b.kind === 'contract' && x.b.status === 'active') ? winFrom : x.s, e: x.e > winTo ? winTo : x.e }))
         .sort((a, b) => a.s.localeCompare(b.s))
 
       if (!spans.length) {

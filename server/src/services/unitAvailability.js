@@ -82,14 +82,15 @@ export async function computeUnitAvailability({ from = null, to = null, includeA
         // A quote whose contract row has since been deleted is treated the same
         // way: there is nothing left to honour.
         const contractIds = openQuotes.map((q) => q.contract).filter(Boolean);
-        const liveContracts = contractIds.length
-            ? await Contract.find({
-                _id: { $in: contractIds },
-                status: { $nin: ['ended', 'cancelled'] },
-            }).select('_id').lean()
+        //
+        // Only a draft contract leaves the hold to its quote. An active or
+        // pending-signature one is already counted above, so the quote held the
+        // unit a second time: F2-34 listed both PB-2026-0469 and QT-000309.
+        const draftContracts = contractIds.length
+            ? await Contract.find({ _id: { $in: contractIds }, status: 'draft' }).select('_id').lean()
             : [];
-        const stillLive = new Set(liveContracts.map((c) => String(c._id)));
-        const holdsUnit = (q) => !q.contract || stillLive.has(String(q.contract));
+        const stillDraft = new Set(draftContracts.map((c) => String(c._id)));
+        const holdsUnit = (q) => !q.contract || stillDraft.has(String(q.contract));
 
         for (const q of openQuotes.filter(holdsUnit)) {
             for (const u of q.units || []) {
