@@ -389,10 +389,15 @@ export default function Units() {
     queryKey: ['sites'],
     queryFn: () => api.get('/sites').then((r) => r.data),
   })
-  const units = useMemo(
-    () => (allSiteUnits || []).filter((u) => unitInSite((u as Unit & { site?: string | null }).site, siteId, sitesList)),
-    [allSiteUnits, siteId, sitesList],
-  )
+  /* A unit whose active contract has started reads Occupied, even while the
+     first-payment check keeps its stored status at Reserved. */
+  const units = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    return (allSiteUnits || [])
+      .filter((u) => unitInSite((u as Unit & { site?: string | null }).site, siteId, sitesList))
+      .map((u) => (u.status === 'reserved' && (activeByUnit[u._id] ?? []).some((c) => c.startDate && c.startDate.slice(0, 10) <= today)
+        ? { ...u, status: 'occupied' as Unit['status'] } : u))
+  }, [allSiteUnits, siteId, sitesList, activeByUnit])
 
   // Which facility the page is showing, for the exported document's title.
   const siteName = sitesList.find((s) => s._id === siteId)?.name

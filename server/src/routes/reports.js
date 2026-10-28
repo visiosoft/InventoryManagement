@@ -129,9 +129,23 @@ router.get('/summary', async (req, res) => {
   }
 
   const occ = await computeOccupancy({ siteId: req.query.site || null });
+  /* The tiles count from contracts, not only the stored status: a unit whose
+     active contract has started is booked even while its first payment waits
+     to be verified (the payment check keeps its status "reserved"). A unit
+     still marked occupied stays booked too — a contract past its end date
+     means the tenant has not been checked out, not that the unit is free. */
+  const units = await Unit.find(uF).select('status').lean();
+  const started = await Contract.find({ ...cF, status: 'active', startDate: { $lte: now } }).select('unit units').lean();
+  const startedIds = new Set(started.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String));
+  const tiles = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
+  for (const u of units) {
+    const k = startedIds.has(String(u._id)) || u.status === 'occupied' ? 'occupied' : (tiles[u.status] !== undefined ? u.status : 'available');
+    tiles[k] += 1;
+  }
   res.json({
     totalUnits,
-    byStatus,
+    byStatus: tiles,
+    storedStatus: byStatus,
     bySize,
     byFloor,
     // One definition everywhere (services/occupancy.js).
@@ -242,9 +256,23 @@ async function statsHandler(req, res) {
   }
 
   const occ = await computeOccupancy({ siteId: req.query.site || null });
+  /* The tiles count from contracts, not only the stored status: a unit whose
+     active contract has started is booked even while its first payment waits
+     to be verified (the payment check keeps its status "reserved"). A unit
+     still marked occupied stays booked too — a contract past its end date
+     means the tenant has not been checked out, not that the unit is free. */
+  const units = await Unit.find(uF).select('status').lean();
+  const started = await Contract.find({ ...cF, status: 'active', startDate: { $lte: now } }).select('unit units').lean();
+  const startedIds = new Set(started.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String));
+  const tiles = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
+  for (const u of units) {
+    const k = startedIds.has(String(u._id)) || u.status === 'occupied' ? 'occupied' : (tiles[u.status] !== undefined ? u.status : 'available');
+    tiles[k] += 1;
+  }
   res.json({
     totalUnits,
-    byStatus,
+    byStatus: tiles,
+    storedStatus: byStatus,
     bySize,
     // One definition everywhere (services/occupancy.js).
     occupancyPct: occ.occupancyPct,
