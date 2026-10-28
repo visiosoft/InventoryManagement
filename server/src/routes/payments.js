@@ -176,13 +176,13 @@ router.post('/invoice-partial', async (req, res) => {
   const remaining = Math.round((invoice.total - partialAmt) * 100) / 100;
   if (partialAmt <= 0) return res.status(400).json({ error: 'Amount must be greater than 0' });
 
-  const existing = await Payment.find({ contract: contractId, invoice: invoiceId, status: { $ne: 'paid' } });
+  const existing = await Payment.find({ contract: contractId, invoice: invoiceId, status: { $in: ['pending', 'overdue'] } });
   const dueDate = existing[0]?.dueDate || invoice.dueDate;
   const unitNote = existing.find(p => p.notes)?.notes || '';
   const unitMatch = unitNote.match(/Unit (.+)$/);
   const unitNo = unitMatch ? unitMatch[1] : '-';
 
-  await Payment.deleteMany({ contract: contractId, invoice: invoiceId, status: { $ne: 'paid' } });
+  await Payment.deleteMany({ contract: contractId, invoice: invoiceId, status: { $in: ['pending', 'overdue'] } });
 
   const actor = req.user?.name || req.user?.email || '';
   await Payment.create({
@@ -220,7 +220,7 @@ router.post('/bulk-record', async (req, res) => {
   const date = paidDate ? new Date(paidDate) : new Date();
   const actor = req.user?.name || req.user?.email || '';
   const result = await Payment.updateMany(
-    { _id: { $in: paymentIds }, status: { $ne: 'paid' } },
+    { _id: { $in: paymentIds }, status: { $in: ['pending', 'overdue'] } },
     { $set: { status: 'paid', method, paidDate: date, recordedBy: actor, ...(notes ? { notes } : {}) } }
   );
 
@@ -228,7 +228,7 @@ router.post('/bulk-record', async (req, res) => {
   const payments = await Payment.find({ _id: { $in: paymentIds } }).select('invoice');
   const invoiceIds = [...new Set(payments.map(p => p.invoice).filter(Boolean).map(String))];
   for (const invId of invoiceIds) {
-    const unpaid = await Payment.countDocuments({ invoice: invId, status: { $ne: 'paid' } });
+    const unpaid = await Payment.countDocuments({ invoice: invId, status: { $in: ['pending', 'overdue'] } });
     if (unpaid === 0) {
       const paidSum = await Payment.aggregate([
         { $match: { invoice: new mongoose.Types.ObjectId(invId), status: 'paid' } },
@@ -284,7 +284,7 @@ router.post('/:id/record', async (req, res) => {
   // Update linked invoice status if all payments for that invoice are now paid
   if (payment.invoice) {
     const invId = String(payment.invoice);
-    const unpaid = await Payment.countDocuments({ invoice: invId, status: { $ne: 'paid' } });
+    const unpaid = await Payment.countDocuments({ invoice: invId, status: { $in: ['pending', 'overdue'] } });
     if (unpaid === 0) {
       const paidSum = await Payment.aggregate([
         { $match: { invoice: new mongoose.Types.ObjectId(invId), status: 'paid' } },

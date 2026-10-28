@@ -1926,7 +1926,7 @@ async function contractTemplateVars(contract) {
 
   const payments = await Payment.find({ contract: contract._id }).lean();
   const now = Date.now();
-  const unpaid = payments.filter((p) => p.status !== 'paid');
+  const unpaid = payments.filter((p) => ['pending', 'overdue'].includes(p.status));
   const overdue = unpaid.filter((p) => new Date(p.dueDate).getTime() < now);
   const nextDue = unpaid
     .filter((p) => new Date(p.dueDate).getTime() >= now)

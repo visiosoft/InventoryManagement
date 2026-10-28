@@ -172,7 +172,7 @@ router.get('/:id', async (req, res) => {
   const paymentSummary = contracts.map(c => {
     const cPayments = allPayments.filter(p => String(p.contract) === String(c._id));
     const totalPaid   = Math.round(cPayments.filter(p => p.status === 'paid').reduce((s, p) => s + p.amount, 0) * 100) / 100;
-    const totalUnpaid = Math.round(cPayments.filter(p => p.status !== 'paid').reduce((s, p) => s + p.amount, 0) * 100) / 100;
+    const totalUnpaid = Math.round(cPayments.filter(p => ['pending', 'overdue'].includes(p.status)).reduce((s, p) => s + p.amount, 0) * 100) / 100;
     return { contractId: c._id, contractNo: c.contractNo, totalPaid, totalUnpaid };
   });
 

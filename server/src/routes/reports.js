@@ -478,7 +478,7 @@ router.get('/tenant-payments', async (req, res) => {
   });
 
   const paid = rows.filter((r) => r.status === 'paid');
-  const pending = rows.filter((r) => r.status !== 'paid');
+  const pending = rows.filter((r) => ['pending', 'overdue'].includes(r.status));
 
   res.json({
     month: monthStart.toLocaleString('en', { month: 'long', year: 'numeric' }),

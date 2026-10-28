@@ -110,7 +110,7 @@ export async function runPaymentReminders() {
   const windowMs = 20 * 24 * 60 * 60 * 1000;
 
   const payments = await Payment.find({
-    status: { $ne: 'paid' },
+    status: { $in: ['pending', 'overdue'] },
     dueDate: { $lte: new Date(now.getTime() + windowMs) },
   }).populate({
     path: 'contract',

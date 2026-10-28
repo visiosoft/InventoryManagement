@@ -372,7 +372,7 @@ router.get('/person', async (req, res) => {
             : [],
       ]);
       const paid = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
-      const owed = payments.filter((p) => p.status !== 'paid').reduce((s, p) => s + p.amount, 0);
+      const owed = payments.filter((p) => ['pending', 'overdue'].includes(p.status)).reduce((s, p) => s + p.amount, 0);
       const overdue = payments.filter((p) => p.status === 'overdue' || (p.status === 'pending' && new Date(p.dueDate) < new Date())).reduce((s, p) => s + p.amount, 0);
 
       const lastWa = messages[0];
