@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import BotBell from './BotBell'
 import {
-  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox, PhoneCall, DoorOpen, Bot as BotIcon } from 'lucide-react'
+  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox, PhoneCall, DoorOpen, BookOpen, Bot as BotIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -36,6 +36,7 @@ const navTop: { to: string; label: string; icon: typeof Package; perm?: string |
   // Shopify merchants (onboarding a store) lives under Settings → Integrations:
   // it is configuration, not a page anyone works from day to day.
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' },
+  { to: '/zoho', label: 'Zoho', icon: BookOpen, adminOnly: true },
   { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'dashboard' },
 ]
 
@@ -150,8 +151,10 @@ const navBottom: { to: string; label: string; icon: any; perm: string | string[]
 // conversations they arrive in are one job, so they sit together under Sales.
 // The one exception: client requests are the customers' own asks, and they
 // come before the pipeline.
-const salesRepNavTop: { key: string; to: string; label: string; icon: typeof UserPlus; perm?: string; badgeKey?: NavBadgeKey }[] = [
+const salesRepNavTop: { key: string; to: string; label: string; icon: typeof UserPlus; perm?: string; badgeKey?: NavBadgeKey; role?: string }[] = [
   { key: 'client-requests', to: '/client-requests', label: 'Client requests', icon: Inbox, badgeKey: 'clientRequests' },
+  // CRM and Zoho Books side by side — accounts' own page.
+  { key: 'zoho', to: '/zoho', label: 'Zoho', icon: BookOpen, role: 'accounts' },
 ]
 
 const salesRepNavGroups = [
@@ -347,6 +350,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/reports/rates': 'Actual vs Leased',
   '/whatsapp': 'WhatsApp Inbox',
   '/client-requests': 'Client requests',
+  '/zoho': 'Zoho',
 }
 
 function getPageTitle(pathname: string): string {
@@ -566,7 +570,7 @@ export default function Layout() {
           )
           return (
             <>
-              {salesRepNavTop.filter(({ perm }) => !perm || hasPermission(perm)).map(link)}
+              {salesRepNavTop.filter(({ perm, role }) => (!perm || hasPermission(perm)) && (!role || user?.role === role)).map(link)}
 
               {salesRepNavGroups.map((group) => {
                 const items = group.items
