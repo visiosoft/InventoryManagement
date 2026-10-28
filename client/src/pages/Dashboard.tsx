@@ -10,7 +10,6 @@ import { CHART_STYLE } from './reports/shared'
 import { formatDate, formatMoney } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
 import RecentAsksCard from '../components/RecentAsksCard'
-import ZohoCompareCard from '../components/ZohoCompareCard'
 import DuplicatePaymentsCard from '../components/DuplicatePaymentsCard'
 import DataQualityBanner from '../components/DataQualityBanner'
 import ZohoPaymentSyncCard from '../components/ZohoPaymentSyncCard'
@@ -1012,7 +1011,6 @@ export default function Dashboard() {
       {tab === 'finance' && (
         <div className="space-y-8">
           <ZohoBooksOverview />
-          <ZohoCompareCard />
           {isAdmin && <ZohoPaymentSyncCard />}
           {isAdmin && <DuplicatePaymentsCard />}
           <AccountsDashboard embedded />
