@@ -27,6 +27,7 @@ import { requireAuth, readOnlyFor } from './middleware/auth.js';
 import { auditLogMiddleware } from './middleware/auditLog.js';
 import { UPLOADS_DIR } from './services/drive.js';
 import authRoutes from './routes/auth.js';
+import maintenanceRoutes from './routes/maintenance.js';
 import unitRoutes from './routes/units.js';
 import warehouseRoutes from './routes/warehouse.js';
 import serviceRequestRoutes from './routes/serviceRequests.js';
@@ -315,6 +316,7 @@ app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.
 app.use('/api/integrations/whatsapp/webhook', (req, _res, next) => next());
 app.use('/api/units', requireAuth, unitRoutes);
+app.use('/api/maintenance-tickets', requireAuth, maintenanceRoutes);
 app.use('/api/warehouse', requireAuth, warehouseRoutes);
 app.use('/api/service-requests', requireAuth, serviceRequestRoutes);
 // Staff inbox for what customers do in the app; team visibility inside the router.

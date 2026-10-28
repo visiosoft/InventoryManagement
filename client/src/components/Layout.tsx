@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import BotBell from './BotBell'
 import {
-  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox, PhoneCall, DoorOpen, Bot as BotIcon } from 'lucide-react'
+  Shuffle, Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Calculator, ListTodo, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck, ShoppingBag, ClipboardCheck, Send, BellRing, Inbox, PhoneCall, DoorOpen, Wrench, Bot as BotIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -45,6 +45,7 @@ const navGroups = [
     items: [
       { to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'quotes' },
       { to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
+      { to: '/maintenance', label: 'Maintenance', icon: Wrench, perm: 'units' },
       { to: '/contracts', label: 'Tenants', icon: Briefcase, perm: 'contracts' },
       { to: '/renewals', label: 'Renewals & Move-outs', icon: CalendarCheck, perm: 'contracts' },
       { to: '/exit-surveys', label: 'Exit Surveys', icon: ClipboardList, perm: 'contracts' },
@@ -296,6 +297,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/bots': 'Bots',
   '/quotes': 'Book Unit',
   '/units': 'Search Units',
+  '/maintenance': 'Maintenance',
   '/floor-map': 'Floor Map',
   '/sites': 'Sites',
   '/customers': 'Tenants',
