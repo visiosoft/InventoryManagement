@@ -1207,7 +1207,10 @@ router.put('/:id', async (req, res) => {
     /* The end date of a booked contract moves only with a reason, so every
        change is a tracked renewal, extension, early check-out or correction
        (WP-05). Drafts and contracts awaiting signature edit freely. */
-    const endMovedDirectly = !endShifted && $set.endDate && contract.endDate && $set.endDate.getTime() !== new Date(contract.endDate).getTime();
+    // Moving check-in and check-out by the same days keeps the stay: no reason needed.
+    const sameShift = $set.startDate && contract.startDate && $set.endDate && contract.endDate
+      && ($set.startDate.getTime() - new Date(contract.startDate).getTime()) === ($set.endDate.getTime() - new Date(contract.endDate).getTime());
+    const endMovedDirectly = !endShifted && !sameShift && $set.endDate && contract.endDate && $set.endDate.getTime() !== new Date(contract.endDate).getTime();
     const endReason = String(req.body.endDateReason || '');
     if (endMovedDirectly && ['active', 'ended'].includes(contract.status) && !END_DATE_REASONS.includes(endReason)) {
       return res.status(400).json({ error: 'Say why the check-out date is changing', code: 'end_date_reason_required', reasons: END_DATE_REASONS });

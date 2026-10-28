@@ -1,3 +1,4 @@
+import axios from 'axios'
 import RevealId from '../components/RevealId'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -470,6 +471,14 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
 
   const [startDate, setStartDate] = useState(c.startDate?.slice(0, 10) || '')
   const [endDate, setEndDate] = useState(c.endDate?.slice(0, 10) || '')
+  // A booked contract's check-out moves only with a reason (WP-05). Moving
+  // check-in moves check-out by the same days; that keeps the stay and needs none.
+  const [endReason, setEndReason] = useState('')
+  const origStart = c.startDate?.slice(0, 10) || ''
+  const origEnd = c.endDate?.slice(0, 10) || ''
+  const dayDiff = (a: string, b: string) => (a && b ? Math.round((Date.parse(a) - Date.parse(b)) / 86400000) : 0)
+  const endMoved = endDate !== origEnd && dayDiff(endDate, origEnd) !== dayDiff(startDate, origStart)
+  const needsEndReason = ['active', 'ended'].includes(c.status) && endMoved
   const [unitIds, setUnitIds] = useState<string[]>(held.map((u) => u._id))
   const [rate, setRate] = useState(String(c.rate ?? ''))
   const asking = Number(rate) || 0
@@ -512,9 +521,11 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
+    if (needsEndReason && !endReason) return
     onSubmit({
       startDate,
       endDate,
+      ...(needsEndReason ? { endDateReason: endReason } : {}),
       units: unitIds,
       rate: Number(rate) || 0,
       leasedPrice: Number(leased) || 0,
@@ -544,6 +555,18 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
         <Field label="Check Out">
           <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
         </Field>
+        {needsEndReason && (
+          <Field label="Why is check-out changing?">
+            <Select value={endReason} onChange={(e) => setEndReason(e.target.value)} required>
+              <option value="">Choose a reason…</option>
+              <option value="renewal">Renewal</option>
+              <option value="extension_short">Short extension</option>
+              <option value="extension_long">Long extension</option>
+              <option value="early_checkout">Early check-out</option>
+              <option value="correction">Correcting a mistake</option>
+            </Select>
+          </Field>
+        )}
         <Field label="Number of Weeks">
           <Input type="number" min="1" value={weeks || ''}
             onChange={(e) => applyWeeks(Number(e.target.value))}
@@ -1090,8 +1113,12 @@ export default function ContractDetail() {
 
   const updateContract = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put(`/contracts/${id}`, body),
-    onSuccess: () => { invalidate(); setEditModal(false); setError('') },
-    onError: (e) => setError(apiError(e)),
+    onSuccess: (r) => { invalidate(); setEditModal(false); setError(r.status === 202 ? r.data?.message || 'Sent for approval' : '') },
+    onError: (e, body) => {
+      // The server asks for a reason the form did not send: ask here instead.
+      if (axios.isAxiosError(e) && e.response?.data?.code === 'end_date_reason_required') { setEditModal(false); setEndChange(body); return }
+      setError(apiError(e))
+    },
   })
 
   const updateCustomer = useMutation({
