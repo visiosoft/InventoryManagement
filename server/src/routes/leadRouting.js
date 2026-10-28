@@ -129,7 +129,8 @@ router.get('/now', async (_req, res) => {
       const newLeadsToday = await Lead.countDocuments({ leadDateTime: { $gte: dayStart } });
       const [waitingLeads, appLeads] = await Promise.all([
          waitingChats.length ? Lead.find({ phoneNormalized: { $in: waitingChats.map((m) => m.phone) }, owner: { $in: ids } }).select('owner').lean() : [],
-         Lead.find({ _id: { $in: [...new Set(appReplies.map((m) => String(m.lead)).filter((x) => x && x !== 'null'))] } }).select('owner').lean(),
+         // An echo the webhook could not match to a lead has no `lead` at all.
+         Lead.find({ _id: { $in: [...new Set(appReplies.filter((m) => m.lead).map((m) => String(m.lead)))] } }).select('owner').lean(),
       ]);
       const ownerOfLead = Object.fromEntries(appLeads.filter((l) => l.owner).map((l) => [String(l._id), String(l.owner)]));
       const replies = repliesByRep({ crm: crmReplies, app: appReplies, ownerOfLead, dayStart });

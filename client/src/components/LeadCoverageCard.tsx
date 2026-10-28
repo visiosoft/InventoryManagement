@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { api } from '../lib/api'
+import { api, apiError } from '../lib/api'
 import { Skeleton } from './ui'
 import { repAccent } from '../lib/repColors'
 import TrafficLight, { type Signal } from './TrafficLight'
@@ -42,12 +42,13 @@ function replyState(r: Rep) {
 
 
 export default function LeadCoverageCard() {
-  const { data, isLoading } = useQuery<Coverage>({
+  const { data, isLoading, error } = useQuery<Coverage>({
     queryKey: ['lead-coverage-now'],
     queryFn: () => api.get('/lead-routing/now').then((r) => r.data),
     // Live: every 10 seconds while the page is open (paused in a background tab).
     refetchInterval: 10_000,
   })
+  if (error && !data) return <div style={{ fontSize: 13, color: '#B91C1C', padding: '12px 4px' }}>Could not load who is on now: {apiError(error)}. It tries again every 10 seconds.</div>
   if (isLoading || !data) return <Skeleton className="h-[180px]" />
 
   const on = data.reps.filter((r) => r.on)
