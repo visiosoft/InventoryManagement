@@ -116,7 +116,8 @@ export function cadenceFor(agent) {
 /**
  * Who the reply speaks as, and how to treat the published offer.
  *
- * Replies go out as the sales rep the lead is assigned to — "Randa from
+ * Replies go out as a person — whoever is logged in and asked for the
+ * draft (rep or admin), else the person the lead is assigned to: "Randa from
  * PurpleBox" — not as the agent's own name (Aisha, Omar…), whatever the
  * agent's saved instructions say. Asked directly whether they are talking to
  * a person, it says honestly that it is PurpleBox's assistant writing for the
@@ -130,7 +131,7 @@ export function identityBlock(repName) {
     const first = name.split(/\s+/)[0];
     return [
         offer,
-        `WHO YOU WRITE AS: this lead belongs to ${name}, our sales representative. Write as ${first} from PurpleBox Storage — introduce yourself and sign off as ${first}, wherever the instructions above give you another name. If the customer asks whether they are talking to a real person or a bot, answer honestly: you are PurpleBox's assistant writing on ${first}'s behalf, and ${first} can step in at any time.`,
+        `WHO YOU WRITE AS: you are writing for ${name} from our team. Write as ${first} from PurpleBox Storage — introduce yourself and sign off as ${first}, wherever the instructions above give you another name. If the customer asks whether they are talking to a real person or a bot, answer honestly: you are PurpleBox's assistant writing on ${first}'s behalf, and ${first} can step in at any time.`,
     ].join('\n');
 }
 
@@ -208,7 +209,7 @@ function parseDecision(content) {
  * @param trigger  { kind: 'inbound' | 'touch' | 'refresh' | 'simulate', text }
  * @returns the decision, already persisted and logged unless persist=false
  */
-export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(), persist = true }) {
+export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(), persist = true, writer = '' }) {
     if (!openaiConfigured()) throw new Error('No AI provider is configured');
     const cadence = cadenceFor(agent);
     const before = snapshotOf(leadFile);
@@ -278,9 +279,10 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
                 ].join('\n')
                 : 'TASK: answer the customer\'s latest message, and anything earlier in the conversation they asked that our team has not yet answered. Use tools for anything factual. Then answer with JSON only: {"reply": string, "needsHuman": boolean, "reason": string, "summary": one line on where this lead stands}.';
 
-    // The rep this lead is assigned to: replies go out in their name.
+    // Replies go out in a person's name: whoever is logged in and asked for
+    // this draft (rep or admin), else the person the lead is assigned to.
     const ownerId = lead?.owner?._id || lead?.owner || null;
-    const repName = lead?.owner?.name || (ownerId ? (await User.findById(ownerId).select('name').lean().catch(() => null))?.name : '') || '';
+    const repName = String(writer || '').trim() || lead?.owner?.name || (ownerId ? (await User.findById(ownerId).select('name').lean().catch(() => null))?.name : '') || '';
 
     const system = [
         String(agent.systemPrompt || '').trim() || 'You are the sales assistant for PurpleBox Storage in Dubai, replying to customers on WhatsApp. Be brief and warm.',

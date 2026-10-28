@@ -381,7 +381,7 @@ router.post('/leads/:leadId/suggest-again', staff, wrap(async (req, res) => {
     const startedAt = new Date();
     let decision;
     try {
-        decision = await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'refresh', text: String(lastInbound.text || '') }, now: new Date(), persist: true });
+        decision = await runAgent({ agent, lead, leadFile: file, trigger: { kind: 'refresh', text: String(lastInbound.text || '') }, now: new Date(), persist: true, writer: req.user?.name });
     } catch (e) {
         console.error(`[Agents] suggest-again failed for lead ${lead._id} (${agent.name}):`, e.stack || e.message);
         throw new Error(`Could not draft a reply: ${e.message}`);
@@ -471,7 +471,7 @@ router.post('/simulate', admin, wrap(async (req, res) => {
             };
         }
     }
-    decision ??= await runAgent({ agent, lead, leadFile: file, trigger: { kind, text }, now, persist });
+    decision ??= await runAgent({ agent, lead, leadFile: file, trigger: { kind, text }, now, persist, writer: req.user?.name });
     res.json({ lead: { _id: lead._id, fullName: lead.fullName, phone: lead.phone }, agent: { _id: agent._id, name: agent.name }, decision, file: { bucket: file.bucket, need: file.need, offers: file.offers, openQuestions: file.openQuestions } });
 }));
 
