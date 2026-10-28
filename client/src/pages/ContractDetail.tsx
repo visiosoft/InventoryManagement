@@ -1364,7 +1364,7 @@ export default function ContractDetail() {
             <div className="grid gap-2" style={{ marginTop: 12 }}>
               {[['renewal', 'Renewal'], ['extension_short', 'Short extension'], ['extension_long', 'Long extension'], ['early_checkout', 'Early check-out'], ['correction', 'Correcting a mistake']].map(([k, label]) => (
                 <button key={k} type="button" className="text-left cursor-pointer" style={{ border: '1px solid rgba(20,8,31,.12)', borderRadius: 10, padding: '9px 12px', background: '#fff', fontSize: 13.5, fontWeight: 600 }}
-                  onClick={async () => { const body = { ...endChange, endDateReason: k }; setEndChange(null); try { await api.put(`/contracts/${id}`, body); invalidate() } catch (e) { setError(apiError(e)) } }}>
+                  onClick={async () => { const body = { ...endChange, endDateReason: k }; setEndChange(null); try { const r = await api.put(`/contracts/${id}`, body); if (r.status === 202) setError(r.data?.message || 'Sent for approval'); invalidate() } catch (e) { setError(apiError(e)) } }}>
                   {label}
                 </button>
               ))}
@@ -1555,7 +1555,7 @@ export default function ContractDetail() {
                     body[field] = Number(val) || 0
                   }
                   if (body.endDate && ['active', 'ended'].includes(c.status)) { setEndChange(body); setInlineField(null); return }
-                  try { await api.put(`/contracts/${id}`, body); invalidate() } catch (e) { setError(apiError(e)) }
+                  try { const r = await api.put(`/contracts/${id}`, body); if (r.status === 202) setError(r.data?.message || 'Sent for approval'); invalidate() } catch (e) { setError(apiError(e)) }
                   setInlineField(null)
                 }
 

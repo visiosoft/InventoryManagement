@@ -4,6 +4,7 @@ import { CheckCircle2, Eye, Loader2, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { EmptyState, Spinner } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
+import ChangeApprovals from './ChangeApprovals'
 
 const PURPLE = '#5B2BC9'
 const INK = '#14081F'
@@ -106,6 +107,8 @@ export default function Approvals() {
           ))}
         </div>
       )}
+      {/* Price, discount and date changes held by approval rules (WP-04). */}
+      <ChangeApprovals />
     </div>
   )
 }

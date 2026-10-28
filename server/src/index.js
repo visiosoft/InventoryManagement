@@ -40,6 +40,7 @@ import warehouseJobPublicRoutes from './routes/warehouseJobPublic.js';
 import floorPlanRoutes from './routes/floorPlans.js';
 import siteRoutes from './routes/sites.js';
 import { Customer, Contract } from './models/index.js';
+import approvalRoutes from './routes/approvals.js';
 import collectionRoutes from './routes/collections.js';
 import { checkPromises } from './services/collections.js';
 import piiRoutes from './routes/pii.js';
@@ -337,6 +338,7 @@ const accountsReadOnly = readOnlyFor('accounts');
 app.use('/api/customers', requireAuth, accountsReadOnly, piiGuard(Customer, ['accessPersons']), customerRoutes);
 app.use('/api/pii', requireAuth, piiRoutes);
 app.use('/api/collections', requireAuth, collectionRoutes);
+app.use('/api/approvals', requireAuth, approvalRoutes);
 // Before the authenticated mount below: a tenant clicking the renewal link in
 // their expiry email has no account, and Express matches in order.
 app.use('/api/contracts/public', contractsPublicRoutes);

@@ -1,3 +1,5 @@
+import { ApprovalRule, ApprovalRequest } from '../models/approvals.js';
+import { triggeredRule } from '../services/approvals.js';
 import { bulkGuard } from '../utils/bulkGuard.js';
 import { Router } from 'express';
 import crypto from 'crypto';
@@ -1209,6 +1211,26 @@ router.put('/:id', async (req, res) => {
     const endReason = String(req.body.endDateReason || '');
     if (endMovedDirectly && ['active', 'ended'].includes(contract.status) && !END_DATE_REASONS.includes(endReason)) {
       return res.status(400).json({ error: 'Say why the check-out date is changing', code: 'end_date_reason_required', reasons: END_DATE_REASONS });
+    }
+    /* Approval rules (WP-04): a change an active rule catches waits as a
+       request; nothing in this edit is applied until someone else approves.
+       The approval re-sends this same edit with its request id. */
+    {
+      const approvalId = req.body.__approvalId;
+      const approved = approvalId ? await ApprovalRequest.findOne({ _id: approvalId, entityId: contract._id, status: 'approved' }).lean() : null;
+      const rules = approved ? [] : await ApprovalRule.find({ active: true }).lean();
+      const hit = rules.length ? triggeredRule(rules, contract, $set) : null;
+      if (hit) {
+        const { __approvalId: _ignored, ...proposed } = req.body;
+        const old = Object.fromEntries(Object.keys(proposed).map((k) => [k, contract[k] ?? null]));
+        const request = await ApprovalRequest.create({
+          action: hit.action, entityId: contract._id, entityLabel: contract.contractNo, requestedBy: req.user?.id || null,
+          requestedByName: req.user?.name || req.user?.email || '', proposed, old, reason: String(req.body.approvalReason || ''),
+          rule: hit._id, ruleLabel: hit.label, ruleVersion: hit.version,
+        });
+        await Contract.updateOne({ _id: contract._id }, { $set: { approvalStatus: 'pending' }, $push: { timeline: { at: new Date(), text: `Change sent for approval (${hit.label})`, author: req.user?.name || req.user?.email || '' } } });
+        return res.status(202).json({ pendingApproval: true, requestId: request._id, rule: hit.label, message: `This needs approval: ${hit.label}. Sent to an admin.` });
+      }
     }
 
     // Allow updating the full units array (primary unit stays in contract.unit, array holds all).
