@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import DashboardAsk from '../components/DashboardAsk'
+import ZohoCompareCard from '../components/ZohoCompareCard'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, ClipboardList, FileSignature, Loader2, ReceiptText, Wallet } from 'lucide-react'
 import { api } from '../lib/api'
@@ -246,6 +247,10 @@ export default function AccountsDashboard({ embedded = false }: { embedded?: boo
           </div>
         </div>
       )}
+
+      {/* Accounts keeps the CRM and Zoho contacts in step; on the admin's
+          Finance tab the card sits above this page already. */}
+      {!embedded && <div className="mt-8"><ZohoCompareCard /></div>}
     </div>
   )
 }
