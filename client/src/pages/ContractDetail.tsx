@@ -719,6 +719,8 @@ export default function ContractDetail() {
   // Editor content is injected on mount via a ref callback — rAF timing is unreliable
   const noticeInitial = useRef('')
   const [inlineField, setInlineField] = useState<string | null>(null)
+  // A check-out change on a booked contract waits here for its reason (WP-05).
+  const [endChange, setEndChange] = useState<Record<string, unknown> | null>(null)
   const [inlineValue, setInlineValue] = useState('')
 
   // Units to choose from in the edit panel or inline unit picker
@@ -1353,6 +1355,24 @@ export default function ContractDetail() {
         style={{ border: '1px solid rgba(20,8,31,.06)' }}>
 
       {/* Check-in moved after signing: the customer must sign again. */}
+      {endChange && (
+        <div role="dialog" aria-label="Why is the check-out date changing" style={{ position: 'fixed', inset: 0, background: 'rgba(20,8,31,.35)', zIndex: 80, display: 'grid', placeItems: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 20, width: 360, maxWidth: 'calc(100vw - 32px)' }}>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>Why is the check-out date changing?</div>
+            <div style={{ fontSize: 12.5, color: '#756E80', marginTop: 4 }}>New check-out {String(endChange.endDate)}. It is recorded in the contract's renewal history.</div>
+            <div className="grid gap-2" style={{ marginTop: 12 }}>
+              {[['renewal', 'Renewal'], ['extension_short', 'Short extension'], ['extension_long', 'Long extension'], ['early_checkout', 'Early check-out'], ['correction', 'Correcting a mistake']].map(([k, label]) => (
+                <button key={k} type="button" className="text-left cursor-pointer" style={{ border: '1px solid rgba(20,8,31,.12)', borderRadius: 10, padding: '9px 12px', background: '#fff', fontSize: 13.5, fontWeight: 600 }}
+                  onClick={async () => { const body = { ...endChange, endDateReason: k }; setEndChange(null); try { await api.put(`/contracts/${id}`, body); invalidate() } catch (e) { setError(apiError(e)) } }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => setEndChange(null)} className="cursor-pointer" style={{ marginTop: 10, fontSize: 12.5, color: '#756E80', background: 'none', border: 0 }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
       {c.resignNeeded && c.status === 'active' && ((c.resignNeeded.previousStart || '').slice(0, 10) !== (c.resignNeeded.newStart || '').slice(0, 10) || (c.resignNeeded.previousEnd || '').slice(0, 10) !== (c.resignNeeded.newEnd || '').slice(0, 10)) && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" style={{ background: '#FFF7E6', borderColor: '#F5D08A' }}>
           <div className="min-w-0 flex-1 text-sm" style={{ color: '#7A4B00' }}>
@@ -1533,6 +1553,7 @@ export default function ContractDetail() {
                   } else {
                     body[field] = Number(val) || 0
                   }
+                  if (body.endDate && ['active', 'ended'].includes(c.status)) { setEndChange(body); setInlineField(null); return }
                   try { await api.put(`/contracts/${id}`, body); invalidate() } catch (e) { setError(apiError(e)) }
                   setInlineField(null)
                 }

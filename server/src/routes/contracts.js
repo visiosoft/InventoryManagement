@@ -27,6 +27,8 @@ import { brandedEmailHtml } from '../services/emailLayout.js';
 import { siteScope } from '../utils/siteScope.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 
+const END_DATE_REASONS = ['renewal', 'extension_short', 'extension_long', 'early_checkout', 'correction'];
+
 const router = Router();
 
 router.param('id', (req, res, next, id) => {
@@ -1036,6 +1038,7 @@ async function closeContract(req, res, status) {
   contract.archived = true;
   // If an early end date was provided, update the stored end date
   if (endDate && new Date(endDate) < new Date(contract.endDate)) {
+    contract.renewalHistory = [...(contract.renewalHistory || []), { at: new Date(), previousEndDate: contract.endDate, newEndDate: effectiveEnd, author: req.user?.name || req.user?.email || '', reason: 'early_checkout', source: 'close' }];
     contract.endDate = effectiveEnd;
   }
   // Record reason as a timeline note
@@ -1198,6 +1201,14 @@ router.put('/:id', async (req, res) => {
     if (effectiveStart && effectiveEnd && effectiveEnd <= effectiveStart) {
       return res.status(400).json({ error: 'Check out must be after check in' });
     }
+    /* The end date of a booked contract moves only with a reason, so every
+       change is a tracked renewal, extension, early check-out or correction
+       (WP-05). Drafts and contracts awaiting signature edit freely. */
+    const endMovedDirectly = !endShifted && $set.endDate && contract.endDate && $set.endDate.getTime() !== new Date(contract.endDate).getTime();
+    const endReason = String(req.body.endDateReason || '');
+    if (endMovedDirectly && ['active', 'ended'].includes(contract.status) && !END_DATE_REASONS.includes(endReason)) {
+      return res.status(400).json({ error: 'Say why the check-out date is changing', code: 'end_date_reason_required', reasons: END_DATE_REASONS });
+    }
 
     // Allow updating the full units array (primary unit stays in contract.unit, array holds all).
     if (Array.isArray(req.body.units)) {
@@ -1324,7 +1335,7 @@ router.put('/:id', async (req, res) => {
       // Every Check Out change on an existing contract is a renewal/extension
       // worth its own trackable record, separate from the general timeline.
       if (!endShifted && $set.endDate && contract.endDate && $set.endDate.getTime() !== new Date(contract.endDate).getTime()) {
-        $push.renewalHistory = { at: new Date(), previousEndDate: contract.endDate, newEndDate: $set.endDate, author: who };
+        $push.renewalHistory = { at: new Date(), previousEndDate: contract.endDate, newEndDate: $set.endDate, author: who, reason: endReason, source: 'edit' };
       }
       await Contract.findByIdAndUpdate(contract._id, { $set, $push });
     } else {
@@ -1425,6 +1436,8 @@ router.post('/:id/extend', async (req, res) => {
       contract.agreementText = refreshAgreementDates(contract.agreementText, { endDate: contract.endDate }, { endDate: newEnd });
     }
     await ContractRenewal.updateMany({ contract: contract._id, status: 'pending' }, { $set: { status: 'cancelled' } });
+    const extendReason = END_DATE_REASONS.includes(req.body.reason) ? req.body.reason : 'renewal';
+    contract.renewalHistory = [...(contract.renewalHistory || []), { at: new Date(), previousEndDate: contract.endDate, newEndDate: newEnd, author: req.user?.name || req.user?.email || '', reason: extendReason, source: 'extend' }];
     contract.endDate = newEnd;
 
     let signingUrl = null;

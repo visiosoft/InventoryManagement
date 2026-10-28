@@ -820,6 +820,10 @@ const contractSchema = new Schema(
         previousEndDate: { type: Date },
         newEndDate: { type: Date },
         author: { type: String, default: '' },
+        // Why the end date moved (WP-05): renewal, extension_short,
+        // extension_long, early_checkout, correction. Empty on older rows.
+        reason: { type: String, default: '' },
+        source: { type: String, default: '' }, // edit | extend | close
         _id: false,
       },
     ],
