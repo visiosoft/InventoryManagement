@@ -15,12 +15,15 @@ const CO = {
   trn: TRN,
 };
 
-// Where a customer transfers money: the same account printed on Zoho invoices.
+// Where a moving customer transfers money. Moving has its own account;
+// storage invoices and quotes keep theirs (services/bankDetails.js).
 const BANK = [
-  ['Bank', 'Mashreq Bank'],
-  ['Account name', 'SHORT TERM STORAGE LLC'],
-  ['Account number', '019101745789'],
-  ['IBAN', 'AE500330000019101745789'],
+  ['Bank', 'Abu Dhabi Islamic Bank'],
+  ['Branch', 'Sheikh Zayed'],
+  ['Account name', 'SHORT TERM STORAGE L L C'],
+  ['Account number', '19635844'],
+  ['IBAN', 'AE450500000000019635844'],
+  ['Currency', 'AED'],
 ];
 
 /** The short pay-by-card address for a quote that has a Stripe link, or null. */
@@ -240,7 +243,8 @@ export function generateMovingQuotePdf(quote) {
        on the right, at the foot of the page. The terms follow on page 2, so
        the quote itself stays one clean page. */
     const payUrl = movingQuotePayUrl(quote);
-    const BLOCK_H = 96;
+    // Heading, one 12 pt row per bank line, the reference line, and air.
+    const BLOCK_H = 48 + BANK.length * 12;
     let by = PH - 45 - BLOCK_H;
     if (y > by - 10) { doc.addPage({ size: 'A4', margin: 0 }); by = PH - 45 - BLOCK_H; }
     doc.moveTo(M, by).lineTo(PW - M, by).strokeColor(BORDER).lineWidth(0.5).stroke();
