@@ -16,8 +16,9 @@ import { Site, Unit, Contract } from '../models/index.js';
  */
 export async function siteScope(siteId) {
   if (!siteId) return null;
-  let site = await Site.findById(siteId).select('isDefault').catch(() => null);
-  if (!site) {
+  let site = await Site.findById(siteId).select('isDefault hidden').catch(() => null);
+  // A hidden facility is out of use: a browser still holding it gets the default, like an unknown one.
+  if (!site || site.hidden) {
     site = await Site.findOne({ isDefault: true }).select('isDefault')
       ?? await Site.findOne().sort({ createdAt: 1 }).select('isDefault');
   }
@@ -35,3 +36,6 @@ export async function siteScope(siteId) {
     paymentFilter: { contract: { $in: contractIds } },
   };
 }
+
+/** Ids of hidden facilities: their units stay out of unit lists. */
+export const hiddenSiteIds = async () => (await Site.find({ hidden: true }).select('_id').lean()).map((s) => s._id);

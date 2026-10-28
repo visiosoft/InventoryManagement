@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
 import { contractLeased, unitRow } from '../services/rateRealisation.js';
 import { Unit, Contract, Site } from '../models/index.js';
-import { siteScope } from '../utils/siteScope.js';
+import { siteScope, hiddenSiteIds } from '../utils/siteScope.js';
 import { syncAllUnitStatuses, statusForUnit } from '../utils/unitStatus.js';
 import { softDelete } from '../utils/softDelete.js';
 
@@ -11,6 +11,8 @@ const router = Router();
 router.get('/', async (req, res) => {
   const scope = await siteScope(req.query.site);
   const filter = scope ? { ...scope.unitFilter } : {};
+  // A hidden facility's units are not offered anywhere (Urban Storage, Oct 2026).
+  if (!scope) { const hidden = await hiddenSiteIds(); if (hidden.length) filter.site = { $nin: hidden }; }
   if (req.query.status) filter.status = req.query.status;
   if (req.query.floor) filter.floor = req.query.floor;
   if (req.query.minSize) filter.sizeSqf = { ...filter.sizeSqf, $gte: Number(req.query.minSize) };

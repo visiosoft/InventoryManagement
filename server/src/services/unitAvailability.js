@@ -1,4 +1,5 @@
 import { Unit, Contract, Quote } from '../models/index.js';
+import { hiddenSiteIds } from '../utils/siteScope.js';
 import { HOLDING_STATUSES, QUOTE_ISSUED_STEP, QUOTE_HOLD_DAYS } from '../utils/unitStatus.js';
 
 /**
@@ -21,6 +22,9 @@ import { HOLDING_STATUSES, QUOTE_ISSUED_STEP, QUOTE_HOLD_DAYS } from '../utils/u
  */
 export async function computeUnitAvailability({ from = null, to = null, includeAll = false } = {}) {
     const unitFilter = includeAll ? {} : { status: { $in: ['available', 'reserved'] } };
+    // A hidden facility is out of use: never offered to a customer, a rep or the AI.
+    const hidden = await hiddenSiteIds();
+    if (hidden.length) unitFilter.site = { $nin: hidden };
     const allUnits = await Unit.find(unitFilter).sort({ unitNumber: 1 }).lean();
 
     const bookedUnitIds = new Set();

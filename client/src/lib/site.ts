@@ -40,11 +40,16 @@ export function useSite() {
   return { siteId, setSiteId }
 }
 
-/** True when a unit belongs to the selected site (units with no site belong to the default site). */
+/**
+ * True when a unit belongs to the selected site (units with no site belong to
+ * the default site). A hidden facility's units are never shown, even to a
+ * browser that still has it selected from before it was hidden.
+ */
 export function unitInSite(unitSite: string | { _id: string } | null | undefined, siteId: string | null, sites: Site[]): boolean {
   const defaultId = sites.find(s => s.isDefault)?._id ?? sites[0]?._id ?? null
-  const selected = siteId ?? defaultId
+  const hidden = new Set(sites.filter(s => s.hidden).map(s => s._id))
+  const selected = siteId && !hidden.has(siteId) ? siteId : defaultId
   if (!selected) return true
-  const us = typeof unitSite === 'object' && unitSite ? unitSite._id : unitSite
-  return (us ?? defaultId) === selected
+  const us = (typeof unitSite === 'object' && unitSite ? unitSite._id : unitSite) ?? defaultId
+  return !hidden.has(us ?? '') && us === selected
 }
