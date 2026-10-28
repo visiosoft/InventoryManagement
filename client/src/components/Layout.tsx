@@ -39,6 +39,11 @@ const navTop: { to: string; label: string; icon: typeof Package; perm?: string |
   { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'dashboard' },
 ]
 
+/* Pages an admin opens from Settings rather than the sidebar (Oct 2026):
+   kept short so the menu holds what is used every day. Other roles keep them. */
+export const ADMIN_PAGES_IN_SETTINGS = ['/client-requests', '/tasks', '/renewals', '/exit-surveys', '/calls']
+const inSettingsFor = (isAdmin: boolean, to: string) => isAdmin && ADMIN_PAGES_IN_SETTINGS.includes(to)
+
 const navGroups = [
   {
     title: 'Inventory',
@@ -585,7 +590,7 @@ export default function Layout() {
           )
         })()}
 
-        {showStorageNav && navTop.filter(({ perm, adminOnly }) => (!adminOnly || isAdmin) && (!perm || hasPermission(perm))).map(({ to, label, icon: Icon, badgeKey }) => (
+        {showStorageNav && navTop.filter(({ to, perm, adminOnly }) => (!adminOnly || isAdmin) && (!perm || hasPermission(perm)) && !inSettingsFor(isAdmin, to)).map(({ to, label, icon: Icon, badgeKey }) => (
           <NavLink key={to} to={to} end={to === '/'}
             className={({ isActive }) => cn(isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive), badgeKey && 'relative')}
             title={badgeKey ? badgeTitle(badgeKey, label) : isCollapsed ? label : undefined}>
@@ -604,7 +609,7 @@ export default function Layout() {
              value — and, before long, an assessment of the reps themselves. */
           if ((group as { adminOnly?: boolean }).adminOnly && !isAdmin) return null
           const visibleItems = group.items
-            .filter(({ perm }) => !perm || hasPermission(perm))
+            .filter(({ to, perm }) => (!perm || hasPermission(perm)) && !inSettingsFor(isAdmin, to))
           if (visibleItems.length === 0) return null
           return (
             <div key={group.title || visibleItems[0]?.to} className="pt-3">

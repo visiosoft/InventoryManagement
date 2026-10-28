@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ConnectionRows } from '../components/ConnectForms'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { CalendarCheck, ClipboardList, Inbox, ListTodo, Pencil, PhoneCall, Plus, Trash2 } from 'lucide-react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { api, apiError, integrationApi, productApi, whatsappApi } from '../lib/api'
 import type { IntegrationStatus, Product } from '../lib/types'
@@ -12,6 +12,15 @@ import UnitPricing from './UnitPricing'
 import BulkUnitPricing from './BulkUnitPricing'
 import WebsitePricing from './WebsitePricing'
 import AiProviderCard from '../components/AiProviderCard'
+
+/* Pages moved off an admin's sidebar to keep it short (Layout's ADMIN_PAGES_IN_SETTINGS). */
+const MORE_PAGES = [
+  { to: '/client-requests', label: 'Client requests', hint: 'What customers asked for from the portal', icon: Inbox },
+  { to: '/tasks', label: 'Tasks', hint: "The team's to-do list", icon: ListTodo },
+  { to: '/renewals', label: 'Renewals & Move-outs', hint: 'Contracts ending soon, and who is leaving', icon: CalendarCheck },
+  { to: '/exit-surveys', label: 'Exit Surveys', hint: 'Why tenants moved out', icon: ClipboardList },
+  { to: '/calls', label: 'Calls', hint: 'Call log and recordings', icon: PhoneCall },
+]
 
 
 // ---- Products / Services Card ----
@@ -288,6 +297,23 @@ export default function Settings() {
         <WebsitePricing embedded />
       ) : (
     <>
+      {isAdmin && (
+        <Card>
+          <CardHeader title="More pages" />
+          <CardBody className="grid gap-2 sm:grid-cols-2 text-sm">
+            {MORE_PAGES.map((p) => (
+              <Link key={p.to} to={p.to} className="flex items-center gap-3 rounded-lg border px-4 py-3 hover:bg-muted/50 transition-colors">
+                <p.icon size={16} style={{ color: '#4A1FA0' }} />
+                <div className="min-w-0">
+                  <div className="font-medium">{p.label}</div>
+                  <div className="text-xs text-muted-foreground truncate">{p.hint}</div>
+                </div>
+              </Link>
+            ))}
+          </CardBody>
+        </Card>
+      )}
+
       <ProductsCard />
 
       <Card>
