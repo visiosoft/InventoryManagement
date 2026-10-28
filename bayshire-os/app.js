@@ -194,7 +194,7 @@
   });
 
   const DEMO_EMAIL = 'hello@2capacity.com';
-  const DEMO_REQUEST_URL = 'https://api.purplebox.ae/api/public/demo-requests';
+  const DEMO_REQUEST_URL = 'https://demoapi.purplebox.ae/api/public/demo-requests';
 
   /* ---------------- Reveal on scroll ---------------- */
   if (window.gsap && window.ScrollTrigger) {
