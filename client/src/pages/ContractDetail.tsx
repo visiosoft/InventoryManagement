@@ -1384,21 +1384,16 @@ export default function ContractDetail() {
 
       {/* Check-in moved after signing: the customer must sign again. */}
       {endChange && (
-        <div role="dialog" aria-label="Why is the check-out date changing" style={{ position: 'fixed', inset: 0, background: 'rgba(20,8,31,.35)', zIndex: 80, display: 'grid', placeItems: 'center' }}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: 20, width: 360, maxWidth: 'calc(100vw - 32px)' }}>
-            <div style={{ fontWeight: 800, fontSize: 15 }}>Why is the check-out date changing?</div>
-            <div style={{ fontSize: 12.5, color: '#756E80', marginTop: 4 }}>New check-out {String(endChange.endDate)}. It is recorded in the contract's renewal history.</div>
-            <div className="grid gap-2" style={{ marginTop: 12 }}>
-              {[['renewal', 'Renewal'], ['extension_short', 'Short extension'], ['extension_long', 'Long extension'], ['early_checkout', 'Early check-out'], ['correction', 'Correcting a mistake']].map(([k, label]) => (
-                <button key={k} type="button" className="text-left cursor-pointer" style={{ border: '1px solid rgba(20,8,31,.12)', borderRadius: 10, padding: '9px 12px', background: '#fff', fontSize: 13.5, fontWeight: 600 }}
-                  onClick={async () => { const body = { ...endChange, endDateReason: k }; setEndChange(null); try { const r = await api.put(`/contracts/${id}`, body); if (r.status === 202) setError(r.data?.message || 'Sent for approval'); invalidate() } catch (e) { setError(apiError(e)) } }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button type="button" onClick={() => setEndChange(null)} className="cursor-pointer" style={{ marginTop: 10, fontSize: 12.5, color: '#756E80', background: 'none', border: 0 }}>Cancel</button>
-          </div>
-        </div>
+        <EndDateDialog
+          initial={String(endChange.endDate || (c.endDate || '').slice(0, 10))}
+          current={(c.endDate || '').slice(0, 10)}
+          onCancel={() => setEndChange(null)}
+          onSave={async (endDate, reason) => {
+            const body = { ...endChange, endDate, endDateReason: reason }
+            setEndChange(null)
+            try { const r = await api.put(`/contracts/${id}`, body); if (r.status === 202) setError(r.data?.message || 'Sent for approval'); else setError(''); invalidate() } catch (e) { setError(apiError(e)) }
+          }}
+        />
       )}
 
       {c.resignNeeded && c.status === 'active' && ((c.resignNeeded.previousStart || '').slice(0, 10) !== (c.resignNeeded.newStart || '').slice(0, 10) || (c.resignNeeded.previousEnd || '').slice(0, 10) !== (c.resignNeeded.newEnd || '').slice(0, 10)) && (
@@ -1628,6 +1623,12 @@ export default function ContractDetail() {
                   <div className="divide-y border-t text-[15px] pt-1">
                     {EditableRow('Check In', 'startDate', c.startDate ? formatDate(c.startDate) : '—', (c.startDate || '').slice(0, 10), 'date')}
                     {EditableRow('Check Out', 'endDate', c.endDate ? formatDate(c.endDate) : '—', (c.endDate || '').slice(0, 10), 'date')}
+                    {['active', 'ended'].includes(c.status) && (
+                      <button type="button" onClick={() => setEndChange({ endDate: (c.endDate || '').slice(0, 10) })}
+                        className="cursor-pointer" style={{ alignSelf: 'flex-end', fontSize: 12.5, fontWeight: 700, color: '#5B2BC9', background: '#F3EEFF', border: 0, borderRadius: 8, padding: '6px 12px', margin: '4px 0 8px auto', display: 'block' }}>
+                        Change check-out date
+                      </button>
+                    )}
                     {EditableRow('Number of Weeks', 'weeks', String(weeks ?? '—'), String(weeks || ''), 'number', '1')}
                     {Row('Expiring In', daysLeft === null ? '—' : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`)}
                     {(() => {
@@ -3416,6 +3417,46 @@ export default function ContractDetail() {
         )}
       </SlideOver>
 
+    </div>
+  )
+}
+
+/* Change a booked contract's check-out: the new date and why, together.
+   Every change is kept in the contract's renewal history (WP-05). */
+const END_REASONS: [string, string][] = [
+  ['renewal', 'Renewal'], ['extension_short', 'Short extension'], ['extension_long', 'Long extension'],
+  ['early_checkout', 'Early check-out'], ['correction', 'Correcting a mistake'],
+]
+function EndDateDialog({ initial, current, onSave, onCancel }: { initial: string; current: string; onSave: (endDate: string, reason: string) => void; onCancel: () => void }) {
+  const [date, setDate] = useState(initial)
+  const [reason, setReason] = useState('')
+  const ready = Boolean(date && reason && date !== current)
+  return (
+    <div role="dialog" aria-label="Change check-out date" style={{ position: 'fixed', inset: 0, background: 'rgba(20,8,31,.35)', zIndex: 80, display: 'grid', placeItems: 'center' }}>
+      <div style={{ background: '#fff', borderRadius: 16, padding: 20, width: 380, maxWidth: 'calc(100vw - 32px)' }}>
+        <div style={{ fontWeight: 800, fontSize: 15 }}>Change check-out date</div>
+        <div style={{ fontSize: 12.5, color: '#756E80', marginTop: 4 }}>Now {current || '—'}. The change and its reason are kept in the renewal history.</div>
+        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#756E80', marginTop: 14 }}>New check-out
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+            style={{ display: 'block', width: '100%', height: 38, marginTop: 4, border: '1px solid rgba(20,8,31,.15)', borderRadius: 8, padding: '0 10px', fontSize: 14 }} />
+        </label>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#756E80', marginTop: 12 }}>Reason</div>
+        <div className="grid gap-2" style={{ marginTop: 6 }}>
+          {END_REASONS.map(([k, label]) => (
+            <button key={k} type="button" onClick={() => setReason(k)} aria-pressed={reason === k} className="text-left cursor-pointer"
+              style={{ border: `1.5px solid ${reason === k ? '#5B2BC9' : 'rgba(20,8,31,.12)'}`, borderRadius: 10, padding: '9px 12px', background: reason === k ? '#F3EEFF' : '#fff', fontSize: 13.5, fontWeight: 600, color: reason === k ? '#5B2BC9' : '#14081F' }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-end gap-2" style={{ marginTop: 16 }}>
+          <button type="button" onClick={onCancel} className="cursor-pointer" style={{ fontSize: 13, fontWeight: 600, color: '#756E80', background: 'none', border: 0, padding: '8px 12px' }}>Cancel</button>
+          <button type="button" disabled={!ready} onClick={() => onSave(date, reason)} className="cursor-pointer"
+            style={{ fontSize: 13, fontWeight: 700, color: '#fff', background: '#5B2BC9', border: 0, borderRadius: 9, padding: '8px 16px', opacity: ready ? 1 : 0.45 }}>
+            Save
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
