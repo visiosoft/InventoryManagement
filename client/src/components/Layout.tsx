@@ -886,7 +886,7 @@ export default function Layout() {
       )}
 
       {/* ── Main content ────────────────────────────────────────── */}
-      <main className={cn("flex-1 pt-14 md:pt-0 min-w-0 transition-all duration-200", collapsed ? 'md:ml-[60px]' : 'md:ml-56')} style={{ background: '#FBF8F2' }}>
+      <main className={cn("flex-1 pt-14 md:pt-0 min-w-0 transition-all duration-200 flex flex-col min-h-screen", collapsed ? 'md:ml-[60px]' : 'md:ml-56')} style={{ background: '#FBF8F2' }}>
         <ViewAsBanner />
         {/* Desktop top bar with profile dropdown */}
         <div className="hidden md:flex items-center justify-between h-14 px-6 border-b border-border/40">
@@ -1052,7 +1052,8 @@ export default function Layout() {
           </div>
         </div>
 
-        <div className={location.pathname === '/floor-map' ? '' : 'p-3 sm:p-4'}>
+        {/* flex-1: the page fills the height, so the footer sits at the bottom even on a short page. */}
+        <div className={cn('flex-1', location.pathname === '/floor-map' ? '' : 'p-3 sm:p-4')}>
           {/* Nothing fetches until we know which facility we are in — see
               SiteGate. Without it the first page of a fresh login asks for
               data before a facility is chosen and caches the whole company. */}
