@@ -7,6 +7,11 @@ import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '.
 import { siteScope } from '../utils/siteScope.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { duplicateGroups, agingSummary, agingBucket } from '../services/receivables.js';
+import { bulkGuard } from '../utils/bulkGuard.js';
+
+// How a payment was made: required when one is recorded, never assumed (WP-13).
+const METHODS = ['cash', 'bank_transfer', 'card', 'cheque', 'other'];
+const badMethod = (m) => !METHODS.includes(m);
 
 const router = Router();
 
@@ -148,6 +153,7 @@ router.post('/invoice-partial', async (req, res) => {
   const { invoiceId, contractId, amount, method, paidDate, notes } = req.body;
   if (!invoiceId || !contractId || !amount)
     return res.status(400).json({ error: 'invoiceId, contractId, amount are required' });
+  if (badMethod(method)) return res.status(400).json({ error: 'Choose how it was paid', methods: METHODS });
 
   const invoice = await Invoice.findById(invoiceId);
   if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
@@ -168,7 +174,7 @@ router.post('/invoice-partial', async (req, res) => {
   await Payment.create({
     contract: contractId, invoice: invoiceId,
     amount: partialAmt, dueDate,
-    status: 'paid', method: method || 'cash',
+    status: 'paid', method,
     paidDate: paidDate ? new Date(paidDate) : new Date(),
     notes: notes || `Partial payment · Unit ${unitNo}`,
     recordedBy: actor,
@@ -194,11 +200,14 @@ router.post('/bulk-record', async (req, res) => {
   const { paymentIds, method, paidDate, notes } = req.body;
   if (!Array.isArray(paymentIds) || paymentIds.length === 0)
     return res.status(400).json({ error: 'paymentIds array is required' });
+  if (badMethod(method)) return res.status(400).json({ error: 'Choose how it was paid', methods: METHODS });
+  const batch = await bulkGuard(req, res, { action: 'payments.bulk_record', count: paymentIds.length });
+  if (!batch) return;
   const date = paidDate ? new Date(paidDate) : new Date();
   const actor = req.user?.name || req.user?.email || '';
   const result = await Payment.updateMany(
     { _id: { $in: paymentIds }, status: { $ne: 'paid' } },
-    { $set: { status: 'paid', method: method || 'cash', paidDate: date, recordedBy: actor, ...(notes ? { notes } : {}) } }
+    { $set: { status: 'paid', method, paidDate: date, recordedBy: actor, ...(notes ? { notes } : {}) } }
   );
 
   // Update linked invoice status if all payments for that invoice are now paid
@@ -241,8 +250,9 @@ router.post('/:id/record', async (req, res) => {
   const payment = await Payment.findById(req.params.id);
   if (!payment) return res.status(404).json({ error: 'Payment not found' });
   if (payment.status === 'paid') return res.status(409).json({ error: 'Payment is already recorded as paid' });
+  if (badMethod(method)) return res.status(400).json({ error: 'Choose how it was paid', methods: METHODS });
   payment.status = 'paid';
-  payment.method = method || 'cash';
+  payment.method = method;
   payment.paidDate = paidDate ? new Date(paidDate) : new Date();
   payment.recordedBy = req.user?.name || req.user?.email || '';
   if (notes) payment.notes = notes;
@@ -466,6 +476,7 @@ router.delete('/bulk', requireAdmin, async (req, res) => {
   const { paymentIds, deleteInvoice, invoiceId } = req.body;
   if (!Array.isArray(paymentIds) || paymentIds.length === 0)
     return res.status(400).json({ error: 'paymentIds array is required' });
+  if (!(await bulkGuard(req, res, { action: 'payments.bulk_delete', count: paymentIds.length }))) return;
   await softDeleteMany(Payment, { _id: { $in: paymentIds } }, req.user.id);
   if (deleteInvoice && invoiceId) {
     const invoice = await Invoice.findById(invoiceId);

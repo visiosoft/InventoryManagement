@@ -1,3 +1,4 @@
+import { bulkGuard } from '../utils/bulkGuard.js';
 import { Router } from 'express';
 import { isValidObjectId } from 'mongoose';
 import { Customer, Contract, Document, Payment, Invoice, Unit, Quote } from '../models/index.js';
@@ -493,6 +494,7 @@ router.post('/send-email', requireEmailSender, async (req, res) => {
 router.post('/bulk-delete', requireAdmin, async (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
   if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
+  if (!(await bulkGuard(req, res, { action: 'customers.bulk_delete', count: ids.length }))) return;
   try {
     for (const id of ids) {
       await deleteCustomerCascade(id, req.user.id);

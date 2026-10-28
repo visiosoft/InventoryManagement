@@ -1,3 +1,4 @@
+import { bulkGuard } from '../utils/bulkGuard.js';
 import { Router } from 'express';
 import crypto from 'crypto';
 import { isValidObjectId, Types } from 'mongoose';
@@ -1542,6 +1543,7 @@ router.post('/bulk-delete', requireAdmin, async (req, res) => {
   if (!ids.length) {
     return res.status(400).json({ error: 'ids array is required' });
   }
+  if (!(await bulkGuard(req, res, { action: 'contracts.bulk_delete', count: ids.length }))) return;
 
   const uniqueIds = Array.from(new Set(ids));
   const contracts = await Contract.find({ _id: { $in: uniqueIds } });

@@ -1311,7 +1311,7 @@ const paymentSchema = new Schema(
     amount: { type: Number, required: true },
     dueDate: { type: Date, required: true },
     paidDate: { type: Date },
-    method: { type: String, enum: ['cash', 'bank_transfer', 'card', 'other', ''], default: '' },
+    method: { type: String, enum: ['cash', 'bank_transfer', 'card', 'cheque', 'other', ''], default: '' },
     // duplicate_voided: an extra copy of another unpaid row, voided by finance
     // on review (WP-02). Never deleted; voidOf points at the row that was kept.
     status: { type: String, enum: ['pending', 'paid', 'overdue', 'duplicate_voided'], default: 'pending' },
@@ -3073,6 +3073,17 @@ automationLogSchema.pre('validate', function redactIdentity() {
   for (const f of ['message', 'error']) if (typeof this[f] === 'string') this[f] = scrubText(this[f]);
 });
 export const AutomationLog = model('AutomationLog', automationLogSchema);
+
+// One row per change touching more than 20 records (utils/bulkGuard.js, WP-13).
+const bulkBatchSchema = new Schema({
+  action: { type: String, required: true },
+  count: { type: Number, default: 0 },
+  reason: { type: String, required: true },
+  user: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  userName: { type: String, default: '' },
+  at: { type: Date, default: Date.now },
+}, { versionKey: false });
+export const BulkBatch = model('BulkBatch', bulkBatchSchema);
 
 // One row per AI call (services/aiUsage.js): what the AI costs, and who spent it.
 const aiUsageSchema = new Schema({

@@ -1,3 +1,4 @@
+import { bulkGuard } from '../utils/bulkGuard.js';
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
 import crypto from 'crypto';
@@ -583,6 +584,7 @@ router.post('/bulk-delete', requireAdmin, async (req, res) => {
     if (!ids.length) {
         return res.status(400).json({ error: 'ids array is required' });
     }
+    if (!(await bulkGuard(req, res, { action: 'invoices.bulk_delete', count: ids.length }))) return;
 
     const uniqueIds = Array.from(new Set(ids));
     const invoices = await Invoice.find({ _id: { $in: uniqueIds } }).select('_id');

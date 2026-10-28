@@ -69,6 +69,16 @@ api.interceptors.response.use(
       localStorage.removeItem('pb_user')
       location.href = '/login'
     }
+    /* A change to more than 20 records needs a reason (server: bulkGuard).
+       Ask once and send it again with the reason; cancelling leaves it undone. */
+    const cfg = err.config
+    if (err.response?.status === 400 && err.response?.data?.code === 'batch_reason_required' && cfg && !cfg._batchAsked) {
+      const reason = window.prompt(`${err.response.data.error}\n\nReason:`)?.trim()
+      if (reason && reason.length >= 3) {
+        const body = typeof cfg.data === 'string' ? JSON.parse(cfg.data || '{}') : (cfg.data || {})
+        return api.request({ ...cfg, _batchAsked: true, data: { ...body, batchReason: reason } } as typeof cfg)
+      }
+    }
     return Promise.reject(err)
   }
 )
