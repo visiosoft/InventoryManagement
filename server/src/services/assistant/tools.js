@@ -75,6 +75,8 @@ tool({
          bySize,
          units: units.slice(0, 40).map((u) => ({
             unitNumber: u.unitNumber, floor: u.floor, sizeSqf: u.sizeSqf, monthlyPrice: money(u.price), status: u.status,
+            // The offer the website shows for this size: quote it first.
+            ...(Number(u.discountPct) > 0 ? { firstMonthDiscountPct: Number(u.discountPct), firstMonthPrice: money(u.price * (1 - Number(u.discountPct) / 100)) } : {}),
          })),
          truncated: units.length > 40,
          links: [link('Search units', '/units')],
@@ -92,11 +94,11 @@ tool({
          sizeSqf: { type: 'number', description: 'Or a size in sq ft' },
          startDate: { type: 'string', description: 'YYYY-MM-DD' },
          endDate: { type: 'string', description: 'YYYY-MM-DD' },
-         discountPct: { type: 'number', description: 'Discount percent on the first 4 weeks, default 0' },
+         discountPct: { type: 'number', description: 'Discount percent on the first 4 weeks. Leave out to use the size\'s current offer (what the website shows).' },
       },
       required: ['startDate', 'endDate'],
    },
-   async run({ unitNumber, sizeSqf, startDate, endDate, discountPct = 0 }, { scope }) {
+   async run({ unitNumber, sizeSqf, startDate, endDate, discountPct }, { scope }) {
       if (!unitNumber && !sizeSqf) return { error: 'Need a unit number or a size' };
       if (new Date(endDate) <= new Date(startDate)) return { error: 'End date must be after the start date' };
 
@@ -115,6 +117,8 @@ tool({
          unit = free[0];
       }
       if (!(unit.price > 0)) return { error: `${unit.unitNumber} has no price set` };
+      // No discount named: the size's own offer, as the website shows it.
+      if (discountPct === undefined || discountPct === null || discountPct === '') discountPct = Number(unit.discountPct) || 0;
 
       const quote = {
          units: [{ unitNumber: unit.unitNumber, sizeSqf: unit.sizeSqf, floor: unit.floor, rate: unit.price, discountPct, startDate, endDate }],

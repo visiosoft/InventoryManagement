@@ -85,9 +85,28 @@ export const FACILITY = {
     hours: process.env.FACILITY_HOURS || 'Monday to Saturday, 10 AM to 6 PM',
 };
 
+/**
+ * One size's price as the customer should hear it: the list price per 4
+ * weeks and, when the size has a discount set (the website price list sets
+ * it per size), the first month at the discounted price. Pure.
+ */
+export function priceLine(size, row) {
+    if (!row?.prices.length) return `${size} sqft: price on request`;
+    const fmt = (n) => (Math.round(n * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    const min = Math.min(...row.prices);
+    const max = Math.max(...row.prices);
+    const list = min === max ? `AED ${fmt(min)}` : `AED ${fmt(min)}–${fmt(max)}`;
+    const d = row.discounts?.length ? Math.max(...row.discounts) : 0;
+    const units = row.total ? ` (${row.total} units)` : '';
+    if (!(d > 0)) return `${size} sqft: ${list} per 4 weeks${units}`;
+    const off = (p) => fmt(p * (1 - d / 100));
+    const first = min === max ? `AED ${off(min)}` : `AED ${off(min)}–${off(max)}`;
+    return `${size} sqft: ${list} per 4 weeks — first month ${d}% off: ${first}${units}`;
+}
+
 export async function buildFacts(inboundText, config) {
     const units = await Unit.find({ status: { $ne: 'maintenance' } })
-        .select('unitNumber floor sizeSqf price status')
+        .select('unitNumber floor sizeSqf price status discountPct')
         .lean();
 
     const floors = [...new Set(units.map((u) => u.floor).filter(Boolean))].sort();
@@ -98,20 +117,18 @@ export async function buildFacts(inboundText, config) {
     const bySize = new Map();
     for (const u of units) {
         if (!(Number(u.sizeSqf) > 0)) continue;
-        const row = bySize.get(u.sizeSqf) || { total: 0, prices: [] };
+        const row = bySize.get(u.sizeSqf) || { total: 0, prices: [], discounts: [] };
         row.total += 1;
         if (Number(u.price) > 0) row.prices.push(Number(u.price));
+        if (Number(u.discountPct) > 0) row.discounts.push(Number(u.discountPct));
         bySize.set(u.sizeSqf, row);
     }
 
     const lines = [];
-    lines.push('SIZES AND MONTHLY PRICES (AED):');
+    lines.push('SIZES AND PRICES (AED per 4 weeks). Where a size has an offer, quote the offer first — it is what the website shows:');
     for (const size of sizes) {
         const row = bySize.get(size);
-        if (!row?.prices.length) { lines.push(`- ${size} sqft: price on request`); continue; }
-        const min = Math.min(...row.prices);
-        const max = Math.max(...row.prices);
-        lines.push(`- ${size} sqft: ${min === max ? `AED ${min}` : `AED ${min}–${max}`} per month (${row.total} units)`);
+        lines.push(`- ${priceLine(size, row)}`);
     }
     if (floors.length) lines.push(`FLOORS: ${floors.join(', ')}`);
     // Where we are and when to come — customers ask in nearly every chat.

@@ -105,7 +105,7 @@ const OWN_TOOLS = [
     },
     {
         name: 'escalate',
-        description: 'Hand this conversation to a person. Use it for contracts, invoices, payments, complaints, discounts, anything you cannot confirm from the facts, or when the customer asks for a person.',
+        description: 'Hand this conversation to a person. Use it for contracts, invoices, payments, complaints, a discount beyond the first-month offer shown in the facts (that offer you quote yourself), anything you cannot confirm from the facts, or when the customer asks for a person.',
         parameters: {
             type: 'object',
             properties: { reason: { type: 'string', description: 'One sentence a colleague picking this up needs' } },

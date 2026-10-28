@@ -10,7 +10,7 @@
  */
 
 import { usableFirstName, stripUnusableNames } from '../services/leadNames.js';
-import { WhatsAppMessage, Lead } from '../models/index.js';
+import { WhatsAppMessage, Lead, User } from '../models/index.js';
 import { chatWithTools, openaiConfigured, openaiModel, resolveModel } from '../services/openai.js';
 import { buildFacts, historyToMessages } from '../services/aiBot.js';
 import { figuresGrounded } from '../services/assistant/index.js';
@@ -111,6 +111,27 @@ export function cadenceFor(agent) {
         if (Array.isArray(own) && own.length) out[k] = own.map(Number).filter((n) => n > 0);
     }
     return out;
+}
+
+/**
+ * Who the reply speaks as, and how to treat the published offer.
+ *
+ * Replies go out as the sales rep the lead is assigned to — "Randa from
+ * PurpleBox" — not as the agent's own name (Aisha, Omar…), whatever the
+ * agent's saved instructions say. Asked directly whether they are talking to
+ * a person, it says honestly that it is PurpleBox's assistant writing for the
+ * rep. The first-month offers in the facts are prices to quote, not a
+ * discount request to hand over. Pure.
+ */
+export function identityBlock(repName) {
+    const offer = 'PRICES: the first-month offers in the facts are published prices — the website shows them. Quote them yourself, the offer first; they are not a discount request. Only a discount beyond them goes to a person.';
+    const name = String(repName || '').trim();
+    if (!name) return offer;
+    const first = name.split(/\s+/)[0];
+    return [
+        offer,
+        `WHO YOU WRITE AS: this lead belongs to ${name}, our sales representative. Write as ${first} from PurpleBox Storage — introduce yourself and sign off as ${first}, wherever the instructions above give you another name. If the customer asks whether they are talking to a real person or a bot, answer honestly: you are PurpleBox's assistant writing on ${first}'s behalf, and ${first} can step in at any time.`,
+    ].join('\n');
 }
 
 const RULES = [
@@ -257,8 +278,13 @@ export async function runAgent({ agent, lead, leadFile, trigger, now = new Date(
                 ].join('\n')
                 : 'TASK: answer the customer\'s latest message, and anything earlier in the conversation they asked that our team has not yet answered. Use tools for anything factual. Then answer with JSON only: {"reply": string, "needsHuman": boolean, "reason": string, "summary": one line on where this lead stands}.';
 
+    // The rep this lead is assigned to: replies go out in their name.
+    const ownerId = lead?.owner?._id || lead?.owner || null;
+    const repName = lead?.owner?.name || (ownerId ? (await User.findById(ownerId).select('name').lean().catch(() => null))?.name : '') || '';
+
     const system = [
         String(agent.systemPrompt || '').trim() || 'You are the sales assistant for PurpleBox Storage in Dubai, replying to customers on WhatsApp. Be brief and warm.',
+        identityBlock(repName),
         leadFileBlock(work, lead, cadence),
         isFollowup ? crmBlock(lead, now) : '',
         'FACTS YOU MAY USE — everything below is from the live system:',
