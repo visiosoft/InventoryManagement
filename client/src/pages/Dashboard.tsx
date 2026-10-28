@@ -445,14 +445,14 @@ export default function Dashboard() {
                 header, big %, bar), Booked/Reserved/Vacant kept as their
                 own separate cards right after it, same as before. */}
             {(() => {
-              const lettable = stats.byStatus.available + stats.byStatus.occupied + stats.byStatus.reserved
+              const lettable = stats.occupancy?.rentable ?? (stats.byStatus.available + stats.byStatus.occupied + stats.byStatus.reserved)
               return (
                 <div className="col-span-2" style={{ padding: 24, borderRadius: 22, background: '#1A0B33', color: '#FFF', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 8px 24px rgba(20,8,31,.10)' }}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>
                       <ChevronDown size={13} aria-hidden="true" /> Occupancy
                     </div>
-                    <div style={{ fontSize: 11, color: '#B9A8E8' }}>{stats.occupancyPct}% of {lettable}</div>
+                    <div style={{ fontSize: 11, color: '#B9A8E8' }} title={stats.occupancy?.definition}>{stats.occupancy ? `${stats.occupancy.occupied} of ${lettable} units` : `${stats.occupancyPct}% of ${lettable}`}</div>
                   </div>
                   <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.04em' }}>{stats.occupancyPct}%</div>
                   <div style={{ height: 8, borderRadius: 999, background: 'rgba(255,255,255,.14)', overflow: 'hidden' }}>

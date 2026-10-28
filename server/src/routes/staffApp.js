@@ -14,6 +14,7 @@
  * list's own "overdue" (leads.js /follow-ups).
  */
 
+import { computeOccupancy } from '../services/occupancy.js';
 import { Router } from 'express';
 import { isValidObjectId } from 'mongoose';
 import { CallLog, Contract, Customer, Invoice, Lead, Payment, SentEmail, Unit, User, WhatsAppMessage } from '../models/index.js';
@@ -140,7 +141,7 @@ router.get('/admin/today', requireAdmin, async (_req, res) => {
       ]);
 
       const units = Object.fromEntries(unitStats.map((r) => [r._id, r.n]));
-      const rentable = (units.available || 0) + (units.occupied || 0) + (units.reserved || 0);
+      const occ = await computeOccupancy();
 
       res.json({
          date: today,
@@ -172,7 +173,8 @@ router.get('/admin/today', requireAdmin, async (_req, res) => {
          moveIns,
          moveOuts,
          occupancy: {
-            pct: rentable ? Math.round((((units.occupied || 0) + (units.reserved || 0)) / rentable) * 100) : 0,
+            pct: occ.occupancyPct,
+            definition: occ.definition,
             available: units.available || 0,
             occupied: units.occupied || 0,
             reserved: units.reserved || 0,

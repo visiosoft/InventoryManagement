@@ -15,6 +15,7 @@
  * not a longer prompt.
  */
 
+import { computeOccupancy } from './occupancy.js';
 import { Contract, Unit, Lead, Payment, User, WhatsAppMessage } from '../models/index.js';
 
 const money = (n) => Math.round(Number(n || 0) * 100) / 100;
@@ -53,27 +54,19 @@ export const BLOCKS = {
         params: {},
         shape: 'stat',
         async run(_params, scope) {
-            const rows = await Unit.aggregate([
-                { $match: unitWhere(scope) },
-                { $group: { _id: '$status', n: { $sum: 1 } } },
-            ]);
-            const get = (k) => rows.find((r) => r._id === k)?.n ?? 0;
-            const booked = get('occupied');
-            const reserved = get('reserved');
-            const vacant = get('available');
-            const maintenance = get('maintenance');
-            // Occupancy is measured against what can actually be let, so a unit
-            // out of service is not counted as empty stock nobody has sold.
-            const lettable = booked + reserved + vacant;
+            // One definition everywhere (services/occupancy.js): occupied from
+            // contracts, out of every unit not decommissioned.
+            const o = await computeOccupancy({ scope: scope || null });
             return {
                 stats: [
-                    { label: 'Booked', value: booked },
-                    { label: 'Reserved', value: reserved },
-                    { label: 'Vacant', value: vacant },
-                    { label: 'Under maintenance', value: maintenance },
-                    { label: 'Occupancy', value: lettable ? Math.round(((booked + reserved) / lettable) * 100) : 0, unit: '%' },
+                    { label: 'Occupied', value: o.occupied },
+                    { label: 'Reserved', value: o.reserved },
+                    { label: 'Vacant', value: o.available },
+                    { label: 'Under maintenance', value: o.maintenance },
+                    { label: 'Occupancy', value: o.occupancyPct, unit: '%' },
                 ],
-                totals: { units: booked + reserved + vacant + maintenance, lettable },
+                totals: { units: o.rentable + o.decommissioned, rentable: o.rentable },
+                definition: o.definition,
             };
         },
     },

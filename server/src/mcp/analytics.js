@@ -1,3 +1,4 @@
+import { computeOccupancy } from '../services/occupancy.js';
 import { Contract, Unit, Lead, Payment, Quote, Invoice } from '../models/index.js';
 import { responseTimeReport } from './crmTools.js';
 
@@ -195,7 +196,8 @@ export async function businessSnapshot() {
   const [f, rt, conv, trend] = await Promise.all([forecast({ weeks: 4 }), responseTimeReport({ days: 30 }), conversionReport({ days: 30 }), occupancyAndRevenueTrend({ months: 3 })]);
   const owed = await Payment.aggregate([{ $match: { deletedAt: null, status: { $in: ['pending', 'overdue'] } } }, { $group: { _id: { $cond: [{ $lt: ['$dueDate', new Date()] }, 'overdue', 'upcoming'] }, total: { $sum: '$amount' }, n: { $sum: 1 } } }]);
   const o = Object.fromEntries(owed.map((x) => [x._id, { aed: money(x.total), count: x.n }]));
-  return { occupancy: { occupiedUnits: f.now.occupiedUnits, totalUnits: f.totalUnits, pct: f.totalUnits ? Math.round((f.now.occupiedUnits / f.totalUnits) * 1000) / 10 : null }, revenuePer4WeeksAed: f.now.revenuePer4WeeksAed, owed: { overdue: o.overdue || { aed: 0, count: 0 }, upcoming: o.upcoming || { aed: 0, count: 0 } }, salesLast30Days: { leads: conv.totalLeads, won: conv.overall?.won || 0, winRatePct: conv.overall?.winRatePct, averageResponse: rt.team.averageReadable, medianResponse: rt.team.medianReadable, neverAnswered: rt.team.leadsNeverAnswered }, nextFourWeeks: f.weeks.map((w) => ({ weekEnding: w.weekEnding, occupiedUnits: w.occupiedUnits.base, revenuePer4WeeksAed: w.revenuePer4WeeksAed.base })), lastThreeMonths: trend.months };
+  const occ = await computeOccupancy();
+  return { occupancy: { occupiedUnits: occ.occupied, rentableUnits: occ.rentable, reservedUnits: occ.reserved, maintenanceUnits: occ.maintenance, pct: occ.occupancyPct, maintenancePct: occ.maintenancePct, definition: occ.definition }, revenuePer4WeeksAed: f.now.revenuePer4WeeksAed, owed: { overdue: o.overdue || { aed: 0, count: 0 }, upcoming: o.upcoming || { aed: 0, count: 0 } }, salesLast30Days: { leads: conv.totalLeads, won: conv.overall?.won || 0, winRatePct: conv.overall?.winRatePct, averageResponse: rt.team.averageReadable, medianResponse: rt.team.medianReadable, neverAnswered: rt.team.leadsNeverAnswered }, nextFourWeeks: f.weeks.map((w) => ({ weekEnding: w.weekEnding, occupiedUnits: w.occupiedUnits.base, revenuePer4WeeksAed: w.revenuePer4WeeksAed.base })), lastThreeMonths: trend.months };
 }
 
 /**

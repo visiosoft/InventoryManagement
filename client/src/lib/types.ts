@@ -617,6 +617,7 @@ export interface Summary {
   bySize: { sizeSqf: string; total: number; available: number; occupied: number; maintenance: number }[]
   byFloor: { floor: string; total: number; available: number; occupied: number; maintenance: number }[]
   occupancyPct: number
+  occupancy?: { rentable: number; occupied: number; reserved: number; maintenance: number; available: number; occupancyPct: number; maintenancePct: number; definition: string }
   activeContracts: number
   revenueThisMonth: number
   expectedThisMonth: number

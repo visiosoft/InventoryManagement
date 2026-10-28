@@ -94,6 +94,8 @@ const unitSchema = new Schema(
       enum: ['available', 'occupied', 'reserved', 'maintenance'],
       default: 'available',
     },
+    // Out of the rentable count for good (WP-06). Set by the owner only.
+    decommissioned: { type: Boolean, default: false },
     discountPct: { type: Number, default: 0, min: 0, max: 100 },
     shared: { type: Boolean, default: false },
     notes: { type: String, default: '' },

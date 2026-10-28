@@ -1,3 +1,4 @@
+import { computeOccupancy, occupancyReconciliation } from '../services/occupancy.js';
 import { Router } from 'express';
 import { Unit, Contract, Payment, Expense } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
@@ -122,13 +123,15 @@ router.get('/summary', async (req, res) => {
     }
   }
 
-  const rentable = byStatus.available + byStatus.occupied + byStatus.reserved;
+  const occ = await computeOccupancy({ siteId: req.query.site || null });
   res.json({
     totalUnits,
     byStatus,
     bySize,
     byFloor,
-    occupancyPct: rentable ? Math.round(((byStatus.occupied + byStatus.reserved) / rentable) * 100) : 0,
+    // One definition everywhere (services/occupancy.js).
+    occupancyPct: occ.occupancyPct,
+    occupancy: occ,
     activeContracts,
     revenueThisMonth: revenueAgg[0]?.total || 0,
     expectedThisMonth: (revenueAgg[0]?.total || 0) + (dueAgg[0]?.total || 0),
@@ -233,12 +236,14 @@ async function statsHandler(req, res) {
     }
   }
 
-  const rentable = byStatus.available + byStatus.occupied + byStatus.reserved;
+  const occ = await computeOccupancy({ siteId: req.query.site || null });
   res.json({
     totalUnits,
     byStatus,
     bySize,
-    occupancyPct: rentable ? Math.round(((byStatus.occupied + byStatus.reserved) / rentable) * 100) : 0,
+    // One definition everywhere (services/occupancy.js).
+    occupancyPct: occ.occupancyPct,
+    occupancy: occ,
     activeContracts,
     revenueThisMonth: revenueAgg[0]?.total || 0,
     expectedThisMonth: (revenueAgg[0]?.total || 0) + (dueAgg[0]?.total || 0),
@@ -878,6 +883,18 @@ router.get('/income-analysis', async (req, res) => {
   };
 
   res.json({ year, months, byUnit, totals });
+});
+
+// Occupancy by the one definition, for a site and date (WP-06).
+router.get('/occupancy', async (req, res) => {
+  const date = req.query.date ? new Date(`${req.query.date}T23:59:59+04:00`) : new Date();
+  if (Number.isNaN(date.getTime())) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+  res.json(await computeOccupancy({ siteId: req.query.siteId || req.query.site || null, date }));
+});
+
+// Units whose stored status disagrees with the contracts. Read-only.
+router.get('/occupancy/reconcile', async (req, res) => {
+  res.json(await occupancyReconciliation({ siteId: req.query.siteId || req.query.site || null }));
 });
 
 export default router;
