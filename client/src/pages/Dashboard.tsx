@@ -12,6 +12,7 @@ import DashboardAsk from '../components/DashboardAsk'
 import RecentAsksCard from '../components/RecentAsksCard'
 import ZohoCompareCard from '../components/ZohoCompareCard'
 import DuplicatePaymentsCard from '../components/DuplicatePaymentsCard'
+import DataQualityBanner from '../components/DataQualityBanner'
 import CustomerFeedbackCard from '../components/CustomerFeedbackCard'
 import LeadCoverageCard from '../components/LeadCoverageCard'
 import ClientInfoSubmissionsCard from '../components/ClientInfoSubmissionsCard'
@@ -994,6 +995,8 @@ export default function Dashboard() {
           )}
         </div>
       )}
+
+      {isAdmin && (tab === 'overview' || tab === 'finance') && <DataQualityBanner />}
 
       {/* The assistant gets the top of Overview: asking on the left, the
           person's own recent searches beside it. */}

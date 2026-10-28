@@ -1,3 +1,4 @@
+import { dataQuality } from '../services/dataQuality.js';
 import { computeOccupancy, occupancyReconciliation } from '../services/occupancy.js';
 import { Router } from 'express';
 import { Unit, Contract, Payment, Expense } from '../models/index.js';
@@ -883,6 +884,11 @@ router.get('/income-analysis', async (req, res) => {
   };
 
   res.json({ year, months, byUnit, totals });
+});
+
+// Active data-quality conditions for the KPI banner (WP-23).
+router.get('/data-quality', async (_req, res) => {
+  res.json(await dataQuality());
 });
 
 // Occupancy by the one definition, for a site and date (WP-06).
