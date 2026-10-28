@@ -16,6 +16,7 @@
  */
 
 import { computeOccupancy } from './occupancy.js';
+import { unitMovementFor, MOVEMENT_COLUMNS, dubaiDay } from './unitMovement.js';
 import { Contract, Unit, Lead, Payment, User, WhatsAppMessage } from '../models/index.js';
 
 const money = (n) => Math.round(Number(n || 0) * 100) / 100;
@@ -68,6 +69,35 @@ export const BLOCKS = {
                 totals: { units: o.rentable + o.decommissioned, rentable: o.rentable },
                 definition: o.definition,
             };
+        },
+    },
+
+    unit_movement_day: {
+        summary: 'One day\'s unit movement by floor (the daily availability sheet): units free in the morning, booked (signed), checked out, newly reserved, reservations cancelled, free at end of day, and reserved but not paid. For "how many check-outs / bookings / reservations on a day", "available units yesterday", "units by floor". Defaults to yesterday.',
+        params: { date: 'date?' },
+        shape: 'table',
+        async run({ date }, scope) {
+            const day = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : dubaiDay(Date.now() - 86_400_000);
+            const m = await unitMovementFor({ day, scope });
+            return {
+                columns: MOVEMENT_COLUMNS,
+                rows: m.rows.map((r) => [r.floor, r.morning, r.booked, r.checkOut, r.reserved, r.cancelled, r.eod, r.notPaid]),
+                totals: { day },
+                definition: 'Rebuilt from contracts (no unit status history is kept): a contract holds its units from when it was made until the end of its check-out day, or until cancelled. Units in maintenance are left out. Quotations are not counted.',
+            };
+        },
+    },
+
+    unit_movement_detail: {
+        summary: 'Which units and contracts make up one day\'s movement sheet: every unit booked, checked out, reserved, cancelled, or reserved but not paid, with its floor and contract. Pair with unit_movement_day. Defaults to yesterday.',
+        params: { date: 'date?' },
+        shape: 'table',
+        async run({ date }, scope) {
+            const day = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : dubaiDay(Date.now() - 86_400_000);
+            const m = await unitMovementFor({ day, scope });
+            const label = { booked: 'Booked', checkOut: 'Check Out', reserved: 'Reserved', cancelled: 'Reservation Cancelled', notPaid: 'Reserved Not Paid' };
+            const rows = Object.entries(label).flatMap(([k, l]) => m.lists[k].map((x) => [l, x.floor, x.unit, x.contractNo]));
+            return { columns: ['Movement', 'Floor', 'Unit', 'Contract'], rows, totals: { day, units: rows.length } };
         },
     },
 

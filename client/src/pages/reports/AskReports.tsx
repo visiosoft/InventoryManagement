@@ -44,6 +44,7 @@ const EXAMPLE_GROUPS = [
     label: 'Space',
     items: [
       'How many units are free and what sizes are they?',
+      "Yesterday's unit movement by floor: booked, check-outs, reserved, cancelled",
       'Which sizes do we have most of, and how many are let?',
     ],
   },

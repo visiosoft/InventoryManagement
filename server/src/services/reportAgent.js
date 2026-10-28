@@ -66,6 +66,10 @@ Rules:
 - Use only the parameters a block declares. Dates are YYYY-MM-DD.
 - "stat" suits a stat block, "chart" a series block, "table" a table block.
 - At most ${MAX_SECTIONS} sections. Fewer is better; answer the question asked.
+- A question about one day's units — check-outs, bookings, reservations or
+  cancellations on a day, units free that morning or at end of day, by floor —
+  is unit_movement_day (pass "date", e.g. yesterday), then unit_movement_detail
+  for the same date to name the units. Not move_ins_outs, which is monthly.
 
 Dates, which is where this most often goes wrong:
 - Today is ${new Date().toISOString().slice(0, 10)}. The business has no records
