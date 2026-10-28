@@ -8,6 +8,7 @@ import { siteScope } from '../utils/siteScope.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { duplicateGroups, agingSummary, agingBucket } from '../services/receivables.js';
 import { bulkGuard } from '../utils/bulkGuard.js';
+import { previewZohoPaymentSync, applyZohoPaymentSync } from '../services/zohoPaymentSync.js';
 
 // How a payment was made: required when one is recorded, never assumed (WP-13).
 const METHODS = ['cash', 'bank_transfer', 'card', 'cheque', 'other'];
@@ -87,6 +88,19 @@ router.post('/duplicates/void', requireAdmin, async (req, res) => {
 // Unpaid totals by age, duplicates shown apart: a confirmed and a maximum overdue.
 router.get('/aging', async (req, res) => {
   res.json(agingSummary(await unpaidRows(req)));
+});
+
+/* ── Zoho Books payments into the CRM (WP-01) ──────────────────────────────
+   Preview first (read-only); apply writes only what the preview lists. */
+const sinceOf = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : '2026-08-01');
+
+router.get('/zoho-sync/preview', requireAdmin, async (req, res) => {
+  try { res.json(await previewZohoPaymentSync({ since: sinceOf(req.query.since) })); } catch (e) { res.status(502).json({ error: `Zoho Books: ${e.response?.data?.message || e.message}` }); }
+});
+
+router.post('/zoho-sync/apply', requireAdmin, async (req, res) => {
+  if (req.body?.confirm !== true) return res.status(400).json({ error: 'Confirm the sync' });
+  try { res.json(await applyZohoPaymentSync({ since: sinceOf(req.body?.since), user: req.user, accept: Array.isArray(req.body?.accept) ? req.body.accept : [] })); } catch (e) { res.status(502).json({ error: `Zoho Books: ${e.response?.data?.message || e.message}` }); }
 });
 
 // A person marks a long-overdue row for follow-up. Nothing else changes.

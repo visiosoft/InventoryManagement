@@ -644,6 +644,18 @@ async function zohoListAll(path, key, params = {}, maxPages = 25) {
     return out;
 }
 
+/** Customer payments dated on or after `since` (YYYY-MM-DD), in the shape the sync uses. */
+export async function listZohoPaymentsSince(since) {
+    const rows = await zohoListAll('customerpayments', 'customerpayments', { date_start: since }, 50);
+    return rows.map((p) => ({ id: p.payment_id, number: p.payment_number, date: p.date, amount: Number(p.amount || 0), mode: p.payment_mode || '', reference: p.reference_number || '', invoiceNumbers: p.invoice_numbers || '', customer: p.customer_name || '' }));
+}
+
+/** Invoices dated on or after `since`: their Zoho id, number and the CRM number kept as reference. */
+export async function listZohoInvoicesSince(since) {
+    const rows = await zohoListAll('invoices', 'invoices', { date_start: since }, 50);
+    return rows.map((i) => ({ invoice_id: i.invoice_id, invoice_number: i.invoice_number, reference_number: i.reference_number || '', total: Number(i.total || 0), date: i.date, customer_name: i.customer_name || '', email: i.email || '' }));
+}
+
 /* Which list filters mean "still owed". Invoices and bills do not share a
  * vocabulary: bills reject Status.Unpaid ("Invalid value passed for
  * filter_by") and use the status parameter's open / overdue /

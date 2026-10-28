@@ -1321,6 +1321,9 @@ const paymentSchema = new Schema(
     voidReason: { type: String, default: '' },
     // Set by a person for rows long overdue; nothing changes automatically.
     reviewStatus: { type: String, enum: ['', 'needs_review', 'paid_elsewhere', 'write_off_candidate'], default: '' },
+    // Set when the row was settled by a Zoho Books payment (WP-01); a second sync skips it.
+    zohoPaymentId: { type: String, default: '', index: true },
+    source: { type: String, enum: ['', 'manual', 'zoho', 'import'], default: '' },
     notes: { type: String, default: '' },
     recordedBy: { type: String, default: '' },
     // Set once the accounts payment-due digest has told the team this
@@ -3084,6 +3087,20 @@ const bulkBatchSchema = new Schema({
   at: { type: Date, default: Date.now },
 }, { versionKey: false });
 export const BulkBatch = model('BulkBatch', bulkBatchSchema);
+
+// One row per sync run (WP-01): what was applied and what was left for finance.
+const syncRunSchema = new Schema({
+  kind: { type: String, required: true },
+  since: { type: String, default: '' },
+  by: { type: String, default: '' },
+  applied: { type: Number, default: 0 },
+  rows: { type: Number, default: 0 },
+  exceptions: { type: Number, default: 0 },
+  skipped: { type: Number, default: 0 },
+  exceptionList: { type: Schema.Types.Mixed, default: [] },
+  at: { type: Date, default: Date.now },
+}, { versionKey: false });
+export const SyncRun = model('SyncRun', syncRunSchema);
 
 // One row per AI call (services/aiUsage.js): what the AI costs, and who spent it.
 const aiUsageSchema = new Schema({

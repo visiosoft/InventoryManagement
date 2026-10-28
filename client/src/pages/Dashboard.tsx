@@ -13,6 +13,7 @@ import RecentAsksCard from '../components/RecentAsksCard'
 import ZohoCompareCard from '../components/ZohoCompareCard'
 import DuplicatePaymentsCard from '../components/DuplicatePaymentsCard'
 import DataQualityBanner from '../components/DataQualityBanner'
+import ZohoPaymentSyncCard from '../components/ZohoPaymentSyncCard'
 import CustomerFeedbackCard from '../components/CustomerFeedbackCard'
 import LeadCoverageCard from '../components/LeadCoverageCard'
 import ClientInfoSubmissionsCard from '../components/ClientInfoSubmissionsCard'
@@ -1012,6 +1013,7 @@ export default function Dashboard() {
         <div className="space-y-8">
           <ZohoBooksOverview />
           <ZohoCompareCard />
+          {isAdmin && <ZohoPaymentSyncCard />}
           {isAdmin && <DuplicatePaymentsCard />}
           <AccountsDashboard embedded />
         </div>
