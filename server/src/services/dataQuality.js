@@ -12,7 +12,7 @@ import { occupancyReconciliation } from './occupancy.js';
 const HOURS_48 = 48 * 3_600_000;
 
 /** Which conditions hold, from the counts. Pure. */
-export function conditionsFrom({ lastPaymentAt, now = new Date(), duplicateGroupCount, maintenanceWithoutTicket, contractsPastEnd, unitStatusMismatches }) {
+export function conditionsFrom({ lastPaymentAt, now = new Date(), duplicateGroupCount, contractsPastEnd, unitStatusMismatches }) {
    const out = [];
    const staleMs = lastPaymentAt ? now - new Date(lastPaymentAt) : Infinity;
    // Weekends (Sat/Sun in Dubai) don't make payments stale on their own.
@@ -23,7 +23,7 @@ export function conditionsFrom({ lastPaymentAt, now = new Date(), duplicateGroup
       out.push({ key: 'payments_stale', severity: 'high', count: days, text: days == null ? 'No payment has ever been recorded in the CRM.' : `No payment recorded in the CRM for ${days} days — collection figures read zero.`, fix: '/?tab=finance' });
    }
    if (duplicateGroupCount > 0) out.push({ key: 'duplicate_payments', severity: 'high', count: duplicateGroupCount, text: `${duplicateGroupCount} groups of duplicate unpaid rows inflate the overdue total.`, fix: '/?tab=finance' });
-   if (maintenanceWithoutTicket > 0) out.push({ key: 'maintenance_no_ticket', severity: 'medium', count: maintenanceWithoutTicket, text: `${maintenanceWithoutTicket} units in maintenance have no ticket, so nobody owns them.`, fix: '/maintenance' });
+   // Units in maintenance without a ticket are not flagged: tickets are not used (Oct 2026).
    if (contractsPastEnd > 0) out.push({ key: 'contracts_past_end', severity: 'medium', count: contractsPastEnd, text: `${contractsPastEnd} contracts are active past their end date.`, fix: '/renewals' });
    if (unitStatusMismatches > 0) out.push({ key: 'unit_status_mismatch', severity: 'low', count: unitStatusMismatches, text: `${unitStatusMismatches} units show a status that disagrees with their contracts.`, fix: '/units' });
    return out;
