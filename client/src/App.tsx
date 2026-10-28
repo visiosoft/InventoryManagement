@@ -87,6 +87,7 @@ import ExitSurveys from './pages/ExitSurveys'
 import BotsHome from './pages/BotsHome'
 import Units from './pages/Units'
 import Maintenance from './pages/Maintenance'
+import Collections from './pages/Collections'
 import StoredInventory from './pages/warehouse/StoredInventory'
 import ServiceRequests from './pages/warehouse/ServiceRequests'
 import ClientRequests from './pages/ClientRequests'
@@ -263,6 +264,7 @@ export default function App() {
         <Route path="/bots" element={<AdminGuard><BotsHome /></AdminGuard>} />
         <Route path="/units" element={<Units />} />
         <Route path="/maintenance" element={<Maintenance />} />
+        <Route path="/collections" element={<AdminGuard><Collections /></AdminGuard>} />
         <Route path="/warehouse" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><StoredInventory /></PermGuard>} />
         {/* Every staff role: the server decides which requests each team sees. */}
         <Route path="/client-requests" element={<ClientRequests />} />

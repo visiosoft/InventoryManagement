@@ -1,3 +1,4 @@
+import { pausedContracts } from './collections.js';
 import mongoose from 'mongoose';
 import { AutomationRule, AutomationLog, MessageTemplate, Payment, Contract } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppTemplate, whatsappSendConfigured, listWhatsAppTemplates } from './whatsapp.js';
@@ -439,8 +440,9 @@ export async function runAutomationRules({ dryRun = false } = {}) {
 
   if (paymentRules.length) {
     const maxBefore = Math.max(0, ...paymentRules.flatMap((r) => r.steps.filter((s) => s.direction !== 'after').map((s) => s.value)));
+    // Unpaid rows only — a voided duplicate is not owed (WP-02).
     const payments = await Payment.find({
-      status: { $ne: 'paid' },
+      status: { $in: ['pending', 'overdue'] },
       dueDate: {
         $gte: new Date(now - MAX_OVERDUE_DAYS * DAY),
         $lte: new Date(now + (maxBefore + 1) * DAY),
@@ -461,8 +463,10 @@ export async function runAutomationRules({ dryRun = false } = {}) {
       byContract.get(key).payments.push(payment);
     }
 
+    // An open promise to pay or a disputed balance waits (WP-21).
+    const paused = await pausedContracts().catch(() => new Set());
     for (const { contract, payments: list } of byContract.values()) {
-      if (contract.remindersMuted) { results.skipped++; continue; }
+      if (contract.remindersMuted || paused.has(String(contract._id))) { results.skipped++; continue; }
 
       const overdue = list.filter((p) => new Date(p.dueDate).getTime() < now);
       const upcoming = list.filter((p) => new Date(p.dueDate).getTime() >= now)

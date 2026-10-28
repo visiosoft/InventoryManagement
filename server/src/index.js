@@ -40,6 +40,8 @@ import warehouseJobPublicRoutes from './routes/warehouseJobPublic.js';
 import floorPlanRoutes from './routes/floorPlans.js';
 import siteRoutes from './routes/sites.js';
 import { Customer, Contract } from './models/index.js';
+import collectionRoutes from './routes/collections.js';
+import { checkPromises } from './services/collections.js';
 import piiRoutes from './routes/pii.js';
 import { piiGuard } from './utils/piiGuard.js';
 import customerRoutes from './routes/customers.js';
@@ -334,6 +336,7 @@ app.use('/api/shopify', requireAuth, shopifyMerchantRoutes);
 const accountsReadOnly = readOnlyFor('accounts');
 app.use('/api/customers', requireAuth, accountsReadOnly, piiGuard(Customer, ['accessPersons']), customerRoutes);
 app.use('/api/pii', requireAuth, piiRoutes);
+app.use('/api/collections', requireAuth, collectionRoutes);
 // Before the authenticated mount below: a tenant clicking the renewal link in
 // their expiry email has no account, and Express matches in order.
 app.use('/api/contracts/public', contractsPublicRoutes);
@@ -637,6 +640,16 @@ async function start() {
   /* Bots (services/bots.js): each runs at its hour, once a day at most.
      Renewal-email bots prepare emails for a person to send unless an admin
      set one to send by itself. */
+  // Promises to pay whose day has come: kept, or broken and escalated (WP-21).
+  setInterval(async () => {
+    try {
+      const out = await checkPromises();
+      if (out.kept || out.broken) console.log(`[Collections] promises kept ${out.kept}, broken ${out.broken}`);
+    } catch (e) {
+      console.error('[Collections]', e.message);
+    }
+  }, 15 * 60_000);
+
   setInterval(async () => {
     try {
       const out = await botsTick();

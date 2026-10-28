@@ -76,6 +76,7 @@ const profileMenuGroups = [
     label: 'Storage',
     items: [
       { to: '/invoices', label: 'Invoices', icon: ReceiptText, perm: 'invoices' as string | undefined, adminOnly: false },
+      { to: '/collections', label: 'Collections', icon: Wallet, perm: 'invoices' as string | undefined, adminOnly: true },
       { to: '/documents', label: 'Documents', icon: FolderOpen, perm: 'documents', adminOnly: false },
       { to: '/customers', label: 'Tenants', icon: Users, perm: 'customers', adminOnly: false },
       { to: '/sites', label: 'Sites', icon: Building2, perm: 'units', adminOnly: false },
@@ -299,6 +300,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/quotes': 'Book Unit',
   '/units': 'Search Units',
   '/maintenance': 'Maintenance',
+  '/collections': 'Collections',
   '/floor-map': 'Floor Map',
   '/sites': 'Sites',
   '/customers': 'Tenants',
