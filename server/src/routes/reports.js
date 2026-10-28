@@ -132,15 +132,22 @@ router.get('/summary', async (req, res) => {
   /* The tiles count from contracts, not only the stored status: a unit under
      an active (signed) contract is booked, moved in or not, even while its
      first payment waits to be verified (the payment check keeps its status
-     "reserved"). Reserved is what is not signed yet. A unit
+     "reserved"). Reserved is a contract not signed yet. A unit
      still marked occupied stays booked too — a contract past its end date
      means the tenant has not been checked out, not that the unit is free. */
   const units = await Unit.find(uF).select('status').lean();
   const started = await Contract.find({ ...cF, status: 'active' }).select('unit units').lean();
   const startedIds = new Set(started.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String));
+  // Reserved is a contract not signed yet. A unit held only by a quotation's
+  // two-day hold has no contract: it counts as vacant.
+  const unsigned = await Contract.find({ ...cF, status: { $in: ['draft', 'pending_signature'] } }).select('unit units').lean();
+  const unsignedIds = new Set(unsigned.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String));
   const tiles = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
   for (const u of units) {
-    const k = startedIds.has(String(u._id)) || u.status === 'occupied' ? 'occupied' : (tiles[u.status] !== undefined ? u.status : 'available');
+    const id = String(u._id);
+    const k = startedIds.has(id) || u.status === 'occupied' ? 'occupied'
+      : unsignedIds.has(id) ? 'reserved'
+      : u.status === 'maintenance' ? 'maintenance' : 'available';
     tiles[k] += 1;
   }
   res.json({
@@ -265,9 +272,16 @@ async function statsHandler(req, res) {
   const units = await Unit.find(uF).select('status').lean();
   const started = await Contract.find({ ...cF, status: 'active', startDate: { $lte: now } }).select('unit units').lean();
   const startedIds = new Set(started.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String));
+  // Reserved is a contract not signed yet. A unit held only by a quotation's
+  // two-day hold has no contract: it counts as vacant.
+  const unsigned = await Contract.find({ ...cF, status: { $in: ['draft', 'pending_signature'] } }).select('unit units').lean();
+  const unsignedIds = new Set(unsigned.flatMap((c) => [c.unit, ...(c.units || [])]).filter(Boolean).map(String));
   const tiles = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
   for (const u of units) {
-    const k = startedIds.has(String(u._id)) || u.status === 'occupied' ? 'occupied' : (tiles[u.status] !== undefined ? u.status : 'available');
+    const id = String(u._id);
+    const k = startedIds.has(id) || u.status === 'occupied' ? 'occupied'
+      : unsignedIds.has(id) ? 'reserved'
+      : u.status === 'maintenance' ? 'maintenance' : 'available';
     tiles[k] += 1;
   }
   res.json({

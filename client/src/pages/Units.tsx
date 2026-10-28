@@ -393,10 +393,17 @@ export default function Units() {
      even while the first-payment check keeps its stored status at Reserved.
      Reserved is for what is not signed yet: a draft, a contract out for
      signature, a quotation. */
+  /* A unit held only by a quotation (the two-day hold that stops one unit
+     being promised twice) reads Quoted, not Reserved: no contract exists. */
   const units = useMemo(() => (allSiteUnits || [])
     .filter((u) => unitInSite((u as Unit & { site?: string | null }).site, siteId, sitesList))
-    .map((u) => (u.status === 'reserved' && (activeByUnit[u._id] ?? []).length
-      ? { ...u, status: 'occupied' as Unit['status'] } : u)), [allSiteUnits, siteId, sitesList, activeByUnit])
+    .map((u) => {
+      if (u.status !== 'reserved') return u
+      if ((activeByUnit[u._id] ?? []).length) return { ...u, status: 'occupied' as Unit['status'] }
+      const held = bookedInWindow.get(u._id)?.bookings ?? []
+      if (held.length && held.every((b) => b.kind === 'quote')) return { ...u, status: 'quoted' as unknown as Unit['status'] }
+      return u
+    }), [allSiteUnits, siteId, sitesList, activeByUnit, bookedInWindow])
 
   // Which facility the page is showing, for the exported document's title.
   const siteName = sitesList.find((s) => s._id === siteId)?.name
@@ -532,7 +539,6 @@ export default function Units() {
     const late = (activeByUnit[u._id] ?? []).filter((c) => daysPastCheckout(c.endDate) > 0)
     return { count: late.length, days: late.reduce((m, c) => Math.max(m, daysPastCheckout(c.endDate)), 0) }
   }
-  const overdueUnitCount = (units || []).filter((u) => overdueOf(u).count > 0).length
 
   const filtered = useMemo(
     () =>
@@ -549,6 +555,10 @@ export default function Units() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [units, statusFilter, floorFilter, sizeFilter, search, onlyOverdue, activeByUnit]
   )
+
+  // Past check-out among the units the filters show, so the warning never
+  // speaks of units the list is not showing.
+  const overdueUnitCount = filtered.filter((u) => overdueOf(u).count > 0).length
 
   // Units genuinely free for the whole window. Maintenance units are never
   // bookable, whatever the contracts say.
@@ -834,7 +844,7 @@ export default function Units() {
           <Control label="Status">
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...controlStyle, minWidth: 130 }}>
               <option value="">All statuses</option>
-              {['available', 'occupied', 'reserved', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+              {['available', 'occupied', 'reserved', 'quoted', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
             </select>
           </Control>
           <Control label="Unit number">

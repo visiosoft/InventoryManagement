@@ -170,6 +170,7 @@ export const unitStatusTone: Record<string, string> = {
   available: 'green',
   occupied: 'blue',
   reserved: 'amber',
+  quoted: 'purple',
   maintenance: 'gray',
 }
 
