@@ -15,6 +15,7 @@
  * The full form is kept on the timeline either way.
  */
 
+import { recordTouch, touchFromWebsite } from './attribution.js';
 import { Lead } from '../models/index.js';
 import { normalizeLeadPhone as normalizePhone } from '../routes/leads.js';
 import { isExistingCustomerPhone } from './customerLeads.js';
@@ -160,5 +161,6 @@ export async function ingestWebsiteLead(body, { at = new Date(), deps: overrides
         }
     }
 
+    if (!overrides.createLead) await recordTouch(lead._id, touchFromWebsite(b), at);
     return { id: lead._id, created, reopened: !created, ownerId, existingCustomer: tenant };
 }

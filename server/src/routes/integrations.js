@@ -1,3 +1,4 @@
+import { recordReferralsFromWebhook } from '../services/attribution.js';
 import { Router } from 'express';
 import { google } from 'googleapis';
 import { requireAdmin } from '../middleware/auth.js';
@@ -593,6 +594,8 @@ router.post('/whatsapp/webhook', async (req, res) => {
     try {
         const result = await processWhatsAppWebhookPayload(req.body || {});
         await record(true, 'processed');
+        // The ad a click-to-WhatsApp chat came from, onto its lead (WP-10).
+        recordReferralsFromWebhook(req.body || {}).catch(() => {});
         return res.json({ ok: true, received: true, result });
     } catch (err) {
         await record(false, `processing failed: ${err?.message || 'unknown'}`);

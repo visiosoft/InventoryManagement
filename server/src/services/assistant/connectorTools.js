@@ -88,3 +88,13 @@ registerTool({
       return churnRisk({});
    },
 });
+
+registerTool({
+   name: 'lead_attribution',
+   description: 'Leads, wins and win rate by where each lead first came from — website UTM campaign, Meta lead-ad campaign, or the click-to-WhatsApp ad — over the last N days (default 30). Read-only. Use for "which campaign brings customers", "leads by campaign", "which ad works". Older leads show "(not recorded)".',
+   parameters: { type: 'object', properties: { days: { type: 'number' } } },
+   async run({ days = 30 } = {}) {
+      const { attributionReport } = await import('../attribution.js');
+      return attributionReport({ days });
+   },
+});

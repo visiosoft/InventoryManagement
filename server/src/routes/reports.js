@@ -1,3 +1,4 @@
+import { attributionReport } from '../services/attribution.js';
 import { inventoryMix } from '../services/inventoryMix.js';
 import { churnRisk } from '../services/churnRisk.js';
 import { dataQuality } from '../services/dataQuality.js';
@@ -897,6 +898,11 @@ router.get('/inventory-mix', async (req, res) => {
 router.get('/retention/at-risk', async (req, res) => {
   if (!['admin', 'accounts_admin'].includes(req.user?.role) && req.user?.role !== 'sales_rep') return res.status(403).json({ error: 'Not available for your role' });
   res.json(await churnRisk({ min: Number(req.query.min) || undefined }));
+});
+
+// Leads and wins by first-touch source and campaign (WP-10).
+router.get('/attribution', async (req, res) => {
+  res.json(await attributionReport({ days: req.query.days }));
 });
 
 // Active data-quality conditions for the KPI banner (WP-23).

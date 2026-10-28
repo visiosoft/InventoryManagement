@@ -1,3 +1,4 @@
+import { recordTouch, touchFromMeta } from './attribution.js';
 import { Lead } from '../models/index.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
 import { routeInboundLead } from './leadRouting.js';
@@ -71,6 +72,9 @@ export function normaliseIncoming(body = {}) {
   const meta = {
     form: clean(get('form_name'), 120), campaign: clean(get('campaign_name', 'campaign'), 120),
     ad: clean(get('ad_name', 'ad'), 120), platform: clean(get('platform'), 40),
+    // The ids Meta sends with a lead ad, for attribution (WP-10).
+    leadgenId: clean(get('leadgen_id'), 60), adId: clean(get('ad_id'), 60), adsetId: clean(get('adset_id'), 60),
+    adset: clean(get('adset_name', 'adset'), 120), campaignId: clean(get('campaign_id'), 60), formId: clean(get('form_id'), 60),
   };
   return { fullName: clean(fullName, 120), phone: clean(phone, 40), email: clean(email, 160), extras, meta };
 }
@@ -103,6 +107,7 @@ export async function ingestMetaLead(fields, { channel = 'form', existing = null
     lead.notes = [lead.notes, details].filter(Boolean).join('\n');
     lead.timeline.push({ type: 'note', text: note });
     await lead.save();
+    await recordTouch(lead._id, touchFromMeta(fields.meta || {}));
     return { lead, created: false };
   }
 
@@ -126,5 +131,6 @@ export async function ingestMetaLead(fields, { channel = 'form', existing = null
     timeline: [{ type: 'created', text: note }, { type: 'note', text: routingNote }],
   });
   if (ownerId) notifyLeadAssigned({ lead: created, ownerId, reason: routingNote.replace(/^Assigned by distribution rules — /, '') }).catch(() => {});
+  await recordTouch(created._id, touchFromMeta(fields.meta || {}));
   return { lead: created, created: true };
 }
