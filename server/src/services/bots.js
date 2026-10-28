@@ -96,6 +96,17 @@ export function pickRecipients(contracts, { recentlyEmailed = new Set(), subject
    return items;
 }
 
+/** Why contracts were left out of a renewal-email run, in words. Pure. */
+export function skipReasons(contracts, recentlyEmailed = new Set()) {
+   let decided = 0; let noEmail = 0; let recent = 0;
+   for (const k of contracts) {
+      if (['renewing', 'not_renewing'].includes(k.renewalIntent)) decided += 1;
+      else if (!String(k.customer?.email || '').trim()) noEmail += 1;
+      else if (recentlyEmailed.has(String(k._id))) recent += 1;
+   }
+   return [decided && `${decided} already said whether they renew`, noEmail && `${noEmail} have no email on file`, recent && `${recent} were emailed in the last 7 days`].filter(Boolean).join(', ') || 'none qualify';
+}
+
 /* ── Quiet good leads ─────────────────────────────────────────────────── */
 
 const OPEN_GOOD_STATUS = ['quotation_sent', 'site_visit_scheduled', 'follow_up_scheduled'];
@@ -198,7 +209,10 @@ async function defaultDeps() {
       },
       recentlyEmailed: async (botId, now) => {
          const runs = await BotRun.find({ bot: botId, createdAt: { $gte: new Date(now.getTime() - 7 * 86400000) } }).select('items.contract items.status').lean();
-         return new Set(runs.flatMap((r) => r.items.filter((i) => i.status === 'sent' || i.status === 'pending').map((i) => String(i.contract))));
+         // Only what was actually sent holds someone back. An email still
+         // waiting for approval in an older run is listed again in this run's
+         // queue (and the old copy retired), so it is never lost from view.
+         return new Set(runs.flatMap((r) => r.items.filter((i) => i.status === 'sent').map((i) => String(i.contract))));
       },
       sentToday: async (botId, now) => {
          const { dayKey } = dubaiParts(now);
@@ -221,7 +235,7 @@ async function defaultDeps() {
       },
       recentlyMessaged: async (botId, now) => {
          const runs = await BotRun.find({ bot: botId, createdAt: { $gte: new Date(now.getTime() - 7 * 86400000) } }).select('items.lead items.status').lean();
-         return new Set(runs.flatMap((r) => r.items.filter((i) => i.status === 'sent' || i.status === 'pending').map((i) => String(i.lead))));
+         return new Set(runs.flatMap((r) => r.items.filter((i) => i.status === 'sent').map((i) => String(i.lead))));
       },
       template: async (name) => {
          const { listWhatsAppTemplates } = await import('./whatsapp.js');
@@ -243,6 +257,13 @@ async function defaultDeps() {
          await markFirstResponse(phoneNormalized).catch(() => {});
       },
       saveRun: (doc) => BotRun.create(doc),
+      // One queue at a time: older runs' unapproved items are retired when a
+      // new run lists who is waiting now.
+      retirePending: (botId) => BotRun.updateMany(
+         { bot: botId, 'items.status': 'pending' },
+         { $set: { 'items.$[p].status': 'skipped', status: 'ok', summary: 'Replaced by a newer run' } },
+         { arrayFilters: [{ 'p.status': 'pending' }] },
+      ),
       fileForEmail: async (file, ctx) => (await import('./assistant/fileBuffers.js')).fileForEmail(file, ctx),
       setSchedule: (id, schedule) => Bot.updateOne({ _id: id }, { $set: { schedule } }),
       // A browser push to each recipient; the bell in the app reads the run itself.
@@ -352,6 +373,8 @@ async function runBotInner(bot, { trigger = 'manual', now = new Date(), deps, re
          }
          run.status = runStatus(run.items);
          run.summary = emailSummary(run.items);
+         // An empty run says why, so "nobody" is never a mystery.
+         if (!run.items.length && contracts.length) run.summary = `${contracts.length} contract${contracts.length === 1 ? '' : 's'} end in the next ${Number(bot.days) || 30} days; none to email: ${skipReasons(contracts, recent)}.`;
       } else if (bot.kind === 'quiet_leads') {
          if (!bot.templateName) throw new Error('Choose the WhatsApp template this bot sends (Edit → Template)');
          const tpl = await d.template(bot.templateName);
@@ -381,6 +404,7 @@ async function runBotInner(bot, { trigger = 'manual', now = new Date(), deps, re
       run.error = String(e.message || e).slice(0, 500);
       run.summary = 'The run failed';
    }
+   if (['contract_emails', 'quiet_leads'].includes(bot.kind) && !run.error && d.retirePending) await d.retirePending(bot._id);
    const saved = await d.saveRun(run);
    if (d.notify) await d.notify(bot, saved).catch(() => null);
    return saved;

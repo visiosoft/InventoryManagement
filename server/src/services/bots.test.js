@@ -47,7 +47,7 @@ function deps(extra = {}) {
          sentToday: async () => 0,
          owner: async () => ({ _id: 'u1', name: 'Mase', role: 'admin' }),
          sendMail: async (m) => { mails.push(m); },
-         saveRun: async (r) => { saved.push(r); return r; },
+         saveRun: async (r) => { saved.push(r); return r; }, retirePending: async () => {},
          ...extra,
       },
    };
@@ -151,7 +151,7 @@ test('the quiet-leads bot fills the template with the first name and waits for a
       }),
       recentlyMessaged: async () => new Set(),
       sendWhatsApp: async (i) => sent.push(i),
-      saveRun: async (r) => r,
+      saveRun: async (r) => r, retirePending: async () => {},
    } });
    assert.equal(sent.length, 0);
    assert.equal(run.status, 'waiting');
@@ -269,4 +269,10 @@ test('a long last answer is kept in full for the follow-up, with what it prepare
    ]);
    assert.match(h[1].content, /Which one\?$/, 'the offer at the end of a long report survives');
    assert.equal(h[h.length - 1].content, '(Prepared for Confirm: WhatsApp template "checking_in" to 2 people: Rony, Maya)');
+});
+
+test('an empty renewal run says why', async () => {
+   const { skipReasons } = await import('./bots.js');
+   const ks = [{ _id: 'a', renewalIntent: 'renewing', customer: { email: 'x@y.z' } }, { _id: 'b', renewalIntent: 'undecided', customer: { email: '' } }, { _id: 'c', renewalIntent: 'undecided', customer: { email: 'c@y.z' } }];
+   assert.equal(skipReasons(ks, new Set(['c'])), '1 already said whether they renew, 1 have no email on file, 1 were emailed in the last 7 days');
 });
