@@ -21,6 +21,7 @@ import { agentTools, toOpenAiTools } from './tools.js';
 import { transition, describeStage, DEFAULT_CADENCE, BUCKETS } from './buckets.js';
 import { record, snapshotOf } from './log.js';
 import { AgentAction } from './models.js';
+import { knowledgeFor } from '../training/live.js';
 import { pushConfigured, pushToUser } from '../services/push.js';
 import { windowOpen, customerWritesArabic, templatesForLanguage } from './guards.js';
 
@@ -301,12 +302,19 @@ async function runAgentInner({ agent, lead, leadFile, trigger, now = new Date(),
         RULES,
         trainingExamplesBlock(agent),
     ].filter(Boolean).join('\n\n');
+    // Answers the business approved in AI Training, matched to this message
+    // and filled with today's values. Below live data in authority (the block
+    // says so); empty when nothing matches, and the reply is composed as before.
+    const knowledge = await knowledgeFor(String(trigger.text || ''), {
+        getValues: async () => (await import('../training/adapters/purplebox.js')).facts().then((f) => f.values),
+    });
     const systemRest = [
         identityBlock(repName),
         leadFileBlock(work, lead, cadence),
         isFollowup ? crmBlock(lead, now) : '',
         'FACTS YOU MAY USE — everything below is from the live system:',
         facts.text || '(no unit data available)',
+        knowledge.text,
         task,
     ].filter(Boolean).join('\n\n');
     const system = `${systemPrefix}\n\n${systemRest}`;
@@ -377,12 +385,15 @@ async function runAgentInner({ agent, lead, leadFile, trigger, now = new Date(),
         template: ctx.changes.template || null,
         bucketBefore: before.bucket, bucketAfter: work.bucket,
         toolCalls: toolLog, grounded, model: resolveModel(agent.model), promptVersion: agent.promptVersion, usage,
+        // Which approved answers (and which published version) shaped this draft.
+        knowledgeUsed: knowledge.used, knowledgeVersion: knowledge.version,
     };
     if (!persist) return result;
 
     // ---- persist the working copy, then log what happened, in order ----
     const detail = {
         system, messages, toolCalls: toolLog, rawContent: content, model: result.model, promptVersion: agent.promptVersion, usage, grounded,
+        knowledgeUsed: knowledge.used, knowledgeVersion: knowledge.version,
         // What the inbox shows and what "approve" sends: kept whole here,
         // since the summary line is truncated.
         customerText: isTouch ? '' : String(trigger.text || ''), reply, template: ctx.changes.template || null, trigger: trigger.kind,

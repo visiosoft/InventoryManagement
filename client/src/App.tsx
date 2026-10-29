@@ -134,6 +134,7 @@ import MovingEstimator from './pages/MovingEstimator'
 import MyPerformance from './pages/MyPerformance'
 import AccountsDashboard from './pages/AccountsDashboard'
 import Zoho from './pages/Zoho'
+import Training from './pages/training/Training'
 import LeadDistribution from './pages/LeadDistribution'
 import DoorAccess from './pages/DoorAccess'
 import DuplicateLeads from './pages/DuplicateLeads'
@@ -297,6 +298,7 @@ export default function App() {
             server scopes a rep to their own leads regardless. */}
         <Route path="/follow-ups" element={<PermGuard module={['sales_board', 'leads']} orSalesRep><FollowUps /></PermGuard>} />
         <Route path="/calls" element={<PermGuard module={['sales_board', 'leads']} orSalesRep><Calls /></PermGuard>} />
+        <Route path="/training" element={<RoleGuard roles={['admin']}><Training /></RoleGuard>} />
         <Route path="/zoho" element={<RoleGuard roles={['admin', 'accounts']}><Zoho /></RoleGuard>} />
         <Route path="/accounts" element={<RoleGuard roles={['admin', 'accounts']}><AccountsDashboard /></RoleGuard>} />
         <Route path="/settings/lead-distribution" element={<AdminGuard><LeadDistribution /></AdminGuard>} />
