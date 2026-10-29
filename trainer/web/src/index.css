@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #14081F;
-  --muted: #6B6478;
-  --purple: #4A2A9E;
-  --bg: #FBF8F2;
+  --ink: #0F172A;
+  --muted: #64748B;
+  --accent: #2563EB;
 }
 html, body, #root { min-height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Manrope', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+body { margin: 0; color: var(--ink); font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+  background: radial-gradient(1200px 600px at 85% -10%, #DCE7FF 0%, rgba(220,231,255,0) 60%), radial-gradient(900px 500px at -10% 110%, #E6EEFF 0%, rgba(230,238,255,0) 55%), #F4F7FD; background-attachment: fixed; }
 button { cursor: pointer; background: none; border: 0; color: inherit; font: inherit; }
 button:disabled { opacity: .55; cursor: default; }
 input, select, textarea { font: inherit; color: inherit; }

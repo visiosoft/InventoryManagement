@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, CornerUpRight, Loader2, Pencil, RefreshCw, Search, X, Plus, AlertTriangle, MessageSquare } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { type Cluster, type KRecord, type Me, type Question, INK, MUTED, PURPLE, LINE, TINT, HEAD, btn, panel, caps, field, when } from './theme'
+import { type Cluster, type KRecord, type Me, type Question, INK, MUTED, ACCENT, LINE, TINT, HEAD, btn, panel, caps, field, when } from './theme'
 import { Pill, Kbd } from './shared'
 
 /* Review: the place a team reads what customers ask and decides what the AI
@@ -72,7 +72,7 @@ export default function Review({ me }: { me: Me }) {
           {!list.isLoading && !shown.length && <div style={{ padding: 24, color: MUTED, fontSize: 13.5, textAlign: 'center' }}>{(list.data?.clusters.length ?? 0) ? 'Nothing here.' : 'No questions yet. Import conversations first.'}</div>}
           {shown.map((c) => (
             <button key={c._id} type="button" onClick={() => setSelected(c._id)} aria-label={`Open ${c.name}`}
-              className="flex w-full items-start gap-3 text-left" style={{ padding: '11px 14px', borderBottom: `1px solid ${LINE}`, background: c._id === current ? TINT : '#fff', borderLeft: `3px solid ${c._id === current ? PURPLE : 'transparent'}` }}>
+              className="flex w-full items-start gap-3 text-left" style={{ padding: '11px 14px', borderBottom: `1px solid ${LINE}`, background: c._id === current ? TINT : '#fff', borderLeft: `3px solid ${c._id === current ? ACCENT : 'transparent'}` }}>
               <div className="min-w-0 flex-1">
                 <div className="truncate" style={{ fontWeight: 700, fontSize: 13.5, color: INK }}>{c.name}</div>
                 <div className="truncate" style={{ fontSize: 12, color: MUTED }}>{c.question}</div>
@@ -160,7 +160,7 @@ function Pane({ id, me, clusters, onNext, onPrev }: { id: string; me: Me; cluste
         </div>
         <Pill status={c.status} />
         <details style={{ fontSize: 12.5 }}>
-          <summary style={{ cursor: 'pointer', color: PURPLE, fontWeight: 700 }}>Organise</summary>
+          <summary style={{ cursor: 'pointer', color: ACCENT, fontWeight: 700 }}>Organise</summary>
           <div className="space-y-2" style={{ position: 'absolute', right: 30, zIndex: 5, ...panel, padding: 12, width: 280, marginTop: 6 }}>
             <button type="button" style={btn()} onClick={() => { const n = window.prompt('Intent name', c.name); if (n) patch.mutate({ name: n }) }}>Rename</button>
             <button type="button" style={btn()} onClick={() => { const n = window.prompt('The question as customers ask it', c.question); if (n) patch.mutate({ question: n }) }}>Edit question</button>
@@ -190,7 +190,7 @@ function Pane({ id, me, clusters, onNext, onPrev }: { id: string; me: Me; cluste
             </button>
           </div>
           <textarea ref={box} value={draft} onChange={(e) => setText(e.target.value)} rows={7} aria-label="Answer" placeholder="Write the answer customers should get…"
-            style={{ ...field, lineHeight: 1.5, fontSize: 14, resize: 'vertical', borderColor: changed ? PURPLE : undefined }} />
+            style={{ ...field, lineHeight: 1.5, fontSize: 14, resize: 'vertical', borderColor: changed ? ACCENT : undefined }} />
           {data!.preview && data!.preview.text !== draft && !changed && (
             <div style={{ fontSize: 12.5, color: MUTED, marginTop: 6 }}>With today's values: <span style={{ color: INK }}>{data!.preview.text}</span>{data!.preview.missing.length ? <span style={{ color: '#B91C1C' }}> · no value for {data!.preview.missing.map((m) => `{${m}}`).join(', ')}</span> : null}</div>
           )}
@@ -227,12 +227,12 @@ function Pane({ id, me, clusters, onNext, onPrev }: { id: string; me: Me; cluste
                 <span className="min-w-0 flex-1">
                   <span style={{ color: INK }} dir="auto">{v.text}</span>
                   {v.repeats > 1 && <span style={{ color: MUTED }}> ×{v.repeats}</span>}
-                  {v.split === 'eval' && <span title="Kept aside to test the AI, not used to write answers" style={{ fontSize: 10.5, fontWeight: 700, color: PURPLE, marginLeft: 6 }}>TEST</span>}
+                  {v.split === 'eval' && <span title="Kept aside to test the AI, not used to write answers" style={{ fontSize: 10.5, fontWeight: 700, color: ACCENT, marginLeft: 6 }}>TEST</span>}
                   {v.humanReply && <span className="block" style={{ color: MUTED, fontSize: 12 }}>Team replied: {v.humanReply.slice(0, 220)}</span>}
                 </span>
               </label>
             ))}
-            {variations.length > 8 && <button type="button" onClick={() => setShowAll(!showAll)} style={{ fontSize: 12.5, color: PURPLE, fontWeight: 700, marginTop: 6 }}>{showAll ? 'Show fewer' : `Show all ${variations.length}`}</button>}
+            {variations.length > 8 && <button type="button" onClick={() => setShowAll(!showAll)} style={{ fontSize: 12.5, color: ACCENT, fontWeight: 700, marginTop: 6 }}>{showAll ? 'Show fewer' : `Show all ${variations.length}`}</button>}
           </div>
         </div>
 

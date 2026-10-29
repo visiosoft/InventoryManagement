@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { GraduationCap } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useSession } from '../lib/session'
-import { INK, MUTED, PURPLE, HEAD, field, btn } from './theme'
+import { INK, MUTED, ACCENT, HEAD, field, btn } from './theme'
 
 /* Sign in, sign up (a new organisation, or joining by invitation). */
 
@@ -12,7 +12,7 @@ function Frame({ title, sub, children }: { title: string; sub: string; children:
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full" style={{ maxWidth: 420 }}>
         <div className="flex items-center gap-2" style={{ marginBottom: 22 }}>
-          <span style={{ width: 36, height: 36, borderRadius: 10, background: PURPLE, display: 'grid', placeItems: 'center' }}><GraduationCap size={20} color="#fff" /></span>
+          <span style={{ width: 36, height: 36, borderRadius: 10, background: ACCENT, display: 'grid', placeItems: 'center' }}><GraduationCap size={20} color="#fff" /></span>
           <span style={{ fontFamily: HEAD, fontWeight: 800, fontSize: 18, color: INK }}>AI Training Center</span>
         </div>
         <h1 style={{ fontFamily: HEAD, fontWeight: 800, fontSize: 28, color: INK, margin: 0 }}>{title}</h1>
@@ -44,7 +44,7 @@ export function Login() {
         {err && <div style={{ color: '#B91C1C', fontSize: 13, marginBottom: 10 }}>{err}</div>}
         <button type="submit" disabled={busy} style={{ ...btn(true), width: '100%', justifyContent: 'center', height: 40 }}>Sign in</button>
       </form>
-      <div style={{ fontSize: 13, color: MUTED, marginTop: 14, textAlign: 'center' }}>New here? <Link to="/signup" style={{ color: PURPLE, fontWeight: 700 }}>Create an account</Link></div>
+      <div style={{ fontSize: 13, color: MUTED, marginTop: 14, textAlign: 'center' }}>New here? <Link to="/signup" style={{ color: ACCENT, fontWeight: 700 }}>Create an account</Link></div>
     </Frame>
   )
 }
@@ -70,7 +70,7 @@ export function Signup({ invite }: { invite?: { token: string; email: string; or
         {err && <div style={{ color: '#B91C1C', fontSize: 13, marginBottom: 10 }}>{err}</div>}
         <button type="submit" disabled={busy} style={{ ...btn(true), width: '100%', justifyContent: 'center', height: 40 }}>{invite ? 'Join' : 'Create account'}</button>
       </form>
-      <div style={{ fontSize: 13, color: MUTED, marginTop: 14, textAlign: 'center' }}>Have an account? <Link to="/login" style={{ color: PURPLE, fontWeight: 700 }}>Sign in</Link></div>
+      <div style={{ fontSize: 13, color: MUTED, marginTop: 14, textAlign: 'center' }}>Have an account? <Link to="/login" style={{ color: ACCENT, fontWeight: 700 }}>Sign in</Link></div>
     </Frame>
   )
 }

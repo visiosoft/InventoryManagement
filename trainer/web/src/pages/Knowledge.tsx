@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Rocket, RotateCcw, Search, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { type KRecord, type Me, INK, MUTED, PURPLE, LINE, TINT, HEAD, btn, panel, caps, field, when } from './theme'
+import { type KRecord, type Me, INK, MUTED, ACCENT, LINE, TINT, HEAD, btn, panel, caps, field, when } from './theme'
 import { Pill } from './shared'
 
 /* The approved answer library: every answer the business stands behind, with
@@ -87,7 +87,7 @@ export default function Knowledge({ me }: { me: Me }) {
           <div style={caps}>Published versions</div>
           {(snaps.data?.snapshots ?? []).map((s) => (
             <div key={s.version} className="flex items-center gap-2" style={{ padding: '7px 0', borderBottom: `1px solid ${LINE}`, fontSize: 12.5 }}>
-              <span style={{ fontWeight: 700, color: s.version === snaps.data?.active ? PURPLE : INK }}>v{s.version}</span>
+              <span style={{ fontWeight: 700, color: s.version === snaps.data?.active ? ACCENT : INK }}>v{s.version}</span>
               <span className="min-w-0 flex-1 truncate" style={{ color: MUTED }}>{s.count} answers · {s.publishedBy?.name} · {when(s.createdAt)}{s.note ? ` · ${s.note}` : ''}</span>
               {s.version === snaps.data?.active ? <Pill status="published">Live</Pill>
                 : canPublish && <button type="button" style={{ ...btn(), height: 26, fontSize: 12 }} onClick={() => { if (window.confirm(`Make version ${s.version} live again?`)) rollback.mutate(s.version) }}><RotateCcw size={12} /> Roll back</button>}
@@ -99,7 +99,7 @@ export default function Knowledge({ me }: { me: Me }) {
         <div style={{ ...panel, padding: 16 }}>
           <div style={caps}>Live values for {'{variables}'}</div>
           <p style={{ fontSize: 12, color: MUTED, margin: '4px 0 8px' }}>Write these in an answer and agents fill in today's value, so prices never go stale.</p>
-          {Object.entries(vars.data?.values ?? {}).map(([k, v]) => <div key={k} className="flex gap-2" style={{ fontSize: 12, padding: '3px 0' }}><code style={{ color: PURPLE }}>{`{${k}}`}</code><span className="truncate" style={{ color: MUTED }}>{v}</span></div>)}
+          {Object.entries(vars.data?.values ?? {}).map(([k, v]) => <div key={k} className="flex gap-2" style={{ fontSize: 12, padding: '3px 0' }}><code style={{ color: ACCENT }}>{`{${k}}`}</code><span className="truncate" style={{ color: MUTED }}>{v}</span></div>)}
         </div>
       </div>
 

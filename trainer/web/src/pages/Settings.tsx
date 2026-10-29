@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useSession } from '../lib/session'
-import { type Me, INK, MUTED, PURPLE, LINE, btn, panel, caps, field, when } from './theme'
+import { type Me, INK, MUTED, ACCENT, LINE, btn, panel, caps, field, when } from './theme'
 import { PageTitle } from './shared'
 
 /* One organisation's settings. Secrets (AI keys, tokens, app secrets) are
@@ -42,7 +42,7 @@ export default function Settings() {
       <div className="flex flex-wrap gap-1" style={{ borderBottom: `1px solid ${LINE}`, marginBottom: 16 }}>
         {TABS.map(([k, label]) => (
           <button key={k} type="button" onClick={() => setParams({ tab: k }, { replace: true })}
-            style={{ padding: '8px 12px', fontSize: 13.5, fontWeight: 700, color: tab === k ? PURPLE : MUTED, borderBottom: `2px solid ${tab === k ? PURPLE : 'transparent'}`, marginBottom: -1 }}>{label}</button>
+            style={{ padding: '8px 12px', fontSize: 13.5, fontWeight: 700, color: tab === k ? ACCENT : MUTED, borderBottom: `2px solid ${tab === k ? ACCENT : 'transparent'}`, marginBottom: -1 }}>{label}</button>
         ))}
       </div>
       {!manage && !['team', 'usage', 'feedback'].includes(tab) ? <div style={{ ...panel, padding: 20, color: MUTED }}>Only owners and admins change settings.</div> : (

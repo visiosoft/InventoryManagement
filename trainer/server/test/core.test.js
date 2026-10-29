@@ -322,3 +322,16 @@ test('uploads: CSV with quoted commas and JSON both become threads', async () =>
    const json = await parseUpload('x.json', Buffer.from(JSON.stringify({ messages: [{ conversation: 'c2', role: 'customer', message: 'Where are you?' }] })));
    assert.equal(svc.rowsToThreads(json)[0].messages[0].text, 'Where are you?');
 });
+
+test('daily trends: every day present, oldest first, decisions counted on their day', () => {
+   const now = new Date('2026-10-29T12:00:00Z');
+   const rows = svc.fillDays([
+      { day: '2026-10-29', key: 'approved', n: 2 }, { day: '2026-10-29', key: 'approved', n: 1 },
+      { day: '2026-10-27', key: 'questions', n: 40 }, { day: '2026-09-01', key: 'questions', n: 99 },
+   ], ['questions', 'approved'], 3, now);
+   assert.deepEqual(rows, [
+      { day: '2026-10-27', questions: 40, approved: 0 },
+      { day: '2026-10-28', questions: 0, approved: 0 },
+      { day: '2026-10-29', questions: 0, approved: 3 },
+   ]);
+});

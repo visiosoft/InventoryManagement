@@ -16,6 +16,11 @@ const CLUSTERS = [
   { _id: 'c3', key: 'damage', name: 'Damaged item complaint', category: 'Complaints', question: 'My item was damaged in storage', count: 6, languages: ['en'], status: 'suggested', bulkEligible: false,
     suggestion: { text: 'I am very sorry to hear that…', sources: [], needsData: 'the insurance claim process', escalate: true } },
 ]
+const TREND = Array.from({ length: 30 }, (_, i) => {
+  const d = new Date(Date.now() - (29 - i) * 86400000).toISOString().slice(0, 10)
+  const w = Math.sin(i / 3.2) + 1.4
+  return { day: d, questions: Math.round(18 + 12 * w), approved: Math.round(3 + 4 * w + (i > 20 ? 4 : 0)), edited: Math.round(1 + 2.2 * w), rejected: Math.round(0.6 * w), escalated: i % 4 === 0 ? 1 : 0 }
+})
 const Q = (id: string, text: string, extra = {}) => ({ _id: id, text, lang: 'en', repeats: 1, split: 'train', ...extra })
 
 async function setup(page: import('@playwright/test').Page, { signedIn = true } = {}) {
@@ -29,7 +34,17 @@ async function setup(page: import('@playwright/test').Page, { signedIn = true } 
     if (path === '/api/auth/signup') return route.fulfill({ status: 201, json: { token: 't', user: { ...USER, orgs: [{ id: 'o3', name: 'New Co', slug: 'new-co', role: 'owner' }] } } })
     if (path === '/api/auth/me') return route.fulfill({ json: { user: USER } })
     if (path === '/api/org') return route.fulfill({ json: { org: ORG(org || 'o1', org === 'o2' ? 'Acme Moving' : org === 'o3' ? 'New Co' : 'PurpleBox Storage'), role: 'owner', permissions: PERMS } })
-    if (path === '/api/training/overview') return route.fulfill({ json: { questions: org === 'o2' ? 17 : 412, holdout: 81, intents: 37, review: { suggested: 29, approved: 6, escalated: 1, rejected: 1 }, knowledge: { published: 4, approved: 2 }, edited: 3, conflicts: 1, activeSnapshot: 2, snapshots: 2, openFeedback: 0, evals: [{ label: 'Test of 30', createdAt: '2026-10-29T09:00:00Z', summary: { mean: 3.9, checksPassed: 26, completed: 30 } }] } })
+    if (path === '/api/training/overview') return route.fulfill({ json: { questions: org === 'o2' ? 17 : 412, holdout: 81, intents: 37, review: { suggested: 29, approved: 6, escalated: 1, rejected: 1 }, knowledge: { published: 4, approved: 2 }, edited: 3, conflicts: 1, activeSnapshot: 2, snapshots: 2, openFeedback: 0, evals: [{ label: 'Test of 30', createdAt: '2026-10-29T09:00:00Z', summary: { mean: 3.9, checksPassed: 26, completed: 30 } }],
+      trend: TREND, testTrend: [{ at: '2026-10-20', mean: 3.1 }, { at: '2026-10-24', mean: 3.5 }, { at: '2026-10-29', mean: 3.9 }],
+      activity: [
+        { _id: 'a1', action: 'review.approve', by: { name: 'Sara' }, at: new Date(Date.now() - 4 * 60000).toISOString() },
+        { _id: 'a2', action: 'review.edit', by: { name: 'Mase' }, at: new Date(Date.now() - 22 * 60000).toISOString() },
+        { _id: 'a3', action: 'publish', by: { name: 'Mase' }, at: new Date(Date.now() - 2 * 3600000).toISOString() },
+        { _id: 'a4', action: 'review.escalate', by: { name: 'Sara' }, at: new Date(Date.now() - 3 * 3600000).toISOString() },
+        { _id: 'a5', action: 'import.start', by: { name: 'Mase' }, at: new Date(Date.now() - 26 * 3600000).toISOString() },
+      ],
+      queue: CLUSTERS.map((c) => ({ ...c, createdAt: '2026-10-28T08:00:00Z' })),
+      top: CLUSTERS.map((c) => ({ _id: c._id, name: c.name, count: c.count, status: c.status, category: c.category })) } })
     if (path === '/api/training/clusters' && req.method() === 'GET') return route.fulfill({ json: { clusters: CLUSTERS } })
     const m = /^\/api\/training\/clusters\/(c\d)$/.exec(path)
     if (m) {
@@ -56,7 +71,7 @@ test('sign up creates an account and opens its own organisation', async ({ page 
   if (SHOT) await page.screenshot({ path: `${SHOT}/trainer-signup.png` })
   await page.getByRole('button', { name: 'Create account' }).click()
   await expect.poll(() => posts.find((p) => p.path === '/api/auth/signup')?.body).toMatchObject({ email: 'sara@newco.example', orgName: 'New Co' })
-  await expect(page.getByRole('heading', { name: 'New Co' })).toBeVisible()
+  await expect(page.getByText("Here's how New Co's AI training is going today.")).toBeVisible()
 })
 
 test('each customer is its own organisation: switching changes what every request is for', async ({ page }) => {
@@ -64,7 +79,7 @@ test('each customer is its own organisation: switching changes what every reques
   await page.goto('/')
   await expect(page.getByText('412')).toBeVisible()
   await page.getByLabel('Organisation', { exact: true }).selectOption('o2')
-  await expect(page.getByRole('heading', { name: 'Acme Moving' })).toBeVisible()
+  await expect(page.getByText("Here's how Acme Moving's AI training is going today.")).toBeVisible()
   await expect(page.getByText('17', { exact: true })).toBeVisible()
   expect(orgHeaders.at(-1)).toBe('o2')
 })

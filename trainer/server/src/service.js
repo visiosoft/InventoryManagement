@@ -275,13 +275,62 @@ export async function overview(r, org) {
       r.snapshots.count({}), r.feedback.count({ status: 'open' }),
    ]);
    const edited = await r.knowledge.count({ 'versions.original': { $nin: [null, ''] } });
+   const [trend, activity, queue, top, tests] = await Promise.all([
+      trends(r, 30),
+      r.audit.find({}, { sort: { at: -1 }, limit: 8, select: 'by action target detail at' }),
+      r.clusters.find({ status: { $in: ['new', 'suggested'] } }, { sort: { count: -1 }, limit: 5, select: 'name question count category status createdAt' }),
+      r.clusters.find({}, { sort: { count: -1 }, limit: 6, select: 'name count status category' }),
+      r.evals.find({ status: 'done' }, { sort: { createdAt: 1 }, limit: 12, select: 'summary.mean createdAt' }),
+   ]);
    return {
       questions, holdout, intents: clusters,
       review: Object.fromEntries(byStatus.map((x) => [x._id, x.n])),
       knowledge: Object.fromEntries(records.map((x) => [x._id, x.n])),
       edited, conflicts: conflictList.length, activeSnapshot: org.activeSnapshot, snapshots, openFeedback: feedback,
-      evals: lastEval,
+      evals: lastEval, trend, activity, queue, top,
+      testTrend: tests.map((t) => ({ at: t.createdAt, mean: t.summary?.mean ?? null })),
    };
+}
+
+const DAY_MS = 86_400_000;
+const dayOf = (d) => new Date(d).toISOString().slice(0, 10);
+
+/**
+ * Daily rows for the last `days` days, every day present (0 when nothing
+ * happened), oldest first. `rows` are [{ day: 'YYYY-MM-DD', key, n }]. Pure.
+ */
+export function fillDays(rows, keys, days, now = new Date()) {
+   const out = [];
+   for (let i = days - 1; i >= 0; i--) {
+      const day = dayOf(now.getTime() - i * DAY_MS);
+      const row = { day };
+      for (const k of keys) row[k] = 0;
+      out.push(row);
+   }
+   const at = new Map(out.map((r) => [r.day, r]));
+   for (const r of rows) if (at.has(r.day) && r.key in at.get(r.day)) at.get(r.day)[r.key] += r.n;
+   return out;
+}
+
+/** What happened each day: questions brought in, and every review decision. */
+export async function trends(r, days = 30, now = new Date()) {
+   const since = new Date(now.getTime() - days * DAY_MS);
+   const [imported, decided] = await Promise.all([
+      r.questions.aggregate([
+         { $match: { createdAt: { $gte: since }, skipped: false } },
+         { $group: { _id: { $dateToString: { date: '$createdAt', format: '%Y-%m-%d' } }, n: { $sum: '$repeats' } } },
+      ]),
+      r.clusters.aggregate([
+         { $unwind: '$history' },
+         { $match: { 'history.at': { $gte: since }, 'history.action': { $in: ['approve', 'edit', 'save_new', 'reject', 'escalate'] } } },
+         { $group: { _id: { day: { $dateToString: { date: '$history.at', format: '%Y-%m-%d' } }, action: '$history.action' }, n: { $sum: 1 } } },
+      ]),
+   ]);
+   const KEY = { approve: 'approved', save_new: 'approved', edit: 'edited', reject: 'rejected', escalate: 'escalated' };
+   return fillDays([
+      ...imported.map((x) => ({ day: x._id, key: 'questions', n: x.n })),
+      ...decided.map((x) => ({ day: x._id.day, key: KEY[x._id.action], n: x.n })),
+   ], ['questions', 'approved', 'edited', 'rejected', 'escalated'], days, now);
 }
 
 export { DATA_RULE, variablesIn };

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FlaskConical } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { type Me, INK, MUTED, PURPLE, LINE, HEAD, btn, panel, caps, field, when } from './theme'
+import { type Me, INK, MUTED, ACCENT, LINE, HEAD, btn, panel, caps, field, when } from './theme'
 import { Pill } from './shared'
 
 /* The testing lab: the agent answers questions kept aside at import (never
@@ -37,7 +37,7 @@ export default function Tests({ me }: { me: Me }) {
     <div className="space-y-4">
       {me.permissions.includes('evaluate') && (
         <div style={{ ...panel, padding: 18 }}>
-          <div className="flex items-center gap-2" style={{ fontWeight: 800, color: INK }}><FlaskConical size={16} style={{ color: PURPLE }} /> Test the agent</div>
+          <div className="flex items-center gap-2" style={{ fontWeight: 800, color: INK }}><FlaskConical size={16} style={{ color: ACCENT }} /> Test the agent</div>
           <p style={{ fontSize: 13, color: MUTED, margin: '4px 0 12px' }}>Questions kept aside at import are put to the agent as real customers asked them. Nothing is sent to customers. Run it before and after publishing to see the difference.</p>
           <div className="flex flex-wrap items-end gap-3">
             <div style={{ fontSize: 13, color: INK }}>Testing: <b>{agent.data?.name ?? '…'}</b><div style={{ fontSize: 12, color: MUTED }}>{agent.data?.connected ? 'Your own AI, through your connected system' : 'The hosted agent, answering from your published answers'}</div></div>

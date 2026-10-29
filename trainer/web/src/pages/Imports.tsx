@@ -3,7 +3,7 @@ import { Link, useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Upload, Plug, Code2, MessageCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { type Me, INK, MUTED, PURPLE, LINE, btn, panel, caps, field, when } from './theme'
+import { type Me, INK, MUTED, ACCENT, LINE, btn, panel, caps, field, when } from './theme'
 import { Pill, PageTitle } from './shared'
 
 /* Conversations come in four ways: the customer's connected system, a file,
@@ -61,11 +61,11 @@ export default function Imports() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card icon={<Plug size={16} style={{ color: PURPLE }} />} title="Connected system">
-          <p style={{ fontSize: 13, color: MUTED, margin: '4px 0 0' }}>{sources.data?.connector ? 'Pull recent conversations straight from your system.' : <>Connect your CRM or helpdesk in <Link to="/settings?tab=connector" style={{ color: PURPLE, fontWeight: 700 }}>Settings</Link> to pull conversations, live prices and test your own AI.</>}</p>
+        <Card icon={<Plug size={16} style={{ color: ACCENT }} />} title="Connected system">
+          <p style={{ fontSize: 13, color: MUTED, margin: '4px 0 0' }}>{sources.data?.connector ? 'Pull recent conversations straight from your system.' : <>Connect your CRM or helpdesk in <Link to="/settings?tab=connector" style={{ color: ACCENT, fontWeight: 700 }}>Settings</Link> to pull conversations, live prices and test your own AI.</>}</p>
           {importBtn('connector', `Import ${limit} questions`, Boolean(sources.data?.connector))}
         </Card>
-        <Card icon={<Upload size={16} style={{ color: PURPLE }} />} title="From a file">
+        <Card icon={<Upload size={16} style={{ color: ACCENT }} />} title="From a file">
           <p style={{ fontSize: 13, color: MUTED, margin: '4px 0 12px' }}>CSV, Excel or JSON from any chat tool. Columns: <code>conversation</code>, <code>from</code> (customer or agent), <code>text</code>, <code>at</code>.</p>
           <div className="flex flex-wrap gap-2">
             <label style={{ ...btn(true), opacity: running || !can ? 0.5 : 1 }}>
@@ -75,12 +75,12 @@ export default function Imports() {
             <button type="button" style={btn()} onClick={sample}><Download size={14} /> Template</button>
           </div>
         </Card>
-        <Card icon={<Code2 size={16} style={{ color: PURPLE }} />} title="Sent by API">
-          <p style={{ fontSize: 13, color: MUTED, margin: '4px 0 0' }}>Your developers send conversations to <code>POST /api/v1/conversations</code> with an API key (<Link to="/settings?tab=api" style={{ color: PURPLE, fontWeight: 700 }}>Settings → API</Link>). {stored.api ? <><b style={{ color: INK }}>{stored.api.messages.toLocaleString()}</b> messages received, latest {when(stored.api.last)}.</> : 'Nothing received yet.'}</p>
+        <Card icon={<Code2 size={16} style={{ color: ACCENT }} />} title="Sent by API">
+          <p style={{ fontSize: 13, color: MUTED, margin: '4px 0 0' }}>Your developers send conversations to <code>POST /api/v1/conversations</code> with an API key (<Link to="/settings?tab=api" style={{ color: ACCENT, fontWeight: 700 }}>Settings → API</Link>). {stored.api ? <><b style={{ color: INK }}>{stored.api.messages.toLocaleString()}</b> messages received, latest {when(stored.api.last)}.</> : 'Nothing received yet.'}</p>
           {importBtn('api', 'Import what was sent', Boolean(stored.api))}
         </Card>
-        <Card icon={<MessageCircle size={16} style={{ color: PURPLE }} />} title="WhatsApp Business">
-          <p style={{ fontSize: 13, color: MUTED, margin: '4px 0 0' }}>{me.org.whatsapp.connected ? <>Customer messages arrive from the moment it was connected (Meta does not share older history). {stored.whatsapp ? <><b style={{ color: INK }}>{stored.whatsapp.messages.toLocaleString()}</b> so far.</> : 'None yet.'}</> : <>Connect your WhatsApp Business number in <Link to="/settings?tab=whatsapp" style={{ color: PURPLE, fontWeight: 700 }}>Settings</Link>. Customer messages collect from then on.</>}</p>
+        <Card icon={<MessageCircle size={16} style={{ color: ACCENT }} />} title="WhatsApp Business">
+          <p style={{ fontSize: 13, color: MUTED, margin: '4px 0 0' }}>{me.org.whatsapp.connected ? <>Customer messages arrive from the moment it was connected (Meta does not share older history). {stored.whatsapp ? <><b style={{ color: INK }}>{stored.whatsapp.messages.toLocaleString()}</b> so far.</> : 'None yet.'}</> : <>Connect your WhatsApp Business number in <Link to="/settings?tab=whatsapp" style={{ color: ACCENT, fontWeight: 700 }}>Settings</Link>. Customer messages collect from then on.</>}</p>
           {importBtn('whatsapp', 'Import WhatsApp questions', Boolean(stored.whatsapp))}
         </Card>
       </div>
@@ -100,7 +100,7 @@ export default function Imports() {
               {i.status === 'running' && (
                 <div style={{ marginTop: 8 }}>
                   <div style={{ fontSize: 12.5, color: MUTED }}>{STAGE[i.stage] ?? i.stage}{i.stage === 'clustering' ? ` · ${i.progress.done} of ${i.progress.total}` : ''}</div>
-                  <div style={{ height: 6, borderRadius: 99, background: '#ECE8F5', marginTop: 5, overflow: 'hidden' }}><div style={{ width: `${i.stage === 'suggesting' ? 100 : pct}%`, height: '100%', background: PURPLE }} /></div>
+                  <div style={{ height: 6, borderRadius: 99, background: '#ECE8F5', marginTop: 5, overflow: 'hidden' }}><div style={{ width: `${i.stage === 'suggesting' ? 100 : pct}%`, height: '100%', background: ACCENT }} /></div>
                 </div>
               )}
               {i.counts?.turns != null && (
