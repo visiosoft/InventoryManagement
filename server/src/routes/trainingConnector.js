@@ -62,8 +62,9 @@ connector.post('/agent-reply', async (req, res, next) => {
       const agent = await AgentProfile.findOne({ kind: 'conversational', isActive: { $ne: false } }).sort({ isDefault: -1, createdAt: 1 }).lean();
       if (!agent) return res.status(404).json({ error: 'No conversational agent is set up' });
       const phone = req.body?.ref ? await phoneForRef(String(req.body.ref)) : '';
-      const out = await agentFor(agent).reply({ question: String(req.body?.question || '').slice(0, 2000), ref: phone, at: req.body?.at });
-      res.json({ reply: out.reply, needsHuman: out.needsHuman });
+      const context = Array.isArray(req.body?.context) ? req.body.context.slice(-30).map((m) => ({ from: m?.from === 'agent' ? 'agent' : 'customer', text: String(m?.text || '').slice(0, 2000) })) : null;
+      const out = await agentFor(agent).reply({ question: String(req.body?.question || '').slice(0, 2000), ref: context ? '' : phone, at: req.body?.at, context });
+      res.json({ reply: out.reply, needsHuman: out.needsHuman, tools: out.tools || [] });
    } catch (e) { next(e); }
 });
 

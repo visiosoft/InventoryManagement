@@ -48,5 +48,8 @@ export function scoped(models, orgId) {
       feedback: make(models.TrainingFeedback),
       members: make(models.TrainingMember),
       audit: make(models.TrainingAudit),
+      scenarios: make(models.TrainingScenario),
+      runs: make(models.TrainingSuiteRun),
+      sandbox: make(models.TrainingSandbox),
    };
 }

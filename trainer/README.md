@@ -30,6 +30,12 @@ A separate, multi-tenant product: any business signs up, brings in its real cust
 | Public API by key: knowledge, match, feedback, conversations | **Built** |
 | Platform admin: all organisations, their usage, plan label, platform keys, sign-up on/off | **Built** |
 | Export an organisation's data; delete an organisation and everything in it; daily retention purge; audit log | **Built** |
+| **Sales playbook** as configuration: behaviour contract, conversation states, Next Best Actions, lead fields, weighted scorecard, automatic fails, media library, scenario groups, graduation gates. Templates: general customer service, and self-storage sales (the PurpleBox AI Sales Training & Deployment Specification v1.0) | **Built** |
+| **Scenario library** in the spec's dataset format (context, message, lead state before, intent, correct actions, ideal reply, weak reply, critique, outcome, commercial note); coverage against the test matrix; 74 starter scenarios as drafts; AI-drafted scenarios and ideal replies, always approved by a person | **Built** |
+| **Sandbox**: chat as a customer; lead-state viewer with confidence, conversation state, Next Best Action and reason, knowledge trace, media and actions simulated (nothing sent); score, approve or correct any reply — corrections become regression cases | **Built** |
+| **Scenario suite**: weighted 0–100 score, code-checked automatic fails (invented figures, unlisted discounts, missed hand-overs), regressions against the last run, the eight graduation gates, blind human review; each run records model, playbook version and knowledge version | **Built** |
+| **Go-live stages** Sandbox → A Shadow → B Human approval → C Limited → D Expanded → E Optimised; past Shadow only one stage at a time on a run that passes every gate; shared by `GET /v1/rollout` | **Built** — the stage is advisory: the business's own system decides what it sends |
+| Production monitoring of visits, bookings, discounts and revenue by model version (Specification §19) | Not built — needs outcome data from the business's system |
 | Billing (Stripe subscriptions, metered usage invoices), quotas per plan | Not built — plans are a label today; usage is counted, ready to bill |
 | Live quality monitoring, behaviour studio, human-vs-AI auto cases, SDK packages, more providers, fine-tuning export | Not built (Phases 2–4) |
 
@@ -55,6 +61,14 @@ Approving an answer **does not retrain a model**. The answer becomes a controlle
    - **R** rejects.
 7. **Approved answers → Publish.** Its agent reads them by API key (`/v1/match` or `/v1/knowledge`), or the hosted agent uses them.
 8. **Tests:** run a test before and after publishing.
+
+**Sales agents (the playbook):**
+
+1. **Settings → Playbook:** start from a template (self-storage sales brings 74 starter scenarios as drafts), then adjust the contract, actions, scorecard and gates.
+2. **Scenarios:** fill in or **Draft with AI** each ideal reply, check the correct action, and **Approve**. Coverage cards show each group against the matrix minimum; the wand drafts 8 more for a group.
+3. **Sandbox:** chat as a customer, or open a scenario and **Replay** it. **Score**, **Approve** or **Correct** any reply.
+4. **Tests & go-live → Run** the core suite. Read the gates, do a **Blind review** (20+ ratings), correct failing cases, and run again.
+5. When every gate passes, move one stage at a time. Shadow needs no gates, because it sends nothing.
 
 ### PurpleBox, as a customer
 
@@ -107,8 +121,10 @@ This is what a customer's own system implements. Every call carries `Authorizati
 GET  {base}/health                        → { ok: true, name }
 GET  {base}/conversations?days&limit      → { threads: [{ ref, messages: [{ from: 'customer'|'agent', text, at, byAi }] }] }
 GET  {base}/facts                         → { text, values: { name: value } }
-POST {base}/agent-reply { question, ref, at } → { reply, needsHuman }
+POST {base}/agent-reply { question, ref, at, context? } → { reply, needsHuman, tools? }
 ```
+
+`context` is a sandbox conversation `[{ from, text }]`. When it is present, the agent answers from that conversation instead of a real customer's history; the PurpleBox CRM does this with `persist: false`, so nothing is sent or saved.
 
 PurpleBox's implementation is `server/src/routes/trainingConnector.js`. Its references are keyed hashes of the phone number, so no number is sent.
 
@@ -119,6 +135,7 @@ GET  /api/v1/knowledge                     published answers, {variables} filled
 POST /api/v1/match         { message, limit }
 POST /api/v1/conversations { conversations: [{ conversation, messages: [{ from, text, at, id }] }] }   (≤2,000 messages/call, deduplicated by id)
 POST /api/v1/feedback      { question, aiReply, humanReply }
+GET  /api/v1/rollout                       { stage, intents, contract }   contract only when the owner shares it
 POST /api/webhooks/whatsapp/:orgId         Meta deliveries, verified with the app secret
 ```
 
@@ -192,6 +209,7 @@ cd trainer/web && npm install && npm run dev # :5180, proxies /api
   - the core: masking, injection, extraction, clustering, variables, retrieval, conflicts, snapshots and rollback, roles, tenant scoping, review → publish → rollback, evaluation;
   - security: encryption and tampering, sessions, passwords, the private-address guard, webhook signatures, secrets never returned;
   - HTTP: every organisation route refuses without a session, and the public API refuses without a key.
-- `trainer/web`: `npx playwright test` (mocked API). Covers sign-up, switching organisations (every request carries the chosen one), and keyboard review.
+- `trainer/server` also covers the playbook: the spec's states, actions, weights and gates; cleaning a saved playbook; weighted scores; code-caught automatic fails; pass rules; gates (pending vs failing); regressions; stage moves; starter scenarios; and sandbox turns and a suite run against a fake model.
+- `trainer/web`: `npx playwright test` (mocked API). Covers sign-up, switching organisations (every request carries the chosen one), keyboard review, the sandbox (reply, lead state, trace, score, correction, lead carried forward), scenarios (coverage, AI draft, approve), gates and blind review, and playbook settings.
 - CRM: `server/src/services/trainerKnowledge.test.js` and `server/src/routes/trainingConnector.test.js`.
 - **Not yet tested:** the full flow against a live database and a live model. Run it once on the server after the first deploy.

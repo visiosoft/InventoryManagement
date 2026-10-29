@@ -1,5 +1,5 @@
 import { Message, TrainingSnapshot } from './models.js';
-import { llmFor } from './providers.js';
+import { llmFor, resolveProvider } from './providers.js';
 import { connectorClient } from './connector.js';
 import { knowledgeBlock, AUTHORITY } from './core/knowledge.js';
 import { asData, DATA_RULE } from './core/text.js';
@@ -79,5 +79,12 @@ export function hostFor(org) {
       },
       facts: () => factsFor(org),
       agent: agentFor(org),
+      snapshotItems: async () => (org.activeSnapshot ? (await TrainingSnapshot.findOne({ org: org._id, version: org.activeSnapshot }).lean())?.items || [] : []),
+      modelName: async () => { const r = await resolveProvider(org); return `${r.provider}:${r.model}`; },
+      // The connected system's agent, with the simulated conversation so far (sandbox and suite).
+      connectedReply: async (body) => {
+         if (!c) throw new Error('No system is connected');
+         return c.agentReply(body);
+      },
    };
 }

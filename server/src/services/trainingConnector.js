@@ -64,13 +64,15 @@ export function agentFor(agentDoc) {
    if (!agentDoc) return null;
    return {
       name: agentDoc.name,
-      async reply({ question, ref, at }) {
+      async reply({ question, ref, at, context = null }) {
          const { runAgent, findLead } = await import('../agents/runtime.js');
          const { freshState } = await import('../agents/buckets.js');
          const when = at ? new Date(at) : new Date();
          const lead = (await findLead({ phone: ref })) || { _id: null, fullName: '', phoneNormalized: String(ref || '') };
          const file = { ...freshState(when), phoneNormalized: String(ref || lead.phoneNormalized || ''), need: {}, offers: [], openQuestions: [], lastSummary: '' };
-         const d = await runAgent({ agent: agentDoc, lead, leadFile: file, trigger: { kind: 'inbound', text: question, until: when }, now: when, persist: false });
+         // A sandbox conversation: the simulated messages stand in for the real history.
+         const historyOverride = Array.isArray(context) ? [...context, { from: 'customer', text: question }].map((m, i, a) => ({ direction: m.from === 'agent' ? 'outbound' : 'inbound', type: 'text', text: String(m.text || '').slice(0, 2000), occurredAt: new Date(when.getTime() - (a.length - i) * 60_000) })) : null;
+         const d = await runAgent({ agent: agentDoc, lead: historyOverride ? { _id: null, fullName: '', phoneNormalized: '' } : lead, leadFile: historyOverride ? { ...file, phoneNormalized: '' } : file, trigger: { kind: 'inbound', text: question, until: when }, now: when, persist: false, historyOverride });
          return { reply: d.reply || '', needsHuman: Boolean(d.needsHuman), tools: (d.toolCalls || []).map((c) => c.name) };
       },
    };

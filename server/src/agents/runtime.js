@@ -218,7 +218,7 @@ export async function runAgent(args) {
     return withAiFeature(`agent:${args?.agent?.name || 'agent'}`, () => runAgentInner(args));
 }
 
-async function runAgentInner({ agent, lead, leadFile, trigger, now = new Date(), persist = true, writer = '' }) {
+async function runAgentInner({ agent, lead, leadFile, trigger, now = new Date(), persist = true, writer = '', historyOverride = null }) {
     if (!openaiConfigured()) throw new Error('No AI provider is configured');
     const cadence = cadenceFor(agent);
     const before = snapshotOf(leadFile);
@@ -231,7 +231,9 @@ async function runAgentInner({ agent, lead, leadFile, trigger, now = new Date(),
 
     // A rehearsal replays the past: history stops at the moment being
     // replayed, so the agent cannot see what happened next.
-    const history = await WhatsAppMessage.find({
+    // The AI Training Center's sandbox supplies a simulated conversation
+    // instead (newest first, like the query); only ever for a dry run.
+    const history = historyOverride && !persist ? [...historyOverride].reverse() : await WhatsAppMessage.find({
         phoneNormalized: leadFile.phoneNormalized,
         occurredAt: { $gte: new Date(now.getTime() - HISTORY_DAYS * 86_400_000), ...(trigger.until ? { $lte: new Date(trigger.until) } : {}) },
         deletedAt: null,

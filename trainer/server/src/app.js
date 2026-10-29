@@ -5,6 +5,7 @@ import authRoutes, { requireUser } from './routes/auth.js';
 import orgRoutes from './routes/org.js';
 import trainingRoutes from './routes/training.js';
 import platformRoutes from './routes/platform.js';
+import salesRoutes from './routes/sales.js';
 import { v1, webhooks } from './routes/public.js';
 
 /**
@@ -13,6 +14,7 @@ import { v1, webhooks } from './routes/public.js';
  *   /api/auth/*        sign up, sign in, invitations, new organisations
  *   /api/org/*         one organisation's settings, team, keys     (X-Org)
  *   /api/training/*    its imports, review, knowledge, tests        (X-Org)
+ *   /api/sales/*       its playbook, scenarios, sandbox, test suite, rollout (X-Org)
  *   /api/platform/*    platform admins
  *   /api/v1/*          agents and systems elsewhere, by API key
  *   /api/webhooks/*    WhatsApp Business deliveries
@@ -31,6 +33,7 @@ export function createApp() {
    app.use('/api/auth', authRoutes);
    app.use('/api/org', requireUser, orgRoutes);
    app.use('/api/training', requireUser, trainingRoutes);
+   app.use('/api/sales', requireUser, salesRoutes);
    app.use('/api/platform', requireUser, platformRoutes);
    app.use('/api/v1', v1);
    app.use('/api/webhooks', webhooks);

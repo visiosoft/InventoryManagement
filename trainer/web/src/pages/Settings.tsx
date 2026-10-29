@@ -6,12 +6,13 @@ import { api, apiError } from '../lib/api'
 import { useSession } from '../lib/session'
 import { type Me, INK, MUTED, ACCENT, LINE, btn, panel, caps, field, when } from './theme'
 import { PageTitle } from './shared'
+import PlaybookSettings from './PlaybookSettings'
 
 /* One organisation's settings. Secrets (AI keys, tokens, app secrets) are
    written here and never shown back — only their last four characters. */
 
 const TABS = [
-  ['business', 'Business'], ['ai', 'AI provider'], ['connector', 'Connected system'], ['whatsapp', 'WhatsApp'],
+  ['business', 'Business'], ['playbook', 'Playbook'], ['ai', 'AI provider'], ['connector', 'Connected system'], ['whatsapp', 'WhatsApp'],
   ['api', 'API'], ['team', 'Team'], ['usage', 'Usage'], ['feedback', 'Feedback'], ['data', 'Data'],
 ] as const
 
@@ -48,6 +49,7 @@ export default function Settings() {
       {!manage && !['team', 'usage', 'feedback'].includes(tab) ? <div style={{ ...panel, padding: 20, color: MUTED }}>Only owners and admins change settings.</div> : (
         <>
           {tab === 'business' && <Business me={me} />}
+          {tab === 'playbook' && <PlaybookSettings me={me} />}
           {tab === 'ai' && <Ai me={me} />}
           {tab === 'connector' && <Connector me={me} />}
           {tab === 'whatsapp' && <WhatsApp me={me} />}

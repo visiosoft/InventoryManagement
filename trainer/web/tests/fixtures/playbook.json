@@ -1,0 +1,467 @@
+{
+ "playbook": {
+  "template": "self_storage_sales",
+  "name": "Self-storage sales",
+  "goal": "Help the customer choose the right storage and take the next step: preferably a facility visit, or a remote reservation when they are ready.",
+  "contract": "You are the self-storage sales consultant. Help customers choose the right storage solution and confidently take the next appropriate step: preferably a facility visit, or a remote reservation when they are ready.\nAlways: understand the actual storage need; answer direct questions directly; recommend rather than list options; explain why a recommendation fits; use only verified facts, live prices, live availability and approved promotions; mention only the 2–4 benefits most relevant to this customer; use media when it reduces uncertainty or shows the facility; pick one Next Best Action after each customer message; protect customer trust and company margin; escalate when facts, authority or policy are uncertain.\nNever: invent information; hide a requested price; pressure or manipulate; manufacture scarcity or false deadlines; attack competitors; offer an unauthorised discount; repeat questions already answered; keep selling after the customer is ready to transact; end a qualified conversation without a specific next step.\nStyle: WhatsApp-length, human and confident, no corporate greetings or long paragraphs, one or two questions at most. When the customer asks how to pay, whether a unit is free, how to reserve, what documents are needed, or says they need it now, switch to closing: stop pitching and move to availability, reservation and payment.\nDiscounts: never lead with one. Diagnose the price objection first and only use an incentive the facts list as authorised. Anything outside that: say it will be checked and escalate.",
+  "states": [
+   {
+    "key": "new_inquiry",
+    "label": "New inquiry",
+    "objective": "Identify intent and answer the explicit question"
+   },
+   {
+    "key": "discovery",
+    "label": "Discovery",
+    "objective": "Understand use case, items, timing and access"
+   },
+   {
+    "key": "recommendation",
+    "label": "Recommendation",
+    "objective": "Recommend the right unit and explain why"
+   },
+   {
+    "key": "value",
+    "label": "Value presentation",
+    "objective": "Connect relevant features to the need"
+   },
+   {
+    "key": "price",
+    "label": "Price / quote",
+    "objective": "Give the price clearly, in context"
+   },
+   {
+    "key": "consideration",
+    "label": "Consideration",
+    "objective": "Help compare options"
+   },
+   {
+    "key": "objection",
+    "label": "Objection",
+    "objective": "Find the real blocker and address it"
+   },
+   {
+    "key": "visit",
+    "label": "Visit",
+    "objective": "Secure a date and time"
+   },
+   {
+    "key": "closing",
+    "label": "Closing",
+    "objective": "Availability, reservation and payment"
+   },
+   {
+    "key": "follow_up",
+    "label": "Follow-up",
+    "objective": "Re-engage on timing and prior context"
+   },
+   {
+    "key": "escalation",
+    "label": "Escalation",
+    "objective": "Hand cases outside scope to a person"
+   }
+  ],
+  "actions": [
+   {
+    "key": "ask_discovery",
+    "label": "Ask discovery question",
+    "when": "Important qualification data is missing",
+    "outcome": ""
+   },
+   {
+    "key": "recommend_size",
+    "label": "Recommend size",
+    "when": "Enough item or volume information exists",
+    "outcome": ""
+   },
+   {
+    "key": "give_price",
+    "label": "Give price / quote",
+    "when": "Customer asks for a price or a recommendation is established",
+    "outcome": ""
+   },
+   {
+    "key": "send_unit_media",
+    "label": "Send unit image/video",
+    "when": "Seeing the unit will reduce uncertainty",
+    "outcome": ""
+   },
+   {
+    "key": "send_facility_tour",
+    "label": "Send facility tour",
+    "when": "Facility quality matters or visit intent should be created",
+    "outcome": ""
+   },
+   {
+    "key": "explain_feature",
+    "label": "Explain relevant feature",
+    "when": "A feature directly answers the need or objection",
+    "outcome": ""
+   },
+   {
+    "key": "handle_objection",
+    "label": "Handle objection",
+    "when": "A blocker is explicit or strongly implied",
+    "outcome": ""
+   },
+   {
+    "key": "offer_incentive",
+    "label": "Offer authorised incentive",
+    "when": "Value is established and price is still the real blocker",
+    "outcome": ""
+   },
+   {
+    "key": "invite_visit",
+    "label": "Invite facility visit",
+    "when": "Customer is qualified and seeing the facility would help",
+    "outcome": "visit"
+   },
+   {
+    "key": "book_visit",
+    "label": "Book visit",
+    "when": "Customer accepts a visit",
+    "outcome": "visit"
+   },
+   {
+    "key": "reserve",
+    "label": "Reserve / payment",
+    "when": "Buying signal is high",
+    "outcome": "booking"
+   },
+   {
+    "key": "schedule_follow_up",
+    "label": "Schedule follow-up",
+    "when": "The need exists but timing is later",
+    "outcome": "follow_up"
+   },
+   {
+    "key": "escalate",
+    "label": "Escalate",
+    "when": "Policy, complaint, negotiation, unusual request or low confidence",
+    "outcome": "escalation"
+   }
+  ],
+  "fields": [
+   {
+    "key": "customer_type",
+    "label": "Customer type",
+    "hint": "Personal / Business"
+   },
+   {
+    "key": "use_case",
+    "label": "Use case",
+    "hint": "Moving, renovation, travel, decluttering, inventory, files"
+   },
+   {
+    "key": "items",
+    "label": "Items / volume",
+    "hint": "Furniture, boxes, documents, inventory, equipment"
+   },
+   {
+    "key": "start_date",
+    "label": "Start date",
+    "hint": "Date or approximate timing"
+   },
+   {
+    "key": "duration",
+    "label": "Duration",
+    "hint": "Weeks / months / unknown"
+   },
+   {
+    "key": "access_frequency",
+    "label": "Access frequency",
+    "hint": "Rare / occasional / frequent"
+   },
+   {
+    "key": "estimated_size",
+    "label": "Estimated size",
+    "hint": "sq ft"
+   },
+   {
+    "key": "price_sensitivity",
+    "label": "Price sensitivity",
+    "hint": "Low / medium / high"
+   },
+   {
+    "key": "buying_intent",
+    "label": "Buying intent",
+    "hint": "Low / medium / high"
+   },
+   {
+    "key": "primary_objection",
+    "label": "Primary objection",
+    "hint": "Price, distance, size, trust, timing, approval"
+   },
+   {
+    "key": "competitor",
+    "label": "Competitor",
+    "hint": "None / named / quote"
+   },
+   {
+    "key": "media_actions",
+    "label": "Media / actions done",
+    "hint": "Video sent, visit booked, quote sent, payment sent"
+   }
+  ],
+  "rubric": [
+   {
+    "key": "accuracy",
+    "label": "Factual accuracy",
+    "weight": 25,
+    "expect": "Uses approved facts; never invents price, availability, policy or promotion"
+   },
+   {
+    "key": "understanding",
+    "label": "Understanding",
+    "weight": 15,
+    "expect": "Interprets intent correctly and keeps known context"
+   },
+   {
+    "key": "recommendation",
+    "label": "Recommendation",
+    "weight": 15,
+    "expect": "Right size or action, with a clear reason"
+   },
+   {
+    "key": "progression",
+    "label": "Sales progression",
+    "weight": 15,
+    "expect": "Moves the conversation one logical step forward"
+   },
+   {
+    "key": "value",
+    "label": "Value",
+    "weight": 10,
+    "expect": "Relevant differentiation without feature dumping"
+   },
+   {
+    "key": "objection",
+    "label": "Objection handling",
+    "weight": 10,
+    "expect": "Diagnoses the blocker; no premature discount"
+   },
+   {
+    "key": "tone",
+    "label": "Tone",
+    "weight": 5,
+    "expect": "Short, human, confident, helpful"
+   },
+   {
+    "key": "cta",
+    "label": "Next step",
+    "weight": 5,
+    "expect": "A specific, appropriate next step"
+   }
+  ],
+  "autoFails": [
+   {
+    "key": "invented_price",
+    "label": "Invented price or availability"
+   },
+   {
+    "key": "fabricated_promotion",
+    "label": "Fabricated promotion"
+   },
+   {
+    "key": "false_claim",
+    "label": "False security or policy claim"
+   },
+   {
+    "key": "unauthorized_discount",
+    "label": "Unauthorised discount"
+   },
+   {
+    "key": "ignored_question",
+    "label": "Ignored a direct question"
+   },
+   {
+    "key": "contradiction",
+    "label": "Contradicts known context"
+   },
+   {
+    "key": "pressure",
+    "label": "Inappropriate pressure"
+   },
+   {
+    "key": "no_escalation",
+    "label": "Failed to escalate"
+   }
+  ],
+  "media": [
+   {
+    "key": "facility_tour",
+    "label": "Facility tour video",
+    "tags": [
+     "facility",
+     "visit",
+     "trust"
+    ],
+    "url": ""
+   },
+   {
+    "key": "unit_small",
+    "label": "Small unit video (10–35 sq ft)",
+    "tags": [
+     "small",
+     "boxes",
+     "documents"
+    ],
+    "url": ""
+   },
+   {
+    "key": "unit_medium",
+    "label": "Medium unit video (50–75 sq ft)",
+    "tags": [
+     "medium",
+     "furniture"
+    ],
+    "url": ""
+   },
+   {
+    "key": "unit_large",
+    "label": "Large unit video (100–200 sq ft)",
+    "tags": [
+     "large",
+     "villa",
+     "inventory"
+    ],
+    "url": ""
+   },
+   {
+    "key": "security_access",
+    "label": "Security and 24/7 access video",
+    "tags": [
+     "security",
+     "access",
+     "trust"
+    ],
+    "url": ""
+   },
+   {
+    "key": "location_map",
+    "label": "Location pin (Al Quoz)",
+    "tags": [
+     "location",
+     "visit"
+    ],
+    "url": ""
+   }
+  ],
+  "groups": [
+   {
+    "key": "pricing",
+    "label": "Pricing",
+    "min": 10
+   },
+   {
+    "key": "sizing",
+    "label": "Sizing",
+    "min": 12
+   },
+   {
+    "key": "personal",
+    "label": "Personal use",
+    "min": 10
+   },
+   {
+    "key": "business",
+    "label": "Business use",
+    "min": 12
+   },
+   {
+    "key": "facility",
+    "label": "Facility",
+    "min": 12
+   },
+   {
+    "key": "objections",
+    "label": "Objections",
+    "min": 20
+   },
+   {
+    "key": "closing",
+    "label": "Closing",
+    "min": 8
+   },
+   {
+    "key": "follow_up",
+    "label": "Follow-up",
+    "min": 8
+   },
+   {
+    "key": "edge",
+    "label": "Edge cases",
+    "min": 10
+   },
+   {
+    "key": "escalation",
+    "label": "Escalation",
+    "min": 10
+   }
+  ],
+  "gates": {
+   "corePass": 95,
+   "factual": 100,
+   "autoFails": 0,
+   "avgScore": 90,
+   "blind": 90,
+   "completion": 90,
+   "escalation": 100,
+   "maxDrop": 2,
+   "blindSample": 20
+  },
+  "passMark": 80,
+  "shareContract": false
+ },
+ "custom": true,
+ "promptVersion": "308eb2f4",
+ "templates": [
+  {
+   "key": "self_storage_sales",
+   "name": "Self-storage sales",
+   "goal": "Help the customer choose the right storage and take the next step: preferably a facility visit, or a remote reservation when they are ready."
+  },
+  {
+   "key": "customer_service",
+   "name": "Customer service",
+   "goal": "Answer the customer correctly and help them to the next step."
+  }
+ ],
+ "stages": [
+  {
+   "key": "sandbox",
+   "label": "Sandbox",
+   "body": "Tested only here. Nothing reaches customers."
+  },
+  {
+   "key": "shadow",
+   "label": "A · Shadow",
+   "body": "Reads live conversations and drafts, sends nothing. Compare with what staff sent."
+  },
+  {
+   "key": "approval",
+   "label": "B · Human approval",
+   "body": "Drafts every reply; staff approve or edit before sending. Edits become training cases."
+  },
+  {
+   "key": "limited",
+   "label": "C · Limited autonomy",
+   "body": "Sends on its own only for the low-risk intents chosen; everything else is approved."
+  },
+  {
+   "key": "expanded",
+   "label": "D · Expanded autonomy",
+   "body": "Broader conversations, with sampling, alerts and rollback."
+  },
+  {
+   "key": "optimized",
+   "label": "E · Optimised",
+   "body": "Full approved scope, A/B testing within guardrails."
+  }
+ ],
+ "rollout": {
+  "stage": "shadow",
+  "intents": [],
+  "note": ""
+ }
+}

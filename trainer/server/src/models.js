@@ -41,6 +41,10 @@ const orgSchema = new Schema({
    // WhatsApp Business: messages arrive by webhook from the moment it is connected.
    whatsapp: { verifyToken: { type: String, default: '' }, appSecretEnc: { type: String, default: '' }, phoneNumberId: { type: String, default: '' }, connectedAt: Date },
    apiKeys: { type: [{ _id: false, id: String, label: String, hash: String, last4: String, createdAt: Date, revokedAt: Date }], default: [] },
+   // How the agent should sell and how it is scored (core/playbook.js); null uses the general template.
+   playbook: { type: Schema.Types.Mixed, default: null },
+   // Where the agent stands on the way to live traffic (Specification §18).
+   rollout: { stage: { type: String, default: 'sandbox' }, intents: { type: [String], default: [] }, note: String, run: Schema.Types.ObjectId, changedBy: by, at: Date },
 }, { timestamps: true });
 
 const memberSchema = new Schema({
@@ -133,6 +137,37 @@ const feedbackSchema = new Schema({
    status: { type: String, enum: ['open', 'used', 'dismissed'], default: 'open' },
 }, { timestamps: true });
 
+// A training case (Specification §13): the situation, the right action, the approved reply.
+const scenarioSchema = new Schema({
+   org, group: { type: String, index: true }, title: String, tags: { type: [String], default: [] },
+   context: { type: [{ _id: false, from: String, text: String }], default: [] }, message: String, leadBefore: { type: Schema.Types.Mixed, default: {} },
+   intent: String, nba: { type: [String], default: [] }, idealResponse: { type: String, default: '' }, media: { type: [String], default: [] },
+   badResponse: { type: String, default: '' }, critique: { type: String, default: '' },
+   outcome: { type: String, default: '' }, commercial: { type: String, default: '' }, qaTags: { type: [String], default: [] },
+   mustEscalate: { type: Boolean, default: false }, factual: { type: Boolean, default: false }, core: { type: Boolean, default: true },
+   source: { type: String, enum: ['seed', 'manual', 'generated', 'correction', 'sandbox'], default: 'manual' },
+   status: { type: String, enum: ['draft', 'approved', 'archived'], default: 'draft', index: true },
+   approvedBy: by, approvedAt: Date,
+   history: { type: [{ _id: false, action: String, by, at: Date, note: String }], default: [] },
+}, { timestamps: true });
+
+// One run of the scenario suite, with everything needed to attribute a change (§14 audit log).
+const suiteRunSchema = new Schema({
+   org, label: String, scope: String, agent: String, model: String, promptVersion: String, knowledgeVersion: Number,
+   status: { type: String, enum: ['running', 'done', 'failed'], default: 'running' },
+   progress: { done: { type: Number, default: 0 }, total: { type: Number, default: 0 } },
+   cases: { type: [Schema.Types.Mixed], default: [] }, summary: Schema.Types.Mixed, gates: { type: [Schema.Types.Mixed], default: [] },
+   regressions: { type: [String], default: [] }, passedAll: { type: Boolean, default: false },
+   error: String, startedBy: by, finishedAt: Date,
+}, { timestamps: true });
+
+// Each sandbox turn, kept for the audit trail and replay.
+const sandboxSchema = new Schema({
+   org, session: { type: String, index: true }, scenario: Schema.Types.ObjectId, agent: String, model: String, promptVersion: String, knowledgeVersion: Number,
+   context: { type: [{ _id: false, from: String, text: String }], default: [] }, message: String, leadBefore: Schema.Types.Mixed,
+   out: Schema.Types.Mixed, grade: Schema.Types.Mixed, decision: { action: String, by, at: Date }, by,
+}, { timestamps: true });
+
 const auditSchema = new Schema({ org, by, action: String, target: String, detail: Schema.Types.Mixed, at: { type: Date, default: Date.now } });
 
 export const User = model('User', userSchema);
@@ -151,5 +186,8 @@ export const TrainingSnapshot = model('Snapshot', snapshotSchema);
 export const TrainingEval = model('Eval', evalSchema);
 export const TrainingFeedback = model('Feedback', feedbackSchema);
 export const TrainingAudit = model('Audit', auditSchema);
+export const TrainingScenario = model('Scenario', scenarioSchema);
+export const TrainingSuiteRun = model('SuiteRun', suiteRunSchema);
+export const TrainingSandbox = model('SandboxTurn', sandboxSchema);
 export const TrainingMember = Member;
 export const TrainingOrg = Org;

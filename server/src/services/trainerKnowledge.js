@@ -14,12 +14,18 @@ const TTL = 60_000;
 const cache = new Map();
 const AUTHORITY = 'legal and safety > current business rules > live data from the CRM and your tools > these approved answers > your instructions > past conversations';
 
-/** The prompt block from the Training Center's matches. Pure. */
-export function blockFromMatches(matches = []) {
+/**
+ * The prompt block from the Training Center's matches, and the sales
+ * playbook's behaviour contract when PurpleBox chose to share it there. Pure.
+ */
+export function blockFromMatches(matches = [], contract = '') {
    const answers = matches.filter((m) => !m.escalate);
    const people = matches.filter((m) => m.escalate);
-   if (!answers.length && !people.length) return '';
+   const rules = String(contract || '').trim().slice(0, 6000);
+   if (!answers.length && !people.length && !rules) return '';
+   if (!answers.length && !people.length) return `SALES PLAYBOOK — approved by PurpleBox in the AI Training Center. Follow it; live data and your tools still win on facts.\n${rules}`;
    const lines = [
+      ...(rules ? [`SALES PLAYBOOK — approved by PurpleBox in the AI Training Center. Follow it; live data and your tools still win on facts.\n${rules}`, ''] : []),
       'APPROVED ANSWERS — written and approved by PurpleBox for situations like this one. Use their content and approach, in your own words for this customer.',
       `If anything in them disagrees with live data or your tools, the live data wins (authority: ${AUTHORITY}). Never quote a figure from here that a tool contradicts.`,
       ...answers.map((m) => `- When asked: "${m.question}"\n  Approved answer: ${m.answer}${m.followUp ? `\n  Then: ${m.followUp}` : ''}`),
@@ -39,7 +45,7 @@ export async function knowledgeFor(message, { post = axios.post } = {}) {
       const url = `${(process.env.TRAINER_API_URL || 'http://127.0.0.1:5020/api/v1').replace(/\/+$/, '')}/match`;
       const { data } = await post(url, { message: text, limit: 3 }, { headers: { Authorization: `Bearer ${key}` }, timeout: 2000 });
       const matches = Array.isArray(data?.matches) ? data.matches : [];
-      value = { text: blockFromMatches(matches), used: matches.map((m) => ({ id: m.id, version: m.version, score: m.score })), version: Number(data?.version) || 0 };
+      value = { text: blockFromMatches(matches, data?.contract), used: matches.map((m) => ({ id: m.id, version: m.version, score: m.score })), version: Number(data?.version) || 0 };
    } catch { /* the Training Center is optional; reply as before */ }
    if (cache.size > 500) cache.clear();
    cache.set(text, { at: Date.now(), value });

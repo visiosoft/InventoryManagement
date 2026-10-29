@@ -36,3 +36,12 @@ test('phone numbers leave the CRM only as an opaque, stable reference', () => {
    assert.notEqual(r, refFor('971501234568'));
    assert.ok(!r.includes('971501234567') && /^wa_[0-9a-f]{24}$/.test(r));
 });
+
+test('the shared sales playbook leads the block, with or without matching answers', () => {
+   const only = blockFromMatches([], 'Never offer an unauthorised discount.');
+   assert.match(only, /^SALES PLAYBOOK/);
+   assert.match(only, /unauthorised discount/);
+   const both = blockFromMatches([{ question: 'Price?', answer: 'AED 1' }], 'Recommend, do not list.');
+   assert.ok(both.indexOf('SALES PLAYBOOK') < both.indexOf('APPROVED ANSWERS'));
+   assert.equal(blockFromMatches([], ''), '', 'nothing shared, nothing added');
+});

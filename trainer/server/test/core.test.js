@@ -166,7 +166,7 @@ function fakeModels() {
       deleteMany: async (f) => { seen.push([name, 'deleteMany', f]); return {}; },
       aggregate: async (p) => { seen.push([name, 'aggregate', p[0].$match]); return []; },
    });
-   const models = Object.fromEntries(['TrainingImport', 'TrainingQuestion', 'TrainingCluster', 'TrainingKnowledge', 'TrainingSnapshot', 'TrainingEval', 'TrainingFeedback', 'TrainingMember', 'TrainingAudit'].map((n) => [n, M(n)]));
+   const models = Object.fromEntries(['TrainingImport', 'TrainingQuestion', 'TrainingCluster', 'TrainingKnowledge', 'TrainingSnapshot', 'TrainingEval', 'TrainingFeedback', 'TrainingMember', 'TrainingAudit', 'TrainingScenario', 'TrainingSuiteRun', 'TrainingSandbox'].map((n) => [n, M(n)]));
    return { models, seen };
 }
 
@@ -179,6 +179,9 @@ test('tenant isolation: every query and write carries the organisation, and a ca
    await r.snapshots.create({ version: 2, org: 'orgB' });
    await r.feedback.insertMany([{ question: 'q', org: 'orgB' }]);
    await r.audit.deleteMany({});
+   await r.scenarios.find({ status: 'approved', org: 'orgB' });
+   await r.runs.create({ label: 'x', org: 'orgB' });
+   await r.sandbox.count({});
    await r.questions.aggregate([{ $group: { _id: null } }]);
    assert.equal(await r.clusters.byId('not-an-id'), null);
    for (const [, op, f] of seen) {

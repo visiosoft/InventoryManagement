@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { LayoutGrid, CheckSquare, BookOpenCheck, MessagesSquare, FlaskConical, Settings, Shield, LogOut, GraduationCap, Plus, Menu, ChevronDown, ArrowRight, Sparkles, Upload, Building2 } from 'lucide-react'
+import { LayoutGrid, CheckSquare, BookOpenCheck, MessagesSquare, FlaskConical, Settings, Shield, MessageSquareText, ListChecks, LogOut, GraduationCap, Plus, Menu, ChevronDown, ArrowRight, Sparkles, Upload, Building2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useSession } from '../lib/session'
 import { type Me, INK, MUTED, ACCENT, TINT, panel, btn } from './theme'
@@ -15,7 +15,9 @@ const NAV = [
   { to: '/review', label: 'Review', icon: CheckSquare },
   { to: '/answers', label: 'Approved answers', icon: BookOpenCheck },
   { to: '/imports', label: 'Conversations', icon: MessagesSquare },
-  { to: '/tests', label: 'Tests', icon: FlaskConical },
+  { to: '/sandbox', label: 'Sandbox', icon: MessageSquareText },
+  { to: '/scenarios', label: 'Scenarios', icon: ListChecks },
+  { to: '/tests', label: 'Tests & go-live', icon: FlaskConical },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 

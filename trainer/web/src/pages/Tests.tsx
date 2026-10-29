@@ -4,6 +4,7 @@ import { FlaskConical } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { type Me, INK, MUTED, ACCENT, LINE, HEAD, btn, panel, caps, field, when } from './theme'
 import { Pill } from './shared'
+import Suite from './Suite'
 
 /* The testing lab: the agent answers questions kept aside at import (never
    used to write answers), each reply is checked by code and graded against
@@ -35,6 +36,8 @@ export default function Tests({ me }: { me: Me }) {
 
   return (
     <div className="space-y-4">
+      <Suite me={me} />
+      <div style={{ fontFamily: HEAD, fontWeight: 800, fontSize: 18, color: INK, paddingTop: 12 }}>Quick check on real questions</div>
       {me.permissions.includes('evaluate') && (
         <div style={{ ...panel, padding: 18 }}>
           <div className="flex items-center gap-2" style={{ fontWeight: 800, color: INK }}><FlaskConical size={16} style={{ color: ACCENT }} /> Test the agent</div>

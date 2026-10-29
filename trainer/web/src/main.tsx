@@ -11,6 +11,8 @@ import Review from './pages/Review'
 import Knowledge from './pages/Knowledge'
 import Imports from './pages/Imports'
 import Tests from './pages/Tests'
+import Sandbox from './pages/Sandbox'
+import Scenarios from './pages/Scenarios'
 import Settings from './pages/Settings'
 import Platform from './pages/Platform'
 import { PageTitle } from './pages/shared'
@@ -51,7 +53,9 @@ createRoot(document.getElementById('root')!).render(
               <Route path="/review" element={<With title="Review" sub="Each common question with the answer the AI should give. Approve it, change it, or send it to a person." page={Review} />} />
               <Route path="/answers" element={<With title="Approved answers" sub="Every answer your business stands behind, with its versions. Nothing reaches an agent until it is published." page={Knowledge} />} />
               <Route path="/imports" element={<Imports />} />
-              <Route path="/tests" element={<With title="Tests" sub="Put questions kept aside to your agent and see how it answers — before and after publishing." page={Tests} />} />
+              <Route path="/sandbox" element={<Sandbox />} />
+              <Route path="/scenarios" element={<Scenarios />} />
+              <Route path="/tests" element={<With title="Tests & go-live" sub="Score the agent on every approved scenario, check the graduation gates, and move it toward live customers one stage at a time." page={Tests} />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/platform" element={<AdminOnly><Platform /></AdminOnly>} />
             </Route>

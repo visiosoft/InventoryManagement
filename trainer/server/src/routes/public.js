@@ -7,6 +7,7 @@ import { render, retrieve } from '../core/knowledge.js';
 import { redact } from '../core/text.js';
 import { sha256, sameHash, decrypt } from '../security.js';
 import { factsFor } from '../host.js';
+import { playbookOf } from '../core/playbook.js';
 
 /**
  * For agents and systems running elsewhere, by API key:
@@ -15,6 +16,7 @@ import { factsFor } from '../host.js';
  *   POST /v1/match              the best answers for one customer message
  *   POST /v1/feedback           a case where a person replied differently from the AI
  *   POST /v1/conversations      send conversations in, to be imported later
+ *   GET  /v1/rollout            the agent's go-live stage, and its behaviour contract when shared
  *
  * And the WhatsApp Business webhook, verified by the Meta app secret.
  */
@@ -54,9 +56,17 @@ v1.post('/match', async (req, res, next) => {
    try {
       const message = String(req.body?.message || '').slice(0, 2000);
       const [items, vals] = await Promise.all([active(req), values(req)]);
-      res.json({ version: req.org.activeSnapshot, matches: retrieve(message, items, { limit: Math.min(Number(req.body?.limit) || 3, 10) }).map(({ r, score }) => ({ id: r.id, version: r.version, score, question: r.question, answer: render(r.answer, vals).text, followUp: r.followUp || '', escalate: r.escalate, escalationNote: r.escalationNote || '' })) });
+      res.json({ version: req.org.activeSnapshot, ...shared(req.org), matches: retrieve(message, items, { limit: Math.min(Number(req.body?.limit) || 3, 10) }).map(({ r, score }) => ({ id: r.id, version: r.version, score, question: r.question, answer: render(r.answer, vals).text, followUp: r.followUp || '', escalate: r.escalate, escalationNote: r.escalationNote || '' })) });
    } catch (e) { next(e); }
 });
+
+/** The stage, and the playbook's contract when the owner chose to share it with their own agent. Pure. */
+export function shared(org) {
+   const p = playbookOf(org);
+   return { stage: org.rollout?.stage || 'sandbox', contract: p.shareContract ? p.contract : '' };
+}
+
+v1.get('/rollout', (req, res) => res.json({ ...shared(req.org), intents: req.org.rollout?.intents || [], at: req.org.rollout?.at || null }));
 
 v1.post('/feedback', async (req, res, next) => {
    try {

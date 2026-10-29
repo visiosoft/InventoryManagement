@@ -11,7 +11,8 @@ import { decrypt } from './security.js';
  *   GET  {base}/health                       → { ok: true, name }
  *   GET  {base}/conversations?days&limit     → { threads: [{ ref, messages: [{ from: 'customer'|'agent', text, at, byAi }] }] }
  *   GET  {base}/facts                        → { text, values: { name: value } }   live data and {variables}
- *   POST {base}/agent-reply { question, ref, at } → { reply, needsHuman }          their own AI, for tests
+ *   POST {base}/agent-reply { question, ref, at, context } → { reply, needsHuman, tools }   their own AI, for tests;
+ *                                            `context` is a simulated conversation [{ from, text }] from the sandbox
  *
  * The URL is customer-supplied, so it must be https and must not resolve to
  * a private, loopback or link-local address — the trainer will not be used
@@ -59,7 +60,7 @@ export function connectorClient(org) {
       },
       agentReply: async (body) => {
          const d = await call('post', '/agent-reply', { data: body, timeout: 120_000 });
-         return { reply: String(d?.reply || ''), needsHuman: Boolean(d?.needsHuman) };
+         return { reply: String(d?.reply || ''), needsHuman: Boolean(d?.needsHuman), tools: (Array.isArray(d?.tools) ? d.tools : []).map(String).slice(0, 20) };
       },
    };
 }
