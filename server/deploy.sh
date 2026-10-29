@@ -34,6 +34,38 @@ else
 fi
 pm2 save
 
+echo "── AI Training Center (trainer/server) ──"
+# A separate product on the same machine: its own process, port and
+# database. Its .env is created once (never overwritten): the same MongoDB
+# cluster under its own database name, and a fresh random secret.
+TRAINER_DIR="$APP_DIR/trainer/server"
+if [ -d "$TRAINER_DIR" ]; then
+  if [ ! -f "$TRAINER_DIR/.env" ]; then
+    MONGO_URI=$(grep -E '^MONGODB_URI=' "$APP_DIR/server/.env" 2>/dev/null | tail -1 | cut -d= -f2-)
+    {
+      echo "PORT=5020"
+      echo "TRAINER_MONGODB_URI=${MONGO_URI}"
+      echo "TRAINER_DB_NAME=ai_trainer"
+      echo "TRAINER_SECRET=$(openssl rand -hex 32)"
+      echo "TRAINER_WEB_ORIGINS=https://train.purplebox.ae"
+    } > "$TRAINER_DIR/.env"
+    chmod 600 "$TRAINER_DIR/.env"
+    echo "Created trainer/server/.env"
+  fi
+  (cd "$TRAINER_DIR" && (npm ci --omit=dev 2>/dev/null || npm install --omit=dev))
+  if pm2 describe ai-trainer >/dev/null 2>&1; then
+    pm2 restart ai-trainer --update-env
+  else
+    (cd "$TRAINER_DIR" && pm2 start src/index.js --name ai-trainer)
+  fi
+  pm2 save
+  for i in $(seq 1 12); do
+    T_BODY=$(curl -s -m 5 "http://127.0.0.1:5020/api/health" || true)
+    case "$T_BODY" in *'"ok":true'*) echo "Trainer healthy: $T_BODY"; break;; esac
+    sleep 5
+  done
+fi
+
 echo "── Health check ──"
 # The server's port comes from its .env (production runs on a non-default port)
 API_PORT=$(grep -E '^PORT=' .env 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '[:space:]')

@@ -21,7 +21,7 @@ import { agentTools, toOpenAiTools } from './tools.js';
 import { transition, describeStage, DEFAULT_CADENCE, BUCKETS } from './buckets.js';
 import { record, snapshotOf } from './log.js';
 import { AgentAction } from './models.js';
-import { knowledgeFor } from '../training/live.js';
+import { knowledgeFor } from '../services/trainerKnowledge.js';
 import { pushConfigured, pushToUser } from '../services/push.js';
 import { windowOpen, customerWritesArabic, templatesForLanguage } from './guards.js';
 
@@ -302,12 +302,11 @@ async function runAgentInner({ agent, lead, leadFile, trigger, now = new Date(),
         RULES,
         trainingExamplesBlock(agent),
     ].filter(Boolean).join('\n\n');
-    // Answers the business approved in AI Training, matched to this message
-    // and filled with today's values. Below live data in authority (the block
-    // says so); empty when nothing matches, and the reply is composed as before.
-    const knowledge = await knowledgeFor(String(trigger.text || ''), {
-        getValues: async () => (await import('../training/adapters/purplebox.js')).facts().then((f) => f.values),
-    });
+    // Answers PurpleBox approved in the AI Training Center, matched to this
+    // message and filled with today's values. Below live data in authority
+    // (the block says so); empty when nothing matches or the Training Center
+    // is not connected, and the reply is composed as before.
+    const knowledge = await knowledgeFor(String(trigger.text || ''));
     const systemRest = [
         identityBlock(repName),
         leadFileBlock(work, lead, cadence),

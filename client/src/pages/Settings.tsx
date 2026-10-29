@@ -12,6 +12,7 @@ import UnitPricing from './UnitPricing'
 import BulkUnitPricing from './BulkUnitPricing'
 import WebsitePricing from './WebsitePricing'
 import AiProviderCard from '../components/AiProviderCard'
+import TrainingCenterCard from '../components/TrainingCenterCard'
 
 /* Pages moved off an admin's sidebar to keep it short (Layout's ADMIN_PAGES_IN_SETTINGS). */
 const MORE_PAGES = [
@@ -322,6 +323,7 @@ export default function Settings() {
           {isAdmin && <ConnectionRows />}
           {/* Connecting a Shopify store holds live write access to a merchant's
               account, so it sits here with the other integrations, admin only. */}
+          {isAdmin && <TrainingCenterCard />}
           {isAdmin && (
             <Link to="/shopify/merchants" className="flex items-center justify-between rounded-lg border px-4 py-3 flex-wrap gap-3 hover:bg-muted/50 transition-colors">
               <div>

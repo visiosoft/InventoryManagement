@@ -104,7 +104,8 @@ import automationRuleRoutes from './routes/automationRules.js';
 import taskRoutes from './routes/tasks.js';
 import salesGoalRoutes from './routes/salesGoals.js';
 import agentRoutes from './agents/routes.js';
-import trainingRoutes, { publicRouter as trainingPublicRoutes } from './training/routes.js';
+import { connector as trainingConnector, settings as trainingSettings } from './routes/trainingConnector.js';
+import { trainerProxy } from './utils/trainerProxy.js';
 import { runAgentTick } from './agents/service.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import staffAppRoutes from './routes/staffApp.js';
@@ -182,6 +183,10 @@ app.use('/api/whatsapp/flow', express.json({ limit: '20mb' }), whatsappFlowRoute
 // Shopify sent — so the body must reach the route unparsed, ahead of the
 // global JSON parser.
 app.use('/api/shopify/webhooks', express.raw({ type: '*/*', limit: '5mb' }), shopifyWebhookRoutes);
+// The AI Training Center (train.purplebox.ae) runs as its own process on this
+// server; its website reaches it through here. Ahead of the JSON parser so
+// bodies stream through untouched.
+app.use('/trainer-api', trainerProxy());
 
 app.use(
   express.json({
@@ -442,10 +447,10 @@ app.use('/api/sales-goals', requireAuth, salesGoalRoutes);
 // The AI sales agents: profiles, lead files, buckets, the action log. A
 // separate module; shadow mode only in this prototype, nothing sends.
 app.use('/api/agents', requireAuth, agentRoutes);
-// AI Training & Quality Control: staff screens behind the CRM sign-in, and a
-// key-authenticated API for agents running elsewhere (training/routes.js).
-app.use('/api/training/v1', trainingPublicRoutes);
-app.use('/api/training', requireAuth, trainingRoutes);
+// PurpleBox as a customer of the AI Training Center (train.purplebox.ae):
+// the Connector protocol it calls, by token, and the admin settings.
+app.use('/api/training-connector', trainingConnector);
+app.use('/api/training-settings', requireAuth, trainingSettings);
 // Signed in is enough: a board only the manager can see recognises nobody.
 app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
 app.use('/api/my-day', requireAuth, myDayRoutes);
@@ -599,14 +604,6 @@ async function start() {
   // The sales agents' clock: due follow-up touches, silence into Quiet,
   // exhausted cadences falling through. A minute is plenty — the shortest
   // cadence is a day. Does nothing until an agent exists in shadow mode.
-  // AI Training: imported customer questions past each organisation's
-  // retention period are deleted, once a day.
-  setInterval(() => {
-    import('./training/service.js').then(async (svc) => svc.purgeExpired(await import('./training/models.js')))
-      .then((n) => { if (n) console.log(`[Training] ${n} expired question(s) deleted`); })
-      .catch((e) => console.error('[Training]', e.message));
-  }, 24 * 3600_000);
-
   setTimeout(() => setInterval(() => {
     runAgentTick().then((out) => {
       if (out.proposed || out.silenced || out.exhausted) console.log(`[Agents] ${out.proposed} touch(es) proposed, ${out.silenced} went quiet, ${out.exhausted} exhausted`);

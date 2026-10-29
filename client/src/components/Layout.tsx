@@ -37,13 +37,14 @@ const navTop: { to: string; label: string; icon: typeof Package; perm?: string |
   // it is configuration, not a page anyone works from day to day.
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' },
   { to: '/zoho', label: 'Zoho', icon: BookOpen, adminOnly: true },
-  { to: '/training', label: 'AI Training', icon: GraduationCap, adminOnly: true },
+  // AI Training is its own product now (train.purplebox.ae), linked from Settings.
+  { to: 'https://train.purplebox.ae', label: 'AI Training ↗', icon: GraduationCap, adminOnly: true },
   { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'dashboard' },
 ]
 
 /* Pages an admin opens from Settings rather than the sidebar (Oct 2026):
    kept short so the menu holds what is used every day. Other roles keep them. */
-export const ADMIN_PAGES_IN_SETTINGS = ['/client-requests', '/tasks', '/renewals', '/exit-surveys', '/calls']
+const ADMIN_PAGES_IN_SETTINGS = ['/client-requests', '/tasks', '/renewals', '/exit-surveys', '/calls']
 const inSettingsFor = (isAdmin: boolean, to: string) => isAdmin && ADMIN_PAGES_IN_SETTINGS.includes(to)
 
 const navGroups = [
@@ -352,7 +353,6 @@ const PAGE_TITLES: Record<string, string> = {
   '/whatsapp': 'WhatsApp Inbox',
   '/client-requests': 'Client requests',
   '/zoho': 'Zoho',
-  '/training': 'AI Training',
 }
 
 function getPageTitle(pathname: string): string {
@@ -597,12 +597,20 @@ export default function Layout() {
         })()}
 
         {showStorageNav && navTop.filter(({ to, perm, adminOnly }) => (!adminOnly || isAdmin) && (!perm || hasPermission(perm)) && !inSettingsFor(isAdmin, to)).map(({ to, label, icon: Icon, badgeKey }) => (
+          /^https?:/.test(to) ? (
+            // Another product (e.g. the AI Training Center): opens in its own tab.
+            <a key={to} href={to} target="_blank" rel="noopener noreferrer" title={isCollapsed ? label : undefined}
+              className={isCollapsed ? 'flex items-center justify-center rounded-lg p-2 text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8' : navLinkCls(false)}>
+              <Icon size={isCollapsed ? 18 : 15} />{!isCollapsed && label}
+            </a>
+          ) : (
           <NavLink key={to} to={to} end={to === '/'}
             className={({ isActive }) => cn(isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive), badgeKey && 'relative')}
             title={badgeKey ? badgeTitle(badgeKey, label) : isCollapsed ? label : undefined}>
             <Icon size={isCollapsed ? 18 : 15} />{!isCollapsed && label}
             {badgeKey && <NavBadge badge={badges[badgeKey]} collapsed={isCollapsed} />}
           </NavLink>
+          )
         ))}
 
         {showStorageNav && navGroups.map((group) => {
