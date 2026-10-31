@@ -187,7 +187,7 @@
 }
 </script>
 <script>(function(){try{var t=localStorage.getItem('twocap-theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t;}catch(e){}})();</script>
-<script src="analytics.js"></script>
+<script defer src="analytics.js"></script>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -302,6 +302,10 @@
       <div class="metric"><div class="metric__v">24/7</div><div class="metric__l">Replies drafted, any hour</div></div>
       <div class="metric"><div class="metric__v">EN &middot; AR</div><div class="metric__l">Replies in the customer's language</div></div>
       <div class="metric"><div class="metric__v">0</div><div class="metric__l">Messages sent without your approval</div></div>
+    </div>
+    <div class="wrap hero__integrations">
+      <span class="works-with__label">Integrates with</span>
+      <ul class="hero__integ-list" id="heroIntegrations"></ul>
     </div>
   </div>
 </section>

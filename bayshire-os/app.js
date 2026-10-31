@@ -11,6 +11,17 @@
   const lite3d = reduced || matchMedia('(max-width: 768px)').matches ||
     Boolean(navigator.connection && navigator.connection.saveData);
   let threeLoading = null;
+  // With no real GPU, WebGL renders on the CPU and locks up the page
+  let softGL = null;
+  function softwareGL() {
+    if (softGL === null) {
+      const gl = document.createElement('canvas').getContext('webgl');
+      const info = gl && gl.getExtension('WEBGL_debug_renderer_info');
+      const name = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : '';
+      softGL = !gl || /swiftshader|llvmpipe|software/i.test(name);
+    }
+    return softGL;
+  }
   function loadThree() {
     if (window.THREE) return Promise.resolve();
     if (!threeLoading) {
@@ -772,6 +783,9 @@
   $('#moduleGrid').innerHTML = D.modules.map(m => `
     <div class="module-card" style="border-top-color:${m.color}"><div class="module-card__n">${m.n}</div><div class="module-card__d">${m.d}</div></div>
   `).join('');
+  $('#heroIntegrations').innerHTML = D.integrations.map(i => `
+    <li><a href="#integrations"><img src="${i.logo}" alt="" width="20" height="20"><span>${i.n.replace(' (MCP)', '')}</span></a></li>`).join('');
+
   $('#integrationList').innerHTML = D.integrations.map(i => `
     <div class="integration-row">
       <div class="integration-mark" aria-hidden="true">${i.logo ? `<img src="${i.logo}" alt="">` : i.mark}</div>
@@ -792,21 +806,25 @@
   /* ---------------- 3D hero scene ---------------- */
   // Decorative 3D is skipped on phones, for reduced motion and on Save-Data:
   // three.js plus its render loop was most of the mobile load time and CPU.
-  if (lite3d) {
-    $('#top').classList.add('hero--static');
-  } else {
-    // After the page has loaded, so it never competes with first paint
-    const startHero = () => loadThree().then(() => {
-      window.__twocapScene = TwoCapScene({
-        canvasEl: $('#heroCanvas'),
-        heroEl: $('#top'),
-        textEl: $('#heroText'),
-        metricsEl: $('#heroMetrics'),
-        units
-      });
-    }).catch(() => {});
-    if (document.readyState === 'complete') startHero();
-    else window.addEventListener('load', startHero, { once: true });
+  $('#top').classList.add('hero--static');
+  if (!lite3d) {
+    // Waits for the visitor's first move, so it never competes with page load
+    const firstMove = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'scroll'];
+    const startHero = () => {
+      firstMove.forEach(ev => window.removeEventListener(ev, startHero));
+      if (softwareGL()) return;
+      loadThree().then(() => {
+        $('#top').classList.remove('hero--static');
+        window.__twocapScene = TwoCapScene({
+          canvasEl: $('#heroCanvas'),
+          heroEl: $('#top'),
+          textEl: $('#heroText'),
+          metricsEl: $('#heroMetrics'),
+          units
+        });
+      }).catch(() => {});
+    };
+    firstMove.forEach(ev => window.addEventListener(ev, startHero, { passive: true }));
   }
 
   /* ---------------- Ambient 3D backdrop for closing CTA ---------------- */
@@ -816,6 +834,7 @@
     new IntersectionObserver(entries => {
       closingVisible = entries.some(e => e.isIntersecting);
       if (!closingVisible) { if (ambientScene) ambientScene.stop(); return; }
+      if (softwareGL()) return;
       loadThree().then(() => {
         if (!ambientScene) {
           ambientScene = TwoCapAmbientScene({ canvasEl: closingCanvas });

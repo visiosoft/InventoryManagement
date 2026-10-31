@@ -1,6 +1,6 @@
 // Google tag (GA4 + Google Ads) with Consent Mode v2 and a small consent banner.
 // Fill in the IDs below; while GA4_ID is empty nothing loads and no banner shows.
-// Loaded on every page (index + legal), before app.js, so window.TwoCapTrack exists for it.
+// Loaded on every page (index + legal), deferred and listed before app.js, so window.TwoCapTrack exists for it.
 (function () {
   const CONFIG = {
     GA4_ID: 'G-MY03W4SZ55',   // e.g. 'G-XXXXXXXXXX'   (GA4 > Admin > Data streams)
@@ -98,7 +98,7 @@
     bar.setAttribute('aria-label', 'Cookie consent');
     bar.innerHTML =
       '<p>We use cookies to measure visits and the results of our ads. ' +
-      '<a href="/legal/privacy-policy.html#cookies">Learn more</a></p>' +
+      '<a href="/legal/privacy-policy.html#cookies">Read our cookie policy</a></p>' +
       '<div class="consent__actions">' +
       '<button type="button" class="btn btn--outline" data-consent="denied">Decline</button>' +
       '<button type="button" class="btn btn--solid" data-consent="granted">Accept</button>' +
