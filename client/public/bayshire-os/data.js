@@ -154,22 +154,14 @@ const TwoCapData = (function () {
     ['Reports', 'Revenue, occupancy and availability analysis.'],
     ['Settings', 'Pricing, alerts, permissions and business rules.'],
     ['Integrations', 'Connect 2Capacity with external services.']
-  ].map((a, i) => ({ n: a[0], d: a[1], color: ['var(--g1)', 'var(--g2)', 'var(--g3)'][i % 3] }));
-
-  // Set photo to an image path (e.g. 'assets/team/mase.jpg', square, 256px+) to replace the placeholder
-  const team = [
-    { n: 'Leanne Binsell', r: 'Co-founder', photo: 'assets/team/leanne.jpg', bio: 'Shapes the roadmap directly from operator calls, not a backlog.', color: 'var(--g3)' },
-    { n: 'Mase R', r: 'Co-founder & CEO', photo: 'assets/team/mase.jpg', bio: 'Ran a three-site self-storage group in Dubai for six years before starting 2Capacity.', color: 'var(--g1)' },
-    { n: 'Zulfiqar Ali', r: 'Co-founder & CTO', photo: 'assets/team/zulfiqar.jpg', bio: 'Built the pricing and payments engine that the platform still runs on today.', color: 'var(--g2)' },
-    { n: 'Meljay Jadulos', r: 'Customer Success Lead', bio: 'Personally onboards every new facility for its first 90 days.', color: 'var(--g1)' }
-  ];
+  ].map(a => ({ n: a[0], d: a[1] }));
 
   // Operators shown in the "Trusted by" row. Only list real clients who agreed to be shown.
   // icon: optional brand mark shown before a text name.
   // logo: path to their logo (SVG or transparent PNG, ~40px tall) — without it the name is shown as text.
   const clients = [
-    { n: 'Urban Storage', city: 'UAE', logo: 'assets/clients/urban-storage.webp', w: 239, h: 72, href: 'https://urbanstorage.ae/' },
-    { n: 'Access Self Storage', city: 'UK', logo: 'assets/clients/access-self-storage.webp', w: 158, h: 54 }
+    { n: 'Urban Storage', logo: 'assets/clients/urban-storage.webp', w: 239, h: 72, href: 'https://urbanstorage.ae/' },
+    { n: 'Access Self Storage', logo: 'assets/clients/access-self-storage.webp', w: 158, h: 54 }
   ];
 
   // Customer quote for the "See what our customers say" panel. The section stays hidden while this is empty.
@@ -215,6 +207,6 @@ const TwoCapData = (function () {
   return {
     buildUnits, fmt, statusColor, suggestFor, leads, defaultInbound, templateReply,
     revenue, occBySize, occBySizeShort, activity, expiries, payments, csvRows, docs,
-    payStatus, modules, integrations, alerts, team, agents, areas, clients, testimonials
+    payStatus, modules, integrations, alerts, agents, areas, clients, testimonials
   };
 })();

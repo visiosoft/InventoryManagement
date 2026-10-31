@@ -73,7 +73,7 @@ async function record({ to, cc, bcc, subject, text, html, attachments, context =
     } catch { /* the log is a record, not a gate */ }
 }
 
-export async function sendMail({ to, subject, text, html, attachments, cc, bcc, context }) {
+export async function sendMail({ to, subject, text, html, attachments, cc, bcc, from, replyTo, context }) {
     if (!gmailConfigured() && !smtpConfigured()) {
         // Not logged: nothing was attempted, and a row here would read as a
         // delivery failure rather than a missing configuration.
@@ -82,9 +82,10 @@ export async function sendMail({ to, subject, text, html, attachments, cc, bcc, 
 
     try {
         const result = gmailConfigured()
-            ? await sendGmail({ to, subject, text, html, attachments, cc, bcc })
+            ? await sendGmail({ to, subject, text, html, attachments, cc, bcc, from, replyTo })
             : await getTransporter().sendMail({
-                from: process.env.SMTP_FROM || `PurpleBox <${process.env.SMTP_USER}>`,
+                from: from || process.env.SMTP_FROM || `PurpleBox <${process.env.SMTP_USER}>`,
+                replyTo,
                 to, subject, text, html, attachments, cc, bcc,
             });
         await record({ to, cc, bcc, subject, text, html, attachments, context, status: 'sent' });

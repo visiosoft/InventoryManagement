@@ -1,5 +1,12 @@
-// Interactive 3D unit picker for the Units section. Same isometric box-geometry approach as
-// the hero scene, but static-framed, drag-to-rotate, and raycast-selectable instead of scroll-tied.
+// Palette for the 3D unit picker, retinted when the visitor switches between light and dark.
+function TwoCapThreeTheme() {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  return dark
+    ? { bg: 0x131314, floor: 0x1B1B1D, grid: 0x2E2F31, edge: 0xE3E3E3, edgeOp: 0.09, avail: 0x232426, occ: 0x2E5A3C, res: 0x5A4A1C, maint: 0x5E2A26, hemi: 0.9, dir: 1.0, iOcc: 0x6DD58C, iRes: 0xFDD663, iMaint: 0xF28B82, g1: 0x6DD58C, g2: 0x8AB4F8, g3: 0xFDD663 }
+    : { bg: 0xFFFFFF, floor: 0xF8F9FA, grid: 0xE3E3E3, edge: 0x1F1F1F, edgeOp: 0.1, avail: 0xFFFFFF, occ: 0xA8DAB5, res: 0xFDE293, maint: 0xF6AEA9, hemi: 1.15, dir: 1.3, iOcc: 0x34A853, iRes: 0xF9AB00, iMaint: 0xEA4335, g1: 0x34A853, g2: 0x4285F4, g3: 0xFBBC04 };
+}
+
+// Interactive 3D unit picker for the Units section: isometric, drag-to-rotate and raycast-selectable.
 function TwoCapUnitsScene(opts) {
   const { canvasEl, units, getSelectedCode, onSelect } = opts;
   const THREE = window.THREE;

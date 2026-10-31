@@ -188,6 +188,7 @@
 </script>
 <script>(function(){try{var t=localStorage.getItem('twocap-theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t;}catch(e){}})();</script>
 <script defer src="analytics.js"></script>
+<script defer src="nav-menu.js"></script>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -200,61 +201,9 @@
     <a href="#top" class="nav__brand" aria-label="2Capacity home">2Capacity</a>
     <nav class="nav__links" aria-label="Primary">
       <a href="#agents">AI Agents</a>
-      <div class="nav__item">
-        <button type="button" class="nav__link nav__link--trigger" id="productMenuBtn" aria-haspopup="true" aria-expanded="false">
-          Platform <span class="nav__chevron" aria-hidden="true"></span>
-        </button>
-        <div class="nav__dropdown" id="productDropdown" role="menu" aria-label="Platform" hidden>
-          <a href="#units" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark" aria-hidden="true">IM</span>
-            <span>
-              <span class="nav__dropdown-title">Inventory Management System</span>
-              <span class="nav__dropdown-desc">Live floor plan, 3D unit picker and per-unit pricing</span>
-            </span>
-          </a>
-          <a href="#pipeline" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark" aria-hidden="true">CR</span>
-            <span>
-              <span class="nav__dropdown-title">CRM</span>
-              <span class="nav__dropdown-desc">Leads, quotes and contracts in one pipeline</span>
-            </span>
-          </a>
-          <a href="#assist" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark" aria-hidden="true">WA</span>
-            <span>
-              <span class="nav__dropdown-title">AI Inbox for WhatsApp</span>
-              <span class="nav__dropdown-desc">AI drafts every reply from the lead record, you approve</span>
-            </span>
-          </a>
-          <a href="#integrations" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark" aria-hidden="true">ES</span>
-            <span>
-              <span class="nav__dropdown-title">E-Signature</span>
-              <span class="nav__dropdown-desc">Route contracts for e-signature automatically</span>
-            </span>
-          </a>
-          <a href="#finance" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark" aria-hidden="true">FS</span>
-            <span>
-              <span class="nav__dropdown-title">Financial System</span>
-              <span class="nav__dropdown-desc">Invoices, payments, vendors and expenses</span>
-            </span>
-          </a>
-          <a href="#modules" role="menuitem" class="nav__dropdown-item">
-            <span class="nav__dropdown-mark" aria-hidden="true">MS</span>
-            <span>
-              <span class="nav__dropdown-title">Moving System</span>
-              <span class="nav__dropdown-desc">Schedule move-ins and move-outs and track unit turnover</span>
-            </span>
-          </a>
-        </div>
-      </div>
-      <a href="#how">How it works</a>
-      <a href="#integrations">Integrations</a>
+      <a href="platform/">Platform</a>
       <a href="#pricing">Pricing</a>
-      <a href="#about">Team</a>
       <a href="#faq">FAQ</a>
-      <a href="#contact">Contact</a>
     </nav>
     <div class="nav__actions">
       <button type="button" class="theme-toggle" id="themeToggle" aria-label="Dark theme" title="Dark theme" aria-pressed="false">
@@ -267,53 +216,41 @@
 
 <main id="main" tabindex="-1">
 
-<section id="top" class="hero" aria-label="Hero">
-  <div class="hero__canvas" id="heroCanvas" aria-hidden="true"></div>
-  <div class="hero__text" id="heroText">
-    <div class="announce" id="announce">
-      <span class="announce__text">New: five AI agents that answer, follow up and sort your inbox</span>
-      <a href="#agents" class="announce__cta">Meet them</a>
-      <button type="button" class="announce__dismiss" id="announceDismiss" aria-label="Dismiss">&times;</button>
+<section id="top" class="hero hero--home" aria-label="Hero">
+  <div class="wrap hero__grid">
+    <div class="hero__text" id="heroText">
+      <div class="hero__eyebrow">2CAPACITY &middot; AI SELF STORAGE MANAGEMENT SOFTWARE</div>
+      <h1 class="hero__h1">The AI Powerhouse Behind <span class="grad-text">Your Storage Business.</span></h1>
+      <p class="hero__sub">2Capacity answers inquiries, follows up leads and runs your daily operations, and you approve every message.</p>
+      <div class="hero__ctas">
+        <a href="#contact" class="btn btn--solid btn--lg">Book a demo <span class="arrow" aria-hidden="true">&rarr;</span></a>
+      </div>
     </div>
-    <div class="hero__eyebrow">2CAPACITY &middot; AI SELF STORAGE MANAGEMENT SOFTWARE</div>
-    <h1 class="hero__h1">The AI Powerhouse Behind <span class="grad-text">Your Storage Business.</span></h1>
-    <p class="hero__sub">2Capacity is the AI-powered operating system that automates your facility's workflows, from customer acquisition and lead follow up to marketing, daily operations, and accounting. Bring your business together in one powerful platform, with less manual work and more control.</p>
-    <div class="hero__ctas">
-      <a href="#contact" class="btn btn--solid btn--lg">Book a demo <span class="arrow" aria-hidden="true">&rarr;</span></a>
-      <a href="#live" class="btn btn--outline btn--lg">See 2Capacity in Action</a>
-    </div>
-  </div>
 
-  <div class="hero__chat-wrap">
-    <div class="wa-chat ai-glow" role="img" aria-label="Sample WhatsApp chat: a customer asks the price of a 50 square foot unit, Aisha drafts a reply with the price and availability, and the owner approves it">
-      <div class="wa-chat__head">
+    <div class="hero__chat-wrap">
+      <div class="wa-chat" role="img" aria-label="Sample WhatsApp chat: a customer asks the price of a 50 square foot unit, Aisha drafts a reply with the price and availability, and the owner approves it">
+        <div class="wa-chat__head">
           <span class="agent-avatar agent-avatar--sm" aria-hidden="true">A</span>
           <span><span class="wa-chat__name">Aisha</span><span class="wa-chat__status">AI first response &middot; WhatsApp</span></span>
           <span class="wa-chat__live" aria-hidden="true"></span>
         </div>
-      <div class="wa-chat__body" id="heroChatBody" aria-hidden="true"></div>
-    </div>
-    <div class="hero__chat-note">Sample conversation with sample prices</div>
-  </div>
-
-  <div class="hero__metrics" id="heroMetrics">
-    <div class="wrap hero__metrics-row">
-      <div class="metric"><div class="metric__v">5</div><div class="metric__l">AI agents, one job each</div></div>
-      <div class="metric"><div class="metric__v">24/7</div><div class="metric__l">Replies drafted, any hour</div></div>
-      <div class="metric"><div class="metric__v">EN &middot; AR</div><div class="metric__l">Replies in the customer's language</div></div>
-      <div class="metric"><div class="metric__v">0</div><div class="metric__l">Messages sent without your approval</div></div>
-    </div>
-    <div class="wrap hero__integrations">
-      <span class="works-with__label">Integrates with</span>
-      <ul class="hero__integ-list" id="heroIntegrations"></ul>
+        <div class="wa-chat__body" id="heroChatBody" aria-hidden="true"></div>
+      </div>
+      <div class="hero__chat-note">Sample conversation with sample prices</div>
     </div>
   </div>
 </section>
 
-<section class="clients" aria-label="Clients">
-  <div class="wrap clients__row">
-    <span class="works-with__label">Trusted by storage operators</span>
-    <ul class="clients__list" id="clientList"></ul>
+<section class="proof" aria-label="Clients and integrations">
+  <div class="wrap proof__row">
+    <div class="proof__group">
+      <span class="works-with__label">Trusted by storage operators</span>
+      <ul class="clients__list" id="clientList"></ul>
+    </div>
+    <div class="proof__group">
+      <span class="works-with__label">Integrates with</span>
+      <ul class="proof__logos" id="proofIntegrations"></ul>
+    </div>
   </div>
 </section>
 
@@ -337,42 +274,7 @@
       </div>
     </div>
     <p class="tour__caption" id="tourCaption" aria-live="polite"></p>
-  </div>
-</section>
-
-<section id="outcomes" class="section">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <h2>Fill More Units. Simplify Operations. Unlock Growth.</h2>
-      <p>Opportunities get lost in the gaps: an inquiry answered too late, a follow up that never went out, a ledger reconciled by hand at month end. 2Capacity connects those steps, so work keeps moving without you chasing it.</p>
-    </div>
-    <div class="outcome-grid" data-reveal>
-      <div class="outcome">
-        <div class="outcome__t">Occupancy and Revenue</div>
-        <p class="outcome__d">Capture demand when it appears. Inquiries are logged and followed up promptly, so fewer prospective tenants go cold.</p>
-        <div class="outcome__by">Powered by Lead Generation &middot; Customer Journey</div>
-      </div>
-      <div class="outcome">
-        <div class="outcome__t">Customer Experience</div>
-        <p class="outcome__d">Make renting easy. Timely, consistent communication from first inquiry through move in and every month after.</p>
-        <div class="outcome__by">Powered by Customer Journey &middot; Marketing</div>
-      </div>
-      <div class="outcome">
-        <div class="outcome__t">Efficiency and Control</div>
-        <p class="outcome__d">Spend less time on repetitive admin. See tasks, activity, and finances across every facility in one place.</p>
-        <div class="outcome__by">Powered by Operations &middot; Accounting</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="areas" class="section">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <h2>One Operating System. AI Across Your Business.</h2>
-      <p>Six connected areas, one platform. AI moves each workflow forward and passes the results to the next.</p>
-    </div>
-    <div class="area-grid" data-reveal id="areaGrid"></div>
+    <p class="tour__more" data-reveal><a href="platform/">Explore the full platform <span class="arrow" aria-hidden="true">&rarr;</span></a></p>
   </div>
 </section>
 
@@ -423,358 +325,6 @@
         <p class="step__d">An activity view shows what ran and what is waiting on you, across every facility.</p>
       </li>
     </ol>
-    <div data-reveal style="margin-top:40px">
-      <a href="#live" class="btn btn--outline btn--lg">See 2Capacity in Action <span class="arrow" aria-hidden="true">&rarr;</span></a>
-    </div>
-  </div>
-</section>
-
-<section id="tenant-app" class="section">
-  <div class="wrap">
-    <div class="app-band" data-reveal>
-      <div class="phone ai-glow" aria-hidden="true">
-        <div class="phone__notch"></div>
-        <div class="phone__screen">
-          <div class="phone__unit">
-            <div class="phone__unit-code">F2-034</div>
-            <div class="phone__unit-meta">50 sq ft &middot; Demo Facility</div>
-          </div>
-          <div class="phone__card">
-            <div class="phone__label">Next invoice</div>
-            <div class="phone__amount">$157.50</div>
-            <div class="phone__due">Due 28 Oct</div>
-            <div class="phone__pay">Pay now</div>
-          </div>
-          <div class="phone__row">Contract PDF<span>&rsaquo;</span></div>
-          <div class="phone__row">Receipts<span>&rsaquo;</span></div>
-          <div class="phone__row">Change move-out date<span>&rsaquo;</span></div>
-        </div>
-      </div>
-      <div class="app-band__text">
-        <div class="hero__eyebrow" style="margin-bottom:12px">For your tenants</div>
-        <h2>Simplify your tenants' storage experience.</h2>
-        <p>Pay invoices. Download contracts and receipts. Change a move-out date. Your tenants do it all from their phone, signing in with a one-time code, and every action lands on the right record in 2Capacity.</p>
-        <a href="#contact" class="btn btn--solid btn--lg">See the tenant app <span class="arrow" aria-hidden="true">&rarr;</span></a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="live" class="section">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <h2>See the AI in action.</h2>
-      <p>Ask a storage question the way a customer would. This demo answers from a sample facility's units and prices, the same way Aisha drafts from your live list.</p>
-    </div>
-    <div class="split split--2" data-reveal style="margin-top:0">
-      <div>
-        <div class="wa-chat wa-chat--demo ai-glow">
-          <div class="wa-chat__head">
-          <span class="agent-avatar agent-avatar--sm" aria-hidden="true">A</span>
-          <span><span class="wa-chat__name">Aisha</span><span class="wa-chat__status">AI first response &middot; demo</span></span>
-          <span class="wa-chat__live" aria-hidden="true"></span>
-        </div>
-          <div class="wa-chat__body" id="demoChatBody" aria-live="polite"></div>
-          <div class="demo-chips" id="demoChips"></div>
-          <form class="wa-chat__composer" id="demoChatForm">
-            <label for="demoChatInput" class="sr-only">Ask a storage question</label>
-            <input id="demoChatInput" type="text" autocomplete="off" maxlength="200" placeholder="e.g. anything around 100 sq ft free?">
-            <button type="submit" class="btn btn--solid">Send</button>
-          </form>
-        </div>
-        <p class="fine">Scripted demo with sample prices. In your account every draft waits for your approval. Nothing you type here leaves your browser. Prefer a guided tour? <a href="#contact">Book a demo</a> and we'll run it on your own units.</p>
-      </div>
-      <!-- Hidden until assets/demo.mp4 is re-exported without the old branding. To restore: remove hidden, put back src="assets/demo.mp4" and poster="assets/poster.jpg". -->
-      <div hidden>
-        <div class="hero__frame" id="videoFrame">
-          <video id="demoVideo" class="hero__video" preload="none" playsinline aria-label="2Capacity product demo"></video>
-          <div class="hero__frame-inner" id="videoOverlay">
-            <button type="button" class="play-btn" id="playBtn" aria-label="Play demo video">
-              <span class="play-btn__triangle" aria-hidden="true"></span>
-            </button>
-            <div class="hero__frame-label">Meet 2Capacity</div>
-            <div class="hero__frame-meta">7 min product walkthrough</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="roi" class="section">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <h2>What a faster reply is worth.</h2>
-      <p>A rough estimate for your facility. Move the sliders to match your numbers.</p>
-    </div>
-    <div class="roi" data-reveal>
-      <div>
-        <div class="roi-input">
-          <label for="roiInq"><span>Inquiries a month</span><output id="roiInqOut" for="roiInq"></output></label>
-          <input type="range" id="roiInq" min="20" max="1000" step="10" value="200">
-        </div>
-        <div class="roi-input">
-          <label for="roiMin"><span>Minutes your team spends per inquiry</span><output id="roiMinOut" for="roiMin"></output></label>
-          <input type="range" id="roiMin" min="2" max="30" step="1" value="10" data-unit=" min">
-        </div>
-        <div class="roi-input">
-          <label for="roiAfter"><span>Inquiries arriving after hours</span><output id="roiAfterOut" for="roiAfter"></output></label>
-          <input type="range" id="roiAfter" min="0" max="80" step="5" value="30" data-unit="%">
-        </div>
-        <div class="roi-input">
-          <label for="roiClose"><span>Inquiries that become tenants</span><output id="roiCloseOut" for="roiClose"></output></label>
-          <input type="range" id="roiClose" min="5" max="60" step="1" value="20" data-unit="%">
-        </div>
-      </div>
-      <div class="roi-results" aria-live="polite">
-        <div class="roi-result"><div class="roi-result__v"><span id="roiHours"></span> h</div><div class="roi-result__l">of typing saved each month</div></div>
-        <div class="roi-result"><div class="roi-result__v" id="roiAfterCount"></div><div class="roi-result__l">after-hours inquiries with a reply drafted and waiting</div></div>
-        <div class="roi-result"><div class="roi-result__v" id="roiUnits"></div><div class="roi-result__l">extra units filled a month</div></div>
-        <p class="fine">Assumes AI drafts halve the time spent writing replies, and that a quarter of after-hours inquiries are currently lost to a slow reply. Your results will vary.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="workflows" class="section">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <h2>See the Power Behind Your Next Stage of Growth.</h2>
-      <p>Three workflows that show how customer activity, operations, and finances connect.</p>
-    </div>
-    <div class="workflow-grid" data-reveal>
-      <a class="workflow" href="#pipeline">
-        <div class="workflow__t">From inquiry to tenant</div>
-        <p class="workflow__d">A new lead followed up and moved toward a rental, without manual chasing.</p>
-        <span class="workflow__go">Try it below <span class="arrow" aria-hidden="true">&rarr;</span></span>
-      </a>
-      <a class="workflow" href="#tour">
-        <div class="workflow__t">Operations at a glance</div>
-        <p class="workflow__d">Tasks across your facilities in one view, so nothing waits unnoticed.</p>
-        <span class="workflow__go">Try it below <span class="arrow" aria-hidden="true">&rarr;</span></span>
-      </a>
-      <a class="workflow" href="#finance">
-        <div class="workflow__t">Payments to reporting</div>
-        <p class="workflow__d">Payments tracked and reconciled, with reports ready when you need them.</p>
-        <span class="workflow__go">Try it below <span class="arrow" aria-hidden="true">&rarr;</span></span>
-      </a>
-    </div>
-  </div>
-</section>
-
-<section id="units" class="section">
-  <div class="wrap">
-    <div class="section-head section-head--split" data-reveal>
-      <h2 class="max-14ch">Every unit. One live inventory.</h2>
-      <div class="segmented" role="tablist" aria-label="Inventory view">
-        <button type="button" class="segmented__btn segmented__btn--active" id="floorTabBtn" role="tab" aria-selected="true">Floor view</button>
-        <button type="button" class="segmented__btn" id="threeDTabBtn" role="tab" aria-selected="false">3D view</button>
-        <button type="button" class="segmented__btn" id="tableTabBtn" role="tab" aria-selected="false">Table view</button>
-      </div>
-    </div>
-
-    <div id="floorView" class="units-floor" data-reveal>
-      <div class="units-floor__plan-wrap">
-        <div class="units-floor__plan" id="floorPlan"></div>
-        <div class="units-floor__plan3d" id="unitsCanvas3d" hidden></div>
-        <div class="legend">
-          <span class="legend__item"><span class="legend__swatch legend__swatch--available"></span>Available</span>
-          <span class="legend__item"><span class="legend__swatch legend__swatch--occupied"></span>Occupied</span>
-          <span class="legend__item"><span class="legend__swatch legend__swatch--reserved"></span>Reserved</span>
-          <span class="legend__item"><span class="legend__swatch legend__swatch--maintenance"></span>Maintenance</span>
-          <span class="legend__count mono" id="unitCountLabel"></span>
-        </div>
-        <div class="plan3d-hint" id="plan3dHint">Drag to rotate &middot; click a unit to select it</div>
-      </div>
-      <div class="unit-detail" id="unitDetail" aria-live="polite"></div>
-    </div>
-
-    <div id="tableView" class="units-table" hidden>
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>Unit</th><th>Floor</th><th>Size</th><th>Dimensions</th><th>Status</th><th class="ta-r">4-week price</th><th class="ta-r">Weekly equivalent</th></tr></thead>
-          <tbody id="unitsTableBody"></tbody>
-        </table>
-        <div class="table-foot">
-          <span class="mono" id="tableFootCount"></span>
-          <span>Weekly equivalent = 4-week contract rate &divide; 4 &middot; Create, read, update, delete</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="pipeline" class="section">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <h2>From inquiry to tenant, without the chasing.</h2>
-      <p>A lead becomes a quote, a quote becomes a contract, and the contract creates its own payment schedule. Customer and unit details are entered once and carried through every step.</p>
-    </div>
-
-    <div class="flow-track" data-reveal id="flowTrack"></div>
-  </div>
-
-  <div class="wrap">
-    <div class="row-head" data-reveal>
-      <h3>Leads</h3>
-      <span class="hint">Select a card to carry it into the quote</span>
-    </div>
-    <div class="kanban" data-reveal id="kanban"></div>
-  </div>
-
-  <div class="wrap">
-    <div class="split split--2" data-reveal>
-      <div>
-        <div class="row-head"><h3>Quote</h3><span class="mono muted" id="quoteId"></span></div>
-        <div class="kv-list kv-list--top" id="quoteRows"></div>
-        <div class="btn-row">
-          <button type="button" class="btn btn--solid">Generate PDF</button>
-          <button type="button" class="btn btn--outline" id="toContractBtn">Convert to contract <span class="arrow" aria-hidden="true">&rarr;</span></button>
-        </div>
-        <p class="fine">Customer, unit and pricing carry into the contract. Nothing is re-entered.</p>
-      </div>
-      <div>
-        <div class="row-head"><h3>Contract</h3><span class="mono muted">CT-0197</span></div>
-        <div class="wizard-tabs" id="wizardTabs" role="tablist" aria-label="Contract steps"></div>
-        <div class="kv-list" id="wizardRows"></div>
-        <div class="btn-row btn-row--center">
-          <button type="button" class="btn btn--solid" id="activateBtn">Activate contract</button>
-          <button type="button" class="btn btn--outline" id="docusignBtn">Send via E-Signature</button>
-        </div>
-        <p class="fine" id="docusignStatus">Activation creates the payment schedule automatically.</p>
-      </div>
-    </div>
-
-    <div class="split split--2" data-reveal style="margin-top:72px">
-      <div>
-        <h3>Lifecycle</h3>
-        <div class="lifecycle" id="lifecycle"></div>
-        <p class="fine">Contracts move from draft to pending to active. Ended and cancelled contracts release their unit back to inventory. Missed payments are flagged overdue without manual review.</p>
-      </div>
-      <div>
-        <div class="row-head"><h3>Payment schedule</h3><span class="mono muted" id="scheduleUnit"></span></div>
-        <div class="kv-list" id="scheduleRows"></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="finance" class="section">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <h2>Organized books. A clear view of cash flow.</h2>
-      <p>Invoices, payments, vendors, purchases and expenses link to each other, so every record knows where it came from and month end stops being a manual reconciliation.</p>
-    </div>
-
-    <div class="split split--2" data-reveal>
-      <div class="chain-stack">
-        <div>
-          <div class="chain-label chain-label--green">Customer side</div>
-          <div class="chain" id="chainA"></div>
-        </div>
-        <div>
-          <div class="chain-label chain-label--blue">Vendor side</div>
-          <div class="chain" id="chainB"></div>
-        </div>
-        <p class="fine">Expenses and purchases accept attachments, receipts, delivery notes, warranty documents, <span class="mono ink">up to 10 files / 10 MB</span> per record.</p>
-      </div>
-      <div>
-        <div class="row-head"><h3>CSV import</h3><span class="mono muted">expenses_sep.csv &middot; 3 rows</span></div>
-        <div class="dropzone">Drop a CSV of expenses or purchases. Columns map automatically.</div>
-        <div class="table-scroll" style="margin-top:20px">
-          <table>
-            <thead><tr><th>Vendor</th><th>Category</th><th class="ta-r">Amount</th><th>Auto-link</th></tr></thead>
-            <tbody id="csvRows"></tbody>
-          </table>
-        </div>
-        <p class="fine">Vendors are matched by name during import. Unmatched names create a vendor record so nothing is imported without a link.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="reporting" class="section">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <h2>Your operational record, organized.</h2>
-      <p>Signed contracts, invoices and supporting documents are filed against the records they belong to, with reports ready when you need them. No spreadsheet export first.</p>
-    </div>
-
-    <div class="split split--report" data-reveal>
-      <div>
-        <h3>Documents</h3>
-        <div class="kv-list kv-list--docs" id="docsRows"></div>
-      </div>
-      <div>
-        <div class="row-head"><h3>Reports</h3><button type="button" class="btn btn--ghost">Export CSV</button></div>
-        <div class="report-grid">
-          <div>
-            <div class="muted small">Revenue by month</div>
-            <div class="bars bars--short" id="reportBars"></div>
-          </div>
-          <div>
-            <div class="muted small">Payment status</div>
-            <div class="pay-status" id="payStatus"></div>
-          </div>
-        </div>
-        <div class="report-grid" style="margin-top:28px">
-          <div>
-            <div class="muted small">Occupancy by size</div>
-            <div class="occ-list occ-list--short" id="occBySizeShort"></div>
-          </div>
-          <div>
-            <div class="muted small">Availability search</div>
-            <div class="avail-search"><span>size &ge; 100 sq ft &middot; F2 &middot; available</span><span class="muted" id="availCount"></span></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="assist" class="section">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <h2>2Capacity AI at work.</h2>
-      <p>2Capacity AI drafts WhatsApp replies, suggests rates and flags anomalies using the records already in your system. You set the rules, and nothing is sent or changed until you approve it.</p>
-    </div>
-
-    <div class="split split--2" data-reveal>
-      <div>
-        <div class="row-head"><h3>Reply drafting</h3><span class="mono muted">WhatsApp &middot; <span id="leadName"></span></span></div>
-        <div class="assist-block">
-          <div class="assist-field">
-            <label for="inboundMessage" class="muted small">Inbound message</label>
-            <textarea id="inboundMessage" rows="3"></textarea>
-          </div>
-          <div class="assist-field">
-            <div class="assist-field__head"><span class="muted small">Draft reply</span><span class="mono muted micro" id="draftMeta"></span></div>
-            <div class="draft-panel" id="draftPanel" aria-live="polite">Select a lead, edit the inbound message if needed, then draft a reply.</div>
-          </div>
-        </div>
-        <div class="btn-row">
-          <button type="button" class="btn btn--solid" id="draftBtn">Draft reply</button>
-          <button type="button" class="btn btn--outline">Send via WhatsApp</button>
-          <span class="hint">Uses the lead record, unit availability and pricing. Nothing is sent without review.</span>
-        </div>
-      </div>
-      <div class="assist-side">
-        <div>
-          <h3>Pricing suggestions</h3>
-          <div class="table-scroll">
-            <table>
-              <thead><tr><th>Size</th><th class="ta-r">Current</th><th class="ta-r">Suggested</th><th>Basis</th></tr></thead>
-              <tbody id="pricingRows"></tbody>
-            </table>
-          </div>
-          <p class="fine">Suggestions follow the pricing rules in Settings. Rates change only when an operator applies them.</p>
-        </div>
-        <div>
-          <h3>Anomaly alerts</h3>
-          <div class="kv-list" id="alertRows"></div>
-        </div>
-      </div>
-    </div>
   </div>
 </section>
 
@@ -789,26 +339,8 @@
       <div class="trust-item"><div class="trust-item__t">No invented prices</div><p class="trust-item__d">Every figure in a draft must come from your unit list. If a number can't be traced, the draft goes to a person instead.</p></div>
       <div class="trust-item"><div class="trust-item__t">Hands over when unsure</div><p class="trust-item__d">Discounts, payments, contracts, complaints or a request for a person go straight to your team with a short summary.</p></div>
       <div class="trust-item"><div class="trust-item__t">No money moves without you</div><p class="trust-item__d">Agents can't send payment links, contracts or quotations, and never confirm a booking or promise a refund.</p></div>
-      <div class="trust-item"><div class="trust-item__t">Limits you set</div><p class="trust-item__d">Daily caps on follow-ups and a daily AI budget for each agent. Switch any agent off in one click.</p></div>
-      <div class="trust-item"><div class="trust-item__t">Official WhatsApp API</div><p class="trust-item__d">Messages run through Meta's WhatsApp Business Cloud API on your own business number.</p></div>
     </div>
     <p class="trust-note" data-reveal>Your customer data is processed only to run your account, under our <a href="legal/dpa.html">Data Processing Agreement</a> and <a href="legal/privacy-policy.html">Privacy Policy</a>.</p>
-  </div>
-</section>
-
-<section id="modules" class="section">
-  <div class="wrap">
-    <h2 data-reveal>Every module, included.</h2>
-    <div class="module-grid" data-reveal id="moduleGrid"></div>
-  </div>
-</section>
-
-<section id="integrations" class="section">
-  <div class="wrap">
-    <div class="split split--integrations" data-reveal>
-      <h2>Integrations</h2>
-      <div class="integration-list" id="integrationList"></div>
-    </div>
   </div>
 </section>
 
@@ -829,7 +361,7 @@
         </ul>
         <a href="#contact" class="btn btn--outline">Get pricing</a>
       </div>
-      <div class="price-card ai-glow">
+      <div class="price-card">
         <div class="price-card__n">Growth</div>
         <div class="price-card__tag">Starter plus AI follow-ups and closing</div>
         <ul>
@@ -850,16 +382,6 @@
         <a href="#contact" class="btn btn--outline">Get pricing</a>
       </div>
     </div>
-  </div>
-</section>
-
-<section id="about" class="section">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <h2>Built by people who ran the floor.</h2>
-      <p>2Capacity is built by a small team who spent years operating and servicing self-storage facilities before writing a line of it.</p>
-    </div>
-    <div class="team-grid" data-reveal id="teamGrid"></div>
   </div>
 </section>
 
@@ -912,15 +434,6 @@
           <div class="kv-row"><span>Coverage</span><span>Worldwide, with remote onboarding</span></div>
           <div class="kv-row"><span>Hours</span><span>24/7, seven days a week</span></div>
         </div>
-
-        <div class="chat-card">
-          <div class="chat-card__mark" aria-hidden="true">WA</div>
-          <div class="chat-card__body">
-            <div class="chat-card__title">Prefer to chat now?</div>
-            <div class="chat-card__desc">Message our team on WhatsApp for a live reply, 24/7, seven days a week.</div>
-          </div>
-          <a href="https://wa.me/14169308205" target="_blank" rel="noopener" class="btn btn--outline">Start chat</a>
-        </div>
       </div>
 
       <div>
@@ -928,7 +441,7 @@
         <ol class="next-steps">
           <li><span class="next-steps__n">1</span>Share a few details about your facilities.</li>
           <li><span class="next-steps__n">2</span>Our team replies quickly, 24/7, to arrange a time that suits you.</li>
-          <li><span class="next-steps__n">3</span>A personalized walkthrough of about 30 minutes, built around your goals.</li>
+          <li><span class="next-steps__n">3</span>A personalized walkthrough of about 15 minutes, built around your goals.</li>
         </ol>
         <div id="contactFormView">
           <form id="contactForm" novalidate>
@@ -988,21 +501,13 @@
   </div>
 </section>
 
-<section id="demo" class="closing">
-  <div class="closing__canvas" id="closingCanvas" aria-hidden="true"></div>
-  <div class="wrap" data-reveal>
-    <h2 class="closing__h2">See 2Capacity <span class="grad-text">in Action.</span></h2>
-    <p class="closing__sub">A personalized demo built around your facility and your business goals.</p>
-    <a href="#contact" class="btn btn--solid btn--lg">Book a demo <span class="arrow" aria-hidden="true">&rarr;</span></a>
-    <div class="closing__foot">An AI team for self-storage owners and operators worldwide.</div>
-  </div>
-</section>
-
 </main>
 
 <footer class="footer">
   <div class="wrap footer__row">
     <span class="footer__brand">2Capacity Storage OS</span>
+    <a href="platform/">Platform</a>
+    <a href="team/">Team</a>
     <a href="mailto:hello@2capacity.com">hello@2capacity.com</a>
     <a href="https://www.linkedin.com/company/146876953/" target="_blank" rel="noopener" aria-label="2Capacity on LinkedIn">LinkedIn</a>
     <a href="https://maps.google.com/?cid=16257923591558110511" target="_blank" rel="noopener">Find us on Google Maps</a>
@@ -1039,14 +544,11 @@
   </button>
 </div>
 
-<!-- three.js is not listed here: app.js loads it only when a 3D scene is actually shown -->
 <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
 <script defer src="data.js"></script>
-<script defer src="scene3d.js"></script>
-<script defer src="unitsScene3d.js"></script>
-<script defer src="ambientScene3d.js"></script>
 <script defer src="app.js"></script>
+<script defer src="home.js"></script>
 <script defer src="tour.js"></script>
 </body>
 </html>

@@ -22,13 +22,14 @@ function mimeEncode(str) {
     return '=?UTF-8?B?' + Buffer.from(str, 'utf8').toString('base64') + '?=';
 }
 
-function buildRawEmail({ from, to, subject, text, html, attachments, cc, bcc }) {
+function buildRawEmail({ from, to, subject, text, html, attachments, cc, bcc, replyTo }) {
     const boundary = '____boundary_' + Date.now().toString(36);
     const nl = '\r\n';
 
     let raw = '';
     raw += `From: ${from}${nl}`;
     raw += `To: ${to}${nl}`;
+    if (replyTo) raw += `Reply-To: ${replyTo}${nl}`;
     // Cc is visible to every other recipient, unlike Bcc below.
     if (cc) raw += `Cc: ${cc}${nl}`;
     // Comma-separated list; Gmail strips this header before delivery so
@@ -134,11 +135,11 @@ export async function readGmailMessage(id) {
     } catch (e) { throw explainReadError(e); }
 }
 
-export async function sendGmail({ to, subject, text, html, attachments, cc, bcc }) {
+export async function sendGmail({ to, subject, text, html, attachments, cc, bcc, from: fromOverride, replyTo }) {
     const auth = getOAuth2Client();
     if (!auth) throw new Error('Gmail API is not configured — connect Gmail in Settings');
     const gmail = google.gmail({ version: 'v1', auth });
-    const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'PurpleBox <contact@purplebox.ae>';
-    const raw = buildRawEmail({ from, to, subject, text, html, attachments, cc, bcc });
+    const from = fromOverride || process.env.SMTP_FROM || process.env.SMTP_USER || 'PurpleBox <contact@purplebox.ae>';
+    const raw = buildRawEmail({ from, to, subject, text, html, attachments, cc, bcc, replyTo });
     await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
 }

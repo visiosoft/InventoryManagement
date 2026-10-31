@@ -24,6 +24,9 @@ const router = Router();
 const FACILITY_CHOICES = ['1', '2 to 5', '6 to 20', '21 to 50', '51 or more'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Fixed in code, not read from .env: every inquiry goes to this inbox and no other.
+const DEMO_INBOX = 'hello@2capacity.com';
+
 // A real visitor sends one of these; a script spamming the inbox sends dozens
 const demoLimiter = rateLimit({
     windowMs: 10 * 60_000, max: 5, standardHeaders: true, legacyHeaders: false,
@@ -85,6 +88,17 @@ export function demoRequestEmailText(f) {
     ].filter(Boolean).join('\n');
 }
 
+/** The notification for one request. Replies go straight to the prospect. */
+export function demoRequestMail(f) {
+    return {
+        to: DEMO_INBOX,
+        from: `2Capacity <${DEMO_INBOX}>`,
+        replyTo: f.email,
+        subject: `Demo request: ${f.company} (${f.country})`,
+        text: demoRequestEmailText(f),
+    };
+}
+
 router.post('/', demoLimiter, (req, res) => {
     const body = req.body || {};
     // Honeypot: people never see the "website" field, bots fill it. Answer as
@@ -107,12 +121,9 @@ router.post('/', demoLimiter, (req, res) => {
         // The visitor is answered as soon as the request is safe; the email is ours to chase
         res.status(201).json({ ok: true, id: String(saved._id) });
 
-        const to = process.env.DEMO_REQUEST_NOTIFY || 'hello@2capacity.com';
         try {
             await sendMail({
-                to,
-                subject: `Demo request: ${fields.company} (${fields.country})`,
-                text: demoRequestEmailText(fields),
+                ...demoRequestMail(fields),
                 context: { kind: 'demo_request', label: fields.company },
             });
             await DemoRequest.updateOne({ _id: saved._id }, { $set: { notified: true } });

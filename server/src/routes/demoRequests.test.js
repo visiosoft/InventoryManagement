@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDemoRequest, demoRequestEmailText } from './demoRequests.js';
+import { parseDemoRequest, demoRequestEmailText, demoRequestMail } from './demoRequests.js';
 
 const valid = {
   name: 'Sam Lee', email: 'Sam@Acme.com ', company: 'Acme Storage',
@@ -35,4 +35,15 @@ test('the email lists the details and any ad tracking', () => {
   assert.match(text, /Phone \/ WhatsApp: \+1 555/);
   assert.match(text, /Campaign: ca-search/);
   assert.match(text, /Google Ads click/);
+});
+
+test('demo request mail comes from 2Capacity, goes only to the 2Capacity inbox and replies to the prospect', () => {
+  const previous = process.env.DEMO_REQUEST_NOTIFY;
+  process.env.DEMO_REQUEST_NOTIFY = 'someone-else@example.com';
+  const { fields } = parseDemoRequest(valid);
+  const mail = demoRequestMail(fields);
+  if (previous === undefined) delete process.env.DEMO_REQUEST_NOTIFY; else process.env.DEMO_REQUEST_NOTIFY = previous;
+  assert.equal(mail.to, 'hello@2capacity.com');
+  assert.equal(mail.from, '2Capacity <hello@2capacity.com>');
+  assert.equal(mail.replyTo, fields.email);
 });
