@@ -52,6 +52,8 @@ if [ -d "$TRAINER_DIR" ]; then
     chmod 600 "$TRAINER_DIR/.env"
     echo "Created trainer/server/.env"
   fi
+  # The secret for one-click connect from the CRM (same machine), added once.
+  grep -q '^TRAINER_LINK_TOKEN=' "$TRAINER_DIR/.env" || echo "TRAINER_LINK_TOKEN=$(openssl rand -hex 32)" >> "$TRAINER_DIR/.env"
   (cd "$TRAINER_DIR" && (npm ci --omit=dev 2>/dev/null || npm install --omit=dev))
   if pm2 describe ai-trainer >/dev/null 2>&1; then
     pm2 restart ai-trainer --update-env

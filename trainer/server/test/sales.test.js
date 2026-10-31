@@ -206,3 +206,16 @@ test('the suite runs approved scenarios only, records versions, sets gates, and 
    assert.deepEqual(second.regressions, [first.cases[0].scenario], 'the price case passed before and fails now');
    assert.equal(second.passedAll, false);
 });
+
+test('one-click link: only from this machine, not through a proxy, with the right token; picks the PurpleBox organisation', async () => {
+   const { linkAllowed, pickOrg } = await import('../src/routes/link.js');
+   const ok = { remote: '127.0.0.1', forwarded: undefined, token: 'abc', expected: 'abc' };
+   assert.equal(linkAllowed(ok), true);
+   assert.equal(linkAllowed({ ...ok, remote: '203.0.113.9' }), false, 'remote address');
+   assert.equal(linkAllowed({ ...ok, forwarded: '203.0.113.9, 127.0.0.1' }), false, 'came through the public proxy');
+   assert.equal(linkAllowed({ ...ok, token: 'abd' }), false);
+   assert.equal(linkAllowed({ ...ok, expected: '' }), false, 'not set up: refused');
+   const orgs = [{ name: 'Acme', slug: 'acme', createdAt: '2026-10-01' }, { name: 'PurpleBox Storage', slug: 'purplebox-storage', createdAt: '2026-10-31' }, { name: 'Purple Box test', slug: 'pb-test', createdAt: '2026-11-01' }];
+   assert.equal(pickOrg(orgs, 'purplebox').name, 'PurpleBox Storage', 'the oldest match');
+   assert.equal(pickOrg([orgs[0]], 'purplebox'), null);
+});

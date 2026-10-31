@@ -17,6 +17,12 @@ export default function TrainingCenterCard() {
   const [key, setKey] = useState('')
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const gen = useMutation({ mutationFn: () => api.post('/training-settings/connector-token').then((r) => r.data), onSuccess: (d) => { setMade(d); qc.invalidateQueries({ queryKey: ['training-settings'] }) } })
+  const [linked, setLinked] = useState<{ ok: boolean; text: string } | null>(null)
+  const connect = useMutation({
+    mutationFn: () => api.post('/training-settings/connect').then((r) => r.data),
+    onSuccess: (d) => { setLinked({ ok: !/could not|no answer/.test(d.check), text: `Connected to “${d.org}” — ${d.check}. Aisha reads its published answers from her next reply.` }); qc.invalidateQueries({ queryKey: ['training-settings'] }) },
+    onError: (e) => setLinked({ ok: false, text: apiError(e) }),
+  })
   const saveKey = useMutation({ mutationFn: () => api.post('/training-settings/trainer-key', { key }), onSuccess: () => { setKey(''); setMsg({ ok: true, text: 'Saved — Aisha uses the published answers from her next reply.' }); qc.invalidateQueries({ queryKey: ['training-settings'] }) }, onError: (e) => setMsg({ ok: false, text: apiError(e) }) })
   return (
     <div className="rounded-lg border px-4 py-3 space-y-3">
@@ -27,6 +33,13 @@ export default function TrainingCenterCard() {
         </div>
         <a href="https://office.purplebox.ae/train/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: '#4A1FA0' }}>Open <ExternalLink size={12} /></a>
       </div>
+      <div className="rounded-md p-3 text-sm" style={{ background: '#F5F0FF' }}>
+        <div className="font-medium">Connect automatically</div>
+        <div className="text-xs text-muted-foreground">Sign up in the Training Center first (organisation “PurpleBox Storage”). Then one click does both steps below.{data?.connectorToken && data?.trainerKey ? ' Already connected; clicking again renews both keys.' : ''}</div>
+        <button type="button" onClick={() => connect.mutate()} disabled={connect.isPending} className="mt-2 rounded-md px-3 py-1.5 text-xs font-medium text-white" style={{ background: '#4A1FA0' }}>{connect.isPending ? 'Connecting…' : 'Connect automatically'}</button>
+        {linked && <div className="mt-1 text-xs" style={{ color: linked.ok ? '#166534' : '#B91C1C' }}>{linked.text}</div>}
+      </div>
+      <div className="text-xs text-muted-foreground">Or by hand:</div>
       <div className="text-sm">
         <div className="font-medium">1. Let the Training Center read this CRM</div>
         <div className="text-xs text-muted-foreground">In the Training Center: Settings → Connected system. Paste the address and token.{data?.connectorToken ? ` A token is set (${data.connectorToken}); making a new one replaces it.` : ''}</div>

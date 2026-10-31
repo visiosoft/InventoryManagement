@@ -45,3 +45,11 @@ test('the shared sales playbook leads the block, with or without matching answer
    assert.ok(both.indexOf('SALES PLAYBOOK') < both.indexOf('APPROVED ANSWERS'));
    assert.equal(blockFromMatches([], ''), '', 'nothing shared, nothing added');
 });
+
+test('one-click connect finds the link secret in the Training Center .env on this machine', async () => {
+   const { linkToken } = await import('../routes/trainingConnector.js');
+   const saved = process.env.TRAINER_LINK_TOKEN; delete process.env.TRAINER_LINK_TOKEN;
+   assert.equal(await linkToken(async () => 'PORT=5020\nTRAINER_LINK_TOKEN=abc123\n'), 'abc123');
+   assert.equal(await linkToken(async () => { throw new Error('missing'); }), '');
+   if (saved) process.env.TRAINER_LINK_TOKEN = saved;
+});

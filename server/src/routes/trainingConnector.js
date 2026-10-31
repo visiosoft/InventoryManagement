@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import axios from 'axios';
 import { WhatsAppMessage } from '../models/index.js';
 import { conversations, facts, agentFor } from '../services/trainingConnector.js';
 import { updateEnvFile } from '../utils/env.js';
@@ -87,7 +89,42 @@ settings.post('/connector-token', async (_req, res, next) => {
       await updateEnvFile({ TRAINING_CONNECTOR_TOKEN: t });
       process.env.TRAINING_CONNECTOR_TOKEN = t;
       refMap = { at: 0, map: new Map() };
-      res.json({ token: t, url: 'https://api.purplebox.ae/api/training-connector' });
+      res.json({ token: t, url: CONNECTOR_URL });
+   } catch (e) { next(e); }
+});
+
+const CONNECTOR_URL = 'https://api.purplebox.ae/api/training-connector';
+
+/** TRAINER_LINK_TOKEN from the environment, else from the Training Center's own .env on this machine. */
+export async function linkToken(read = () => fs.readFile(new URL('../../../trainer/server/.env', import.meta.url), 'utf8')) {
+   if (process.env.TRAINER_LINK_TOKEN) return process.env.TRAINER_LINK_TOKEN;
+   const text = await read().catch(() => '');
+   return /^TRAINER_LINK_TOKEN=(.+)$/m.exec(text)?.[1]?.trim() || '';
+}
+
+/**
+ * One click: a fresh connector token goes to the Training Center (on this
+ * machine), which connects to this CRM and returns an API key for Aisha.
+ * Nothing is copied by hand.
+ */
+settings.post('/connect', async (_req, res, next) => {
+   try {
+      const link = await linkToken();
+      if (!link) return res.status(400).json({ error: 'The AI Training Center is not set up on this server yet' });
+      const t = crypto.randomBytes(32).toString('base64url');
+      await updateEnvFile({ TRAINING_CONNECTOR_TOKEN: t });
+      process.env.TRAINING_CONNECTOR_TOKEN = t;
+      refMap = { at: 0, map: new Map() };
+      const base = `http://127.0.0.1:${Number(process.env.TRAINER_PORT || 5020)}`;
+      let data;
+      try {
+         ({ data } = await axios.post(`${base}/internal/link`, { url: CONNECTOR_URL, token: t, org: 'purplebox' }, { headers: { 'X-Link-Token': link }, timeout: 30_000 }));
+      } catch (e) {
+         return res.status(502).json({ error: e.response?.data?.error || 'The AI Training Center did not answer' });
+      }
+      await updateEnvFile({ TRAINER_API_KEY: data.key });
+      process.env.TRAINER_API_KEY = data.key;
+      res.json({ ok: true, org: data.org, check: data.check });
    } catch (e) { next(e); }
 });
 

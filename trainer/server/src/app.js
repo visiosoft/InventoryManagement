@@ -6,6 +6,7 @@ import orgRoutes from './routes/org.js';
 import trainingRoutes from './routes/training.js';
 import platformRoutes from './routes/platform.js';
 import salesRoutes from './routes/sales.js';
+import linkRoutes from './routes/link.js';
 import { v1, webhooks } from './routes/public.js';
 
 /**
@@ -37,6 +38,8 @@ export function createApp() {
    app.use('/api/platform', requireUser, platformRoutes);
    app.use('/api/v1', v1);
    app.use('/api/webhooks', webhooks);
+   // Same-machine only, outside /api so the public proxy never reaches it.
+   app.use('/internal', linkRoutes);
    app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
    app.use((err, _req, res, _next) => {
       console.error('[trainer]', err.message);
