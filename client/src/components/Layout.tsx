@@ -37,8 +37,8 @@ const navTop: { to: string; label: string; icon: typeof Package; perm?: string |
   // it is configuration, not a page anyone works from day to day.
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' },
   { to: '/zoho', label: 'Zoho', icon: BookOpen, adminOnly: true },
-  // AI Training is its own product now (train.purplebox.ae), linked from Settings.
-  { to: 'https://train.purplebox.ae', label: 'AI Training ↗', icon: GraduationCap, adminOnly: true },
+  // AI Training is its own app, served at /train on this site (or train.purplebox.ae).
+  { to: 'https://office.purplebox.ae/train/', label: 'AI Training ↗', icon: GraduationCap, adminOnly: true },
   { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'dashboard' },
 ]
 

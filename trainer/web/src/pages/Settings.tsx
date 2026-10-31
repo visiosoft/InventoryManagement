@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useOutletContext, useSearchParams, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy } from 'lucide-react'
-import { api, apiError } from '../lib/api'
+import { api, apiError, BASE } from '../lib/api'
 import { useSession } from '../lib/session'
 import { type Me, INK, MUTED, ACCENT, LINE, btn, panel, caps, field, when } from './theme'
 import { PageTitle } from './shared'
@@ -182,7 +182,7 @@ function WhatsApp({ me }: { me: Me }) {
       {shown && (
         <div style={{ fontSize: 13, marginTop: 14 }}>
           In Meta → WhatsApp → Configuration → Webhook, set:
-          <div style={{ marginTop: 6 }}>Callback URL: <code>{window.location.origin}/api{shown.path.replace(/^\/webhooks/, '/webhooks')}</code></div>
+          <div style={{ marginTop: 6 }}>Callback URL: <code>{window.location.origin}{BASE}api{shown.path.replace(/^\/webhooks/, '/webhooks')}</code></div>
           <div>Verify token: <code>{shown.verifyToken}</code></div>
           <div style={{ color: MUTED, marginTop: 4 }}>Then subscribe to the <b>messages</b> field.</div>
         </div>
@@ -197,7 +197,7 @@ function ApiKeys() {
   const keys = useQuery<{ keys: { id: string; label: string; last4: string; createdAt: string; revokedAt?: string }[] }>({ queryKey: ['keys'], queryFn: () => api.get('/org/keys').then((r) => r.data) })
   const mk = useMutation({ mutationFn: (label: string) => api.post('/org/keys', { label }).then((r) => r.data), onSuccess: (d) => { setCreated(d.key); qc.invalidateQueries({ queryKey: ['keys'] }) } })
   const revoke = useMutation({ mutationFn: (id: string) => api.delete(`/org/keys/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['keys'] }) })
-  const base = `${window.location.origin}/api/v1`
+  const base = `${window.location.origin}${BASE}api/v1`
   return (
     <Section title="API keys" sub="For your own chatbot or system: read the published answers, match a customer message to them, send conversations in, and report where a person corrected the AI. Keys are stored hashed and can be revoked any time.">
       {keys.data?.keys.map((k) => (
@@ -227,7 +227,7 @@ function Team({ me }: { me: Me }) {
   const refresh = () => qc.invalidateQueries({ queryKey: ['members', me.org.id] })
   const setRole = useMutation({ mutationFn: (b: { id: string; role: string }) => api.patch(`/org/members/${b.id}`, { role: b.role }), onSuccess: refresh, onError: (e) => setErr(apiError(e)) })
   const remove = useMutation({ mutationFn: (id: string) => api.delete(`/org/members/${id}`), onSuccess: refresh, onError: (e) => setErr(apiError(e)) })
-  const invite = useMutation({ mutationFn: (b: { email: string; role: string }) => api.post('/org/invites', b).then((r) => r.data), onSuccess: (d) => { setLink(`${window.location.origin}/invite/${d.token}`); refresh() }, onError: (e) => setErr(apiError(e)) })
+  const invite = useMutation({ mutationFn: (b: { email: string; role: string }) => api.post('/org/invites', b).then((r) => r.data), onSuccess: (d) => { setLink(`${window.location.origin}${BASE}invite/${d.token}`); refresh() }, onError: (e) => setErr(apiError(e)) })
   const help: Record<string, string> = { owner: 'everything', admin: 'everything but deleting', trainer: 'import, review, test', reviewer: 'review and comment', approver: 'approve, publish, test', analyst: 'read only' }
   return (
     <Section title="Team" sub={Object.entries(help).map(([r, h]) => `${r}: ${h}`).join(' · ')}>

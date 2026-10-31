@@ -6,7 +6,10 @@ import axios from 'axios'
 export const TOKEN_KEY = 'trainer_token'
 export const ORG_KEY = 'trainer_org'
 
-export const api = axios.create({ baseURL: '/api' })
+/** Where the app is served: '/' on its own domain, '/train/' inside the CRM site. */
+export const BASE = import.meta.env.BASE_URL
+
+export const api = axios.create({ baseURL: `${BASE}api` })
 
 api.interceptors.request.use((config) => {
   try {
@@ -21,7 +24,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use((r) => r, (err) => {
   if (err?.response?.status === 401 && !String(err.config?.url || '').startsWith('/auth/')) {
     try { localStorage.removeItem(TOKEN_KEY) } catch { /* ignore */ }
-    if (!location.pathname.startsWith('/login') && !location.pathname.startsWith('/signup') && !location.pathname.startsWith('/invite')) location.assign('/login')
+    const here = location.pathname.slice(BASE.length - 1)
+    if (!here.startsWith('/login') && !here.startsWith('/signup') && !here.startsWith('/invite')) location.assign(`${BASE}login`)
   }
   return Promise.reject(err)
 })

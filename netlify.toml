@@ -1,6 +1,7 @@
 [build]
   base = "client"
-  command = "npm run build"
+  # The AI Training Center is built into /train of the same site.
+  command = "npm run build && npm --prefix ../trainer/web ci && TRAINER_BASE=/train/ npm --prefix ../trainer/web run build -- --outDir ../../client/dist/train --emptyOutDir"
   publish = "dist"
 
 [[redirects]]
@@ -14,6 +15,17 @@
   to = "https://api.purplebox.ae/uploads/:splat"
   status = 200
   force = true
+
+[[redirects]]
+  from = "/train/api/*"
+  to = "https://api.purplebox.ae/trainer-api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/train/*"
+  to = "/train/index.html"
+  status = 200
 
 [[redirects]]
   from = "/*"

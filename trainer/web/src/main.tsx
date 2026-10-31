@@ -43,7 +43,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={qc}>
       <SessionProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
           <Routes>
             <Route path="/login" element={<Public><Login /></Public>} />
             <Route path="/signup" element={<Public><Signup /></Public>} />

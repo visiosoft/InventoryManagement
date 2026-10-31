@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, apiError } from '../lib/api'
+import { api, apiError, BASE } from '../lib/api'
 import { useSession } from '../lib/session'
 import { INK, MUTED, LINE, btn, panel, caps, field, when } from './theme'
 import { PageTitle } from './shared'
@@ -46,7 +46,7 @@ export default function Platform() {
               <td style={{ padding: '9px 12px' }}>{o.usage30d?.calls ?? 0}</td>
               <td style={{ padding: '9px 12px' }}>{o.usage30d?.platform ?? 0}</td>
               <td style={{ padding: '9px 12px', color: MUTED }}>{when(o.createdAt)}</td>
-              <td style={{ padding: '9px 12px' }}><button type="button" style={{ ...btn(), height: 28 }} onClick={() => { setOrg(o.id); qc.clear(); window.location.assign('/') }}>Open</button></td>
+              <td style={{ padding: '9px 12px' }}><button type="button" style={{ ...btn(), height: 28 }} onClick={() => { setOrg(o.id); qc.clear(); window.location.assign(BASE) }}>Open</button></td>
             </tr>
           ))}</tbody>
         </table>

@@ -4,7 +4,7 @@ import { Copy, ExternalLink } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 
 /* PurpleBox as a customer of the AI Training Center (a separate product at
-   train.purplebox.ae). Two things connect them: a token the Training Center
+   office.purplebox.ae/train). Two things connect them: a token the Training Center
    uses to read this CRM's conversations and prices and to test Aisha, and a
    Training Center API key Aisha uses to read the approved answers. */
 
@@ -25,7 +25,7 @@ export default function TrainingCenterCard() {
           <div className="font-medium">AI Training Center</div>
           <div className="text-xs text-muted-foreground">Teach Aisha from real conversations — a separate product; PurpleBox is one of its organisations.</div>
         </div>
-        <a href="https://train.purplebox.ae" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: '#4A1FA0' }}>Open <ExternalLink size={12} /></a>
+        <a href="https://office.purplebox.ae/train/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: '#4A1FA0' }}>Open <ExternalLink size={12} /></a>
       </div>
       <div className="text-sm">
         <div className="font-medium">1. Let the Training Center read this CRM</div>
