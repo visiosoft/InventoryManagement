@@ -135,9 +135,12 @@ function Ai({ me }: { me: Me }) {
   )
 }
 
+const PURPLEBOX_CRM = 'https://api.purplebox.ae/api/training-connector'
+
 function Connector({ me }: { me: Me }) {
   const saved = useSaved()
-  const [url, setUrl] = useState(me.org.connector.url)
+  // PurpleBox's own install: its CRM's connector address is filled in.
+  const [url, setUrl] = useState(me.org.connector.url || (/purplebox\.ae$/.test(window.location.hostname) ? PURPLEBOX_CRM : ''))
   const [token, setToken] = useState('')
   const [m, setM] = useState<{ ok: boolean; text: string } | null>(null)
   const save = useMutation({ mutationFn: () => api.put('/org/connector', { url, token: token || undefined, enabled: true }).then((r) => r.data), onSuccess: (d) => { setToken(''); setM({ ok: !/could not|no answer/.test(d.check), text: `Saved — ${d.check}.` }); saved() }, onError: (e) => setM({ ok: false, text: apiError(e) }) })
@@ -146,12 +149,13 @@ function Connector({ me }: { me: Me }) {
     <Section title="Connected system" sub="Your CRM, helpdesk or chatbot platform, so the trainer can pull conversations, read live prices and test your own AI. Your system implements four endpoints (see below) and gives you a token.">
       {me.org.connector.enabled && <div style={{ fontSize: 13, marginBottom: 12 }}>Status: <b style={{ color: /could not|no answer/.test(me.org.connector.lastCheck) ? '#B91C1C' : '#166534' }}>{me.org.connector.lastCheck || 'saved'}</b>{me.org.connector.lastCheckAt ? ` · checked ${when(me.org.connector.lastCheckAt)}` : ''}</div>}
       <div className="grid gap-4 md:grid-cols-2">
-        <Row label="Base address (https)"><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://api.example.com/training-connector" style={field} /></Row>
-        <Row label={me.org.connector.hasToken ? 'Token (leave blank to keep)' : 'Token'}><input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" style={field} /></Row>
+        <Row label="Base address (https)"><input name="connector-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://api.example.com/training-connector" autoComplete="off" style={field} /></Row>
+        <Row label={me.org.connector.hasToken ? 'Token (leave blank to keep)' : 'Token'}><input name="connector-token" type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="new-password" placeholder="Paste the token from your system" style={field} /></Row>
       </div>
       <div className="flex gap-2"><button type="button" style={btn(true)} disabled={!url || save.isPending} onClick={() => save.mutate()}>Save and test</button>
         {me.org.connector.enabled && <button type="button" style={btn(false, true)} onClick={() => remove.mutate()}>Disconnect</button>}</div>
       <Msg m={m} />
+      {url === PURPLEBOX_CRM && !me.org.connector.enabled && <div style={{ fontSize: 12.5, color: MUTED, marginTop: 10 }}>PurpleBox CRM: in the CRM open Settings → Integrations → AI Training Center → <b>Make a token</b>, copy it, paste it above, then Save and test.</div>}
       <pre style={{ fontSize: 11.5, background: '#14081F', color: '#E9E3FA', borderRadius: 10, padding: 12, marginTop: 16, overflowX: 'auto' }}>{`Authorization: Bearer <token>
 
 GET  {base}/health                   → { "ok": true, "name": "Your CRM" }
