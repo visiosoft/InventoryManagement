@@ -3,7 +3,7 @@
 // Loaded on every page (index + legal), before app.js, so window.TwoCapTrack exists for it.
 (function () {
   const CONFIG = {
-    GA4_ID: '',               // e.g. 'G-XXXXXXXXXX'   (GA4 > Admin > Data streams)
+    GA4_ID: 'G-MY03W4SZ55',   // e.g. 'G-XXXXXXXXXX'   (GA4 > Admin > Data streams)
     ADS_ID: '',               // e.g. 'AW-123456789'   (Google Ads > Goals > Conversions > Tag setup)
     ADS_DEMO_LABEL: ''        // e.g. 'AbCdEfGhIjK'    (the label of the "Book a demo" conversion action)
   };
@@ -92,14 +92,13 @@
   if (choice) return;
 
   function showBanner() {
-    const root = location.pathname.indexOf('/legal/') !== -1 ? '../' : '';
     const bar = document.createElement('div');
     bar.className = 'consent';
     bar.setAttribute('role', 'region');
     bar.setAttribute('aria-label', 'Cookie consent');
     bar.innerHTML =
       '<p>We use cookies to measure visits and the results of our ads. ' +
-      '<a href="' + root + 'legal/privacy-policy.html#cookies">Learn more</a></p>' +
+      '<a href="/legal/privacy-policy.html#cookies">Learn more</a></p>' +
       '<div class="consent__actions">' +
       '<button type="button" class="btn btn--outline" data-consent="denied">Decline</button>' +
       '<button type="button" class="btn btn--solid" data-consent="granted">Accept</button>' +
