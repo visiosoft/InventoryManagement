@@ -253,15 +253,44 @@ export function observerSystem(p) {
 }
 
 /** The conversation, lead and facts as the agent sees them. Pure. */
-export function turnPrompt({ context = [], message, lead = {}, answers = [], facts = '' }) {
+/**
+ * An approved scenario as a worked example an agent can learn from: the
+ * situation, the right action and the reply the business approved. Matched to
+ * a new message by the customer's words. Pure.
+ */
+export function exampleFrom(s) {
+   return {
+      id: String(s._id ?? s.id), question: String(s.message || ''), variations: [s.title, s.intent].filter(Boolean).map(String),
+      context: (s.context || []).slice(-2).map((m) => ({ from: m.from, text: String(m.text || '').slice(0, 300) })),
+      nba: (s.nba || [])[0] || '', reply: String(s.idealResponse || ''), escalate: Boolean(s.mustEscalate),
+   };
+}
+
+/** Worked examples for a prompt. Prices in them are examples only: live facts win. Pure. */
+export function examplesBlock(examples = [], actionLabel = (k) => k) {
+   if (!examples.length) return '';
+   return [
+      'APPROVED EXAMPLES — replies the business approved for situations like this one. Follow their approach, length, tone and next step, in words that fit this customer. Any price, date or availability in them is only an example: use the live facts.',
+      ...examples.map((e, i) => [
+         `Example ${i + 1}:`,
+         ...e.context.map((m) => `  ${m.from === 'agent' ? 'Agent' : 'Customer'}: ${m.text}`),
+         `  Customer: ${e.question}`,
+         `  Right action: ${actionLabel(e.nba) || 'reply'}${e.escalate ? ' (hand to a person)' : ''}`,
+         e.reply ? `  Approved reply: ${e.reply}` : '',
+      ].filter(Boolean).join('\n')),
+   ].join('\n\n');
+}
+
+export function turnPrompt({ context = [], message, lead = {}, answers = [], facts = '', examples = '' }) {
    const convo = context.map((m) => `${m.from === 'agent' ? 'Agent' : 'Customer'}: ${m.text}`).join('\n');
    return [
+      examples,
       answers.length ? `APPROVED ANSWERS:\n${answers.map((a) => `[${a.id}] Q: ${a.question}\nA: ${a.answer}`).join('\n\n')}` : 'APPROVED ANSWERS: none match.',
       `BUSINESS FACTS:\n${facts || '(none)'}`,
       `LEAD STATE BEFORE THIS MESSAGE: ${JSON.stringify(lead)}`,
       convo ? `CONVERSATION SO FAR:\n${asData(convo, 'conversation')}` : 'CONVERSATION SO FAR: (this is the first message)',
       `Customer's new message: ${asData(message)}`,
-   ].join('\n\n');
+   ].filter(Boolean).join('\n\n');
 }
 
 /** A model's turn made safe: only known states, actions, fields and media. Pure. */

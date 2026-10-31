@@ -1,4 +1,5 @@
-import { Message, TrainingSnapshot } from './models.js';
+import { Message, TrainingSnapshot, TrainingScenario } from './models.js';
+import { exampleFrom } from './core/playbook.js';
 import { llmFor, resolveProvider } from './providers.js';
 import { connectorClient } from './connector.js';
 import { knowledgeBlock, AUTHORITY } from './core/knowledge.js';
@@ -80,6 +81,8 @@ export function hostFor(org) {
       facts: () => factsFor(org),
       agent: agentFor(org),
       snapshotItems: async () => (org.activeSnapshot ? (await TrainingSnapshot.findOne({ org: org._id, version: org.activeSnapshot }).lean())?.items || [] : []),
+      // Approved scenarios teach the training bot at once (the sandbox and tests); they reach the business's own agent only when published.
+      examples: async () => (await TrainingScenario.find({ org: org._id, status: 'approved' }).select('message title intent context nba idealResponse mustEscalate').limit(2000).lean()).map(exampleFrom),
       modelName: async () => { const r = await resolveProvider(org); return `${r.provider}:${r.model}`; },
       // The connected system's agent, with the simulated conversation so far (sandbox and suite).
       connectedReply: async (body) => {

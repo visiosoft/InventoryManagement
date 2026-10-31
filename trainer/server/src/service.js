@@ -1,6 +1,7 @@
 import { extractTurns, dedupe, bucketOf, asData, DATA_RULE } from './core/text.js';
 import { clusterQuestions } from './core/cluster.js';
 import { SUGGEST_SYSTEM, suggestPrompt, variablesIn, findConflicts, buildSnapshot, rollbackTarget, render } from './core/knowledge.js';
+import { exampleFrom } from './core/playbook.js';
 import { deterministicChecks, JUDGE_SYSTEM, judgePrompt, cleanJudgement, summarize } from './core/evaluate.js';
 
 /**
@@ -202,15 +203,17 @@ export async function publish(r, org, { note = '', force = false } = {}, user) {
    const found = await conflicts(r);
    if (found.length && !force) return { error: `${found.length} possible conflict${found.length === 1 ? '' : 's'} between approved answers — resolve them, or publish anyway`, conflicts: found };
    const records = await r.knowledge.find({ status: { $in: ['approved', 'published'] } });
-   if (!records.length) return { error: 'Nothing is approved yet' };
+   // Approved scenarios go out with the answers, as worked examples.
+   const examples = r.scenarios ? (await r.scenarios.find({ status: 'approved' }, { limit: 2000 })).filter((s) => s.idealResponse).map(exampleFrom) : [];
+   if (!records.length && !examples.length) return { error: 'Nothing is approved yet' };
    const last = await r.snapshots.findOne({}, { sort: { version: -1 } });
    const version = (last?.version || 0) + 1;
-   const snap = buildSnapshot(records, version);
+   const snap = { ...buildSnapshot(records, version), examples };
    await r.snapshots.create({ ...snap, note: String(note).slice(0, 300), publishedBy: actorOf(user), conflicts: found });
    await r.knowledge.updateMany({ status: 'approved' }, { $set: { status: 'published' } });
    await setActive(org, version);
-   await audit(r, user, 'publish', version, { count: snap.count, conflicts: found.length });
-   return { ok: true, version, count: snap.count };
+   await audit(r, user, 'publish', version, { count: snap.count, examples: examples.length, conflicts: found.length });
+   return { ok: true, version, count: snap.count, examples: examples.length };
 }
 
 export async function rollback(r, org, toVersion, user) {

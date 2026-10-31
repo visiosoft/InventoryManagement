@@ -244,3 +244,25 @@ test('PurpleBox WhatsApp playbook: the full rules survive saving, and code catch
       assert.ok(!/\b(950|1,?300|2,?500)\b/.test(s.idealResponse), 'no hard-coded price in an ideal reply');
    }
 });
+
+test('a corrected reply teaches the training bot: it is in the next prompt, shown in the trace, but never used to grade itself', async () => {
+   const { exampleFrom } = await import('../src/core/playbook.js');
+   const taughtEx = exampleFrom({ _id: 's7', message: 'i am looking for storage', title: 'Looking for storage', nba: ['ask_discovery'], idealResponse: 'Sure — what are you looking to store?' });
+   const host = { ...fakeHost(), examples: async () => [taughtEx] };
+   const org = { name: 'PB', playbook: P };
+   const out = await sales.turn(host, org, { message: 'Hi, looking for storage' });
+   assert.match(host.calls.at(-1).user, /APPROVED EXAMPLES[\s\S]*what are you looking to store\?/);
+   assert.equal(out.trace.examples[0].id, 's7');
+   await sales.turn(host, org, { message: 'i am looking for storage', exclude: 's7' });
+   assert.doesNotMatch(host.calls.at(-1).user, /APPROVED EXAMPLES/, 'a scenario under test is not its own example');
+});
+
+test('publishing sends approved scenarios out as examples, even with no approved answers', async () => {
+   const svc = await import('../src/service.js');
+   const rows = { knowledge: [], snapshots: [], scenarios: [{ _id: 's1', status: 'approved', message: 'How much?', title: 'Price', nba: ['ask_one_question'], idealResponse: 'Sure — what are you storing?' }, { _id: 's2', status: 'approved', message: 'x', nba: [], idealResponse: '' }] };
+   const coll = (k) => ({ find: async () => rows[k], findOne: async () => null, create: async (d) => { rows[k].push(d); return d; }, updateMany: async () => ({}) });
+   const r = { knowledge: coll('knowledge'), snapshots: coll('snapshots'), scenarios: coll('scenarios'), audit: { create: async () => ({}) } };
+   const out = await svc.publish(r, { _id: 'o' }, {}, { id: 'u' });
+   assert.equal(out.examples, 1, 'only scenarios with an approved reply');
+   assert.equal(rows.snapshots[0].examples[0].reply, 'Sure — what are you storing?');
+});

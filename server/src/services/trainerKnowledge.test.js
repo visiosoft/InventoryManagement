@@ -53,3 +53,13 @@ test('one-click connect finds the link secret in the Training Center .env on thi
    assert.equal(await linkToken(async () => { throw new Error('missing'); }), '');
    if (saved) process.env.TRAINER_LINK_TOKEN = saved;
 });
+
+test('published worked examples reach Aisha as approved replies, prices marked as examples only', async () => {
+   const { examplesText } = await import('./trainerKnowledge.js');
+   const block = blockFromMatches([], '', [{ customer: 'How much?', reply: 'Sure — what are you storing?' }, { customer: 'I want a refund', escalate: true }]);
+   assert.match(block, /^APPROVED EXAMPLES/);
+   assert.match(block, /Approved reply: Sure — what are you storing\?/);
+   assert.match(block, /hand to a person/);
+   assert.match(examplesText([{ customer: 'x', reply: 'y' }]), /only an example/);
+   assert.equal(examplesText([{ customer: '', reply: 'y' }]), '');
+});

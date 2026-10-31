@@ -105,7 +105,7 @@ export default function Sandbox() {
                 {l.id && (
                   <div className="flex flex-wrap gap-1.5" style={{ marginTop: 6 }}>
                     {!l.grade && <button type="button" style={{ ...btn(), height: 28 }} disabled={score.isPending} onClick={() => score.mutate(i)}><Gauge size={13} /> Score</button>}
-                    {l.saved ? <span style={{ fontSize: 12, color: '#166534' }}>Saved as a scenario · <Link to="/scenarios" style={{ color: ACCENT }}>open</Link></span> : me.permissions.includes('review') && <>
+                    {l.saved ? <span style={{ fontSize: 12, color: '#166534' }}>Saved — the training bot uses it from the next message. <Link to="/answers" style={{ color: ACCENT }}>Publish</Link> to send it to your agent.</span> : me.permissions.includes('review') && <>
                       <button type="button" style={{ ...btn(), height: 28 }} onClick={() => setEditing(editing === i ? null : i)}><PenLine size={13} /> Correct</button>
                       <Save i={i} line={l} lines={lines} setLines={setLines} p={pb.data} corrected={false} />
                     </>}
@@ -170,10 +170,11 @@ function Trace({ out }: { out?: Turn }) {
       <div className="flex items-center gap-1.5" style={caps}><BookOpen size={12} /> Knowledge trace</div>
       {!out ? <div style={{ fontSize: 12.5, color: MUTED, marginTop: 6 }}>What the agent relied on shows here.</div> : (
         <div style={{ fontSize: 12.5, marginTop: 6 }} className="space-y-2">
+          {out.trace.examples?.map((e) => <div key={e.id}><b style={{ color: INK }}>Approved example</b> <span style={{ color: MUTED }}>({Math.round(e.score * 100)}% match)</span><div style={{ color: MUTED }}>“{e.question}”</div></div>)}
           {out.trace.answers.map((a) => <div key={a.id}><b style={{ color: INK }}>Approved answer</b> <span style={{ color: MUTED }}>({Math.round(a.score * 100)}% match)</span><div style={{ color: MUTED }}>{a.question}</div></div>)}
           {out.trace.facts.map((f, i) => <div key={i} style={{ color: INK }}>“{f}”</div>)}
           {out.trace.tools.map((t) => <div key={t} style={{ color: MUTED }}>Tool used: {t}</div>)}
-          {!out.trace.answers.length && !out.trace.facts.length && !out.trace.tools.length && <div style={{ color: '#B45309' }}>No approved answer or fact was cited.</div>}
+          {!out.trace.answers.length && !out.trace.examples?.length && !out.trace.facts.length && !out.trace.tools.length && <div style={{ color: '#B45309' }}>No approved answer or fact was cited.</div>}
           <div style={{ color: MUTED, fontSize: 11.5, paddingTop: 6, borderTop: `1px solid ${LINE}` }}>{out.agent} · {out.model} · playbook {out.promptVersion} · knowledge v{out.knowledgeVersion} · {(out.latencyMs / 1000).toFixed(1)}s</div>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { retrieve, render } from './core/knowledge.js';
-import { playbookOf, promptVersion, agentSystem, observerSystem, turnPrompt, cleanTurn, scoreSystem, scorePrompt, codeChecks, grade, summarizeRun, regressions, gateResults, allPassed } from './core/playbook.js';
+import { playbookOf, promptVersion, exampleFrom, examplesBlock, agentSystem, observerSystem, turnPrompt, cleanTurn, scoreSystem, scorePrompt, codeChecks, grade, summarizeRun, regressions, gateResults, allPassed } from './core/playbook.js';
 import { asData } from './core/text.js';
 import { audit } from './service.js';
 
@@ -24,6 +24,16 @@ async function matches(host, message, values) {
    return retrieve(message, items, { limit: 4, min: 0.2 }).map(({ r, score }) => ({ id: r.id, question: r.question, answer: render(r.answer, values).text, score: Math.round(score * 100) / 100, escalate: Boolean(r.escalate) }));
 }
 
+/**
+ * Approved scenarios that match the message: what the training bot has been
+ * taught for situations like this. `exclude` keeps a scenario from being its
+ * own example when it is the one being tested.
+ */
+async function taught(host, message, exclude) {
+   const all = ((await host.examples?.()) || []).filter((e) => e.reply && e.id !== String(exclude || ''));
+   return retrieve(message, all, { limit: 3, min: 0.25 }).map(({ r, score }) => ({ ...r, score: Math.round(score * 100) / 100 }));
+}
+
 /** Which agent answers: 'connected' only when a system is connected, else the hosted playbook agent. */
 export function agentChoice(org, wanted) {
    return wanted === 'connected' && org.connector?.enabled ? 'connected' : 'hosted';
@@ -40,11 +50,12 @@ export function normLead(lead) {
    return out;
 }
 
-export async function turn(host, org, { context = [], message, lead: given = {}, agent }) {
+export async function turn(host, org, { context = [], message, lead: given = {}, agent, exclude }) {
    const p = playbookOf(org);
    const lead = normLead(given);
    const facts = await host.facts().catch(() => ({ text: '', values: {} }));
    const answers = await matches(host, message, facts.values);
+   const examples = await taught(host, message, exclude);
    const who = agentChoice(org, agent);
    const t0 = Date.now();
    let out; let tools = [];
@@ -54,7 +65,7 @@ export async function turn(host, org, { context = [], message, lead: given = {},
       const seen = await host.llmFor('observe').json({ system: observerSystem(p), user: `${turnPrompt({ context, message, lead, facts: facts.text })}\n\nAgent's reply: ${asData(r.reply, 'agent_reply')}`, maxTokens: 1200 });
       out = cleanTurn({ ...seen, reply: r.reply, needsHuman: r.needsHuman, factsUsed: [] }, p);
    } else {
-      const raw = await host.llmFor('agent').json({ system: agentSystem(org, p), user: turnPrompt({ context, message, lead, answers, facts: facts.text }), maxTokens: 2500 });
+      const raw = await host.llmFor('agent').json({ system: agentSystem(org, p), user: turnPrompt({ context, message, lead, answers, facts: facts.text, examples: examplesBlock(examples, (k) => p.actions.find((a) => a.key === k)?.label || k) }), maxTokens: 2500 });
       out = cleanTurn(raw, p);
    }
    // The lead state carries forward: what the agent did not mention stays as it was.
@@ -62,7 +73,7 @@ export async function turn(host, org, { context = [], message, lead: given = {},
    return {
       ...out, lead: merged, latencyMs: Date.now() - t0, agent: who === 'connected' ? 'Connected agent' : 'Playbook agent',
       model: who === 'connected' ? 'connected' : await host.modelName(), promptVersion: promptVersion(p), knowledgeVersion: org.activeSnapshot || 0,
-      trace: { answers, facts: out.factsUsed, tools, media: out.media.map((k) => p.media.find((m) => m.key === k)).filter(Boolean) },
+      trace: { answers, examples: who === 'connected' ? [] : examples.map((e) => ({ id: e.id, question: e.question, reply: e.reply, score: e.score })), facts: out.factsUsed, tools, media: out.media.map((k) => p.media.find((m) => m.key === k)).filter(Boolean) },
    };
 }
 
@@ -98,7 +109,7 @@ export async function startSuite(r, org, host, { scope = 'core', agent, label = 
       for (const s of list) {
          const c = { scenario: String(s._id), title: s.title, group: s.group, core: s.core, factual: s.factual, mustEscalate: s.mustEscalate, message: s.message, context: s.context, expected: s.nba, ideal: s.idealResponse };
          try {
-            const out = await turn(host, org, { context: s.context, message: s.message, lead: s.leadBefore, agent: who });
+            const out = await turn(host, org, { context: s.context, message: s.message, lead: s.leadBefore, agent: who, exclude: s._id });
             c.out = { reply: out.reply, nba: out.nba, state: out.state, media: out.media, needsHuman: out.needsHuman, lead: out.lead, latencyMs: out.latencyMs, trace: out.trace, reason: out.reason };
             c.grade = await score(host, org, { context: s.context, message: s.message, lead: s.leadBefore, scenario: s }, out);
          } catch (e) { c.error = String(e.message).slice(0, 200); }
@@ -159,6 +170,6 @@ export async function generate(r, org, host, { group, count = 8 }, user) {
 
 /** The playbook agent's reply as a starting point for the ideal response. */
 export async function draftIdeal(host, org, s) {
-   const out = await turn(host, org, { context: s.context, message: s.message, lead: s.leadBefore, agent: 'hosted' });
+   const out = await turn(host, org, { context: s.context, message: s.message, lead: s.leadBefore, agent: 'hosted', exclude: s._id });
    return { idealResponse: out.reply, nba: out.nba, media: out.media, trace: out.trace };
 }

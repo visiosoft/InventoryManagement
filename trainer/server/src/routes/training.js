@@ -220,7 +220,15 @@ router.post('/knowledge/:id/archive', need('approve'), wrap(async (req, res) => 
 router.get('/conflicts', need('read'), wrap(async (req, res) => res.json({ conflicts: await svc.conflicts(req.r) })));
 router.get('/variables', need('read'), wrap(async (req, res) => res.json({ values: (await factsFor(req.org).catch(() => ({ values: {} }))).values })));
 
-router.get('/snapshots', need('read'), wrap(async (req, res) => res.json({ active: req.org.activeSnapshot, snapshots: await req.r.snapshots.find({}, { sort: { version: -1 }, limit: 50, select: 'version count note publishedBy createdAt conflicts' }) })));
+router.get('/snapshots', need('read'), wrap(async (req, res) => {
+   const [snapshots, examples, live] = await Promise.all([
+      req.r.snapshots.find({}, { sort: { version: -1 }, limit: 50, select: 'version count note publishedBy createdAt conflicts' }),
+      req.r.scenarios.count({ status: 'approved', idealResponse: { $nin: ['', null] } }),
+      req.org.activeSnapshot ? req.r.snapshots.findOne({ version: req.org.activeSnapshot }) : null,
+   ]);
+   // Approved scenarios (sandbox corrections included) go out with the next publish as worked examples.
+   res.json({ active: req.org.activeSnapshot, snapshots, examples, liveExamples: live?.examples?.length || 0 });
+}));
 router.post('/publish', need('publish'), wrap(async (req, res) => {
    const out = await svc.publish(req.r, req.org, { note: req.body?.note, force: Boolean(req.body?.force) }, req.user);
    res.status(out.error ? 409 : 200).json(out);

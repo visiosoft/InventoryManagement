@@ -19,13 +19,13 @@ export default function Knowledge({ me }: { me: Me }) {
   const [note, setNote] = useState('')
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const recs = useQuery<{ records: KRecord[] }>({ queryKey: ['training-knowledge'], queryFn: () => api.get('/training/knowledge').then((r) => r.data) })
-  const snaps = useQuery<{ active: number; snapshots: Snap[] }>({ queryKey: ['training-snapshots'], queryFn: () => api.get('/training/snapshots').then((r) => r.data) })
+  const snaps = useQuery<{ active: number; snapshots: Snap[]; examples: number; liveExamples: number }>({ queryKey: ['training-snapshots'], queryFn: () => api.get('/training/snapshots').then((r) => r.data) })
   const conf = useQuery<{ conflicts: Conflict[] }>({ queryKey: ['training-conflicts'], queryFn: () => api.get('/training/conflicts').then((r) => r.data) })
   const vars = useQuery<{ values: Record<string, string> }>({ queryKey: ['training-variables'], queryFn: () => api.get('/training/variables').then((r) => r.data) })
   const refresh = () => ['training-knowledge', 'training-snapshots', 'training-conflicts', 'training-overview'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }))
   const publish = useMutation({
     mutationFn: (force: boolean) => api.post('/training/publish', { note, force }).then((r) => r.data),
-    onSuccess: (d) => { setMsg({ ok: true, text: `Published version ${d.version}: ${d.count} answers are live for the agents.` }); setNote(''); refresh() },
+    onSuccess: (d) => { setMsg({ ok: true, text: `Published version ${d.version}: ${d.count} answers and ${d.examples ?? 0} approved examples are live for the agents.` }); setNote(''); refresh() },
     onError: (e) => setMsg({ ok: false, text: apiError(e) }),
   })
   const rollback = useMutation({
@@ -67,6 +67,7 @@ export default function Knowledge({ me }: { me: Me }) {
           <div style={caps}>Live for the agents</div>
           <div style={{ fontFamily: HEAD, fontWeight: 800, fontSize: 26, color: INK }}>{snaps.data?.active ? `Version ${snaps.data.active}` : 'Nothing published'}</div>
           <div style={{ fontSize: 12.5, color: MUTED }}>{pending} approved answer{pending === 1 ? '' : 's'} waiting to be published</div>
+          <div style={{ fontSize: 12.5, color: MUTED }}>{snaps.data?.examples ?? 0} approved example{snaps.data?.examples === 1 ? '' : 's'} from Sandbox and Scenarios · {snaps.data?.liveExamples ?? 0} live</div>
           {conflicts.length > 0 && (
             <div style={{ background: '#FFF7E6', border: '1px solid #F5D896', borderRadius: 10, padding: 10, marginTop: 10, fontSize: 12.5, color: '#8A5A00' }}>
               <div className="flex items-center gap-1" style={{ fontWeight: 700 }}><AlertTriangle size={13} /> {conflicts.length} possible conflict{conflicts.length === 1 ? '' : 's'}</div>
@@ -75,9 +76,9 @@ export default function Knowledge({ me }: { me: Me }) {
           )}
           {canPublish && (<>
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="What changed (optional)" aria-label="Publish note" style={{ ...field, marginTop: 10 }} />
-            <button type="button" style={{ ...btn(true), marginTop: 8, width: '100%', justifyContent: 'center' }} disabled={publish.isPending || !pending}
+            <button type="button" style={{ ...btn(true), marginTop: 8, width: '100%', justifyContent: 'center' }} disabled={publish.isPending || (!pending && (snaps.data?.examples ?? 0) === (snaps.data?.liveExamples ?? 0))}
               onClick={() => { if (!conflicts.length || window.confirm(`There ${conflicts.length === 1 ? 'is 1 possible conflict' : `are ${conflicts.length} possible conflicts`}. Publish anyway?`)) publish.mutate(conflicts.length > 0) }}>
-              <Rocket size={14} /> Publish {pending} answer{pending === 1 ? '' : 's'}
+              <Rocket size={14} /> Publish to the agents
             </button>
           </>)}
           {msg && <div style={{ fontSize: 12.5, marginTop: 8, color: msg.ok ? '#166534' : '#B91C1C' }}>{msg.text}</div>}

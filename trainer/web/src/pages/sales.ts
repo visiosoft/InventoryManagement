@@ -25,7 +25,7 @@ export type Lead = Record<string, { value: string; confidence: number }>
 export type Turn = {
   state: string; nba: string; lead: Lead; reply: string; media: string[]; actions: { type: string; detail: string }[]
   needsHuman: boolean; reason: string; latencyMs: number; agent: string; model: string; promptVersion: string; knowledgeVersion: number
-  trace: { answers: { id: string; question: string; answer: string; score: number }[]; facts: string[]; tools: string[]; media: { key: string; label: string }[] }
+  trace: { answers: { id: string; question: string; answer: string; score: number }[]; examples?: { id: string; question: string; reply: string; score: number }[]; facts: string[]; tools: string[]; media: { key: string; label: string }[] }
 }
 export type Grade = {
   scores: Record<string, number>; score: number | null; autoFails: string[]; nbaOk: boolean; escalationOk: boolean; factualOk: boolean

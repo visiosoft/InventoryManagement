@@ -120,7 +120,7 @@ const knowledgeSchema = new Schema({
 }, { timestamps: true });
 
 const snapshotSchema = new Schema({
-   org, version: { type: Number, required: true }, items: { type: [Schema.Types.Mixed], default: [] }, count: Number,
+   org, version: { type: Number, required: true }, items: { type: [Schema.Types.Mixed], default: [] }, examples: { type: [Schema.Types.Mixed], default: [] }, count: Number,
    note: String, publishedBy: by, conflicts: { type: [Schema.Types.Mixed], default: [] },
 }, { timestamps: true });
 snapshotSchema.index({ org: 1, version: 1 }, { unique: true });

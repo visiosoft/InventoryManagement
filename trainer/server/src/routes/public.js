@@ -42,7 +42,8 @@ v1.use(async (req, res, next) => {
    } catch (e) { next(e); }
 });
 
-const active = async (req) => (req.org.activeSnapshot ? (await req.r.snapshots.findOne({ version: req.org.activeSnapshot }))?.items || [] : []);
+const snapshot = async (req) => (req.org.activeSnapshot ? req.r.snapshots.findOne({ version: req.org.activeSnapshot }) : null);
+const active = async (req) => (await snapshot(req))?.items || [];
 const values = async (req) => (await factsFor(req.org).catch(() => ({ values: {} }))).values;
 
 v1.get('/knowledge', async (req, res, next) => {
@@ -55,8 +56,11 @@ v1.get('/knowledge', async (req, res, next) => {
 v1.post('/match', async (req, res, next) => {
    try {
       const message = String(req.body?.message || '').slice(0, 2000);
-      const [items, vals] = await Promise.all([active(req), values(req)]);
-      res.json({ version: req.org.activeSnapshot, ...shared(req.org), matches: retrieve(message, items, { limit: Math.min(Number(req.body?.limit) || 3, 10) }).map(({ r, score }) => ({ id: r.id, version: r.version, score, question: r.question, answer: render(r.answer, vals).text, followUp: r.followUp || '', escalate: r.escalate, escalationNote: r.escalationNote || '' })) });
+      const [snap, vals] = await Promise.all([snapshot(req), values(req)]);
+      const items = snap?.items || [];
+      // Published worked examples: how the business wants situations like this handled.
+      const examples = retrieve(message, snap?.examples || [], { limit: 2, min: 0.25 }).map(({ r, score }) => ({ id: r.id, score, context: r.context, customer: r.question, action: r.nba, reply: r.reply, escalate: r.escalate }));
+      res.json({ version: req.org.activeSnapshot, ...shared(req.org), examples, matches: retrieve(message, items, { limit: Math.min(Number(req.body?.limit) || 3, 10) }).map(({ r, score }) => ({ id: r.id, version: r.version, score, question: r.question, answer: render(r.answer, vals).text, followUp: r.followUp || '', escalate: r.escalate, escalationNote: r.escalationNote || '' })) });
    } catch (e) { next(e); }
 });
 
