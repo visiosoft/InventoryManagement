@@ -219,3 +219,28 @@ test('one-click link: only from this machine, not through a proxy, with the righ
    assert.equal(pickOrg(orgs, 'purplebox').name, 'PurpleBox Storage', 'the oldest match');
    assert.equal(pickOrg([orgs[0]], 'purplebox'), null);
 });
+
+test('PurpleBox WhatsApp playbook: the full rules survive saving, and code catches "monthly", price ranges, false holds and card requests', async () => {
+   const { purpleboxSeeds } = await import('../src/core/purplebox.js');
+   const p = cleanPlaybook(TEMPLATES.purplebox_whatsapp);
+   assert.ok(p.contract.length > 6000 && /20% off the FIRST four-week cycle only/.test(p.contract), 'the whole contract is kept');
+   assert.ok(!/AED (300|950|1,300)\b/.test(p.contract), 'no price table: prices come from the CRM');
+   assert.equal(p.codeRules.length, 4);
+   const fails = (reply) => codeChecks({ out: { reply, needsHuman: false }, message: '', facts: `50 sq ft: AED 975 per 4 weeks\n${p.contract}`, rules: p.codeRules }).autoFails;
+   assert.deepEqual(fails('A 50 sq ft unit is AED 975 monthly.'), ['called_monthly']);
+   assert.deepEqual(fails('It is around AED 975 per four weeks.'), ['price_range']);
+   assert.ok(fails('Prices are AED 625 – AED 975.').includes('price_range'));
+   assert.deepEqual(fails("Great, I've reserved it for you."), ['unconfirmed_action']);
+   assert.deepEqual(fails('Please send your card number and CVV to confirm.'), ['asked_card_details']);
+   for (const ok of ['A 50 sq ft unit is AED 975 per four weeks, before VAT.', "That's about 43 sq ft, so a 50 sq ft unit may work.", 'We bill every four weeks rather than by calendar month.', 'From 5 November works. Padlock is AED 80 before VAT.', "Please don't send card details here. The team will provide the secure payment process."]) {
+      assert.deepEqual(fails(ok), [], ok);
+   }
+   const actions = new Set(p.actions.map((a) => a.key));
+   const seeds = purpleboxSeeds();
+   assert.ok(seeds.length >= 40);
+   for (const s of seeds) {
+      assert.ok(s.nba.every((k) => actions.has(k)) && p.groups.some((g) => g.key === s.group), s.title);
+      if (s.idealResponse) assert.deepEqual(fails(s.idealResponse), [], `the rules' own example passes: ${s.title}`);
+      assert.ok(!/\b(950|1,?300|2,?500)\b/.test(s.idealResponse), 'no hard-coded price in an ideal reply');
+   }
+});

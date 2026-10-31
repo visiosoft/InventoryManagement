@@ -71,7 +71,8 @@ export async function score(host, org, { context = [], message, lead = {}, scena
    const facts = await host.facts().catch(() => ({ text: '', values: {} }));
    const answers = out.trace?.answers || [];
    const factText = [facts.text, ...answers.map((a) => `Approved answer: ${a.answer}`)].filter(Boolean).join('\n');
-   const code = codeChecks({ out, message, context, facts: factText, answers, mustEscalate: scenario.mustEscalate, maxLength: org.maxReplyLength });
+   // The playbook's own rules (padlock, VAT, the upfront discount…) are approved facts too.
+   const code = codeChecks({ out, message, context, facts: `${factText}\n${p.contract}`, answers, mustEscalate: scenario.mustEscalate, maxLength: org.maxReplyLength, rules: p.codeRules || [] });
    const judge = await host.llmFor('judge').json({ system: scoreSystem(p), user: scorePrompt({ context, message, lead, facts: factText, out, expected: { nba: scenario.nba, ideal: scenario.idealResponse, mustEscalate: scenario.mustEscalate } }), maxTokens: 900 });
    return { ...grade({ p, out, judge, code, scenario }), judgedBy: 'ai' };
 }

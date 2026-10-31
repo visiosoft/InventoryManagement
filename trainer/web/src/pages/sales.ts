@@ -11,12 +11,13 @@ export type Playbook = {
   media: (Item & { tags: string[]; url?: string })[]
   groups: (Item & { min: number })[]
   gates: Record<'corePass' | 'factual' | 'autoFails' | 'avgScore' | 'blind' | 'completion' | 'escalation' | 'maxDrop' | 'blindSample', number>
+  codeRules?: (Item & { pattern: string })[]
   passMark: number; shareContract: boolean
 }
 export type Stage = { key: string; label: string; body: string }
 export type PlaybookResp = {
   playbook: Playbook; custom: boolean; promptVersion: string
-  templates: { key: string; name: string; goal: string }[]
+  templates: { key: string; name: string; goal: string; starters: number }[]
   stages: Stage[]; rollout: { stage: string; intents: string[]; note: string; changedBy?: { name: string }; at?: string }
 }
 export type Msg = { from: 'customer' | 'agent'; text: string }

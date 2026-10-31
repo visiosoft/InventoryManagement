@@ -4,6 +4,7 @@ import * as M from '../models.js';
 import { can } from '../core/knowledge.js';
 import { TEMPLATES, STAGES, playbookOf, cleanPlaybook, promptVersion, canMoveTo } from '../core/playbook.js';
 import { storageSeeds } from '../core/seeds.js';
+import { purpleboxSeeds } from '../core/purplebox.js';
 import { redact } from '../core/text.js';
 import { hostFor } from '../host.js';
 import * as sales from '../sales.js';
@@ -26,7 +27,7 @@ router.get('/playbook', need('read'), (req, res) => {
    const p = playbookOf(req.org);
    res.json({
       playbook: p, custom: Boolean(req.org.playbook?.template), promptVersion: promptVersion(p),
-      templates: Object.values(TEMPLATES).map((t) => ({ key: t.template, name: t.name, goal: t.goal })),
+      templates: Object.values(TEMPLATES).map((t) => ({ key: t.template, name: t.name, goal: t.goal, starters: SEEDS[t.template]?.().length || 0 })),
       stages: STAGES, rollout: { stage: req.org.rollout?.stage || 'sandbox', intents: req.org.rollout?.intents || [], note: req.org.rollout?.note || '', changedBy: req.org.rollout?.changedBy, at: req.org.rollout?.at },
    });
 });
@@ -46,14 +47,17 @@ router.post('/playbook/template', need('manage'), wrap(async (req, res) => {
    const p = cleanPlaybook(t);
    await M.Org.updateOne({ _id: req.org._id }, { $set: { playbook: p } });
    let seeded = 0;
-   if (req.body?.seed && t.template === 'self_storage_sales') seeded = await seed(req);
+   if (req.body?.seed && SEEDS[t.template]) seeded = await seed(req, t.template);
    await audit(req.r, req.user, 'playbook.template', t.template, { seeded });
    res.json({ playbook: p, seeded });
 }));
 
-async function seed(req) {
+const SEEDS = { self_storage_sales: storageSeeds, purplebox_whatsapp: purpleboxSeeds };
+
+async function seed(req, template = playbookOf(req.org).template) {
+   if (!SEEDS[template]) return 0;
    const have = new Set((await req.r.scenarios.find({ source: 'seed' }, { select: 'title', limit: 1000 })).map((s) => s.title));
-   const docs = storageSeeds().filter((s) => !have.has(s.title));
+   const docs = SEEDS[template]().filter((s) => !have.has(s.title));
    if (docs.length) await req.r.scenarios.insertMany(docs);
    return docs.length;
 }

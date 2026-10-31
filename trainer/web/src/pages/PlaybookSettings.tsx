@@ -74,7 +74,7 @@ function Editor({ me, data }: { me: Me; data: PlaybookResp }) {
             <div key={t.key} style={{ border: `1px solid ${LINE}`, borderRadius: 14, padding: 14 }}>
               <div style={{ fontWeight: 700, color: INK }}>{t.name}</div>
               <div style={{ fontSize: 12.5, color: MUTED, margin: '4px 0 10px' }}>{t.goal}</div>
-              {t.key === 'self_storage_sales' && <label className="flex items-center gap-1.5" style={{ fontSize: 12.5, color: INK, marginBottom: 8 }}><input type="checkbox" checked={seed} onChange={(e) => setSeed(e.target.checked)} /> Add 74 starter scenarios as drafts</label>}
+              {t.starters > 0 && <label className="flex items-center gap-1.5" style={{ fontSize: 12.5, color: INK, marginBottom: 8 }}><input type="checkbox" checked={seed} onChange={(e) => setSeed(e.target.checked)} /> Add {t.starters} starter scenarios as drafts</label>}
               <button type="button" style={btn()} disabled={use.isPending} onClick={() => { if (!data.custom || window.confirm('Replace the current playbook with this template?')) use.mutate(t.key) }}>Use this</button>
             </div>
           ))}

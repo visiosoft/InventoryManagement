@@ -40,7 +40,7 @@ export default function Scenarios() {
     <div>
       <PageTitle title="Scenarios" sub={<>The situations your agent must get right. Approved ones are retested on every change. <b style={{ color: INK }}>{totalApproved}</b> approved of the <b style={{ color: INK }}>{target}</b> the matrix asks for.</>} action={
         <div className="flex flex-wrap gap-2">
-          {p?.template === 'self_storage_sales' && me.permissions.includes('manage') && <button type="button" style={btn()} disabled={seed.isPending} onClick={() => seed.mutate()}><Sparkles size={14} /> Add starter scenarios</button>}
+          {(pb.data?.templates.find((t) => t.key === p?.template)?.starters ?? 0) > 0 && me.permissions.includes('manage') && <button type="button" style={btn()} disabled={seed.isPending} onClick={() => seed.mutate()}><Sparkles size={14} /> Add starter scenarios</button>}
           {me.permissions.includes('review') && <button type="button" style={btn(true)} disabled={add.isPending} onClick={() => add.mutate()}><Plus size={14} /> New scenario</button>}
         </div>
       } />

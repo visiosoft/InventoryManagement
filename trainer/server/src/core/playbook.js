@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { asData, DATA_RULE } from './text.js';
 import { AUTHORITY } from './knowledge.js';
+import { PURPLEBOX_WHATSAPP } from './purplebox.js';
 
 /**
  * Sales playbooks: how an organisation wants its agent to sell, and how a
@@ -160,7 +161,7 @@ const SUPPORT = {
    shareContract: false,
 };
 
-export const TEMPLATES = { self_storage_sales: STORAGE, customer_service: SUPPORT };
+export const TEMPLATES = { purplebox_whatsapp: PURPLEBOX_WHATSAPP, self_storage_sales: STORAGE, customer_service: SUPPORT };
 
 /** The playbook an organisation uses: its own, else the general template. Pure. */
 export const playbookOf = (org) => (org?.playbook?.template ? org.playbook : SUPPORT);
@@ -170,6 +171,7 @@ export const playbookOf = (org) => (org?.playbook?.template ? org.playbook : SUP
 const KEY = /^[a-z][a-z0-9_]{0,40}$/;
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
 const list = (arr, max, map) => (Array.isArray(arr) ? arr : []).map(map).filter((x) => x && KEY.test(x.key)).filter((x, i, a) => a.findIndex((y) => y.key === x.key) === i).slice(0, max);
+const validPattern = (s) => { try { new RegExp(s, 'i'); return s; } catch { return ''; } };
 const num = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : d);
 
 /** A playbook as saved: known fields only, sizes capped, keys valid. Throws on an unusable one. Pure. */
@@ -180,7 +182,7 @@ export function cleanPlaybook(p) {
       template: base.template,
       name: str(p?.name || base.name, 80),
       goal: str(p?.goal ?? base.goal, 600),
-      contract: str(p?.contract ?? base.contract, 6000),
+      contract: str(p?.contract ?? base.contract, 20000),
       states: list(p?.states ?? base.states, 30, (s) => ({ key: str(s?.key, 41), label: str(s?.label, 60), objective: str(s?.objective, 200) })),
       actions: list(p?.actions ?? base.actions, 30, (a) => ({ key: str(a?.key, 41), label: str(a?.label, 60), when: str(a?.when, 200), outcome: ['visit', 'booking', 'follow_up', 'escalation'].includes(a?.outcome) ? a.outcome : '' })),
       fields: list(p?.fields ?? base.fields, 30, (f) => ({ key: str(f?.key, 41), label: str(f?.label, 60), hint: str(f?.hint, 120) })),
@@ -193,6 +195,8 @@ export function cleanPlaybook(p) {
          avgScore: num(g.avgScore, 0, 100, base.gates.avgScore), blind: num(g.blind, 0, 100, base.gates.blind), completion: num(g.completion, 0, 100, base.gates.completion),
          escalation: num(g.escalation, 0, 100, base.gates.escalation), maxDrop: num(g.maxDrop, 0, 100, base.gates.maxDrop), blindSample: num(g.blindSample, 1, 1000, base.gates.blindSample),
       },
+      // Patterns code checks every reply for: a match is that automatic fail. Invalid patterns are dropped.
+      codeRules: list(p?.codeRules ?? base.codeRules ?? [], 20, (r) => ({ key: str(r?.key, 41), label: str(r?.label, 80), pattern: validPattern(str(r?.pattern, 400)) })).filter((r) => r.pattern),
       passMark: num(p?.passMark, 0, 100, base.passMark),
       shareContract: Boolean(p?.shareContract),
    };
@@ -335,17 +339,18 @@ const DISCOUNT = /\b(discount|% ?off|percent off|special (price|rate|offer)|free
  *  - a discount or promotion when the facts list none → unauthorized_discount
  *  - a case that must go to a person and did not → no_escalation
  */
-export function codeChecks({ out, message, context = [], facts = '', answers = [], mustEscalate = false, maxLength = 700 }) {
+export function codeChecks({ out, message, context = [], facts = '', answers = [], mustEscalate = false, maxLength = 700, rules = [] }) {
    const known = new Set([...figures(facts), ...figures(message), ...answers.flatMap((a) => [...figures(a.answer)]), ...context.flatMap((m) => [...figures(m.text)])]);
    const unsupported = [...figures(out.reply)].filter((n) => !known.has(n));
    const fails = [];
    if (unsupported.length) fails.push('invented_price');
    if (DISCOUNT.test(out.reply) && !DISCOUNT.test(facts) && !answers.some((a) => DISCOUNT.test(a.answer))) fails.push('unauthorized_discount');
    if (mustEscalate && !out.needsHuman) fails.push('no_escalation');
+   for (const r of rules) if (new RegExp(r.pattern, 'i').test(out.reply) && !fails.includes(r.key)) fails.push(r.key);
    return { autoFails: fails, unsupportedFigures: unsupported, tooLong: out.reply.length > maxLength };
 }
 
-const FACTUAL = new Set(['invented_price', 'fabricated_promotion', 'false_claim', 'unauthorized_discount']);
+const FACTUAL = new Set(['invented_price', 'fabricated_promotion', 'false_claim', 'unauthorized_discount', 'price_range', 'called_monthly', 'unconfirmed_action']);
 
 /**
  * One reply's grade. Pass: no automatic fail, weighted score at or above the
