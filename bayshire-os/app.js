@@ -1,5 +1,5 @@
 (function () {
-  const D = BayshireData;
+  const D = TwoCapData;
   const $ = sel => document.querySelector(sel);
   const $$ = sel => Array.from(document.querySelectorAll(sel));
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -41,11 +41,11 @@
   function isDark() { return document.documentElement.dataset.theme === 'dark'; }
   function setTheme(dark) {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-    try { localStorage.setItem('bayshire-theme', dark ? 'dark' : 'light'); } catch (e) {}
+    try { localStorage.setItem('twocap-theme', dark ? 'dark' : 'light'); } catch (e) {}
     syncThemeToggle();
-    if (window.__bayshireScene) window.__bayshireScene.applyTheme();
-    if (window.__bayshireUnitsScene) window.__bayshireUnitsScene.applyTheme();
-    if (window.__bayshireAmbientScene) window.__bayshireAmbientScene.applyTheme();
+    if (window.__twocapScene) window.__twocapScene.applyTheme();
+    if (window.__twocapUnitsScene) window.__twocapUnitsScene.applyTheme();
+    if (window.__twocapAmbientScene) window.__twocapAmbientScene.applyTheme();
   }
   // aria-pressed says whether dark mode is on; the label stays "Dark theme" so the pair reads correctly
   function syncThemeToggle() {
@@ -139,7 +139,7 @@
       return;
     }
     contactFormError.hidden = true;
-    const track = window.BayshireTrack;
+    const track = window.TwoCapTrack;
     const submitLabel = contactSubmit.textContent;
     contactSubmit.disabled = true;
     contactSubmit.textContent = 'Sending…';
@@ -194,7 +194,7 @@
   });
 
   const DEMO_EMAIL = 'hello@2capacity.com';
-  const DEMO_REQUEST_URL = 'https://demoapi.purplebox.ae/api/public/demo-requests';
+  const DEMO_REQUEST_URL = 'https://2capacity.com/api/demo-requests';
 
   /* ---------------- Reveal on scroll ---------------- */
   if (window.gsap && window.ScrollTrigger) {
@@ -328,12 +328,12 @@
       <div class="unit-detail__kv">
         <span>Size</span><span>${u.sqft} sq ft</span>
         <span>Dimensions</span><span>${u.dims}</span>
-        <span>4-week rate</span><span>AED ${u.price} / 4 weeks</span>
-        <span>Weekly equivalent</span><span>AED ${u.weekly}</span>
+        <span>4-week rate</span><span>$${u.price} / 4 weeks</span>
+        <span>Weekly equivalent</span><span>$${u.weekly}</span>
         <span>Status</span><span style="font-weight:600;color:${u.statusColor}">${u.status}</span>
       </div>
       <div class="suggest-box">
-        <span class="suggest-box__title">Suggested 4-week rate · AED ${u.suggest.sug.toLocaleString('en-US')}</span>
+        <span class="suggest-box__title">Suggested 4-week rate · $${u.suggest.sug.toLocaleString('en-US')}</span>
         <span class="muted">${u.suggest.why}</span>
       </div>
       <p class="fine">Weekly rates calculate automatically from configurable pricing rules, for example <span class="mono ink">4-week rate &divide; 4</span>. Units can be created, read, updated and deleted directly in inventory.</p>
@@ -346,7 +346,7 @@
       <tr>
         <td>${u.code}</td><td>${u.floor}</td><td>${u.sqft} sq ft</td><td>${u.dims}</td>
         <td style="font-family:'Manrope',sans-serif;font-weight:600;color:${u.statusColor}">${u.status}</td>
-        <td>AED ${u.price}</td><td>AED ${u.weekly}</td>
+        <td>$${u.price}</td><td>$${u.weekly}</td>
       </tr>`).join('');
     $('#tableFootCount').textContent = 'Showing 12 of ' + unitCount;
   }
@@ -370,12 +370,12 @@
       // The visitor asked for 3D, so this one loads three.js even on phones
       loadThree().then(() => {
         if (!unitsScene) {
-          unitsScene = BayshireUnitsScene({
+          unitsScene = TwoCapUnitsScene({
             canvasEl: canvas3dEl, units,
             getSelectedCode: () => state.selectedUnit.code,
             onSelect: selectUnitByCode
           });
-          window.__bayshireUnitsScene = unitsScene;
+          window.__twocapUnitsScene = unitsScene;
         }
         if (unitsScene3dVisible && state.view === '3d') unitsScene.start();
       }).catch(() => {});
@@ -451,7 +451,7 @@
 
   function renderQuote() {
     const lead = currentLead();
-    const rate = lead.sq * 19;
+    const rate = lead.sq * 3;
     const disc = lead.sq >= 200 ? Math.round(rate * 0.05) : 0;
     const net = rate - disc;
     const vat = Math.round(net * 0.05 * 100) / 100;
@@ -461,10 +461,10 @@
       { k: 'Unit', v: lead.code + ' · ' + lead.sq + ' sq ft', mono: true },
       { k: 'Line item', v: 'Storage unit, 4-week term', mono: false },
       { k: 'Quantity', v: '1', mono: true },
-      { k: 'Rate', v: 'AED ' + D.fmt(rate), mono: true },
-      { k: 'Discount', v: disc ? '- AED ' + D.fmt(disc) + ' (5%)' : 'AED 0.00', mono: true },
-      { k: 'VAT 5%', v: 'AED ' + D.fmt(vat), mono: true },
-      { k: 'Total', v: 'AED ' + D.fmt(net + vat), mono: true, bold: true }
+      { k: 'Rate', v: '$' + D.fmt(rate), mono: true },
+      { k: 'Discount', v: disc ? '- $' + D.fmt(disc) + ' (5%)' : '$0.00', mono: true },
+      { k: 'Tax 5%', v: '$' + D.fmt(vat), mono: true },
+      { k: 'Total', v: '$' + D.fmt(net + vat), mono: true, bold: true }
     ];
     $('#quoteRows').innerHTML = rows.map(r => `
       <div class="kv-row"><span>${r.k}</span><span style="${r.mono ? "font-family:'IBM Plex Mono',monospace;" : ''}${r.bold ? 'font-weight:600;' : ''}">${r.v}</span></div>
@@ -486,17 +486,17 @@
     const lead = currentLead();
     const { net, vat } = computeTotals(lead);
     const wiz = [
-      [{ k: 'Name', v: lead.n }, { k: 'Phone', v: '+971 5x xxx xxxx', mono: true }, { k: 'Email', v: 'customer@example.com', mono: true }, { k: 'Source', v: lead.src + ' · lead L-0' + (330 + lead.id) }],
+      [{ k: 'Name', v: lead.n }, { k: 'Phone', v: '+1 555 xxx xxxx', mono: true }, { k: 'Email', v: 'customer@example.com', mono: true }, { k: 'Source', v: lead.src + ' · lead L-0' + (330 + lead.id) }],
       [{ k: 'Unit', v: lead.code, mono: true }, { k: 'Size', v: lead.sq + ' sq ft', mono: true }, { k: 'Floor', v: lead.code.slice(1, 2), mono: true }, { k: 'Status', v: 'Reserved on activation' }],
-      [{ k: 'Start', v: '01 Jul 2026', mono: true }, { k: 'Term', v: '4 weeks, rolling' }, { k: 'Rate', v: 'AED ' + D.fmt(net) + ' / 4 weeks', mono: true }, { k: 'Expiry alert', v: '30 days before end' }],
-      [{ k: 'Customer', v: lead.n }, { k: 'Unit', v: lead.code + ' · ' + lead.sq + ' sq ft', mono: true }, { k: 'Total / term', v: 'AED ' + D.fmt(net + vat) + ' incl. VAT', mono: true }, { k: 'From quote', v: 'Q-0' + (330 + lead.id) + ' · no fields re-entered' }]
+      [{ k: 'Start', v: '01 Jul 2026', mono: true }, { k: 'Term', v: '4 weeks, rolling' }, { k: 'Rate', v: '$' + D.fmt(net) + ' / 4 weeks', mono: true }, { k: 'Expiry alert', v: '30 days before end' }],
+      [{ k: 'Customer', v: lead.n }, { k: 'Unit', v: lead.code + ' · ' + lead.sq + ' sq ft', mono: true }, { k: 'Total / term', v: '$' + D.fmt(net + vat) + ' incl. tax', mono: true }, { k: 'From quote', v: 'Q-0' + (330 + lead.id) + ' · no fields re-entered' }]
     ][state.contractStep];
     $('#wizardRows').innerHTML = wiz.map(r => `<div class="kv-row"><span>${r.k}</span><span${r.mono ? " style=\"font-family:'IBM Plex Mono',monospace;\"" : ''}>${r.v}</span></div>`).join('');
     $('#activateBtn').textContent = state.contractActivated ? 'Contract active' : 'Activate contract';
   }
 
   function computeTotals(lead) {
-    const rate = lead.sq * 19;
+    const rate = lead.sq * 3;
     const disc = lead.sq >= 200 ? Math.round(rate * 0.05) : 0;
     const net = rate - disc;
     const vat = Math.round(net * 0.05 * 100) / 100;
@@ -513,7 +513,7 @@
   function renderSchedule() {
     const lead = currentLead();
     const { net, vat } = computeTotals(lead);
-    const amt = 'AED ' + D.fmt(net + vat);
+    const amt = '$' + D.fmt(net + vat);
     const schedule = [
       { d: '01 Jul 2026', s: 'Paid' }, { d: '29 Jul 2026', s: 'Paid' }, { d: '26 Aug 2026', s: 'Overdue' },
       { d: '23 Sep 2026', s: 'Due' }, { d: '21 Oct 2026', s: 'Scheduled' }
@@ -622,10 +622,10 @@
   renderAssist();
 
   $('#pricingRows').innerHTML = [50, 100, 200, 300].map(sq => {
-    const u = { sqft: sq, price: sq * 19 };
+    const u = { sqft: sq, price: sq * 3 };
     const g = D.suggestFor(u);
     const color = g.pct > 0 ? 'var(--g1)' : g.pct < 0 ? 'var(--g2)' : 'var(--ink2)';
-    return `<tr><td class="mono" style="white-space:nowrap">${sq} sq ft</td><td class="mono">AED ${u.price.toLocaleString('en-US')}</td><td class="mono" style="font-weight:500;color:${color}">AED ${g.sug.toLocaleString('en-US')}</td><td class="muted small">${g.why}</td></tr>`;
+    return `<tr><td class="mono" style="white-space:nowrap">${sq} sq ft</td><td class="mono">$${u.price.toLocaleString('en-US')}</td><td class="mono" style="font-weight:500;color:${color}">$${g.sug.toLocaleString('en-US')}</td><td class="muted small">${g.why}</td></tr>`;
   }).join('');
   $('#alertRows').innerHTML = D.alerts.map(a => `
     <div class="kv-row" style="grid-template-columns:72px 1fr"><span class="mono" style="color:var(--g2)">${a.t}</span><span style="line-height:1.5">${a.x}</span></div>
@@ -673,7 +673,7 @@
   const heroSteps = [
     { at: 500, html: '<div class="bubble bubble--in">Hi, price for 50 sq ft? Need it from Saturday.</div>' },
     { at: 1400, html: TYPING },
-    { at: 3300, dropTyping: true, html: `<div class="bubble bubble--ai"><span class="bubble__tag">AI draft</span>Hi! A ${heroUnit.sqft} sq ft unit is free from Saturday: ${heroUnit.code}, ${heroUnit.dims}. It's AED ${D.fmt(heroUnit.price)} per 4 weeks, about AED ${D.fmt(heroUnit.price / 4)} a week. Shall I send you a written quote?</div>` },
+    { at: 3300, dropTyping: true, html: `<div class="bubble bubble--ai"><span class="bubble__tag">AI draft</span>Hi! A ${heroUnit.sqft} sq ft unit is free from Saturday: ${heroUnit.code}, ${heroUnit.dims}. It's $${D.fmt(heroUnit.price)} per 4 weeks, about $${D.fmt(heroUnit.price / 4)} a week. Shall I send you a written quote?</div>` },
     { at: 4300, html: '<div class="approve-card" data-approve><div class="approve-card__t">Draft ready. Approve and send?</div><div class="approve-card__d">Price checked against your unit list</div><div class="approve-card__btns"><span>Approve &amp; send</span><span>Edit</span></div></div>' },
     { at: 6400, approve: true, html: '<div class="sent-tick">Sent by you &middot; &#10003;&#10003;</div>' }
   ];
@@ -708,10 +708,10 @@
       const free = units.filter(u => u.sqft === size && u.status === 'Available');
       if (!free.length) return { tag: 'Checked live availability', text: `${size} sq ft is fully booked right now. Want me to check the next size up?` };
       const u = free[0];
-      return { tag: 'Price from unit list', text: `${size === want ? '' : `The closest size is ${size} sq ft. `}We have ${free.length} unit${free.length > 1 ? 's' : ''} of ${size} sq ft free, like ${u.code} (${u.dims}). It's AED ${D.fmt(u.price)} per 4 weeks, about AED ${D.fmt(u.price / 4)} a week. Shall I send you a written quote?` };
+      return { tag: 'Price from unit list', text: `${size === want ? '' : `The closest size is ${size} sq ft. `}We have ${free.length} unit${free.length > 1 ? 's' : ''} of ${size} sq ft free, like ${u.code} (${u.dims}). It's $${D.fmt(u.price)} per 4 weeks, about $${D.fmt(u.price / 4)} a week. Shall I send you a written quote?` };
     }
     if (/hour|open|access|time/.test(t)) return { tag: 'From facility facts', text: 'The sample facility is open for access from 7am to 10pm, every day.' };
-    if (/where|location|address|map/.test(t)) return { tag: 'From facility facts', text: 'The sample facility is in Al Quoz, Dubai. I can send you a map pin.' };
+    if (/where|location|address|map/.test(t)) return { tag: 'From facility facts', text: 'The sample facility is on Sample Street, near the city centre. I can send you a map pin.' };
     if (/minimum|how long|shortest|month|week/.test(t)) return { tag: 'From facility facts', text: 'Contracts run in 4-week periods on a rolling basis, so you can stay as long as you need.' };
     if (/^\s*(hi|hello|hey|salam|marhaba|good)/.test(t)) return { tag: 'AI draft', text: 'Hi! What are you looking to store, and roughly how much space do you need?' };
     return { tag: HANDOVER, text: "I'm not sure about that one, so I'll check with the team rather than guess. Someone will reply here shortly." };
@@ -797,7 +797,7 @@
   } else {
     // After the page has loaded, so it never competes with first paint
     const startHero = () => loadThree().then(() => {
-      window.__bayshireScene = BayshireScene({
+      window.__twocapScene = TwoCapScene({
         canvasEl: $('#heroCanvas'),
         heroEl: $('#top'),
         textEl: $('#heroText'),
@@ -818,8 +818,8 @@
       if (!closingVisible) { if (ambientScene) ambientScene.stop(); return; }
       loadThree().then(() => {
         if (!ambientScene) {
-          ambientScene = BayshireAmbientScene({ canvasEl: closingCanvas });
-          window.__bayshireAmbientScene = ambientScene;
+          ambientScene = TwoCapAmbientScene({ canvasEl: closingCanvas });
+          window.__twocapAmbientScene = ambientScene;
         }
         if (closingVisible) ambientScene.start();
       }).catch(() => {});

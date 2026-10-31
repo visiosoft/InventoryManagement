@@ -1,6 +1,6 @@
 // Interactive 3D unit picker for the Units section. Same isometric box-geometry approach as
 // the hero scene, but static-framed, drag-to-rotate, and raycast-selectable instead of scroll-tied.
-function BayshireUnitsScene(opts) {
+function TwoCapUnitsScene(opts) {
   const { canvasEl, units, getSelectedCode, onSelect } = opts;
   const THREE = window.THREE;
   let renderer, scene, camera, group, raycaster, pointer;
@@ -10,7 +10,7 @@ function BayshireUnitsScene(opts) {
   let highlight;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  function theme() { return BayshireThreeTheme(); }
+  function theme() { return TwoCapThreeTheme(); }
 
   function applyTheme() {
     if (!built) return;

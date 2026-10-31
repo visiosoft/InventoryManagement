@@ -1,6 +1,6 @@
 // Sample data generation, ported from the design reference's buildUnits()/leads logic.
 // All figures are illustrative.
-const BayshireData = (function () {
+const TwoCapData = (function () {
   function buildUnits() {
     let seed = 7;
     const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
@@ -25,7 +25,7 @@ const BayshireData = (function () {
         out.push({
           x, z: r.z, w, d: r.d, h: r.h, floor: r.f,
           code: 'F' + r.f + '-' + String(counters[r.f]).padStart(3, '0'),
-          status, sqft, dims: w + ' m x ' + r.d + ' m', price: sqft * 19, W, D
+          status, sqft, dims: w + ' m x ' + r.d + ' m', price: sqft * 3, W, D
         });
         x += w + 0.2;
       }
@@ -76,8 +76,8 @@ const BayshireData = (function () {
 
   function templateReply(lead, unit, avail) {
     return 'Hi ' + lead.n.split(' ')[0] + ', thanks for reaching out. We have ' + avail + ' units of ' + lead.sq +
-      ' sq ft available now, including ' + lead.code + ' (' + unit.dims + '). The rate is AED ' + fmt(lead.sq * 19) +
-      ' per 4 weeks on a rolling contract, which works out to AED ' + fmt(lead.sq * 19 / 4) + ' a week. ' +
+      ' sq ft available now, including ' + lead.code + ' (' + unit.dims + '). The rate is $' + fmt(lead.sq * 3) +
+      ' per 4 weeks on a rolling contract, which works out to $' + fmt(lead.sq * 3 / 4) + ' a week. ' +
       'Would you like to book a viewing this week? I can hold the unit for you until then.';
   }
 
@@ -91,7 +91,7 @@ const BayshireData = (function () {
 
   const activity = [
     { t: 'Alert', x: 'Occupancy for 300 sq ft fell to 71%, 8 points below the 12-month average' },
-    { t: '09:42', x: 'Payment received. INV-2041. AED 3,800' },
+    { t: '09:42', x: 'Payment received. INV-2041. $1,200' },
     { t: '09:15', x: 'Contract CT-0197 activated. F2-034' },
     { t: '08:50', x: 'Reply drafted by Aisha. Hana Al Rashid' },
     { t: 'Yesterday', x: 'Quote Q-0336 sent. PDF generated' },
@@ -106,17 +106,17 @@ const BayshireData = (function () {
   ];
 
   const payments = [
-    { i: 'INV-2036', a: 'AED 1,900.00', s: 'Overdue' },
-    { i: 'INV-2038', a: 'AED 4,750.00', s: 'Paid' },
-    { i: 'INV-2040', a: 'AED 950.00', s: 'Due' },
-    { i: 'INV-2041', a: 'AED 3,800.00', s: 'Paid' },
-    { i: 'INV-2043', a: 'AED 2,850.00', s: 'Overdue' }
+    { i: 'INV-2036', a: '$600.00', s: 'Overdue' },
+    { i: 'INV-2038', a: '$1,500.00', s: 'Paid' },
+    { i: 'INV-2040', a: '$300.00', s: 'Due' },
+    { i: 'INV-2041', a: '$1,200.00', s: 'Paid' },
+    { i: 'INV-2043', a: '$900.00', s: 'Overdue' }
   ].map(p => ({ ...p, color: p.s === 'Overdue' ? 'var(--oxide)' : p.s === 'Paid' ? 'var(--accent)' : 'var(--ink2)' }));
 
   const csvRows = [
-    { v: 'Gulf Power Supplies', c: 'Utilities', a: 'AED 1,240.00', m: 'Matched. VEN-014', color: 'var(--accent)' },
-    { v: 'Al Noor Cleaning Co', c: 'Facility', a: 'AED 860.00', m: 'Matched. VEN-007', color: 'var(--accent)' },
-    { v: 'Desert Lock & Key', c: 'Maintenance', a: 'AED 315.00', m: 'New vendor. VEN-031', color: 'var(--oxide)' }
+    { v: 'Gulf Power Supplies', c: 'Utilities', a: '$420.00', m: 'Matched. VEN-014', color: 'var(--accent)' },
+    { v: 'Al Noor Cleaning Co', c: 'Facility', a: '$290.00', m: 'Matched. VEN-007', color: 'var(--accent)' },
+    { v: 'Desert Lock & Key', c: 'Maintenance', a: '$105.00', m: 'New vendor. VEN-031', color: 'var(--oxide)' }
   ];
 
   const docs = [
@@ -168,7 +168,6 @@ const BayshireData = (function () {
   // icon: optional brand mark shown before a text name.
   // logo: path to their logo (SVG or transparent PNG, ~40px tall) — without it the name is shown as text.
   const clients = [
-    { n: 'PurpleBox Storage', city: 'Dubai', icon: 'assets/clients/purplebox-icon.png', href: '#customers' },
     { n: 'Urban Storage', city: 'UAE', logo: 'assets/clients/urban-storage.png', href: 'https://urbanstorage.ae/' },
     { n: 'Access Self Storage', city: 'UK', logo: 'assets/clients/access-self-storage.png' }
   ];
@@ -209,8 +208,8 @@ const BayshireData = (function () {
 
   const alerts = [
     { t: 'Today', x: '300 sq ft occupancy at 71%, 8 points below the 12-month average. 4 units vacant over 30 days.' },
-    { t: 'Sep 12', x: 'Overdue balance rose to AED 4,750 across 7 payments. 2 contracts have missed two consecutive dates.' },
-    { t: 'Sep 03', x: 'August revenue AED 268,900, in line with the trailing average after two months of growth.' }
+    { t: 'Sep 12', x: 'Overdue balance rose to $1,500 across 7 payments. 2 contracts have missed two consecutive dates.' },
+    { t: 'Sep 03', x: 'August revenue $84,900, in line with the trailing average after two months of growth.' }
   ];
 
   return {

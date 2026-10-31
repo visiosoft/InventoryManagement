@@ -1,6 +1,6 @@
 // Google tag (GA4 + Google Ads) with Consent Mode v2 and a small consent banner.
 // Fill in the IDs below; while GA4_ID is empty nothing loads and no banner shows.
-// Loaded on every page (index + legal), before app.js, so window.BayshireTrack exists for it.
+// Loaded on every page (index + legal), before app.js, so window.TwoCapTrack exists for it.
 (function () {
   const CONFIG = {
     GA4_ID: '',               // e.g. 'G-XXXXXXXXXX'   (GA4 > Admin > Data streams)
@@ -37,7 +37,7 @@
     if (enabled) gtag('event', name, params || {});
   }
 
-  window.BayshireTrack = {
+  window.TwoCapTrack = {
     source: () => Object.assign({ page: location.pathname }, source),
     event,
     // A completed demo request: the GA4 key event plus the Ads conversion

@@ -1,6 +1,6 @@
 // Shared palette for every Three.js scene on the page (hero, units picker, ambient CTA backdrop),
 // kept in one place so light/dark retints stay consistent across scenes.
-function BayshireThreeTheme() {
+function TwoCapThreeTheme() {
   const dark = document.documentElement.dataset.theme === 'dark';
   return dark
     ? { bg: 0x131314, floor: 0x1B1B1D, grid: 0x2E2F31, edge: 0xE3E3E3, edgeOp: 0.09, avail: 0x232426, occ: 0x2E5A3C, res: 0x5A4A1C, maint: 0x5E2A26, hemi: 0.9, dir: 1.0, iOcc: 0x6DD58C, iRes: 0xFDD663, iMaint: 0xF28B82, g1: 0x6DD58C, g2: 0x8AB4F8, g3: 0xFDD663 }
@@ -8,7 +8,7 @@ function BayshireThreeTheme() {
 }
 
 // Isometric storage-facility 3D scene for the hero. Ported from the design reference.
-function BayshireScene(opts) {
+function TwoCapScene(opts) {
   const { canvasEl, heroEl, textEl, metricsEl, units } = opts;
   let renderer, scene, camera, group, floorMat, grid, bound, hemi, dir, fog;
   let meshes = [], materials = [];
@@ -16,7 +16,7 @@ function BayshireScene(opts) {
   let camTarget, introTween, introDone = false, alive = true;
   let reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  function theme() { return BayshireThreeTheme(); }
+  function theme() { return TwoCapThreeTheme(); }
 
   function applyTheme() {
     if (!renderer) return;

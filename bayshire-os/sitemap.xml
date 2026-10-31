@@ -1,8 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://2capacity.com/</loc>
-    <lastmod>2026-10-28</lastmod>
+    <lastmod>2026-10-29</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://2capacity.com/"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://2capacity.com/ar/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://2capacity.com/"/>
+  </url>
+  <url>
+    <loc>https://2capacity.com/ar/</loc>
+    <lastmod>2026-10-29</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://2capacity.com/"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://2capacity.com/ar/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://2capacity.com/"/>
+  </url>
+  <url>
+    <loc>https://2capacity.com/self-storage-software-canada/</loc>
+    <lastmod>2026-10-29</lastmod>
+  </url>
+  <url>
+    <loc>https://2capacity.com/self-storage-software-uae/</loc>
+    <lastmod>2026-10-29</lastmod>
+  </url>
+  <url>
+    <loc>https://2capacity.com/whatsapp-for-self-storage/</loc>
+    <lastmod>2026-10-29</lastmod>
   </url>
   <url>
     <loc>https://2capacity.com/legal/privacy-policy.html</loc>

@@ -2,14 +2,14 @@
 // in the brand gradient colors, sitting quietly behind the copy. Motivation: gives the closing
 // moment the same "real system, not a static poster" depth cue as the hero, at near-zero cost
 // (small canvas, few low-poly meshes, paused whenever off-screen).
-function BayshireAmbientScene(opts) {
+function TwoCapAmbientScene(opts) {
   const { canvasEl } = opts;
   const THREE = window.THREE;
   let renderer, scene, camera, meshes = [];
   let running = false, built = false, alive = true, lastT = 0;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  function theme() { return BayshireThreeTheme(); }
+  function theme() { return TwoCapThreeTheme(); }
 
   function applyTheme() {
     if (!built) return;

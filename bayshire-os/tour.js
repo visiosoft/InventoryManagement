@@ -17,7 +17,7 @@
         <div class="ta-tabs"><span class="is-on">Overview</span><span>Sales</span><span>Leads</span><span>Finance</span><span>Customer Feedback</span></div>
         <div class="ta-ask"><span class="ta-spark">&#10022;</span>Ask about occupancy, expiring contracts, WhatsApp activity&hellip;<span class="ta-ask__go">&rarr;</span></div>
         <div class="ta-chips"><span>Which contracts expire in the next 15 days?</span><span>Who's still waiting for a WhatsApp reply?</span><span>How many 10 sq ft units are free?</span></div>
-        <div class="ta-banner"><b>Contracts expiring soon</b><span>6 &middot; 15 days before expiry &middot; 3 &middot; 7 days &middot; 2 &middot; 1 day &mdash; reminders waiting on your approval</span><a>Review &amp; approve &rarr;</a></div>
+        <div class="ta-banner"><b>Contracts expiring soon</b><span>6 &middot; 15 days before expiry &middot; 3 &middot; 7 days &middot; 2 &middot; 1 day &mdash; reminders waiting on your approval</span><button type="button">Review &amp; approve &rarr;</button></div>
         <div class="ta-kpis">
           <div class="ta-occ"><div class="ta-label">Occupancy</div><div class="ta-big">72%</div><div class="ta-bar"><i style="width:72%"></i></div>
             <div class="ta-occ__row"><span><b>168</b>Booked</span><span><b>12</b>Reserved</span><span><b>70</b>Vacant</span></div></div>
@@ -38,7 +38,7 @@
         <div class="ta-chips ta-chips--dark"><span class="is-on">All agents &middot; 42</span><span>Aisha &middot; 24</span><span>Omar &middot; 9</span><span>Layla &middot; 4</span><span>Nadia &middot; 3</span><span>Sam &middot; 2</span></div>
         <div class="ta-card ta-card--accent"><div class="ta-row">${agentDot('Nadia', 'g')}<b>Nadia</b><span class="ta-muted">07:00 &middot; 14 sorted, 5 drafts, 2 for a person</span></div>
           <p class="ta-p">Good morning. 3 new storage inquiries came in by email overnight, I drafted replies for each. One supplier invoice and one complaint need a person.</p></div>
-        ${[['Hannah Weber', 'Active', '"Hi, do you have something around 50 sq ft from next week? Mostly boxes."', 'Hi Hannah! Yes, we have a 50 sq ft unit free from Monday at AED 975 per 4 weeks. Shall I send you a quote?', 'lead file: 50 sqft &middot; boxes'],
+        ${[['Hannah Weber', 'Active', '"Hi, do you have something around 50 sq ft from next week? Mostly boxes."', 'Hi Hannah! Yes, we have a 50 sq ft unit free from Monday at $165 per 4 weeks. Shall I send you a quote?', 'lead file: 50 sqft &middot; boxes'],
            ['Karim Nassar', 'New', '"Ok"', 'Great! When would you like to come and see the unit?', '']]
           .map(([n, st, q, d, f]) => `<div class="ta-card"><div class="ta-row">${avatar(n, 'g')}<b>${n}</b>${badge(st, 'p')}<span class="ta-muted">wrote 11m ago &middot; <b class="ta-purple">Aisha</b> drafted</span><span class="ta-conf">confident</span></div>
             <div class="ta-quote">${q}</div><div class="ta-draft">${d}</div>${f ? `<div class="ta-muted ta-small">${f}</div>` : ''}
@@ -78,7 +78,7 @@
             <div class="ta-summ">&#10022; Summarise this conversation</div>
             <div class="ta-bubbles">
               <div class="ta-bub ta-bub--in">Hi, how much for a unit around 150 sq ft? I need it from the 1st.</div>
-              <div class="ta-bub ta-bub--out"><div class="ta-unitpic"><b>150 SQ FT</b><span>F1-19</span></div>150 sq ft is free from the 1st: F1-19 at AED 2,700 per 4 weeks. Want me to hold it with a quote?</div>
+              <div class="ta-bub ta-bub--out"><div class="ta-unitpic"><b>150 SQ FT</b><span>F1-19</span></div>150 sq ft is free from the 1st: F1-19 at $450 per 4 weeks. Want me to hold it with a quote?</div>
               <div class="ta-bub ta-bub--in">That works for 150 sq ft?</div>
             </div>
             <div class="ta-row ta-row--btns"><span class="ta-btn">Remind me</span><span class="ta-btn ta-purple">&#10022; Suggest a reply</span></div>
@@ -113,8 +113,8 @@
         <div class="ta-label ta-purple">Operations</div><h4 class="ta-h">Unit availability</h4>
         <div class="ta-filters"><span>Free from<i>21/10/2026</i></span><span>Until<i>18/11/2026</i></span><span>Floor<i>All floors</i></span><span>Size<i>Any size</i></span><span class="ta-btn ta-btn--purple">Find available units</span></div>
         <div class="ta-muted ta-small"><b>86</b> of 250 units free for the whole window</div>
-        <div class="ta-units">${[['F1-5', 150, 1, 2700], ['F1-14', 200, 1, 3100], ['F1-31', 75, 1, 1400, '5%'], ['F2-16', 35, 2, 770, '5%'], ['F2-48', 10, 2, 330, '20%'], ['F2-60', 50, 2, 975, '15%'], ['F2-69', 100, 2, 1650], ['F3-4', 50, 3, 975, '15%']]
-          .map(([c, s, f, p, d]) => `<div class="ta-unit"><span class="ta-gdot"></span><b>${c}</b><div class="ta-muted ta-small">${s} sqft &middot; Floor F${f}</div><div class="ta-green ta-small">Free entire window</div><div class="ta-row">${d ? badge(d + ' 1st 4wk', 'y') : ''}<span class="ta-price">AED ${p.toLocaleString('en-US')}</span></div></div>`).join('')}</div>`
+        <div class="ta-units">${[['F1-5', 150, 1, 450], ['F1-14', 200, 1, 580], ['F1-31', 75, 1, 240, '5%'], ['F2-16', 35, 2, 130, '5%'], ['F2-48', 10, 2, 60, '20%'], ['F2-60', 50, 2, 165, '15%'], ['F2-69', 100, 2, 290], ['F3-4', 50, 3, 165, '15%']]
+          .map(([c, s, f, p, d]) => `<div class="ta-unit"><span class="ta-gdot"></span><b>${c}</b><div class="ta-muted ta-small">${s} sqft &middot; Floor F${f}</div><div class="ta-green ta-small">Free entire window</div><div class="ta-row">${d ? badge(d + ' 1st 4wk', 'y') : ''}<span class="ta-price">$${p.toLocaleString('en-US')}</span></div></div>`).join('')}</div>`
     },
     financials: {
       title: 'Actual vs Leased',
@@ -122,12 +122,12 @@
       html: () => `
         <div class="ta-label ta-purple">Financials</div><h4 class="ta-h">Actual vs leased</h4><p class="ta-muted">What each unit is priced at, against what it actually let for.</p>
         <div class="ta-fin">
-          <div class="ta-kpi"><div class="ta-label">Annual run rate</div><div class="ta-big">3,612,400</div><div class="ta-sub">asking &times; 13 four-week cycles</div></div>
-          <div class="ta-kpi"><div class="ta-label">Monthly asking</div><div class="ta-big">277,880</div><div class="ta-sub">across all 250 units</div></div>
-          <div class="ta-kpi ta-kpi--purple"><div class="ta-label">Monthly leased</div><div class="ta-big">191,240</div><div class="ta-sub">180 of 250 units under lease</div></div>
+          <div class="ta-kpi"><div class="ta-label">Annual run rate</div><div class="ta-big">568,100</div><div class="ta-sub">asking &times; 13 four-week cycles</div></div>
+          <div class="ta-kpi"><div class="ta-label">Monthly asking</div><div class="ta-big">43,700</div><div class="ta-sub">across all 250 units</div></div>
+          <div class="ta-kpi ta-kpi--purple"><div class="ta-label">Monthly leased</div><div class="ta-big">30,100</div><div class="ta-sub">180 of 250 units under lease</div></div>
           <div class="ta-kpi"><div class="ta-label">Occupancy</div><div class="ta-big">72%</div><div class="ta-sub">180 leased &middot; 70 vacant</div></div>
-          <div class="ta-kpi"><div class="ta-label">Sitting empty</div><div class="ta-big">AED 71,320</div><div class="ta-sub">asking price not earning</div></div>
-          <div class="ta-kpi"><div class="ta-label">Below asking</div><div class="ta-big">AED 15,320</div><div class="ta-sub">7.4% on what is let</div></div>
+          <div class="ta-kpi"><div class="ta-label">Sitting empty</div><div class="ta-big">$11,200</div><div class="ta-sub">asking price not earning</div></div>
+          <div class="ta-kpi"><div class="ta-label">Below asking</div><div class="ta-big">$2,400</div><div class="ta-sub">7.4% on what is let</div></div>
         </div>
         <div class="ta-chart">${[[55, 30], [55, 38], [80, 46], [82, 54], [84, 62]].map(([a, l], i) => `<div class="ta-pair"><i style="height:${a}%"></i><i class="ta-light" style="height:${l}%"></i><span>${['Jun', 'Jul', 'Aug', 'Sep', 'Oct'][i]}</span></div>`).join('')}</div>`
     },
