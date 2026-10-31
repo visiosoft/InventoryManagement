@@ -87,7 +87,7 @@ test('sandbox: the agent replies with its action, lead state, media and trace; a
   await page.getByLabel('Ideal reply').fill('For a studio I’d start with 50 sq ft. It’s temperature controlled, so your furniture stays in good shape. Want to see it?')
   await page.getByLabel('Correct next action').selectOption('send_unit_media')
   await page.getByRole('button', { name: 'Save correction' }).click()
-  await expect(page.getByText('Saved as a scenario')).toBeVisible()
+  await expect(page.getByText(/the training bot uses it from the next message/)).toBeVisible()
   expect(calls.find((c) => c.path === '/api/sales/sandbox/t1/save')!.body).toMatchObject({ nba: ['send_unit_media'], group: 'pricing' })
 
   // The next message carries the conversation and the lead state forward.
