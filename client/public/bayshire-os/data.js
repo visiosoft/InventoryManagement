@@ -168,8 +168,8 @@ const TwoCapData = (function () {
   // icon: optional brand mark shown before a text name.
   // logo: path to their logo (SVG or transparent PNG, ~40px tall) — without it the name is shown as text.
   const clients = [
-    { n: 'Urban Storage', city: 'UAE', logo: 'assets/clients/urban-storage.webp', href: 'https://urbanstorage.ae/' },
-    { n: 'Access Self Storage', city: 'UK', logo: 'assets/clients/access-self-storage.webp' }
+    { n: 'Urban Storage', city: 'UAE', logo: 'assets/clients/urban-storage.webp', w: 239, h: 72, href: 'https://urbanstorage.ae/' },
+    { n: 'Access Self Storage', city: 'UK', logo: 'assets/clients/access-self-storage.webp', w: 158, h: 54 }
   ];
 
   // Customer quote for the "See what our customers say" panel. The section stays hidden while this is empty.

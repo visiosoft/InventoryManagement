@@ -645,7 +645,7 @@
   /* ---------------- Clients ---------------- */
   $('#clientList').innerHTML = D.clients.map(c => {
     const icon = c.icon ? `<img class="clients__icon" src="${c.icon}" alt="" aria-hidden="true">` : '';
-    const mark = c.logo ? `<img src="${c.logo}" alt="${c.n}" loading="lazy">` : `${icon}<span class="clients__name">${c.n}</span>`;
+    const mark = c.logo ? `<img src="${c.logo}" alt="${c.n}" width="${c.w}" height="${c.h}" loading="lazy">` : `${icon}<span class="clients__name">${c.n}</span>`;
     const inner = `${mark}<span class="clients__city">${c.city}</span>`;
     const ext = /^https?:/.test(c.href || '') ? ' target="_blank" rel="noopener"' : '';
     return `<li>${c.href ? `<a href="${c.href}"${ext}>${inner}</a>` : inner}</li>`;
