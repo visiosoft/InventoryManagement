@@ -199,8 +199,10 @@ function Save({ i, line, lines, setLines, p, corrected }: { i: number; line: Lin
       <div style={caps}>What it should have said</div>
       <textarea rows={4} value={ideal} onChange={(e) => setIdeal(e.target.value)} dir="auto" style={field} aria-label="Ideal reply" />
       <div className="grid gap-2 sm:grid-cols-2">
-        <select value={nba} onChange={(e) => setNba(e.target.value)} style={field} aria-label="Correct next action">{p?.playbook.actions.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}</select>
-        <select value={group} onChange={(e) => setGroup(e.target.value)} style={field} aria-label="Scenario group">{p?.playbook.groups.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}</select>
+        <label style={{ fontSize: 11.5, color: MUTED }}>What it should have done next
+          <select value={nba} onChange={(e) => setNba(e.target.value)} style={{ ...field, marginTop: 3 }} aria-label="Correct next action">{p?.playbook.actions.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}</select></label>
+        <label style={{ fontSize: 11.5, color: MUTED }}>File this test under
+          <select value={group} onChange={(e) => setGroup(e.target.value)} style={{ ...field, marginTop: 3 }} aria-label="Scenario group">{p?.playbook.groups.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}</select></label>
       </div>
       <input value={critique} onChange={(e) => setCritique(e.target.value)} placeholder="Why the agent's reply was wrong (optional)" style={field} />
       {err && <div style={{ color: '#B91C1C', fontSize: 12 }}>{err}</div>}
