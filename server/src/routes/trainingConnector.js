@@ -49,7 +49,7 @@ connector.get('/health', (_req, res) => res.json({ ok: true, name: 'PurpleBox CR
 
 connector.get('/conversations', async (req, res, next) => {
    try {
-      const threads = await conversations({ limit: Math.min(Number(req.query.limit) || 500, 20000), days: Number(req.query.days) || 60, perConversation: 3 });
+      const threads = await conversations({ limit: Math.min(Number(req.query.limit) || 500, 20000), days: Number(req.query.days) || 60, perConversation: Math.min(Math.max(Number(req.query.perConversation) || 3, 1), 20) });
       res.json({ threads: threads.map((t) => ({ ref: refFor(t.ref), messages: t.messages })) });
    } catch (e) { next(e); }
 });

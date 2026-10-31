@@ -75,7 +75,7 @@ export function hostFor(org) {
          whatsapp: (p) => storedThreads(org, 'whatsapp', p),
          connector: async (p) => {
             if (!c) throw new Error('No system is connected');
-            return c.conversations({ days: p.days, limit: p.limit });
+            return c.conversations({ days: p.days, limit: p.limit, perConversation: p.perConversation });
          },
       },
       facts: () => factsFor(org),

@@ -18,6 +18,10 @@ type Imp = {
 type Sources = { connector: boolean; stored: Record<string, { messages: number; last: string }> }
 const STAGE: Record<string, string> = { reading: 'Reading conversations', clustering: 'Grouping questions', suggesting: 'Writing suggested answers', done: 'Done', failed: 'Failed' }
 
+function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
+  return <button type="button" onClick={onClick} style={{ height: 30, padding: '0 10px', borderRadius: 99, fontSize: 12.5, fontWeight: 600, border: `1px solid ${on ? ACCENT : 'rgba(15,23,42,.12)'}`, background: on ? '#EFF4FF' : '#fff', color: on ? ACCENT : INK }}>{children}</button>
+}
+
 function Card({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return <div style={{ ...panel, padding: 18 }}><div className="flex items-center gap-2" style={{ fontWeight: 800, color: INK }}>{icon} {title}</div>{children}</div>
 }
@@ -54,10 +58,19 @@ export default function Imports() {
     <div className="space-y-4">
       <PageTitle title="Conversations" sub="Bring in real customer conversations. Phone numbers, emails, IDs and card numbers are masked before anything is stored." />
       <div style={{ ...panel, padding: 14 }} className="flex flex-wrap items-end gap-4">
-        <label style={{ fontSize: 12, color: MUTED }}>Questions to take<input type="number" min={50} max={20000} step={50} value={limit} onChange={(e) => setLimit(Number(e.target.value))} style={{ ...field, marginTop: 4, width: 120 }} /></label>
-        <label style={{ fontSize: 12, color: MUTED }}>From the last … days<input type="number" min={1} max={730} value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ ...field, marginTop: 4, width: 120 }} /></label>
+        <div style={{ fontSize: 12, color: MUTED }}>How many questions
+          <div className="flex flex-wrap gap-1" style={{ marginTop: 4 }}>
+            {[500, 1000, 2000, 5000, 10000, 20000].map((n) => <Chip key={n} on={limit === n} onClick={() => setLimit(n)}>{n.toLocaleString()}</Chip>)}
+            <input type="number" min={50} max={20000} step={50} value={limit} onChange={(e) => setLimit(Math.min(20000, Number(e.target.value)))} aria-label="Questions to take" style={{ ...field, width: 96, padding: '5px 8px' }} />
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: MUTED }}>From the last
+          <div className="flex flex-wrap gap-1" style={{ marginTop: 4 }}>
+            {[30, 60, 90, 180, 365].map((n) => <Chip key={n} on={days === n} onClick={() => setDays(n)}>{n} days</Chip>)}
+          </div>
+        </div>
         <label style={{ fontSize: 12, color: MUTED }}>Per conversation, at most<input type="number" min={1} max={20} value={per} onChange={(e) => setPer(Number(e.target.value))} style={{ ...field, marginTop: 4, width: 120 }} /></label>
-        <span style={{ fontSize: 12, color: MUTED, maxWidth: 360 }}>A few questions per person means they come from many different people. One in five is kept aside to test the AI.</span>
+        <span style={{ fontSize: 12, color: MUTED, maxWidth: 360 }}>A few questions per person means they come from many different people. One in five is kept aside to test the AI.{limit > 2000 ? ` A large import takes a while and uses more AI credit (about ${Math.ceil(limit / 30)} grouping calls).` : ''}</span>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
