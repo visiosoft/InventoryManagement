@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Sparkles, Wand2, Check, Archive, Play, X } from 'lucide-react'
+import { Plus, Sparkles, Wand2, Check, Archive, Play, X, Rocket } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { type Me, INK, MUTED, ACCENT, LINE, TINT, btn, panel, caps, field } from './theme'
 import { Pill, PageTitle } from './shared'
@@ -30,6 +30,11 @@ export default function Scenarios() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['scenarios', me.org.id] })
   const seed = useMutation({ mutationFn: () => api.post('/sales/scenarios/seed'), onSuccess: (r) => { setMsg(`${r.data.seeded} starter scenarios added as drafts.`); refresh() }, onError: (e) => setMsg(apiError(e)) })
   const gen = useMutation({ mutationFn: (g: string) => api.post('/sales/scenarios/generate', { group: g, count: 8 }), onSuccess: (r) => { setMsg(`${r.data.created} new drafts written. Check and approve them.`); refresh() }, onError: (e) => setMsg(apiError(e)) })
+  const publish = useMutation({
+    mutationFn: () => api.post('/training/publish', { note: 'From Scenarios' }).then((r) => r.data),
+    onSuccess: (d) => setMsg(`Published version ${d.version}: ${d.examples ?? 0} approved examples and ${d.count} answers are live for your agent.`),
+    onError: (e) => setMsg(apiError(e)),
+  })
   const add = useMutation({ mutationFn: () => api.post('/sales/scenarios', { message: 'New customer message', group: group || undefined }), onSuccess: (r) => { refresh(); setOpen(r.data.scenario._id) }, onError: (e) => setMsg(apiError(e)) })
   const p = pb.data?.playbook
   const cov = list.data?.coverage ?? []
@@ -41,6 +46,7 @@ export default function Scenarios() {
       <PageTitle title="Scenarios" sub={<>The situations your agent must get right. Approved ones are retested on every change. <b style={{ color: INK }}>{totalApproved}</b> approved of the <b style={{ color: INK }}>{target}</b> the matrix asks for.</>} action={
         <div className="flex flex-wrap gap-2">
           {(pb.data?.templates.find((t) => t.key === p?.template)?.starters ?? 0) > 0 && me.permissions.includes('manage') && <button type="button" style={btn()} disabled={seed.isPending} onClick={() => seed.mutate()}><Sparkles size={14} /> Add starter scenarios</button>}
+          {me.permissions.includes('publish') && <button type="button" style={btn()} disabled={publish.isPending} title="Send every approved scenario and answer to your agent" onClick={() => { if (window.confirm('Publish all approved scenarios and answers to your agent? Your connected agent (Aisha) uses them from her next reply.')) publish.mutate() }}><Rocket size={14} /> Publish to agents</button>}
           {me.permissions.includes('review') && <button type="button" style={btn(true)} disabled={add.isPending} onClick={() => add.mutate()}><Plus size={14} /> New scenario</button>}
         </div>
       } />
